@@ -75,7 +75,12 @@ interface InternalTrack {
 // register as more motion just because the frame is more zoomed in.
 const NOISE_THRESHOLD_RATIO = 0.015;
 const PARKED_AFTER_MS = 2500;
-const RESUME_AFTER_FRAMES = 3;
+// Lowered from 3 -- per explicit request that a car pulling away from a stop picks its speed
+// back up immediately, not after a noticeably longer pause than PARKED_AFTER_MS took to settle
+// on "parked" in the first place. 2 consecutive above-threshold frames (at the ~300ms Frame
+// Processor throttle, ~600ms) is still enough of a real, sustained streak to reject a single
+// noisy frame -- see this constant's own use below -- just not a third one on top of that.
+const RESUME_AFTER_FRAMES = 2;
 
 // How long a track survives a missed detection before its identity is given up on -- a
 // partially-visible or edge-of-frame vehicle can easily fail to detect for a single frame

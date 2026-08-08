@@ -223,7 +223,7 @@ export function DestinationSearchBar({
                 accessibilityLabel={`Starting point: ${originLabel}. Tap to change.`}
               >
                 <Ionicons name="ellipse" size={10} color={colors.accent} />
-                <Text style={styles.originText} numberOfLines={1}>
+                <Text style={styles.originText} numberOfLines={2}>
                   {originLabel}
                 </Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
@@ -414,12 +414,18 @@ const styles = StyleSheet.create({
     // without this the text ran directly underneath the gear button instead of truncating
     // safely clear of it.
     paddingRight: spacing.md + 44,
-    height: 40,
+    // minHeight (not a fixed height) -- a full street address routinely needs the 2 lines
+    // originText now allows (see its own numberOfLines) instead of being clipped to whatever a
+    // single 40px row could fit; the row grows to fit the real text instead of hiding it.
+    minHeight: 40,
+    paddingVertical: spacing.xs + 2,
   },
   originText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
+    letterSpacing: 0.2,
+    lineHeight: 18,
     color: colors.text,
   },
   originDivider: {

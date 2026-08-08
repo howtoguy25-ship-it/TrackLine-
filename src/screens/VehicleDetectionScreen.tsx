@@ -46,6 +46,15 @@ import { Sentry } from "@/services/sentry";
 // never cleared the bar to start being tracked at all). Same real trade as before: a few more
 // false positives for meaningfully fewer real, partially-visible vehicles going undetected.
 const MIN_DETECTION_SCORE = 0.3;
+// Real, confirmed complaint: a low-confidence detection box spanning almost the entire frame
+// (a misclassified shadow/road surface/dashboard reflection, not an actual close-up vehicle)
+// rendered as a giant box "covering the whole screen" instead of locking to the real car body.
+// A genuinely huge box IS possible at very close range (Place & Play right next to traffic, or
+// a near-collision) -- so this doesn't reject big boxes outright, it just requires a much higher
+// score to accept one that large, same principle as MIN_DETECTION_SCORE but scaled to how much
+// of the frame the box claims to cover.
+const OVERSIZED_BOX_FRAME_FRACTION = 0.75;
+const MIN_SCORE_FOR_OVERSIZED_BOX = 0.65;
 // This model's own fixed TFLite_Detection_PostProcess output size (see
 // assets/models/tflite_ssd_mobilenet_v1) -- it never returns more than this many candidate
 // detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE.
@@ -156,19 +165,21 @@ function TargetCorners({ width, height, color }: { width: number; height: number
   );
 }
 
-// Color-codes the lock/target box by the vehicle's own real road speed -- green under 60 km/h,
-// amber 60-100, red over 100, matching real fixed-camera traffic-radar convention (a driver
-// glances at a color, not a number, to gauge how fast someone's going). Only applied to a real
-// "absolute" road-speed reading (a genuine ego-GPS-combined estimate, or a Place & Play stationary
-// camera's own closing rate -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate
-// (no ego GPS available, phone being driven around) isn't a real speed measurement and stays the
-// neutral default amber rather than implying a threshold it can't actually back up.
+// Color-codes the lock/target box by the vehicle's own real road speed, per explicit request:
+// under 50 km/h amber/orange (an uncertain/low reading -- also the neutral default below for any
+// speed that isn't a confirmed "absolute" reading at all), 50-70 green (normal, confident cruise
+// speed), over 70 red. Matches real fixed-camera traffic-radar convention (a driver glances at a
+// color, not a number, to gauge how fast someone's going). Only applied to a real "absolute"
+// road-speed reading (a genuine ego-GPS-combined estimate, or a Place & Play stationary camera's
+// own closing rate -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate (no ego
+// GPS available, phone being driven around) isn't a real speed measurement and stays the neutral
+// default amber rather than implying a threshold it can't actually back up.
 function speedLockColor(box: TrackedBox): string {
   if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return "#F59E0B";
   const abs = Math.abs(box.speedKmh);
-  if (abs > 100) return "#DC2626";
-  if (abs >= 60) return "#F59E0B";
-  return "#22C55E";
+  if (abs > 70) return "#DC2626";
+  if (abs >= 50) return "#22C55E";
+  return "#F59E0B";
 }
 
 // Maps a box from the Frame Processor's UPRIGHT coordinate space (frameWidth x frameHeight,
@@ -626,6 +637,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         const w = (xmax - xmin) * uprightWidth;
         const h = (ymax - ymin) * uprightHeight;
         if (w <= 0 || h <= 0) continue;
+        // See OVERSIZED_BOX_FRAME_FRACTION's own comment -- a near-full-frame box needs a much
+        // higher score than an ordinary one to be trusted as a real close-up vehicle rather than
+        // a low-confidence misdetection sprawled across most of the screen.
+        const isOversized = xmax - xmin > OVERSIZED_BOX_FRAME_FRACTION || ymax - ymin > OVERSIZED_BOX_FRAME_FRACTION;
+        if (isOversized && score < MIN_SCORE_FOR_OVERSIZED_BOX) continue;
         detections.push({ label, score, bbox: [xmin * uprightWidth, ymin * uprightHeight, w, h] });
       }
 
@@ -996,7 +1012,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // nothing at all.
           const speedLabel =
             box.state === "parked"
-              ? "0 km/h"
+              ? "Parked"
               : box.speedKmh === null
                 ? null
                 : box.speedKind === "absolute"
@@ -1222,7 +1238,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
             <Text style={styles.detailLabel}>Speed</Text>
             <Text style={styles.detailValue}>
               {selectedBox.state === "parked"
-                ? "0 km/h"
+                ? "Parked"
                 : selectedBox.speedKmh === null
                   ? "—"
                   : selectedBox.speedKind === "absolute"
