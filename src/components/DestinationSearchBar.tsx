@@ -407,13 +407,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
+    // Extra right padding (beyond the ordinary paddingHorizontal) reserves real room for
+    // MapScreen's Settings gear button, which floats on top of this bar's own top-right corner
+    // -- a short placeholder/"My Location" label never reached that zone, but a real full
+    // street address (this row's live reverse-geocoded origin label) routinely does, and
+    // without this the text ran directly underneath the gear button instead of truncating
+    // safely clear of it.
+    paddingRight: spacing.md + 44,
     height: 40,
   },
   originText: {
     flex: 1,
     fontSize: 13,
-    fontWeight: "600",
-    color: colors.textMuted,
+    fontWeight: "700",
+    color: colors.text,
   },
   originDivider: {
     height: StyleSheet.hairlineWidth,

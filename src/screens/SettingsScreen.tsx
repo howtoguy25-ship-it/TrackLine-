@@ -660,21 +660,28 @@ export function SettingsScreen() {
           community — shown independently on the map, whether or not "Live alerts" is on, out to
           however far from your own location the radius above is set (1-200 km).
         </Text>
-        <Row
-          label="Live traffic cameras (NSW)"
-          icon={<MaterialCommunityIcons name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : colors.textMuted} />}
-        >
-          <Switch
-            value={settings.showLiveCameras}
-            onValueChange={onShowLiveCamerasToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
-          />
-        </Row>
-        <Text style={styles.helperText}>
-          Real, live-refreshing government road camera images (Transport for NSW's open
-          dataset) — separate from the mapped OSM layer above. NSW only for now; tap a camera
-          pin on the map to see its actual current image.
-        </Text>
+        {/* Boxed off from the OSM layer rows above -- per explicit request, a real, visually
+            distinct rectangle rather than just another inline row, since this is genuinely a
+            separate dataset/feature (a live government camera feed, not the mapped
+            traffic-light/speed-camera locations) and blended in with those rows it read as more
+            of the same thing. */}
+        <View style={styles.liveCameraBox}>
+          <Row
+            label="Live traffic cameras (NSW)"
+            icon={<MaterialCommunityIcons name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : colors.textMuted} />}
+          >
+            <Switch
+              value={settings.showLiveCameras}
+              onValueChange={onShowLiveCamerasToggle}
+              trackColor={{ true: colors.accent, false: colors.border }}
+            />
+          </Row>
+          <Text style={styles.helperText}>
+            Real, live-refreshing government road camera images (Transport for NSW's open
+            dataset) — separate from the mapped OSM layer above. NSW only for now; tap a camera
+            pin on the map to see its actual current image.
+          </Text>
+        </View>
       </Section>
 
       <Section title="AI Vehicle Detection">
@@ -848,6 +855,11 @@ export function SettingsScreen() {
         </Text>
 
         <Row label={`Detection sensitivity — ${sensitivityLabel(settings.sirenSensitivity)}`}>
+          {/* Per explicit request: a clear boundary for where the range actually ends, not just
+              the slider trailing off into plain white with no marker -- "Low"/"High" anchors
+              plus an explicit maximumTrackTintColor (not left to whatever the platform default
+              happens to render as, which can read as "empty/disabled" rather than "this is the
+              real end of the range") make it obvious at a glance where max sensitivity is. */}
           <Slider
             minimumValue={0.3}
             maximumValue={0.9}
@@ -855,7 +867,12 @@ export function SettingsScreen() {
             value={settings.sirenSensitivity}
             onSlidingComplete={onSensitivityChange}
             minimumTrackTintColor={colors.accent}
+            maximumTrackTintColor={colors.border}
           />
+          <View style={styles.sliderEndLabels}>
+            <Text style={styles.sliderEndLabelText}>Low</Text>
+            <Text style={styles.sliderEndLabelText}>High</Text>
+          </View>
         </Row>
       </Section>
 
@@ -926,6 +943,14 @@ function OsmLayerIcon({
   enabled: boolean;
 }) {
   const size = Math.max(marker.badgeSize, 22);
+  // Real, confirmed cause of the traffic-light row icon looking blank: marker.glyphSize (9px)
+  // is calibrated for TRAFFIC_LIGHT_MARKER's own tiny 14px on-map badge, not this row's 22px
+  // floor -- speed cameras' 30px badge/18px glyph never hit that floor so it happened to look
+  // fine, but traffic lights' 14px badge did, leaving a 9px glyph adrift in a 22px circle
+  // (effectively invisible, especially against the muted grey "off" background). Scaling the
+  // glyph by the marker's own real badge-to-glyph ratio instead of reusing glyphSize verbatim
+  // keeps speed cameras pixel-identical to before while actually fixing traffic lights.
+  const glyphSize = size * (marker.glyphSize / marker.badgeSize);
   return (
     <View
       style={[
@@ -933,7 +958,7 @@ function OsmLayerIcon({
         { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : colors.border },
       ]}
     >
-      <MaterialCommunityIcons name={marker.icon as any} size={marker.glyphSize} color="#FFFFFF" />
+      <MaterialCommunityIcons name={marker.icon as any} size={glyphSize} color="#FFFFFF" />
     </View>
   );
 }
@@ -971,6 +996,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     color: colors.text,
+  },
+  sliderEndLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: -4,
+  },
+  sliderEndLabelText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textFaint,
+  },
+  liveCameraBox: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
   },
   helperText: {
     fontSize: 12,
