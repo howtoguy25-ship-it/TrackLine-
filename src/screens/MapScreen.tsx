@@ -1797,7 +1797,11 @@ export function MapScreen() {
   // edge (AI Detection), incrementing outward from there. The `route ? 0 : 1` offset preserves
   // the same slot the Report "+" FAB (which has its own fixed, independent position) occupies
   // only while not navigating.
-  const fabSecondaryStep = route ? 54 : 70;
+  // Per explicit request: smaller buttons AND a wider relative gap between them, not just a
+  // scaled-down version of the same tight spacing -- 44px/34px buttons (down from 52px/40px)
+  // with a 20px/14px gap between them (up from 18px/14px) so any two adjacent buttons read as
+  // clearly, unmistakably separate even at a glance, not just technically non-overlapping.
+  const fabSecondaryStep = route ? 48 : 64;
   const fabSecondaryBottom = (indexFromBottom: number) =>
     navFabBaseBottom + (indexFromBottom + (route ? 0 : 1)) * fabSecondaryStep;
 
@@ -2651,7 +2655,7 @@ export function MapScreen() {
             : "Live vehicle detection"
         }
       >
-        <Ionicons name="videocam" size={route ? 18 : 24} color="#FFFFFF" />
+        <Ionicons name="videocam" size={route ? 15 : 20} color="#FFFFFF" />
         {/* Advisory only -- see detectionBatteryLow's own comment above. Never disables this
             Pressable, just flags it before the driver taps in. */}
         {detectionBatteryLow && (
@@ -2682,7 +2686,7 @@ export function MapScreen() {
         }
         accessibilityLabel={show3D ? "Switch to standard map" : "Switch to 3D buildings view"}
       >
-        <Ionicons name="business-outline" size={route ? 17 : 22} color="#FFFFFF" />
+        <Ionicons name="business-outline" size={route ? 14 : 18} color="#FFFFFF" />
       </Pressable>
 
       {/* Permanent recenter button -- always in this stack, on top of the satellite and "+"
@@ -2700,7 +2704,7 @@ export function MapScreen() {
         onPress={onLocateButtonPress}
         accessibilityLabel="Recenter on my location, or switch camera height if already centered."
       >
-        <Ionicons name="locate" size={route ? 17 : 22} color="#FFFFFF" />
+        <Ionicons name="locate" size={route ? 14 : 18} color="#FFFFFF" />
       </Pressable>
         </>
       )}
@@ -2731,7 +2735,7 @@ export function MapScreen() {
           onPress={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
           accessibilityLabel={mapType === "hybrid" ? "Switch to standard map" : "Switch to satellite map"}
         >
-          <Ionicons name="map-outline" size={route ? 17 : 22} color="#FFFFFF" />
+          <Ionicons name="map-outline" size={route ? 14 : 18} color="#FFFFFF" />
         </Pressable>
       )}
 
@@ -3350,9 +3354,9 @@ const styles = StyleSheet.create({
   fabSecondary: {
     position: "absolute",
     right: spacing.xl,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.dark,
     alignItems: "center",
     justifyContent: "center",
@@ -3366,9 +3370,9 @@ const styles = StyleSheet.create({
     ...shadow.medium,
   },
   fabSecondaryCompact: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
   fabActive: {
     backgroundColor: colors.accent,
