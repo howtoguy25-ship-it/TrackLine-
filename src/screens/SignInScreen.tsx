@@ -44,7 +44,14 @@ export function SignInScreen() {
   // against that race.
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [appleAvailable, setAppleAvailable] = useState(false);
+  // Defaults to true on iOS, not false -- isAvailableAsync() is a real async native call, and
+  // starting from false meant the Apple button was invisible for that brief window on every
+  // single mount, not just some rare edge case (worse under load -- a slow JS thread from
+  // whatever else the app was doing right before navigating here stretches that window). Every
+  // real device this ever needs to hide on is iOS 12 or earlier, which expo-apple-authentication
+  // doesn't support running on at all, so optimistically-true is correct for the overwhelming
+  // common case and only flips off in the genuine rare case the check itself says no.
+  const [appleAvailable, setAppleAvailable] = useState(Platform.OS === "ios");
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -57,6 +64,29 @@ export function SignInScreen() {
   }, []);
 
   const onAppleSignIn = useCallback(async () => {
+    // Apple's own identity servers are the slow part of this flow, not anything this app does
+    // -- on a weak connection (low signal, low battery throttling background network activity)
+    // AppleAuthentication.signInAsync can hang for a long time with zero feedback, which reads
+    // as "takes forever to load" even though the busy dimming below IS active the whole time.
+    // Bounding each attempt with a real timeout turns an indefinite hang into a clear, actionable
+    // error instead of a screen that looks frozen.
+    const APPLE_SIGN_IN_TIMEOUT_MS = 20_000;
+    function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(Object.assign(new Error(message), { code: "TIMEOUT" })), ms);
+        promise.then(
+          (value) => {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          (err) => {
+            clearTimeout(timer);
+            reject(err);
+          }
+        );
+      });
+    }
+
     // Real, confirmed cause of "Firebase: Duplicate credential received... (auth/missing-or-
     // invalid-nonce)": AppleAuthenticationButton has no `disabled` prop at all (unlike
     // GoogleSigninButton right below it, which already had one), so a second tap while the
@@ -81,13 +111,17 @@ export function SignInScreen() {
       // Firebase needs the original raw value back so it can hash it itself and compare.
       const rawNonce = Crypto.randomUUID();
       const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-        nonce: hashedNonce,
-      });
+      const credential = await withTimeout(
+        AppleAuthentication.signInAsync({
+          requestedScopes: [
+            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+            AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          ],
+          nonce: hashedNonce,
+        }),
+        APPLE_SIGN_IN_TIMEOUT_MS,
+        "Apple sign-in is taking too long to respond -- check your connection and try again."
+      );
       if (!credential.identityToken) {
         throw new Error("Apple didn't return an identity token -- try again.");
       }
@@ -98,7 +132,7 @@ export function SignInScreen() {
       try {
         await attempt();
       } catch (err: any) {
-        if (err?.code === "ERR_REQUEST_CANCELED") throw err;
+        if (err?.code === "ERR_REQUEST_CANCELED" || err?.code === "TIMEOUT") throw err;
         // Real, observed behavior distinct from the double-tap race this screen already
         // guards against: Apple's own ASAuthorizationController can, particularly during rapid
         // repeated sign-in attempts (exactly what testing looks like), hand back an
@@ -106,7 +140,9 @@ export function SignInScreen() {
         // nothing wrong on this app's side to fix, since a brand new nonce/native request is
         // generated correctly every single call (see rawNonce above). A fresh, fully separate
         // attempt with a NEW nonce/native request commonly clears it immediately; only surface
-        // the raw error if the retry ALSO fails.
+        // the raw error if the retry ALSO fails. Not retried on a timeout -- a slow/weak
+        // connection is the far more likely cause there, and silently doubling the wait would
+        // make "takes forever" worse, not better.
         if (err?.code !== "auth/missing-or-invalid-nonce" && err?.code !== "auth/invalid-credential") {
           throw err;
         }
@@ -121,11 +157,13 @@ export function SignInScreen() {
       if (err?.code === "ERR_REQUEST_CANCELED") return;
       Sentry.logger.error("sign-in: Apple sign-in failed", { error: String(err), code: err?.code });
       setError(
-        err?.code === "auth/missing-or-invalid-nonce" || err?.code === "auth/invalid-credential"
-          ? "Apple sign-in is out of sync on this device. Go to iPhone Settings → [your name] → Sign-In & Security → Apps Using Apple ID → TrackLine → Stop Using Apple ID, then try again."
-          : err instanceof Error
-            ? err.message
-            : "Apple sign-in failed."
+        err?.code === "TIMEOUT"
+          ? err.message
+          : err?.code === "auth/missing-or-invalid-nonce" || err?.code === "auth/invalid-credential"
+            ? "Apple sign-in didn't complete correctly, likely due to a weak connection. Try again on a strong WiFi or cellular signal with Low Power Mode off."
+            : err instanceof Error
+              ? err.message
+              : "Apple sign-in failed."
       );
     } finally {
       busyRef.current = false;
