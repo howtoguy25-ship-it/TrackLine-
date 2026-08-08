@@ -847,6 +847,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         photo={true}
         photoQualityBalance="speed"
         pixelFormat="yuv"
+        // Real, direct fix for "doesn't pick up vehicles at night" -- the model can only ever
+        // detect what's actually visible in the captured frame, and a dark, motion-blurred night
+        // frame (streetlights blown out, everything else near-black, exactly what a low-light
+        // dashcam shot looks like) gives it far less real signal to work with than a well-lit
+        // daytime frame, regardless of confidence threshold tuning. lowLightBoost is the OS's own
+        // sensor-level low-light enhancement (only applied when the hardware actually supports
+        // it), improving the raw frame quality the detector runs against, not just how the photo
+        // looks to a human.
+        lowLightBoost={device?.supportsLowLightBoost ?? false}
         frameProcessor={frameProcessor}
         zoom={zoomFactor}
         onInitialized={() =>
