@@ -250,6 +250,14 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     if (device) setNormalZoomFactor(device.neutralZoom);
   }, [device]);
   const zoomFactor = is5xZoom ? Math.min(ZOOM_5X, device?.maxZoom ?? ZOOM_5X) : normalZoomFactor;
+  // Same ref pattern as egoSpeedRef below -- onDetections runs from the Frame Processor bridge,
+  // not a normal re-render, so it needs a ref (always current by the time the next frame lands)
+  // rather than closing over the zoomFactor value from whenever it was first created. Feeds
+  // speedTracker.ts's update() so parked-vehicle detection and distance/speed estimates both
+  // account for the real, current zoom -- see that file's own comments for why zoom-unaware math
+  // there was misreading handheld shake at 5x zoom as a moving vehicle.
+  const zoomFactorRef = useRef(1);
+  zoomFactorRef.current = zoomFactor;
   const toggleZoom = useCallback(() => {
     setIs5xZoom((v) => !v);
   }, []);
@@ -416,7 +424,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       if (unmountedRef.current) return;
       setPhotoSize({ width: frameWidth, height: frameHeight });
       frameSizeRef.current = { width: frameWidth, height: frameHeight };
-      const tracked = speedTrackerRef.current.update(detections, frameWidth, Date.now(), egoSpeedRef.current);
+      const tracked = speedTrackerRef.current.update(
+        detections,
+        frameWidth,
+        Date.now(),
+        egoSpeedRef.current,
+        zoomFactorRef.current
+      );
       boxesRef.current = tracked;
       setBoxes(tracked);
 
@@ -925,6 +939,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
             <React.Fragment key={box.id}>
               <Pressable
                 onPress={() => onSelectBox(box.id)}
+                // A distant or partially-clipped vehicle's box can be genuinely small on screen
+                // -- hitSlop keeps "tap the vehicle to see its details" reliably tappable even
+                // then, rather than needing a pixel-perfect tap on a narrow box.
+                hitSlop={16}
                 style={[
                   styles.box,
                   isEmergency && styles.boxEmergency,

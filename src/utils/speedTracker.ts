@@ -65,7 +65,14 @@ interface InternalTrack {
 
 // A parked car's box still jitters a pixel or two frame-to-frame from detector noise alone --
 // this is the displacement (as a fraction of frame width) below which movement doesn't count
-// as "real" motion.
+// as "real" motion. Calibrated at 1x zoom -- the real, confirmed cause of parked cars showing a
+// fake speed while zoomed in: the same physical hand tremor covers a proportionally larger
+// fraction of a narrower (zoomed-in) field of view, so at 5x zoom ordinary handheld shake alone
+// was enough to keep clearing this fixed threshold, which meant lowMovementSinceMs never
+// accumulated the sustained PARKED_AFTER_MS needed to ever call the vehicle parked -- it just
+// kept computing a "closing rate" out of pure jitter instead. See the zoomFactor multiply at
+// each call site below: the threshold widens with zoom so the same real-world tremor doesn't
+// register as more motion just because the frame is more zoomed in.
 const NOISE_THRESHOLD_RATIO = 0.015;
 const PARKED_AFTER_MS = 2500;
 const RESUME_AFTER_FRAMES = 3;
@@ -161,8 +168,39 @@ function smoothBbox(
   ];
 }
 
-function estimateDistanceM(boxWidthPx: number, imageWidthPx: number): number {
-  const focalLengthPx = imageWidthPx * ASSUMED_FOCAL_LENGTH_FACTOR;
+// A track's box shrinking sharply in a single ~300ms tick is almost never the real vehicle
+// suddenly getting smaller -- it's the underlying detector clipping to a partial, low-confidence
+// region on one bad frame (a window/door-width strip instead of the whole car, from a shadow,
+// glare, or partial occlusion), which is exactly the "box doesn't match the vehicle, feels weak"
+// complaint this fixes. A vehicle receding fast enough to genuinely justify a big width drop that
+// quickly would need an implausible relative speed at typical dashcam distances. Growth is
+// deliberately NOT clamped the same way -- a vehicle closing distance fast needs to be free to
+// grow its box quickly (that's the collision-relevant case), and a detector correcting up from an
+// initially-clipped box to the real vehicle size is exactly the "lock on properly" behavior
+// wanted, not something to slow down.
+const MAX_SHRINK_RATIO_PER_TICK = 0.2;
+
+function clampShrink(
+  prev: [number, number, number, number],
+  next: [number, number, number, number]
+): [number, number, number, number] {
+  const minW = prev[2] * (1 - MAX_SHRINK_RATIO_PER_TICK);
+  const minH = prev[3] * (1 - MAX_SHRINK_RATIO_PER_TICK);
+  if (next[2] >= minW && next[3] >= minH) return next;
+  const cx = next[0] + next[2] / 2;
+  const cy = next[1] + next[3] / 2;
+  const w = Math.max(next[2], minW);
+  const h = Math.max(next[3], minH);
+  return [cx - w / 2, cy - h / 2, w, h];
+}
+
+// Zooming in narrows the real field of view, which is exactly equivalent (in this pinhole
+// model) to a longer focal length -- 5x zoom means the lens is genuinely acting like a focal
+// length 5x longer than at 1x, not the same one just cropped. Leaving this unscaled (the bug,
+// before this fix) made estimateDistanceM assume the 1x FOV even when actually shooting at 5x,
+// so a real vehicle's on-screen box width was being read against the wrong geometry entirely.
+function estimateDistanceM(boxWidthPx: number, imageWidthPx: number, zoomFactor: number): number {
+  const focalLengthPx = imageWidthPx * ASSUMED_FOCAL_LENGTH_FACTOR * Math.max(zoomFactor, 1);
   return (ASSUMED_VEHICLE_WIDTH_M * focalLengthPx) / Math.max(boxWidthPx, 1);
 }
 
@@ -183,7 +221,12 @@ export function createSpeedTracker() {
     // to turn the closing-rate signal into the target vehicle's actual road speed. Omit or
     // pass null/undefined and every box still gets a real (just differently-labeled) speed
     // reading -- see combineWithEgoSpeed.
-    egoSpeedMps?: number | null
+    egoSpeedMps?: number | null,
+    // The camera's actual current zoom factor (1 = normal/neutral, 5 = the app's 5x toggle) --
+    // see estimateDistanceM's and NOISE_THRESHOLD_RATIO's own comments for why both the distance
+    // estimate and the parked-vehicle noise floor need to know this. Defaults to 1 (normal zoom)
+    // so existing callers that don't pass it keep their previous behavior exactly.
+    zoomFactor = 1
   ): TrackedBox[] {
     const unmatched = new Set(tracks.map((t) => t.id));
     const result: TrackedBox[] = [];
@@ -210,7 +253,7 @@ export function createSpeedTracker() {
         }
       }
 
-      const rawDistanceM = estimateDistanceM(det.bbox[2], imageWidthPx);
+      const rawDistanceM = estimateDistanceM(det.bbox[2], imageWidthPx, zoomFactor);
       let speedKmh: number | null = null;
 
       if (best) {
@@ -218,7 +261,7 @@ export function createSpeedTracker() {
         matchedIds.add(best.id);
 
         const dispRatio = Math.hypot(cx - best.center[0], cy - best.center[1]) / imageWidthPx;
-        const movingNow = dispRatio >= NOISE_THRESHOLD_RATIO;
+        const movingNow = dispRatio >= NOISE_THRESHOLD_RATIO * Math.max(zoomFactor, 1);
 
         let state = best.state;
         let lowMovementSinceMs = best.lowMovementSinceMs;
@@ -264,7 +307,7 @@ export function createSpeedTracker() {
           speedKmh = null;
         }
 
-        const bbox = smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING);
+        const bbox = clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING));
         // `speedKmh` above (fed back into the track for next frame's smoothing) always stays
         // the closing/receding rate -- that's the real underlying signal being smoothed frame
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
