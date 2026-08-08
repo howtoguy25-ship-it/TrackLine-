@@ -15,7 +15,6 @@ import type { TensorflowModel } from "react-native-fast-tflite";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { File } from "expo-file-system";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -284,30 +283,16 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const { location } = useLocation();
   const egoSpeedRef = useRef<number | null>(null);
   egoSpeedRef.current = location?.coords.speed ?? null;
-  // "Place & Play" -- the phone is deliberately propped up stationary facing traffic (portrait
-  // or landscape, a tripod/mount/dashboard, not held while driving) instead of the app's default
-  // "carried in a moving vehicle" assumption. Detection/tracking itself needs no change (every
-  // vehicle in frame is already tracked and boxed simultaneously, not just one at a time) -- the
-  // two real differences are: speed math should treat the camera as having zero ego motion (see
-  // speedTracker.ts's stationary param) rather than trying to combine a moving-vehicle GPS speed
-  // that doesn't apply here, and the phone needs to actually be allowed to rotate to whichever
-  // way it's propped up, which the app is portrait-locked against everywhere else.
+  // "Place & Play" -- the phone is deliberately propped up stationary facing traffic (a
+  // tripod/mount/dashboard, portrait like the rest of the app -- not held while driving) instead
+  // of the app's default "carried in a moving vehicle" assumption. Detection/tracking itself
+  // needs no change (every vehicle in frame is already tracked and boxed simultaneously, not
+  // just one at a time) -- the one real difference is that speed math should treat the camera as
+  // having zero ego motion (see speedTracker.ts's stationary param) rather than trying to combine
+  // a moving-vehicle GPS speed that doesn't apply to a stationary mount.
   const [placeAndPlayMode, setPlaceAndPlayMode] = useState(false);
   const placeAndPlayModeRef = useRef(false);
   placeAndPlayModeRef.current = placeAndPlayMode;
-  useEffect(() => {
-    if (placeAndPlayMode) {
-      ScreenOrientation.unlockAsync().catch(() => {});
-    } else {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    }
-    // Re-locks to portrait on unmount too (closing the screen, or it unmounting for any other
-    // reason) -- Place & Play's unlock must never leak out and leave the rest of the app (which
-    // has no rotation handling anywhere else) stuck sideways.
-    return () => {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    };
-  }, [placeAndPlayMode]);
   // No "error" state -- see the model-load effect and the two capture paths' catch blocks
   // below. Every failure mode here now auto-recovers on its own instead of ever stopping and
   // waiting on a manual tap.
@@ -932,11 +917,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       </Pressable>
 
       {/* "Place & Play" -- a separate mode switch, per explicit request, not a replacement for
-          the existing handheld/driving detection above. Mount the phone (portrait or landscape)
-          facing traffic and every vehicle already gets boxed and tracked simultaneously the same
-          way it always has; this just tells the speed math the camera itself is standing still
-          (see speedTracker.ts's stationary param) and unlocks rotation so the phone can actually
-          be propped up sideways -- see the orientation effect above for both halves of that. */}
+          the existing handheld/driving detection above. Mount the phone (portrait, same as the
+          rest of the app) facing traffic and every vehicle already gets boxed and tracked
+          simultaneously the same way it always has; this just tells the speed math the camera
+          itself is standing still (see speedTracker.ts's stationary param) instead of trying to
+          combine a moving-vehicle GPS speed that doesn't apply to a stationary mount. */}
       <Pressable
         style={({ pressed }) => [
           styles.placeAndPlayToggle,

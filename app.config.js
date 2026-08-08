@@ -22,12 +22,7 @@ module.exports = {
     // Bumped from 1.0.0 now that REV checks + real IAP monetization landed -- a genuine feature
     // milestone, not just an internal TestFlight build tick.
     version: "1.1.0",
-    // "default" (all orientations supported at the native Info.plist level), not "portrait" --
-    // see App.tsx's own comment. The app still opens and runs portrait-only everywhere by
-    // default (locked there at the App root), this just makes landscape reachable at all for
-    // VehicleDetectionScreen's "Place & Play" mode, which a hard "portrait" native config would
-    // block regardless of any runtime JS call.
-    orientation: "default",
+    orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
     assetBundlePatterns: ["**/*"],
@@ -78,7 +73,6 @@ module.exports = {
       "expo-font",
       "expo-asset",
       "expo-tracking-transparency",
-      "expo-screen-orientation",
       // expo-splash-screen's own plugin, not the legacy top-level `splash` config field --
       // that legacy field left Android's actual splashscreen_background color resource
       // hardcoded to white regardless of what backgroundColor was set to (confirmed by
