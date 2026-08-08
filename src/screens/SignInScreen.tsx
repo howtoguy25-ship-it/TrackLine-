@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -37,6 +37,12 @@ export function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  // A plain `busy` state read is only as fresh as the closure it's captured in, and (per
+  // onAppleSignIn's own comment) a fast enough double-tap can hit the exact same closure/render
+  // twice before React ever re-renders with busy=true -- a ref is mutated synchronously and
+  // shared across every closure regardless of render timing, so it's the only reliable guard
+  // against that race.
+  const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
@@ -51,16 +57,25 @@ export function SignInScreen() {
   }, []);
 
   const onAppleSignIn = useCallback(async () => {
+    // Real, confirmed cause of "Firebase: Duplicate credential received... (auth/missing-or-
+    // invalid-nonce)": AppleAuthenticationButton has no `disabled` prop at all (unlike
+    // GoogleSigninButton right below it, which already had one), so a second tap while the
+    // first request was still in flight fired this a second time, each generating its own fresh
+    // rawNonce/hashedNonce pair. Apple's native sign-in sheet can then hand back a credential
+    // tied to the EARLIER request's nonce while this second call is the one that reaches
+    // signInWithAppleCredential with the newer rawNonce -- Firebase hashes that newer rawNonce,
+    // it doesn't match the nonce baked into the identity token it actually received, and rejects
+    // it as a mismatched/duplicate credential. busyRef (not the `busy` state -- see its own
+    // comment) is checked and set synchronously, so it also holds even against two taps fast
+    // enough to both hit this same closure before a re-render ever lands.
+    if (busyRef.current) return;
+    busyRef.current = true;
     setError(null);
     setBusy(true);
     try {
       // Firebase's Apple provider requires a nonce for replay protection: Apple needs the
       // SHA-256 hash (hex) so it can embed it in the identity token's own "nonce" claim,
       // Firebase needs the original raw value back so it can hash it itself and compare.
-      // This was the real, confirmed cause of Apple sign-in failing with "Firebase: Duplicate
-      // credential received... (auth/missing-or-invalid-nonce)" even after the token's
-      // audience itself checked out (that was a separate, already-fixed Firebase Console
-      // config issue) -- no nonce was ever generated or passed on either side before this.
       const rawNonce = Crypto.randomUUID();
       const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
       const credential = await AppleAuthentication.signInAsync({
@@ -83,6 +98,7 @@ export function SignInScreen() {
       Sentry.logger.error("sign-in: Apple sign-in failed", { error: String(err), code: err?.code });
       setError(err instanceof Error ? err.message : "Apple sign-in failed.");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }, [navigation]);
@@ -175,13 +191,19 @@ export function SignInScreen() {
       </Text>
 
       {Platform.OS === "ios" && appleAvailable && (
-        <AppleAuthentication.AppleAuthenticationButton
-          buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-          cornerRadius={radius.md}
-          style={styles.appleButton}
-          onPress={onAppleSignIn}
-        />
+        // AppleAuthenticationButton (unlike GoogleSigninButton below) has no `disabled` prop at
+        // all -- see onAppleSignIn's busyRef guard for how the double-tap this button can't stop
+        // on its own is actually prevented. Wrapped in a plain View with pointerEvents so a tap
+        // while busy is dropped before it ever reaches the native button/onPress.
+        <View pointerEvents={busy ? "none" : "auto"} style={busy && styles.appleButtonBusy}>
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+            cornerRadius={radius.md}
+            style={styles.appleButton}
+            onPress={onAppleSignIn}
+          />
+        </View>
       )}
 
       <GoogleSigninButton
@@ -275,6 +297,9 @@ const styles = StyleSheet.create({
   appleButton: {
     height: 48,
     width: "100%",
+  },
+  appleButtonBusy: {
+    opacity: pressedOpacity,
   },
   googleButton: {
     width: "100%",
