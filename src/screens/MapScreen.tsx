@@ -57,6 +57,7 @@ import {
   findNearestPlace,
   findNearestTransitStation,
   getPlaceInfo,
+  reverseGeocode,
   type PlaceDetails,
   type PlaceInfo,
 } from "@/services/places";
@@ -394,7 +395,39 @@ export function MapScreen() {
   // actually started, live navigation/reroute always tracks real GPS via currentLatLng directly,
   // same as before, since you can't actually be turn-by-turn guided from a place you're not at.
   const routeOriginLatLng = originOverride?.location ?? currentLatLng;
-  const routeOriginLabel = originOverride?.name ?? "My Location";
+  // Real live street address (house number + street) for the driver's own current position,
+  // reverse-geocoded from GPS -- shown in the persistent origin row near the search bar instead
+  // of the generic "My Location" placeholder, and kept live as the driver actually moves (e.g.
+  // resolves to their home address while parked there, then updates to wherever they are once
+  // they drive off). "My Location" is only ever the fallback for the brief window before the
+  // very first reverse-geocode resolves, or if a lookup fails -- liveAddress itself is never
+  // cleared on a failed refresh, so a transient network hiccup doesn't blank out an address that
+  // was already showing.
+  const [liveAddress, setLiveAddress] = useState<string | null>(null);
+  const lastAddressFetchRef = useRef<LatLng | null>(null);
+  const addressFetchInFlightRef = useRef(false);
+  useEffect(() => {
+    if (!currentLatLng) return;
+    const last = lastAddressFetchRef.current;
+    const movedFar =
+      !last || distanceKm(last.latitude, last.longitude, currentLatLng.latitude, currentLatLng.longitude) >= 0.08;
+    if (!movedFar) return;
+    if (addressFetchInFlightRef.current) return;
+
+    lastAddressFetchRef.current = currentLatLng;
+    addressFetchInFlightRef.current = true;
+    reverseGeocode(currentLatLng)
+      .then((address) => {
+        if (address) setLiveAddress(address);
+      })
+      .catch((err) => {
+        Sentry.logger.error("map: reverse geocode failed", { error: String(err) });
+      })
+      .finally(() => {
+        addressFetchInFlightRef.current = false;
+      });
+  }, [currentLatLng]);
+  const routeOriginLabel = originOverride?.name ?? liveAddress ?? "My Location";
 
   // iOS's real 3D-buildings path -- deliberately NOT the custom Map3DView module above (that
   // one wraps Google's still-experimental, pre-GA "Maps 3D SDK for iOS", which has a real,
@@ -2196,6 +2229,7 @@ export function MapScreen() {
           placeholder="Choose starting point"
           onCancel={() => setPickingOrigin(false)}
           showMyLocation
+          myLocationAddress={liveAddress ?? undefined}
         />
       )}
 
@@ -2539,7 +2573,14 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          { bottom: navFabBaseBottom + (route ? 0 : 70) },
+          // Explicit zIndex (also set on the 3D/locate/satellite FABs below) -- these buttons
+          // used to rely on plain JSX/mount order for paint order, which happened to put the
+          // satellite toggle (mounted last, outside this cluster's own <View>) visually on top
+          // of this one during the single frame where navFabBaseBottom briefly recomputes (e.g.
+          // right as bottomBarHeight/routeCardHeight's real measured value lands), showing as
+          // the AI Detection button flashing behind the satellite button. Pinning zIndex here
+          // keeps this cluster's own stacking order fixed regardless of any such transient.
+          { zIndex: 1 },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={() => {
@@ -2571,7 +2612,7 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          { bottom: navFabBaseBottom + (route ? 54 : 140) },
+          { bottom: navFabBaseBottom + (route ? 54 : 140), zIndex: 2 },
           show3D && styles.fabActive,
           pressed && { opacity: pressedOpacity },
         ]}
@@ -2595,7 +2636,7 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          { bottom: navFabBaseBottom + (route ? 162 : 280) },
+          { bottom: navFabBaseBottom + (route ? 162 : 280), zIndex: 3 },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={onLocateButtonPress}
@@ -2621,7 +2662,11 @@ export function MapScreen() {
           style={({ pressed }) => [
             styles.fabSecondary,
             route && styles.fabSecondaryCompact,
-            { bottom: navFabBaseBottom + (route ? 108 : 210) },
+            // zIndex 0 (lowest of the FAB cluster, see the AI Detection button's own comment) --
+            // this button lives outside that cluster's <View> and mounts after it, so without an
+            // explicit zIndex it would paint over the AI Detection/3D/locate buttons during any
+            // transient frame where their bottom offsets briefly coincide.
+            { bottom: navFabBaseBottom + (route ? 108 : 210), zIndex: 0 },
             mapType === "hybrid" && styles.fabActive,
             pressed && { opacity: pressedOpacity },
           ]}

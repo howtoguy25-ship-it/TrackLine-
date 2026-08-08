@@ -45,6 +45,11 @@ interface Props {
   // starting point" bar). See MY_LOCATION_PLACE_ID above for how the caller tells it apart from
   // a real place.
   showMyLocation?: boolean;
+  // Live reverse-geocoded street address for the device's current GPS fix, shown as a subtitle
+  // under the "My Location" row so it's clear *which* real address tapping it will pick, not
+  // just a generic label. Optional -- the row still works (falls back to no subtitle) before the
+  // first reverse-geocode resolves.
+  myLocationAddress?: string;
   // Renders a second "From" row above the main search input, inside the same card -- the
   // stacked From/To directions panel real map apps use. Only passed by the initial, pre-route
   // search bar; the add-a-stop and mid-nav bars have no "from" to show.
@@ -60,6 +65,7 @@ export function DestinationSearchBar({
   onFindNearestStation,
   findingNearestStation,
   showMyLocation,
+  myLocationAddress,
   originLabel,
   onPressOrigin,
 }: Props) {
@@ -259,7 +265,14 @@ export function DestinationSearchBar({
             <View style={styles.myLocationIconWrap}>
               <Ionicons name="navigate" size={13} color="#FFFFFF" />
             </View>
-            <Text style={styles.myLocationText}>My Location</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.myLocationText}>My Location</Text>
+              {!!myLocationAddress && (
+                <Text style={styles.myLocationAddress} numberOfLines={1}>
+                  {myLocationAddress}
+                </Text>
+              )}
+            </View>
           </Pressable>
         )}
         {showQuickActions && (
@@ -430,6 +443,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+  myLocationAddress: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   errorBanner: {
     marginTop: spacing.sm,

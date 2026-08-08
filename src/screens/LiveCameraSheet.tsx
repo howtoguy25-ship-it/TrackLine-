@@ -1,5 +1,5 @@
-import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Image } from "react-native";
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, Pressable, StyleSheet, Image, Animated } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,8 +12,10 @@ interface Props {
   onSheetChange?: (index: number) => void;
 }
 
-// TfNSW republishes each camera's frame roughly every 60s -- refreshing more often than that
-// would just re-fetch the same still image over and over. Mirrors web's LiveCamerasPanel.
+// TfNSW republishes each camera's frame roughly every 60s -- this is a real, government-run
+// still-image feed (not a video stream; there is no live video endpoint for these cameras in
+// the public dataset), so refreshing more often than that would just re-fetch the same image
+// over and over. Mirrors web's LiveCamerasPanel.
 const IMAGE_REFRESH_MS = 60_000;
 
 export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCameraSheet(
@@ -23,15 +25,57 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => ["46%"], []);
   const [src, setSrc] = useState<string | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  // Ticks once a second purely to re-render the "Updated Xs ago" text below -- lastUpdatedAt
+  // itself only changes once a minute, so without this the label would freeze at "0s ago" until
+  // the next real frame landed instead of counting up live.
+  const [, setClockTick] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const livePulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (!camera) return;
+    setImageLoaded(false);
+    setLoadError(false);
     setSrc(refreshLiveCameraImageUrl(camera.imageUrl));
-    const id = setInterval(() => {
+    const refreshId = setInterval(() => {
+      setLoadError(false);
       setSrc(refreshLiveCameraImageUrl(camera.imageUrl));
     }, IMAGE_REFRESH_MS);
-    return () => clearInterval(id);
+    const clockId = setInterval(() => setClockTick((t) => t + 1), 1000);
+    return () => {
+      clearInterval(refreshId);
+      clearInterval(clockId);
+    };
   }, [camera?.imageUrl]);
+
+  // Real crossfade between successive frames -- previously a new frame just snapped in the
+  // instant it finished loading, which read as a jarring flicker every refresh. Fading the new
+  // frame in over the old one makes each real update look like a deliberate live refresh instead
+  // of a broken reload.
+  useEffect(() => {
+    if (!imageLoaded) return;
+    setLastUpdatedAt(Date.now());
+    fadeAnim.setValue(0);
+    Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+  }, [imageLoaded, fadeAnim]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(livePulse, { toValue: 0.35, duration: 700, useNativeDriver: true }),
+        Animated.timing(livePulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [livePulse]);
+
+  const updatedSecondsAgo = lastUpdatedAt ? Math.max(0, Math.floor((Date.now() - lastUpdatedAt) / 1000)) : null;
+  const updatedText =
+    updatedSecondsAgo === null ? "Loading…" : updatedSecondsAgo < 2 ? "Updated just now" : `Updated ${updatedSecondsAgo}s ago`;
 
   return (
     <BottomSheet
@@ -66,12 +110,33 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
               </Text>
             )}
             <View style={styles.imageWrap}>
-              <Image source={{ uri: src }} style={styles.image} resizeMode="cover" />
+              <Animated.Image
+                source={{ uri: src }}
+                style={[styles.image, { opacity: fadeAnim }]}
+                resizeMode="cover"
+                onLoad={() => {
+                  setImageLoaded(true);
+                  setLoadError(false);
+                }}
+                onError={() => setLoadError(true)}
+              />
+              <View style={styles.liveBadge}>
+                <Animated.View style={[styles.liveDot, { opacity: livePulse }]} />
+                <Text style={styles.liveBadgeText}>LIVE</Text>
+              </View>
+              {loadError && (
+                <View style={[StyleSheet.absoluteFill, styles.errorOverlay]} pointerEvents="none">
+                  <Ionicons name="cloud-offline-outline" size={22} color="#FFFFFF" />
+                  <Text style={styles.errorOverlayText}>Camera feed unavailable -- retrying…</Text>
+                </View>
+              )}
             </View>
-            <Text style={styles.caption}>
-              Real live NSW government traffic camera (Transport for NSW open data) — refreshes
-              about once a minute while this sheet is open.
-            </Text>
+            <View style={styles.footerRow}>
+              <Text style={styles.caption}>
+                Real live NSW government traffic camera (Transport for NSW open data).
+              </Text>
+              <Text style={styles.updatedText}>{updatedText}</Text>
+            </View>
           </>
         )}
       </BottomSheetView>
@@ -137,9 +202,56 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  liveBadge: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.danger,
+  },
+  liveBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+  },
+  errorOverlay: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  errorOverlayText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
   caption: {
+    flex: 1,
     fontSize: 12,
     color: colors.textMuted,
-    marginTop: spacing.sm,
+  },
+  updatedText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.textFaint,
   },
 });

@@ -216,6 +216,38 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
   };
 }
 
+// Live "current address" for the driver's own GPS fix -- turns a bare lat/lng into a real
+// street address (house number + street), the same way Apple/Google Maps show a real address
+// under the blue dot rather than raw coordinates. Google's Geocode API returns several results
+// for one point (the exact street address, but also its containing neighborhood/postcode/etc.);
+// street_address is the most specific one that actually has a house number, so it's preferred
+// over whatever happens to be first in the list.
+export async function reverseGeocode(location: LatLng): Promise<string | null> {
+  const params = new URLSearchParams({
+    latlng: `${location.latitude},${location.longitude}`,
+    key: env.googlePlacesApiKey,
+  });
+
+  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+  const json = await res.json();
+
+  if (json.status === "ZERO_RESULTS") return null;
+  if (json.status !== "OK") {
+    Sentry.logger.error("places: reverse geocode request failed", {
+      status: json.status,
+      errorMessage: json.error_message,
+    });
+    throw new PlacesApiError(json.status, json.error_message);
+  }
+
+  const results: any[] = json.results ?? [];
+  const best =
+    results.find((r) => r.types?.includes("street_address")) ??
+    results.find((r) => r.types?.includes("premise")) ??
+    results[0];
+  return best?.formatted_address ?? null;
+}
+
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
   const params = new URLSearchParams({
     place_id: placeId,
