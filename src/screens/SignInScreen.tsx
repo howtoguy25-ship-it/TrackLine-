@@ -72,7 +72,10 @@ export function SignInScreen() {
     busyRef.current = true;
     setError(null);
     setBusy(true);
-    try {
+
+    // A single native Apple sign-in + Firebase credential attempt -- pulled out so the catch
+    // block below can retry it once with a completely fresh nonce/native request.
+    const attempt = async () => {
       // Firebase's Apple provider requires a nonce for replay protection: Apple needs the
       // SHA-256 hash (hex) so it can embed it in the identity token's own "nonce" claim,
       // Firebase needs the original raw value back so it can hash it itself and compare.
@@ -89,6 +92,27 @@ export function SignInScreen() {
         throw new Error("Apple didn't return an identity token -- try again.");
       }
       await signInWithAppleCredential(credential.identityToken, rawNonce);
+    };
+
+    try {
+      try {
+        await attempt();
+      } catch (err: any) {
+        if (err?.code === "ERR_REQUEST_CANCELED") throw err;
+        // Real, observed behavior distinct from the double-tap race this screen already
+        // guards against: Apple's own ASAuthorizationController can, particularly during rapid
+        // repeated sign-in attempts (exactly what testing looks like), hand back an
+        // identityToken whose baked-in nonce claim doesn't match the nonce just requested --
+        // nothing wrong on this app's side to fix, since a brand new nonce/native request is
+        // generated correctly every single call (see rawNonce above). A fresh, fully separate
+        // attempt with a NEW nonce/native request commonly clears it immediately; only surface
+        // the raw error if the retry ALSO fails.
+        if (err?.code !== "auth/missing-or-invalid-nonce" && err?.code !== "auth/invalid-credential") {
+          throw err;
+        }
+        Sentry.logger.info("sign-in: Apple sign-in nonce mismatch, retrying once", { code: err.code });
+        await attempt();
+      }
       Sentry.logger.info("sign-in: Apple sign-in succeeded");
       navigation.goBack();
     } catch (err: any) {
@@ -96,7 +120,13 @@ export function SignInScreen() {
       // show -- matches how the Google branch below treats its own cancel code.
       if (err?.code === "ERR_REQUEST_CANCELED") return;
       Sentry.logger.error("sign-in: Apple sign-in failed", { error: String(err), code: err?.code });
-      setError(err instanceof Error ? err.message : "Apple sign-in failed.");
+      setError(
+        err?.code === "auth/missing-or-invalid-nonce" || err?.code === "auth/invalid-credential"
+          ? "Apple sign-in is out of sync on this device. Go to iPhone Settings → [your name] → Sign-In & Security → Apps Using Apple ID → TrackLine → Stop Using Apple ID, then try again."
+          : err instanceof Error
+            ? err.message
+            : "Apple sign-in failed."
+      );
     } finally {
       busyRef.current = false;
       setBusy(false);

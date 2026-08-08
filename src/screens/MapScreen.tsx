@@ -90,6 +90,10 @@ const DIAGNOSTIC_DISABLE_MAPVIEW = false;
 // check that keeps an empty tap (open water, a park, a gap between buildings) from confidently
 // showing whatever real business happens to be nearest, however far that actually is.
 const MAX_POI_TAP_DISTANCE_METERS = 120;
+// Traffic-light cluster badges show this many small light glyphs before folding the rest into a
+// "+N" suffix -- see the badge's own render for why (a badge that just kept growing wider for a
+// 15-light intersection would stop being a compact marker).
+const MAX_CLUSTER_ICONS = 5;
 
 // Real live-location markers -- see components/LocationMarkers.tsx: a directional arrow badge
 // (rotated live with heading via flat+rotation, exactly like the original CSS triangle) while
@@ -2137,7 +2141,23 @@ export function MapScreen() {
                 }}
               >
                 <View style={styles.osmClusterBadge}>
-                  <Text style={styles.osmClusterBadgeText}>{c.count}</Text>
+                  {/* Per explicit request: how-many-lights-are-here shown as that many small
+                      light glyphs instead of a bare number, so the badge communicates the real
+                      count at a glance the same way the marker itself does. Capped at
+                      MAX_CLUSTER_ICONS -- a real intersection cluster can run into the teens,
+                      and a badge that just keeps growing wider stops being a compact marker;
+                      the remainder folds into a "+N" suffix instead. */}
+                  {Array.from({ length: Math.min(c.count, MAX_CLUSTER_ICONS) }).map((_, i) => (
+                    <MaterialCommunityIcons
+                      key={i}
+                      name={TRAFFIC_LIGHT_MARKER.icon}
+                      size={TRAFFIC_LIGHT_MARKER.glyphSize}
+                      color="#FFFFFF"
+                    />
+                  ))}
+                  {c.count > MAX_CLUSTER_ICONS && (
+                    <Text style={styles.osmClusterBadgeText}>+{c.count - MAX_CLUSTER_ICONS}</Text>
+                  )}
                 </View>
               </Marker>
             )
@@ -2587,14 +2607,16 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          // Explicit zIndex (also set on the 3D/locate/satellite FABs below) -- these buttons
-          // used to rely on plain JSX/mount order for paint order, which happened to put the
-          // satellite toggle (mounted last, outside this cluster's own <View>) visually on top
-          // of this one during the single frame where navFabBaseBottom briefly recomputes (e.g.
-          // right as bottomBarHeight/routeCardHeight's real measured value lands), showing as
-          // the AI Detection button flashing behind the satellite button. Pinning zIndex here
-          // keeps this cluster's own stacking order fixed regardless of any such transient.
-          { zIndex: 1 },
+          // Real, confirmed cause of "AI Detection button stuck at the top of the screen,
+          // overlapping the status bar/battery icon": fabSecondary is position:"absolute" with
+          // only `right` set, no top/bottom of its own -- an earlier zIndex-only fix here
+          // replaced this button's actual `bottom` offset instead of adding to it, which left
+          // this Pressable with NEITHER top nor bottom set. Yoga's default for an absolutely
+          // positioned view with no top/bottom is top:0, which is exactly "pinned to the very
+          // top of the screen" -- not a rare edge case, every single render did this. bottom is
+          // restored here (also see 3D/locate/satellite below for the same zIndex, all now
+          // correctly combined with their own real bottom offset).
+          { bottom: navFabBaseBottom + (route ? 0 : 70), zIndex: 1 },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={() => {
@@ -3076,8 +3098,10 @@ const styles = StyleSheet.create({
     backgroundColor: TRAFFIC_LIGHT_MARKER.color,
     borderWidth: 2,
     borderColor: "#FFFFFF",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 2,
   },
   osmClusterBadgeSpeedCamera: {
     minWidth: 26,
