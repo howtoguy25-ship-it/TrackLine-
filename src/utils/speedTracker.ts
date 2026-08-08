@@ -141,9 +141,19 @@ const EGO_SPEED_MIN_MPS = 1.5; // ~5.4 km/h
 function combineWithEgoSpeed(
   closingKmh: number | null,
   state: "moving" | "parked",
-  egoSpeedMps: number | null | undefined
+  egoSpeedMps: number | null | undefined,
+  // True for "Place & Play" mode -- the phone is deliberately mounted stationary (propped up
+  // facing traffic), not carried in a moving vehicle. This is exactly the case the doc comment
+  // above already calls out: with zero ego motion, the closing/receding rate between the camera
+  // and the target vehicle genuinely IS that vehicle's real road speed (for the same "traveling
+  // roughly along the camera's own sightline, not crossing at a sharp angle" caveat as the
+  // driving case above), not just a proxy for it -- so it's correctly labeled "absolute" here,
+  // not "closing", regardless of whatever egoSpeedMps GPS noise reports for a phone sitting
+  // still.
+  stationary: boolean
 ): { speedKmh: number | null; speedKind: "absolute" | "closing" | null } {
   if (state === "parked" || closingKmh === null) return { speedKmh: null, speedKind: null };
+  if (stationary) return { speedKmh: closingKmh, speedKind: "absolute" };
   if (egoSpeedMps != null && egoSpeedMps > EGO_SPEED_MIN_MPS) {
     const egoKmh = egoSpeedMps * 3.6;
     return { speedKmh: egoKmh - closingKmh, speedKind: "absolute" };
@@ -245,7 +255,11 @@ export function createSpeedTracker() {
     // see estimateDistanceM's and NOISE_THRESHOLD_RATIO's own comments for why both the distance
     // estimate and the parked-vehicle noise floor need to know this. Defaults to 1 (normal zoom)
     // so existing callers that don't pass it keep their previous behavior exactly.
-    zoomFactor = 1
+    zoomFactor = 1,
+    // True in "Place & Play" mode -- see combineWithEgoSpeed's own comment for why a genuinely
+    // stationary, mounted phone gets the closing rate labeled "absolute" speed directly instead
+    // of going through the ego-GPS-speed combination meant for a phone being driven around.
+    stationary = false
   ): TrackedBox[] {
     const unmatched = new Set(tracks.map((t) => t.id));
     const result: TrackedBox[] = [];
@@ -332,7 +346,7 @@ export function createSpeedTracker() {
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
         // know) is a separate, one-shot combination with the ego vehicle's own GPS speed,
         // computed fresh here for `result` only -- see combineWithEgoSpeed's own comment.
-        const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(speedKmh, state, egoSpeedMps);
+        const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(speedKmh, state, egoSpeedMps, stationary);
         nextTracks.push({
           id: best.id,
           bbox,
@@ -410,7 +424,7 @@ export function createSpeedTracker() {
       if (matchedIds.has(t.id)) continue;
       if (nowMs - t.lastSeenMs >= TRACK_GRACE_MS) continue;
       nextTracks.push(t);
-      const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps);
+      const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps, stationary);
       result.push({
         id: t.id,
         bbox: t.bbox,

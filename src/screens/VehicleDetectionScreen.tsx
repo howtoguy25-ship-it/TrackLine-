@@ -15,6 +15,7 @@ import type { TensorflowModel } from "react-native-fast-tflite";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { File } from "expo-file-system";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -116,6 +117,21 @@ function TargetCorners({ width, height, color }: { width: number; height: number
       <View style={[styles.corner, styles.cornerBR, { width: len, height: len, borderColor: color }]} />
     </View>
   );
+}
+
+// Color-codes the lock/target box by the vehicle's own real road speed -- green under 60 km/h,
+// amber 60-100, red over 100, matching real fixed-camera traffic-radar convention (a driver
+// glances at a color, not a number, to gauge how fast someone's going). Only applied to a real
+// "absolute" road-speed reading (a genuine ego-GPS-combined estimate, or a Place & Play stationary
+// camera's own closing rate -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate
+// (no ego GPS available, phone being driven around) isn't a real speed measurement and stays the
+// neutral default amber rather than implying a threshold it can't actually back up.
+function speedLockColor(box: TrackedBox): string {
+  if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return "#F59E0B";
+  const abs = Math.abs(box.speedKmh);
+  if (abs > 100) return "#DC2626";
+  if (abs >= 60) return "#F59E0B";
+  return "#22C55E";
 }
 
 // Maps a box from the Frame Processor's UPRIGHT coordinate space (frameWidth x frameHeight,
@@ -268,6 +284,30 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const { location } = useLocation();
   const egoSpeedRef = useRef<number | null>(null);
   egoSpeedRef.current = location?.coords.speed ?? null;
+  // "Place & Play" -- the phone is deliberately propped up stationary facing traffic (portrait
+  // or landscape, a tripod/mount/dashboard, not held while driving) instead of the app's default
+  // "carried in a moving vehicle" assumption. Detection/tracking itself needs no change (every
+  // vehicle in frame is already tracked and boxed simultaneously, not just one at a time) -- the
+  // two real differences are: speed math should treat the camera as having zero ego motion (see
+  // speedTracker.ts's stationary param) rather than trying to combine a moving-vehicle GPS speed
+  // that doesn't apply here, and the phone needs to actually be allowed to rotate to whichever
+  // way it's propped up, which the app is portrait-locked against everywhere else.
+  const [placeAndPlayMode, setPlaceAndPlayMode] = useState(false);
+  const placeAndPlayModeRef = useRef(false);
+  placeAndPlayModeRef.current = placeAndPlayMode;
+  useEffect(() => {
+    if (placeAndPlayMode) {
+      ScreenOrientation.unlockAsync().catch(() => {});
+    } else {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    }
+    // Re-locks to portrait on unmount too (closing the screen, or it unmounting for any other
+    // reason) -- Place & Play's unlock must never leak out and leave the rest of the app (which
+    // has no rotation handling anywhere else) stuck sideways.
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    };
+  }, [placeAndPlayMode]);
   // No "error" state -- see the model-load effect and the two capture paths' catch blocks
   // below. Every failure mode here now auto-recovers on its own instead of ever stopping and
   // waiting on a manual tap.
@@ -429,7 +469,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         frameWidth,
         Date.now(),
         egoSpeedRef.current,
-        zoomFactorRef.current
+        zoomFactorRef.current,
+        placeAndPlayModeRef.current
       );
       boxesRef.current = tracked;
       setBoxes(tracked);
@@ -890,6 +931,30 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         <Text style={styles.zoomToggleText}>{is5xZoom ? "5x" : "1x"}</Text>
       </Pressable>
 
+      {/* "Place & Play" -- a separate mode switch, per explicit request, not a replacement for
+          the existing handheld/driving detection above. Mount the phone (portrait or landscape)
+          facing traffic and every vehicle already gets boxed and tracked simultaneously the same
+          way it always has; this just tells the speed math the camera itself is standing still
+          (see speedTracker.ts's stationary param) and unlocks rotation so the phone can actually
+          be propped up sideways -- see the orientation effect above for both halves of that. */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.placeAndPlayToggle,
+          { top: insets.top + spacing.md + 196 },
+          placeAndPlayMode && styles.placeAndPlayToggleActive,
+          pressed && { opacity: pressedOpacity },
+        ]}
+        onPress={() => setPlaceAndPlayMode((v) => !v)}
+        accessibilityLabel={
+          placeAndPlayMode ? "Exit Place & Play mode" : "Enable Place & Play mode -- mount the phone facing traffic"
+        }
+        hitSlop={8}
+      >
+        <Ionicons name="scan-outline" size={16} color={placeAndPlayMode ? "#111827" : "#FFFFFF"} />
+        <Text style={[styles.placeAndPlayToggleText, placeAndPlayMode && styles.placeAndPlayToggleTextActive]}>
+          Place & Play
+        </Text>
+      </Pressable>
 
       {photoSize &&
         containerSize &&
@@ -933,7 +998,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const boxTopPx = Math.max(0, Math.min(rawTopPx, containerSize.height));
           const boxWidthPx = Math.max(0, Math.min(rawRightPx, containerSize.width) - boxLeftPx);
           const boxHeightPx = Math.max(0, Math.min(rawBottomPx, containerSize.height) - boxTopPx);
-          const lockColor = isEmergency ? "#DC2626" : isSelected ? "#22D3EE" : "#F59E0B";
+          const lockColor = isEmergency ? "#DC2626" : isSelected ? "#22D3EE" : speedLockColor(box);
           // Keeps the type/speed labels fully on-screen even when the detected box itself
           // extends past an edge -- a vehicle filling most of the frame very plausibly has its
           // own left edge at or past 0, which used to cut the label's own text off (e.g.
@@ -1533,5 +1598,27 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+  placeAndPlayToggle: {
+    position: "absolute",
+    right: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm + 2,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(17, 24, 39, 0.55)",
+  },
+  placeAndPlayToggleActive: {
+    backgroundColor: "#F59E0B",
+  },
+  placeAndPlayToggleText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  placeAndPlayToggleTextActive: {
+    color: "#111827",
   },
 });

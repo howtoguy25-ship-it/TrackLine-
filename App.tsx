@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/context/AuthContext";
@@ -33,7 +34,19 @@ initSentry();
 // crashes, this is ruled out too and the search moves on with real evidence either way.
 const DIAGNOSTIC_DISABLE_APP_OPEN_AD = false;
 
+// app.config.js's top-level `orientation` was changed from "portrait" to "default" so iOS's
+// native Info.plist actually declares landscape as a supported orientation at all -- without
+// that, no runtime call could ever rotate ANY screen, "Place & Play" mode included, since a
+// portrait-only Info.plist is enforced well below where expo-screen-orientation's JS API can
+// reach. That trade needs this lock right back in place at the app root so every screen keeps
+// its existing portrait-only behavior by default; only VehicleDetectionScreen's own "Place &
+// Play" toggle ever calls unlockAsync(), and it re-locks back to portrait itself the moment
+// that mode turns off or the screen closes (see that screen's own effect).
 function App() {
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
