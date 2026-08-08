@@ -94,6 +94,8 @@ const MAX_POI_TAP_DISTANCE_METERS = 120;
 // "+N" suffix -- see the badge's own render for why (a badge that just kept growing wider for a
 // 15-light intersection would stop being a compact marker).
 const MAX_CLUSTER_ICONS = 5;
+// Same idea for speed-camera clusters, capped lower since that glyph renders much bigger.
+const MAX_SPEED_CAMERA_CLUSTER_ICONS = 3;
 
 // Real live-location markers -- see components/LocationMarkers.tsx: a directional arrow badge
 // (rotated live with heading via flat+rotation, exactly like the original CSS triangle) while
@@ -2191,7 +2193,22 @@ export function MapScreen() {
                 }}
               >
                 <View style={styles.osmClusterBadgeSpeedCamera}>
-                  <Text style={styles.osmClusterBadgeText}>{c.count}</Text>
+                  {/* Same "show what's actually there" fix as the traffic-light cluster badge
+                      above -- capped lower (MAX_SPEED_CAMERA_CLUSTER_ICONS, not the traffic
+                      light MAX_CLUSTER_ICONS) since this glyph is drawn much bigger
+                      (SPEED_CAMERA_MARKER.glyphSize=18 vs traffic lights' 9), and a compact
+                      badge stops being compact once several of those are packed in a row. */}
+                  {Array.from({ length: Math.min(c.count, MAX_SPEED_CAMERA_CLUSTER_ICONS) }).map((_, i) => (
+                    <MaterialCommunityIcons
+                      key={i}
+                      name={SPEED_CAMERA_MARKER.icon}
+                      size={SPEED_CAMERA_MARKER.glyphSize}
+                      color="#FFFFFF"
+                    />
+                  ))}
+                  {c.count > MAX_SPEED_CAMERA_CLUSTER_ICONS && (
+                    <Text style={styles.osmClusterBadgeText}>+{c.count - MAX_SPEED_CAMERA_CLUSTER_ICONS}</Text>
+                  )}
                 </View>
               </Marker>
             )
@@ -3104,15 +3121,17 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   osmClusterBadgeSpeedCamera: {
-    minWidth: 26,
-    height: 26,
-    borderRadius: 13,
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
     paddingHorizontal: 6,
     backgroundColor: SPEED_CAMERA_MARKER.color,
     borderWidth: 2,
     borderColor: "#FFFFFF",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 2,
   },
   osmClusterBadgeText: {
     color: "#FFFFFF",
