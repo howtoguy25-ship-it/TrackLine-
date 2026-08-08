@@ -951,6 +951,12 @@ function OsmLayerIcon({
   // glyph by the marker's own real badge-to-glyph ratio instead of reusing glyphSize verbatim
   // keeps speed cameras pixel-identical to before while actually fixing traffic lights.
   const glyphSize = size * (marker.glyphSize / marker.badgeSize);
+  // Real, second confirmed cause (beyond the size floor above): the glyph was hardcoded white
+  // regardless of enabled state, which is fine against the marker's own real color when ON but
+  // near-invisible white-on-light-grey against colors.border when OFF -- not just small, actually
+  // low enough contrast to read as a blank circle. Dark when off, matching the same "muted until
+  // enabled" intent the background color already has.
+  const glyphColor = enabled ? "#FFFFFF" : colors.textMuted;
   return (
     <View
       style={[
@@ -958,7 +964,7 @@ function OsmLayerIcon({
         { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : colors.border },
       ]}
     >
-      <MaterialCommunityIcons name={marker.icon as any} size={glyphSize} color="#FFFFFF" />
+      <MaterialCommunityIcons name={marker.icon as any} size={glyphSize} color={glyphColor} />
     </View>
   );
 }

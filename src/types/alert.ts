@@ -49,20 +49,24 @@ export const ALERT_LABELS: Record<AlertType, string> = {
   traffic_light: "Traffic Light",
 };
 
-// MaterialCommunityIcons names (used by AlertMarker / AlertReportSheet). Same colored-circle
-// pin style as Waze's own "Report an Incident" sheet (a recognizable, at-a-glance convention
-// for this kind of alert), but drawn from a completely different icon set/art style, not
-// Waze's actual icon assets -- similar in spirit, not a copy.
+// MaterialCommunityIcons names (used by AlertMarker / AlertReportSheet via AlertTypeGlyph). Same
+// colored-circle pin style as Waze's own "Report an Incident" sheet (a recognizable, at-a-glance
+// convention for this kind of alert), but drawn from a completely different icon set/art style,
+// not Waze's actual icon assets -- similar in spirit, not a copy.
 //
-// "car-crash" was never a real glyph in this icon set (verified against the installed
-// MaterialCommunityIcons glyph map) -- it silently rendered as nothing everywhere the crash
-// icon was used (map pins, the report-type picker, the alert detail sheet). Swapped for a
-// glyph that actually exists.
+// camera: "cctv" -- matches osmMarkerStyle.ts's SPEED_CAMERA_MARKER exactly, so this alert type
+// and the mapped OSM speed-camera layer read as the same real-world thing (a camera), not two
+// different symbols (this used to be "radar", an abstract set of rings that didn't actually look
+// like a camera at all).
+//
+// crash: unused for rendering -- AlertTypeGlyph special-cases "crash" to MaterialIcons'
+// "car-crash" (a different glyph set from this one, with a real dedicated crash icon
+// MaterialCommunityIcons doesn't have). Kept here only because AlertType requires every key.
 export const ALERT_ICONS: Record<AlertType, string> = {
   police: "police-badge",
   emergency_vehicle: "ambulance",
   hazard: "alert",
-  camera: "radar",
+  camera: "cctv",
   crash: "car-brake-alert",
   traffic_light: "traffic-light",
 };

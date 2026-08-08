@@ -101,6 +101,44 @@ interface RawDetection {
   bbox: [number, number, number, number];
 }
 
+function boxIoU(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const [ax, ay, aw, ah] = a;
+  const [bx, by, bw, bh] = b;
+  const interLeft = Math.max(ax, bx);
+  const interTop = Math.max(ay, by);
+  const interRight = Math.min(ax + aw, bx + bw);
+  const interBottom = Math.min(ay + ah, by + bh);
+  const interW = Math.max(0, interRight - interLeft);
+  const interH = Math.max(0, interBottom - interTop);
+  const interArea = interW * interH;
+  if (interArea <= 0) return 0;
+  const unionArea = aw * ah + bw * bh - interArea;
+  return unionArea > 0 ? interArea / unionArea : 0;
+}
+
+// Real, confirmed cause of "multiple overlapping boxes/labels stacked on the one real vehicle":
+// this model's TFLite_Detection_PostProcess op already runs NMS internally, but (like every
+// standard multi-class detector's built-in NMS) only WITHIN each raw class -- car(3) and
+// motorcycle(4) are separate classes to the model, each with their own independent NMS pass, so
+// a spurious motorcycle-class detection overlapping a real car-class detection of the same
+// vehicle survives the model's own suppression untouched. Both get remapped to the same "Vehicle"
+// label above, but nothing suppressed the duplicate BETWEEN them -- confirmed exactly reproduced
+// (several "Vehicle 3x%"/"Heavy Vehicle 4x%" boxes all on the one real van, overlapping labels
+// unreadable). This is a second, cross-class NMS pass over the already-remapped Vehicle/Heavy
+// Vehicle list: greedy, highest score first, discarding any lower-score box that overlaps an
+// already-kept one past IOU_SUPPRESS_THRESHOLD, regardless of which raw class either came from.
+const IOU_SUPPRESS_THRESHOLD = 0.35;
+
+function suppressOverlappingDetections(detections: RawDetection[]): RawDetection[] {
+  const sorted = [...detections].sort((a, b) => b.score - a.score);
+  const kept: RawDetection[] = [];
+  for (const det of sorted) {
+    if (kept.some((k) => boxIoU(k.bbox, det.bbox) > IOU_SUPPRESS_THRESHOLD)) continue;
+    kept.push(det);
+  }
+  return kept;
+}
+
 // Four corner brackets instead of a plain solid rectangle -- reads as a real targeting
 // lock (the same visual language as a camera's autofocus/tracking reticle) rather than a
 // generic selection outline, per explicit request for the box to look "professionally
@@ -449,8 +487,9 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       if (unmountedRef.current) return;
       setPhotoSize({ width: frameWidth, height: frameHeight });
       frameSizeRef.current = { width: frameWidth, height: frameHeight };
+      const suppressed = suppressOverlappingDetections(detections);
       const tracked = speedTrackerRef.current.update(
-        detections,
+        suppressed,
         frameWidth,
         Date.now(),
         egoSpeedRef.current,
