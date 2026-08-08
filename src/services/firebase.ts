@@ -15,6 +15,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   deleteUser,
+  reauthenticateWithCredential,
   GoogleAuthProvider,
   OAuthProvider,
   EmailAuthProvider,
@@ -141,6 +142,32 @@ export function signInWithGoogleCredential(idToken: string): Promise<User> {
 export function signInWithAppleCredential(idToken: string, rawNonce?: string): Promise<User> {
   const provider = new OAuthProvider("apple.com");
   return linkOrSignIn(provider.credential({ idToken, rawNonce }));
+}
+
+// Which real identity provider the current signed-in user last authenticated with -- lets a
+// caller (deleteAccount's auth/requires-recent-login recovery in SettingsScreen) pick the right
+// native reauth flow (Apple vs Google) without asking the driver which one they used. null for
+// no user, an anonymous-only session, or (in principle) a provider this app doesn't offer.
+export function currentUserProviderId(): string | null {
+  return auth.currentUser?.providerData[0]?.providerId ?? null;
+}
+
+// Firebase requires a RECENT sign-in for certain sensitive ops (deleteUser, most notably) --
+// see deleteAccount below for the real, confirmed case this exists for. Re-running the exact
+// same native Apple/Google sign-in flow the driver already used, then handing the fresh
+// credential to Firebase's own reauthenticateWithCredential, is the standard fix: it proves
+// "this is really you, right now" without forcing an actual sign-out/sign-in round trip.
+export async function reauthenticateWithAppleCredential(idToken: string, rawNonce?: string): Promise<void> {
+  const current = auth.currentUser;
+  if (!current) throw new Error("No signed-in account to reauthenticate.");
+  const provider = new OAuthProvider("apple.com");
+  await reauthenticateWithCredential(current, provider.credential({ idToken, rawNonce }));
+}
+
+export async function reauthenticateWithGoogleCredential(idToken: string): Promise<void> {
+  const current = auth.currentUser;
+  if (!current) throw new Error("No signed-in account to reauthenticate.");
+  await reauthenticateWithCredential(current, GoogleAuthProvider.credential(idToken));
 }
 
 export async function signUpWithEmail(email: string, password: string): Promise<User> {

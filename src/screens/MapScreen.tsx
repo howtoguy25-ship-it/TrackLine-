@@ -125,6 +125,12 @@ export function MapScreen() {
   const insets = useSafeAreaInsets();
 
   const mapRef = useRef<MapView>(null);
+  // True once the native MapView has actually attached its ref (react-native-maps' own
+  // onMapReady) -- see the SF-placeholder correction effect below for why this matters: without
+  // it, that effect could fire (and permanently mark itself done via recenteredOnFixRef) before
+  // mapRef.current was non-null yet, silently no-op through the `?.`, and never get a second
+  // chance.
+  const [mapReady, setMapReady] = useState(false);
   const reportSheetRef = useRef<BottomSheet>(null);
   const detailSheetRef = useRef<BottomSheet>(null);
   const placeInfoSheetRef = useRef<BottomSheet>(null);
@@ -458,12 +464,19 @@ export function MapScreen() {
   // landing even a moment after the map's first render left the map stuck on the placeholder
   // coordinate for the rest of the session -- the real, confirmed "why is it showing San
   // Francisco" bug, not a rare edge case.
+  //
+  // Also gated on mapReady, not just currentLatLng -- a real, confirmed second cause of the
+  // exact same symptom: on a fast GPS fix (already-granted permission from a previous session),
+  // currentLatLng can resolve before the native MapView has actually attached mapRef. Without
+  // this gate, the effect fired anyway, `mapRef.current?.animateCamera` silently no-op'd through
+  // the `?.`, and recenteredOnFixRef was already marked done -- a real correction that was
+  // supposed to happen just silently never did, permanently, for the rest of the session.
   const recenteredOnFixRef = useRef(false);
   useEffect(() => {
-    if (recenteredOnFixRef.current || !currentLatLng || route) return;
+    if (recenteredOnFixRef.current || !currentLatLng || route || !mapReady) return;
     recenteredOnFixRef.current = true;
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
-  }, [currentLatLng, route]);
+  }, [currentLatLng, route, mapReady]);
 
   // GPS "course" heading (location.coords.heading) is a real device/OS-reported value, but a
   // genuinely unreliable one -- iOS commonly reports it as -1 ("invalid") at low speed, right
@@ -1967,6 +1980,7 @@ export function MapScreen() {
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={onMapPress}
         onPanDrag={onMapPanDrag}
+        onMapReady={() => setMapReady(true)}
       >
         {route && remainingPolyline.length > 1 && (
           <Polyline

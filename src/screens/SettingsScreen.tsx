@@ -3,6 +3,9 @@ import { View, Text, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Te
 import Slider from "@react-native-community/slider";
 import Constants from "expo-constants";
 import * as Application from "expo-application";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
+import { GoogleSignin, statusCodes } from "@react-native-google-signin/google-signin";
 import { usePowerState } from "expo-battery";
 import { useIAP } from "react-native-iap";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
@@ -12,7 +15,15 @@ import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { syncVisibleRegionsToProfile } from "@/services/userProfile";
 import { setVoiceEnabled } from "@/services/voice";
-import { signOutUser, deleteAccount } from "@/services/firebase";
+import {
+  signOutUser,
+  deleteAccount,
+  currentUserProviderId,
+  reauthenticateWithAppleCredential,
+  reauthenticateWithGoogleCredential,
+} from "@/services/firebase";
+import { env } from "@/config/env";
+import { Sentry } from "@/services/sentry";
 import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
 import { isOwnerEmail } from "@/config/admin";
@@ -81,6 +92,45 @@ export function SettingsScreen() {
   // got this UI to render (defense in depth, not the only line of defense).
   const isOwner = isOwnerEmail(user?.email);
 
+  useEffect(() => {
+    if (!env.googleIosClientId) return;
+    GoogleSignin.configure({ iosClientId: env.googleIosClientId });
+  }, []);
+
+  // Real, in-place fix for "Couldn't delete account -- sign out and back in, try again right
+  // away" not actually working: that message asked the driver to manually sign out, run the
+  // native Apple/Google sheet again, and race back here before Firebase's recency window
+  // closed -- easy to fail even when followed exactly. Firebase's own fix for
+  // auth/requires-recent-login is reauthenticateWithCredential: re-run the SAME native sign-in
+  // flow the driver already used (same rawNonce/hashedNonce pattern as SignInScreen's Apple
+  // flow) to get a fresh credential, hand it to Firebase to prove "this is really you, right
+  // now," then retry the delete immediately after -- no sign-out round trip needed at all.
+  // Email/password accounts fall back to the old message since re-prompting for a password here
+  // would need its own dedicated UI.
+  const reauthenticateCurrentUser = useCallback(async (): Promise<boolean> => {
+    const providerId = currentUserProviderId();
+    if (providerId === "apple.com") {
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [AppleAuthentication.AppleAuthenticationScope.EMAIL],
+        nonce: hashedNonce,
+      });
+      if (!credential.identityToken) return false;
+      await reauthenticateWithAppleCredential(credential.identityToken, rawNonce);
+      return true;
+    }
+    if (providerId === "google.com") {
+      if (!env.googleIosClientId) return false;
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      if (response.type !== "success" || !response.data.idToken) return false;
+      await reauthenticateWithGoogleCredential(response.data.idToken);
+      return true;
+    }
+    return false;
+  }, []);
+
   // Real account deletion -- see firebase.ts's deleteAccount for exactly what this does and
   // doesn't remove. Confirmed with a real destructive-action dialog first (Alert.alert), same
   // as any other irreversible action in this app.
@@ -97,7 +147,24 @@ export function SettingsScreen() {
           onPress: async () => {
             setDeletingAccount(true);
             try {
-              await deleteAccount();
+              try {
+                await deleteAccount();
+              } catch (err) {
+                const code = err instanceof Object && "code" in err ? String((err as any).code) : null;
+                if (code !== "auth/requires-recent-login") throw err;
+                const reauthed = await reauthenticateCurrentUser().catch((reauthErr) => {
+                  // A cancelled native sheet (ERR_REQUEST_CANCELED / SIGN_IN_CANCELLED) is a
+                  // real, expected outcome, not a failure worth logging as one.
+                  const reauthCode =
+                    reauthErr instanceof Object && "code" in reauthErr ? String((reauthErr as any).code) : null;
+                  if (reauthCode !== "ERR_REQUEST_CANCELED" && reauthCode !== statusCodes.SIGN_IN_CANCELLED) {
+                    Sentry.logger.error("settings: delete-account reauth failed", { error: String(reauthErr) });
+                  }
+                  return false;
+                });
+                if (!reauthed) throw err;
+                await deleteAccount();
+              }
             } catch (err) {
               const code = err instanceof Object && "code" in err ? String((err as any).code) : null;
               Alert.alert(

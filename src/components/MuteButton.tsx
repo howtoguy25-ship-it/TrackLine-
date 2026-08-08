@@ -14,6 +14,11 @@ export function MuteButton() {
   const { voiceEnabled, toggleVoiceEnabled, voiceVolume, setVoiceVolume } = useSettings();
   const [sliderOpen, setSliderOpen] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // React Native's Pressable fires onPress on release even after onLongPress already fired for
+  // the same touch -- without this guard, holding the button to open the volume slider ALSO
+  // toggled mute the instant you lifted your finger, which is exactly the "volume button plays
+  // up" bug: every attempt to adjust the volume muted/unmuted voice guidance as a side effect.
+  const longPressTriggeredRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -48,9 +53,18 @@ export function MuteButton() {
         </View>
       )}
       <Pressable
-        onPress={toggleVoiceEnabled}
+        onPress={() => {
+          // Swallow the onPress that follows a long-press release -- see longPressTriggeredRef's
+          // own comment above.
+          if (longPressTriggeredRef.current) {
+            longPressTriggeredRef.current = false;
+            return;
+          }
+          toggleVoiceEnabled();
+        }}
         onLongPress={() => {
           if (!voiceEnabled) return;
+          longPressTriggeredRef.current = true;
           setSliderOpen(true);
           scheduleAutoHide();
         }}
