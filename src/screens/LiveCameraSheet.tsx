@@ -12,11 +12,16 @@ interface Props {
   onSheetChange?: (index: number) => void;
 }
 
-// TfNSW republishes each camera's frame roughly every 60s -- this is a real, government-run
-// still-image feed (not a video stream; there is no live video endpoint for these cameras in
-// the public dataset), so refreshing more often than that would just re-fetch the same image
-// over and over. Mirrors web's LiveCamerasPanel.
-const IMAGE_REFRESH_MS = 60_000;
+// TfNSW republishes each camera's frame on its own schedule (commonly cited as "roughly every
+// 60s", but that's not a precise, per-camera guarantee this app can rely on) -- this is a real,
+// government-run still-image feed, not a video stream; there is no live video endpoint for
+// these cameras in the public dataset. Polling every 5s doesn't create motion that isn't there,
+// but it does mean whenever TfNSW actually does publish a new frame, this app shows it within
+// 5s instead of sitting on a stale one for up to a minute -- the real, direct fix for "says LIVE
+// but looks frozen" within what this data source can actually support. The cost is re-fetching
+// an unchanged frame most ticks, which is a small JPEG and only happens while this sheet is
+// open, not a background drain.
+const IMAGE_REFRESH_MS = 5_000;
 
 export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCameraSheet(
   { camera, onClose, onSheetChange },
