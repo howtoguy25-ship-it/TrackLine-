@@ -64,7 +64,14 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
               onPress={() => onTypeSelected(type)}
               style={({ pressed }) => [styles.typeButton, pressed && { opacity: pressedOpacity }]}
             >
-              <AlertTypeGlyph type={type} size={30} color={ALERT_COLORS[type]} />
+              {/* Same colored-circle pin treatment as the actual map marker for this alert
+                  type (AlertMarker) -- previously this picker showed bare glyphs (a plain
+                  vector icon for most types, a full-color emoji with no frame at all for
+                  police/crash) with no shared visual language between them, and no visual tie
+                  to what the alert actually looks like once placed on the map. */}
+              <View style={[styles.typeIconWrap, { backgroundColor: ALERT_COLORS[type] }]}>
+                <AlertTypeGlyph type={type} size={24} color="#FFFFFF" />
+              </View>
               <Text style={styles.typeLabel}>{ALERT_LABELS[type]}</Text>
             </Pressable>
           ))}
@@ -118,11 +125,24 @@ const styles = StyleSheet.create({
     width: "30%",
     aspectRatio: 1,
     borderRadius: radius.lg,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs + 2,
+  },
+  // Same colored-circle treatment as AlertMarker's own map pin -- see the render call site's
+  // own comment for why matching that (rather than a bare, backgroundless glyph) was the fix.
+  typeIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    ...shadow.low,
   },
   typeLabel: {
     fontSize: 12,

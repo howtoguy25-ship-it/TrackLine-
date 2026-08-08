@@ -1786,6 +1786,20 @@ export function MapScreen() {
   // for the new bottom trip bar (NavBottomBar), using its actual measured height instead of a
   // guessed constant (same reasoning as instructionCardHeight/routeCardHeight above).
   const navFabBaseBottom = insets.bottom + 24 + (route ? bottomBarHeight + spacing.sm : 0);
+  // Single source of truth for the right-edge secondary FAB stack's vertical spacing (AI
+  // Detection, 3D, satellite, locate) -- each button's `bottom` used to be its own independently
+  // hand-typed `navFabBaseBottom + <magic number>` literal, which is exactly how the AI
+  // Detection button ended up pinned to the top of the screen earlier this session (one of those
+  // four literals got edited on its own and silently drifted out of sync with the rest). Deriving
+  // every button's position from this one step value instead means they're structurally
+  // guaranteed to stay evenly spaced and never collide, no matter how many more of these buttons
+  // get added or reordered later -- fabSecondaryBottom(0) is the button closest to the bottom
+  // edge (AI Detection), incrementing outward from there. The `route ? 0 : 1` offset preserves
+  // the same slot the Report "+" FAB (which has its own fixed, independent position) occupies
+  // only while not navigating.
+  const fabSecondaryStep = route ? 54 : 70;
+  const fabSecondaryBottom = (indexFromBottom: number) =>
+    navFabBaseBottom + (indexFromBottom + (route ? 0 : 1)) * fabSecondaryStep;
 
   const activeStep = route?.steps[activeStepIndex] ?? null;
   // Real "you've arrived at the stop" detection for a transit trip -- scoped to the FIRST
@@ -2624,16 +2638,7 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          // Real, confirmed cause of "AI Detection button stuck at the top of the screen,
-          // overlapping the status bar/battery icon": fabSecondary is position:"absolute" with
-          // only `right` set, no top/bottom of its own -- an earlier zIndex-only fix here
-          // replaced this button's actual `bottom` offset instead of adding to it, which left
-          // this Pressable with NEITHER top nor bottom set. Yoga's default for an absolutely
-          // positioned view with no top/bottom is top:0, which is exactly "pinned to the very
-          // top of the screen" -- not a rare edge case, every single render did this. bottom is
-          // restored here (also see 3D/locate/satellite below for the same zIndex, all now
-          // correctly combined with their own real bottom offset).
-          { bottom: navFabBaseBottom + (route ? 0 : 70), zIndex: 1 },
+          { bottom: fabSecondaryBottom(0), zIndex: 1 },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={() => {
@@ -2665,7 +2670,7 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          { bottom: navFabBaseBottom + (route ? 54 : 140), zIndex: 2 },
+          { bottom: fabSecondaryBottom(1), zIndex: 2 },
           show3D && styles.fabActive,
           pressed && { opacity: pressedOpacity },
         ]}
@@ -2689,7 +2694,7 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          { bottom: navFabBaseBottom + (route ? 162 : 280), zIndex: 3 },
+          { bottom: fabSecondaryBottom(3), zIndex: 3 },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={onLocateButtonPress}
@@ -2715,11 +2720,11 @@ export function MapScreen() {
           style={({ pressed }) => [
             styles.fabSecondary,
             route && styles.fabSecondaryCompact,
-            // zIndex 0 (lowest of the FAB cluster, see the AI Detection button's own comment) --
-            // this button lives outside that cluster's <View> and mounts after it, so without an
-            // explicit zIndex it would paint over the AI Detection/3D/locate buttons during any
-            // transient frame where their bottom offsets briefly coincide.
-            { bottom: navFabBaseBottom + (route ? 108 : 210), zIndex: 0 },
+            // zIndex 0 (lowest of the FAB cluster) -- this button lives outside that cluster's
+            // <View> and mounts after it, so without an explicit zIndex it would paint over the
+            // AI Detection/3D/locate buttons during any transient frame where their bottom
+            // offsets briefly coincide.
+            { bottom: fabSecondaryBottom(2), zIndex: 0 },
             mapType === "hybrid" && styles.fabActive,
             pressed && { opacity: pressedOpacity },
           ]}
@@ -3351,6 +3356,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dark,
     alignItems: "center",
     justifyContent: "center",
+    // Subtle light ring, not a color change -- per explicit request, a refined look rather than
+    // a brighter one. A flat dark circle with nothing but a drop shadow reads as a plain hole
+    // cut in the map at a glance; a faint edge gives it real, deliberate definition against
+    // both light and dark map themes without competing for attention the way a bright accent
+    // color would.
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
     ...shadow.medium,
   },
   fabSecondaryCompact: {
@@ -3360,6 +3372,7 @@ const styles = StyleSheet.create({
   },
   fabActive: {
     backgroundColor: colors.accent,
+    borderColor: "rgba(255,255,255,0.35)",
   },
   // Small advisory badge on the AI Detection FAB when battery is under 50% -- see
   // detectionBatteryLow's own comment. Purely visual, the Pressable underneath stays fully
