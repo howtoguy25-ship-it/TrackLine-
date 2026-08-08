@@ -194,6 +194,25 @@ function clampShrink(
   return [cx - w / 2, cy - h / 2, w, h];
 }
 
+// A real vehicle framed from behind/front/side (the overwhelming common dashcam angle) is never
+// actually taller than it is wide -- a portrait-oriented box is the detector clipping to a
+// partial region (a door, a mirror, a window strip) rather than the whole vehicle, the exact
+// "box doesn't fit the car, feels like a narrow tall rectangle instead of the real vehicle shape"
+// complaint this fixes. Widening a too-narrow box back out to a plausible width (symmetric
+// around its own center, height untouched) is a display-only correction -- it never feeds back
+// into estimateDistanceM/speed, which read the raw detection's own width directly, so this can't
+// corrupt the physics-based speed estimate the way inflating the tracked box's width naively
+// would if distance were derived from it after the fact.
+const MIN_BOX_ASPECT_RATIO = 1.15;
+
+function enforceMinAspectRatio(bbox: [number, number, number, number]): [number, number, number, number] {
+  const [x, y, w, h] = bbox;
+  const minW = h * MIN_BOX_ASPECT_RATIO;
+  if (w >= minW) return bbox;
+  const cx = x + w / 2;
+  return [cx - minW / 2, y, minW, h];
+}
+
 // Zooming in narrows the real field of view, which is exactly equivalent (in this pinhole
 // model) to a longer focal length -- 5x zoom means the lens is genuinely acting like a focal
 // length 5x longer than at 1x, not the same one just cropped. Leaving this unscaled (the bug,
@@ -307,7 +326,7 @@ export function createSpeedTracker() {
           speedKmh = null;
         }
 
-        const bbox = clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING));
+        const bbox = enforceMinAspectRatio(clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING)));
         // `speedKmh` above (fed back into the track for next frame's smoothing) always stays
         // the closing/receding rate -- that's the real underlying signal being smoothed frame
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
@@ -341,9 +360,14 @@ export function createSpeedTracker() {
         });
       } else {
         const id = nextId++;
+        // Same aspect-ratio floor as the matched-track path -- a brand new track's very first
+        // detection can just as easily come back as a narrow partial clip as any later tick,
+        // and starting the track off already corrected means every subsequent smoothBbox() call
+        // eases from a realistic shape instead of a narrow one.
+        const bbox = enforceMinAspectRatio(det.bbox);
         nextTracks.push({
           id,
-          bbox: det.bbox,
+          bbox,
           score: det.score,
           label: det.label,
           confidence: det.confidence,
@@ -357,7 +381,7 @@ export function createSpeedTracker() {
         });
         result.push({
           id,
-          bbox: det.bbox,
+          bbox,
           score: det.score,
           label: det.label,
           confidence: det.confidence,

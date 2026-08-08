@@ -1151,6 +1151,44 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               {selectedIsEmergency ? "Active" : "None detected"}
             </Text>
           </View>
+          {/* Explicit, tappable "save this capture" per request -- a confirmed plate read is
+              already auto-saved to the persistent history log the instant it's confirmed (see
+              captureForPlateAndLightbar's plate-confirm callback), but that happens silently in
+              the background with only a small badge on the plate frame as feedback. This gives
+              a direct, visible action + confirmation for the exact same save, same gating as
+              "Run REV Check" (a real plate is the vehicle's only stable identity to save under). */}
+          <Pressable
+            onPress={() => {
+              if (!selectedPlate || selectedTrackId === null) return;
+              upsertDetectedVehicle(selectedPlate.text, {
+                label: selectedBox.label as "Vehicle" | "Heavy Vehicle",
+                speedKmh: selectedBox.state === "parked" ? 0 : selectedBox.speedKmh,
+                speedKind: selectedBox.state === "parked" ? "absolute" : selectedBox.speedKind,
+              }).catch((err) => {
+                Sentry.logger.error("vehicle-detection: manual save failed", { error: String(err) });
+              });
+              setSavedTrackIds((prev) => (prev.has(selectedTrackId) ? prev : new Set(prev).add(selectedTrackId)));
+            }}
+            disabled={!selectedPlate}
+            style={({ pressed }) => [
+              styles.saveButton,
+              !selectedPlate && styles.saveButtonDisabled,
+              pressed && !!selectedPlate && { opacity: pressedOpacity },
+            ]}
+          >
+            <Ionicons
+              name={selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "checkmark-circle" : "download-outline"}
+              size={16}
+              color={selectedPlate ? colors.accent : "#9CA3AF"}
+            />
+            <Text style={[styles.saveButtonText, !selectedPlate && styles.saveButtonTextDisabled]}>
+              {!selectedPlate
+                ? "Waiting for plate to save…"
+                : selectedTrackId !== null && savedTrackIds.has(selectedTrackId)
+                  ? "Saved to vehicle history"
+                  : "Save capture"}
+            </Text>
+          </Pressable>
           {/* Only enabled once there's an actual confirmed plate to check -- a REV check needs a
               real plate number, not a guess, same rule the plate label itself follows. Navigates
               straight into the same RevCheckScreen a saved history entry opens, prefilled with
@@ -1433,6 +1471,28 @@ const styles = StyleSheet.create({
   },
   detailValueAlert: {
     color: "#F87171",
+  },
+  saveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs + 2,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: spacing.sm,
+  },
+  saveButtonDisabled: {
+    borderColor: "rgba(255,255,255,0.16)",
+  },
+  saveButtonText: {
+    color: colors.accent,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  saveButtonTextDisabled: {
+    color: "#9CA3AF",
   },
   revCheckButton: {
     marginTop: spacing.sm,
