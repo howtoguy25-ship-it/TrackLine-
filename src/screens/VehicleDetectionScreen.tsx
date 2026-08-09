@@ -49,7 +49,7 @@ const MIN_DETECTION_SCORE = 0.3;
 // Real, confirmed complaint: a low-confidence detection box spanning almost the entire frame
 // (a misclassified shadow/road surface/dashboard reflection, not an actual close-up vehicle)
 // rendered as a giant box "covering the whole screen" instead of locking to the real car body.
-// A genuinely huge box IS possible at very close range (Place & Play right next to traffic, or
+// A genuinely huge box IS possible at very close range (a phone mounted right next to traffic, or
 // a near-collision) -- so this doesn't reject big boxes outright, it just requires a much higher
 // score to accept one that large, same principle as MIN_DETECTION_SCORE but scaled to how much
 // of the frame the box claims to cover.
@@ -175,10 +175,11 @@ function TargetCorners({ width, height, color }: { width: number; height: number
 // speed that isn't a confirmed "absolute" reading at all), 50-70 green (normal, confident cruise
 // speed), over 70 red. Matches real fixed-camera traffic-radar convention (a driver glances at a
 // color, not a number, to gauge how fast someone's going). Only applied to a real "absolute"
-// road-speed reading (a genuine ego-GPS-combined estimate, or a Place & Play stationary camera's
-// own closing rate -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate (no ego
-// GPS available, phone being driven around) isn't a real speed measurement and stays the neutral
-// default amber rather than implying a threshold it can't actually back up.
+// road-speed reading (a genuine ego-GPS-combined estimate, or a stationary/mounted camera's own
+// closing rate treated as the target's real speed -- see speedTracker.ts's combineWithEgoSpeed);
+// a plain "closing" rate (no GPS fix at all yet, so whether the camera itself is moving is
+// genuinely unknown) isn't a confirmed speed measurement and stays the neutral default amber
+// rather than implying a threshold it can't actually back up.
 function speedLockColor(box: TrackedBox): string {
   if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return "#F59E0B";
   const abs = Math.abs(box.speedKmh);
@@ -337,16 +338,6 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const { location } = useLocation();
   const egoSpeedRef = useRef<number | null>(null);
   egoSpeedRef.current = location?.coords.speed ?? null;
-  // "Place & Play" -- the phone is deliberately propped up stationary facing traffic (a
-  // tripod/mount/dashboard, portrait like the rest of the app -- not held while driving) instead
-  // of the app's default "carried in a moving vehicle" assumption. Detection/tracking itself
-  // needs no change (every vehicle in frame is already tracked and boxed simultaneously, not
-  // just one at a time) -- the one real difference is that speed math should treat the camera as
-  // having zero ego motion (see speedTracker.ts's stationary param) rather than trying to combine
-  // a moving-vehicle GPS speed that doesn't apply to a stationary mount.
-  const [placeAndPlayMode, setPlaceAndPlayMode] = useState(false);
-  const placeAndPlayModeRef = useRef(false);
-  placeAndPlayModeRef.current = placeAndPlayMode;
   // No "error" state -- see the model-load effect and the two capture paths' catch blocks
   // below. Every failure mode here now auto-recovers on its own instead of ever stopping and
   // waiting on a manual tap.
@@ -521,8 +512,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         frameWidth,
         Date.now(),
         egoSpeedRef.current,
-        zoomFactorRef.current,
-        placeAndPlayModeRef.current
+        zoomFactorRef.current
       );
       boxesRef.current = tracked;
       setBoxes(tracked);
@@ -988,31 +978,6 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         <Text style={styles.zoomToggleText}>{is5xZoom ? "5x" : "1x"}</Text>
       </Pressable>
 
-      {/* "Place & Play" -- a separate mode switch, per explicit request, not a replacement for
-          the existing handheld/driving detection above. Mount the phone (portrait, same as the
-          rest of the app) facing traffic and every vehicle already gets boxed and tracked
-          simultaneously the same way it always has; this just tells the speed math the camera
-          itself is standing still (see speedTracker.ts's stationary param) instead of trying to
-          combine a moving-vehicle GPS speed that doesn't apply to a stationary mount. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.placeAndPlayToggle,
-          { top: insets.top + spacing.md + 196 },
-          placeAndPlayMode && styles.placeAndPlayToggleActive,
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={() => setPlaceAndPlayMode((v) => !v)}
-        accessibilityLabel={
-          placeAndPlayMode ? "Exit Place & Play mode" : "Enable Place & Play mode -- mount the phone facing traffic"
-        }
-        hitSlop={8}
-      >
-        <Ionicons name="scan-outline" size={16} color={placeAndPlayMode ? "#111827" : "#FFFFFF"} />
-        <Text style={[styles.placeAndPlayToggleText, placeAndPlayMode && styles.placeAndPlayToggleTextActive]}>
-          Place & Play
-        </Text>
-      </Pressable>
-
       {photoSize &&
         containerSize &&
         boxes.map((box) => {
@@ -1288,15 +1253,23 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Speed</Text>
-            <Text style={styles.detailValue}>
-              {selectedBox.state === "parked"
-                ? "Parked"
-                : selectedBox.speedKmh === null
-                  ? "—"
-                  : selectedBox.speedKind === "absolute"
-                    ? `${Math.max(0, Math.round(selectedBox.speedKmh))} km/h`
-                    : `${Math.round(Math.abs(selectedBox.speedKmh))} km/h closing`}
-            </Text>
+            {/* Bright, colored speed pill (same thresholds as the on-box lock color -- under 50
+                amber, 50-70 green, over 70 red) instead of plain white text, per explicit
+                request -- the color itself reads as fast/normal/slow at a glance, the same way
+                the box's own lock color already does. */}
+            <View style={[styles.speedPill, { backgroundColor: speedLockColor(selectedBox) }]}>
+              {/* Red is dark/saturated enough that white text reads far better on it than the
+                  dark text amber/green (both bright, light colors) need instead. */}
+              <Text style={[styles.speedPillText, speedLockColor(selectedBox) === "#DC2626" && styles.speedPillTextOnRed]}>
+                {selectedBox.state === "parked"
+                  ? "Parked"
+                  : selectedBox.speedKmh === null
+                    ? "—"
+                    : selectedBox.speedKind === "absolute"
+                      ? `${Math.max(0, Math.round(selectedBox.speedKmh))} km/h`
+                      : `${Math.round(Math.abs(selectedBox.speedKmh))} km/h closing`}
+              </Text>
+            </View>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Plate</Text>
@@ -1597,7 +1570,12 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: spacing.lg,
     right: spacing.lg,
-    backgroundColor: "rgba(17, 24, 39, 0.94)",
+    // Lightened way down from a near-opaque slab (was rgba(...,0.94)) per explicit request for
+    // a more professional look that doesn't just block out the camera feed behind it -- the
+    // subtle border (rather than a heavy fill) is what now gives the panel its shape/definition.
+    backgroundColor: "rgba(17, 24, 39, 0.45)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.18)",
     borderRadius: radius.lg,
     padding: spacing.md,
     ...shadow.high,
@@ -1630,6 +1608,19 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "700",
+  },
+  speedPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  speedPillText: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  speedPillTextOnRed: {
+    color: "#FFFFFF",
   },
   detailValueAlert: {
     color: "#F87171",
@@ -1695,27 +1686,5 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
-  },
-  placeAndPlayToggle: {
-    position: "absolute",
-    right: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.sm + 2,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(17, 24, 39, 0.55)",
-  },
-  placeAndPlayToggleActive: {
-    backgroundColor: "#F59E0B",
-  },
-  placeAndPlayToggleText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  placeAndPlayToggleTextActive: {
-    color: "#111827",
   },
 });

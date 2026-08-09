@@ -128,6 +128,13 @@ const DISTANCE_SMOOTHING = 0.35;
 // impossible jump.
 const MAX_ACCEL_KMH_PER_SEC = 25;
 
+// Real, confirmed false-positive this directly fixes: a clearly parked/stationary vehicle
+// reading a small nonzero "closing" speed (e.g. 14 km/h at 5x zoom) purely from box-width
+// detector jitter, not any real motion. Scaled by zoom the same way NOISE_THRESHOLD_RATIO is,
+// since the same pixel-level width jitter maps to a bigger apparent distance swing at higher
+// zoom. See its own call site below for how it's applied.
+const CLOSING_RATE_DEADZONE_KMH = 8;
+
 // Below this ego speed, GPS's own noise floor makes combining it with the closing-rate signal
 // less reliable than just showing the closing rate honestly on its own -- and at very low
 // speed (e.g. stopped at lights) the "vehicle ahead, same direction of travel" assumption this
@@ -139,29 +146,32 @@ const EGO_SPEED_MIN_MPS = 1.5; // ~5.4 km/h
  *  mounted while driving -- this is not claimed to hold for a vehicle crossing at an angle or
  *  genuinely oncoming, which this app has no way to distinguish from vision alone), the target
  *  vehicle's own road speed = ego's GPS speed minus the closing rate between them (closing
- *  rate positive while approaching). Falls back to reporting the closing rate itself,
- *  correctly labeled as such rather than as the target's real speed, whenever ego GPS speed
- *  isn't available or the phone itself is too close to stationary for the combination to be
- *  trustworthy -- see EGO_SPEED_MIN_MPS. Never fabricates a number either way. */
+ *  rate positive while approaching).
+ *
+ *  Auto-detects the "camera itself isn't moving" (formerly the manual "Place & Play" toggle)
+ *  case instead of requiring it to be switched on by hand -- per explicit request, vehicle
+ *  detection now always behaves this way automatically the moment it has a real (even if
+ *  near-zero) GPS reading, rather than needing a separate mode. Whenever ego GPS speed is
+ *  confidently known to be low (a phone that's mounted/propped/handheld and not being driven
+ *  around), the closing/receding rate between the camera and the target vehicle genuinely IS
+ *  that vehicle's own real road speed (same "traveling roughly along the camera's own sightline"
+ *  caveat as the driving case above), not just a proxy for it -- so it's reported as a real
+ *  "absolute" speed. Only falls back to the honestly-labeled, un-combined "closing" rate when
+ *  ego speed isn't known AT ALL yet (no GPS fix), since that's the one case where whether the
+ *  camera itself is moving is genuinely unknown, not just low. Never fabricates a number either
+ *  way. */
 function combineWithEgoSpeed(
   closingKmh: number | null,
   state: "moving" | "parked",
-  egoSpeedMps: number | null | undefined,
-  // True for "Place & Play" mode -- the phone is deliberately mounted stationary (propped up
-  // facing traffic), not carried in a moving vehicle. This is exactly the case the doc comment
-  // above already calls out: with zero ego motion, the closing/receding rate between the camera
-  // and the target vehicle genuinely IS that vehicle's real road speed (for the same "traveling
-  // roughly along the camera's own sightline, not crossing at a sharp angle" caveat as the
-  // driving case above), not just a proxy for it -- so it's correctly labeled "absolute" here,
-  // not "closing", regardless of whatever egoSpeedMps GPS noise reports for a phone sitting
-  // still.
-  stationary: boolean
+  egoSpeedMps: number | null | undefined
 ): { speedKmh: number | null; speedKind: "absolute" | "closing" | null } {
   if (state === "parked" || closingKmh === null) return { speedKmh: null, speedKind: null };
-  if (stationary) return { speedKmh: closingKmh, speedKind: "absolute" };
   if (egoSpeedMps != null && egoSpeedMps > EGO_SPEED_MIN_MPS) {
     const egoKmh = egoSpeedMps * 3.6;
     return { speedKmh: egoKmh - closingKmh, speedKind: "absolute" };
+  }
+  if (egoSpeedMps != null) {
+    return { speedKmh: closingKmh, speedKind: "absolute" };
   }
   return { speedKmh: closingKmh, speedKind: "closing" };
 }
@@ -257,14 +267,11 @@ export function createSpeedTracker() {
     // reading -- see combineWithEgoSpeed.
     egoSpeedMps?: number | null,
     // The camera's actual current zoom factor (1 = normal/neutral, 5 = the app's 5x toggle) --
-    // see estimateDistanceM's and NOISE_THRESHOLD_RATIO's own comments for why both the distance
-    // estimate and the parked-vehicle noise floor need to know this. Defaults to 1 (normal zoom)
-    // so existing callers that don't pass it keep their previous behavior exactly.
-    zoomFactor = 1,
-    // True in "Place & Play" mode -- see combineWithEgoSpeed's own comment for why a genuinely
-    // stationary, mounted phone gets the closing rate labeled "absolute" speed directly instead
-    // of going through the ego-GPS-speed combination meant for a phone being driven around.
-    stationary = false
+    // see estimateDistanceM's, NOISE_THRESHOLD_RATIO's, and CLOSING_RATE_DEADZONE_KMH's own
+    // comments for why the distance estimate, the parked-vehicle noise floor, AND the closing-
+    // rate noise floor all need to know this. Defaults to 1 (normal zoom) so existing callers
+    // that don't pass it keep their previous behavior exactly.
+    zoomFactor = 1
   ): TrackedBox[] {
     const unmatched = new Set(tracks.map((t) => t.id));
     const result: TrackedBox[] = [];
@@ -331,6 +338,17 @@ export function createSpeedTracker() {
         if (state === "moving" && dtSec > 0.15) {
           const closingMPerSec = (best.distanceM - distanceM) / dtSec;
           let rawKmh = closingMPerSec * 3.6;
+          // Real, confirmed false-positive: a genuinely stationary vehicle (parked, or just not
+          // yet held steady long enough to trip the centroid-based PARKED_AFTER_MS state above)
+          // still showed a small but nonzero "closing" speed purely from box-width detector
+          // jitter -- worse at high zoom, where estimateDistanceM's own zoom-scaled focal length
+          // means the same few pixels of width noise maps to a proportionally bigger swing in
+          // estimated distance. Snapping small readings to exactly 0 here (before they ever reach
+          // the smoothing/acceleration-clamp below) stops that jitter from ever settling into a
+          // stable-looking but fake nonzero number -- while a real vehicle pulling away still
+          // clears this floor within a tick or two and picks up its speed immediately, same as
+          // MAX_ACCEL_KMH_PER_SEC already allows for the upper end.
+          if (Math.abs(rawKmh) < CLOSING_RATE_DEADZONE_KMH * Math.max(zoomFactor, 1)) rawKmh = 0;
           if (best.speedKmh !== null) {
             // Clamp to a physically plausible acceleration -- see MAX_ACCEL_KMH_PER_SEC.
             const maxDeltaKmh = MAX_ACCEL_KMH_PER_SEC * dtSec;
@@ -351,7 +369,7 @@ export function createSpeedTracker() {
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
         // know) is a separate, one-shot combination with the ego vehicle's own GPS speed,
         // computed fresh here for `result` only -- see combineWithEgoSpeed's own comment.
-        const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(speedKmh, state, egoSpeedMps, stationary);
+        const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(speedKmh, state, egoSpeedMps);
         nextTracks.push({
           id: best.id,
           bbox,
@@ -429,7 +447,7 @@ export function createSpeedTracker() {
       if (matchedIds.has(t.id)) continue;
       if (nowMs - t.lastSeenMs >= TRACK_GRACE_MS) continue;
       nextTracks.push(t);
-      const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps, stationary);
+      const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps);
       result.push({
         id: t.id,
         bbox: t.bbox,
