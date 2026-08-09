@@ -12,7 +12,7 @@ import { useResizePlugin } from "vision-camera-resize-plugin";
 import { useSharedValue, useRunOnJS } from "react-native-worklets-core";
 import type { BoxedHybridObject } from "react-native-nitro-modules";
 import type { TensorflowModel } from "react-native-fast-tflite";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
@@ -1088,11 +1088,21 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                     style={[styles.speedLabelWrap, { top: labelAboveBox ? -24 : 6 }]}
                     pointerEvents="none"
                   >
-                    <Text
-                      style={[styles.speedLabel, box.state === "parked" && styles.speedLabelParked]}
-                    >
-                      {speedLabel}
-                    </Text>
+                    {/* Every tracked vehicle renders its own independent badge here -- state
+                        (parked vs moving) and speed are computed per-track in speedTracker.ts,
+                        never a single global reading -- so a parked car and a moving car sharing
+                        the same frame each show their own correct label at the same time. The
+                        small leading icon (parking-circle vs speedometer) makes that state
+                        readable at a glance, not just from the text/color, per explicit request
+                        for a more professional, neatly-designed badge. */}
+                    <View style={[styles.speedLabel, box.state === "parked" && styles.speedLabelParked]}>
+                      {box.state === "parked" ? (
+                        <MaterialCommunityIcons name="parking" size={11} color="#fff" />
+                      ) : (
+                        <Ionicons name="speedometer-outline" size={10} color="#fff" />
+                      )}
+                      <Text style={styles.speedLabelText}>{speedLabel}</Text>
+                    </View>
                   </View>
                 )}
                 {/* Tap a box to lock visual focus on it when several vehicles are in frame --
@@ -1437,15 +1447,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   speedLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "#111827",
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     overflow: "hidden",
     ...shadow.low,
+  },
+  speedLabelText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
   },
   speedLabelParked: {
     backgroundColor: "#4B5563",
