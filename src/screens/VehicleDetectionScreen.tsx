@@ -980,8 +980,19 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           everything else) on Close, so there's no separate "pause the session" state needed
           here. pixelFormat="yuv" is the efficient native default for Frame Processors --
           vision-camera-resize-plugin (used inside frameProcessor above) handles the
-          YUV->RGB conversion this model needs entirely on its own thread. */}
+          YUV->RGB conversion this model needs entirely on its own thread.
+          Landscape add-on only -- key'd on orientation so React fully unmounts and remounts a
+          fresh native preview view across a rotation instead of trying to resize the existing
+          one in place. Real, confirmed reason this is here: the native preview layer
+          (AVCaptureVideoPreviewLayer, always "cover"/resizeAspectFill -- it doesn't letterbox by
+          itself) can end up keeping a stale frame from before the rotation, rendering only in
+          whatever small region its old layout still remembers with the rest of the screen just
+          black, rather than picking up the container's new post-rotation size. A fresh mount
+          guarantees a fresh, correctly-sized layout every time; the brief black flash during the
+          remount is a small, expected cost for a real physical rotation, not a stuck/broken
+          state like the one this fixes. */}
       <Camera
+        key={isLandscapeLayout ? "landscape" : "portrait"}
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
