@@ -2708,26 +2708,36 @@ export function MapScreen() {
       </Pressable>
         </>
       )}
-      </View>
 
       {/* Real satellite selection, available while placing an alert -- previously this button
           lived inside the FAB cluster above, entirely hidden the moment placingAlert became
           true (see that cluster's own comment), so there was no way to switch to satellite
           imagery to place a pin accurately against real ground features (a driveway, a specific
-          building) per explicit request. Pulled out to its own render with the same position it
-          already had in that stack (navFabBaseBottom + 108/210) so nothing shifts for the
-          normal, not-placing-an-alert case -- only now also visible while placingAlert is true.
-          Still hidden behind an open bottom sheet or the destination/route pickers, same as
-          before. */}
+          building) per explicit request. Pulled out to its own conditional, still rendered here
+          -- BEFORE mapArea's own closing </View> below -- so it stays inside the exact same
+          coordinate frame as the AI Detection/3D/locate cluster above it.
+          REAL, CONFIRMED ROOT CAUSE of this button drifting out of alignment with (and
+          overlapping) the rest of the stack: this block used to sit AFTER mapArea's closing
+          </View> instead of before it -- a sibling of mapArea and BannerAdBar inside the outer
+          screen container, not a child of mapArea like every other FAB here. mapArea and
+          BannerAdBar share one flex column (see BannerAdBar.tsx's own comment), so mapArea's
+          own bottom edge sits ABOVE the ad bar, not at the true screen bottom -- every other FAB
+          in this stack has its `bottom` offset measured from THAT edge. This button, rendered
+          outside mapArea, had its own identical-looking `bottom` offset measured from the outer
+          container's edge instead (BELOW the ad bar), a different, lower reference point --
+          so the same numeric offset placed it a whole ad-bar-height off from where its siblings
+          landed, close enough to the 3D/AI Detection buttons' own step spacing to visibly
+          collide with them. Moving the JSX itself (not just the numbers) is what actually fixes
+          it, since the two blocks were never in the same coordinate space to begin with. Still
+          hidden behind an open bottom sheet or the destination/route pickers, same as before. */}
       {!anySheetOpen && !pendingDestination && (
         <Pressable
           style={({ pressed }) => [
             styles.fabSecondary,
             route && styles.fabSecondaryCompact,
-            // zIndex 0 (lowest of the FAB cluster) -- this button lives outside that cluster's
-            // <View> and mounts after it, so without an explicit zIndex it would paint over the
-            // AI Detection/3D/locate buttons during any transient frame where their bottom
-            // offsets briefly coincide.
+            // zIndex 0 (lowest of the FAB cluster) -- this button is rendered after the AI
+            // Detection/3D/locate cluster above, so without an explicit zIndex it would paint
+            // over them during any transient frame where their bottom offsets briefly coincide.
             { bottom: fabSecondaryBottom(2), zIndex: 0 },
             mapType === "hybrid" && styles.fabActive,
             pressed && { opacity: pressedOpacity },
@@ -2738,6 +2748,7 @@ export function MapScreen() {
           <Ionicons name="map-outline" size={route ? 14 : 18} color="#FFFFFF" />
         </Pressable>
       )}
+      </View>
 
       {/* Never shown while navigating -- a driving app shouldn't have anything competing for
           attention with the road/turn instructions, safety concern first and foremost. Also

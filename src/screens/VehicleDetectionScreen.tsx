@@ -55,6 +55,11 @@ const MIN_DETECTION_SCORE = 0.3;
 // of the frame the box claims to cover.
 const OVERSIZED_BOX_FRAME_FRACTION = 0.75;
 const MIN_SCORE_FOR_OVERSIZED_BOX = 0.65;
+// Belt-and-suspenders on top of the score gate above -- caps how much of the screen the drawn
+// box is ever allowed to visually cover, applied at render time (see its call site). Catches the
+// same "box covering the whole screen" complaint even for a detection that did clear the score
+// gate above, without needing to guess the exact right score cutoff.
+const MAX_BOX_RENDER_FRACTION = 0.82;
 // This model's own fixed TFLite_Detection_PostProcess output size (see
 // assets/models/tflite_ssd_mobilenet_v1) -- it never returns more than this many candidate
 // detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE.
@@ -447,6 +452,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // object doesn't fall into either category and isn't guaranteed to reflect updates correctly
   // from inside the separate worklet Runtime.
   const boxedModelShared = useSharedValue<BoxedHybridObject<TensorflowModel> | null>(null);
+  // Real, confirmed lag contributor: this SharedValue kept holding its reference to the boxed
+  // TFLite model (and the GPU/NPU delegate context that comes with it) after the screen closed --
+  // nothing ever cleared it back to null on unmount. tfliteVehicleModel.ts's own module-level
+  // cache is deliberately kept alive across opens for a fast reopen (see its own comment) and is
+  // NOT touched here -- this only drops this one screen instance's own worklet-visible handle
+  // into that cache, so the underlying delegate/thread work it was keeping warm doesn't have to
+  // keep running once there's no camera left to feed it frames.
+  useEffect(() => {
+    return () => {
+      boxedModelShared.value = null;
+    };
+  }, [boxedModelShared]);
 
   // Auto-retries forever with a capped backoff instead of ever dead-ending on a manual "tap
   // Retry" button -- a transient hiccup (a slow first disk read, a momentary GC pause) resolves
@@ -1034,10 +1051,35 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const rawTopPx = y * scale + offsetY;
           const rawRightPx = rawLeftPx + w * scale;
           const rawBottomPx = rawTopPx + h * scale;
-          const boxLeftPx = Math.max(0, Math.min(rawLeftPx, containerSize.width));
-          const boxTopPx = Math.max(0, Math.min(rawTopPx, containerSize.height));
-          const boxWidthPx = Math.max(0, Math.min(rawRightPx, containerSize.width) - boxLeftPx);
-          const boxHeightPx = Math.max(0, Math.min(rawBottomPx, containerSize.height) - boxTopPx);
+          const edgeClampedLeftPx = Math.max(0, Math.min(rawLeftPx, containerSize.width));
+          // Floored at insets.top (not 0) -- a near-full-frame box's top edge otherwise clamped
+          // straight to the physical top of the full-bleed camera preview, which put the
+          // type/confidence label (rendered 6px inside the box's own top edge, see labelAboveBox
+          // below) directly under the status bar/TestFlight banner instead of below it -- the
+          // real cause of the label text reading as jumbled into "TestFlight" in testing
+          // screenshots.
+          const edgeClampedTopPx = Math.max(insets.top, Math.min(rawTopPx, containerSize.height));
+          const edgeClampedWidthPx = Math.max(0, Math.min(rawRightPx, containerSize.width) - edgeClampedLeftPx);
+          const edgeClampedHeightPx = Math.max(0, Math.min(rawBottomPx, containerSize.height) - edgeClampedTopPx);
+          // Second, purely visual safety net on top of the frame-processor's own oversized-box
+          // score gate (see OVERSIZED_BOX_FRAME_FRACTION above) -- caps how much of the screen
+          // the drawn lock box itself is ever allowed to cover, re-centered on the box's own true
+          // center rather than the container's, so a real close-up vehicle still reads as
+          // "locked on tight" instead of a rectangle swallowing the whole preview. Display-only,
+          // same principle as enforceMinAspectRatio in speedTracker.ts -- it never touches
+          // box.bbox itself, so the actual distance/speed estimate (which reads the raw detection
+          // width directly) can't be corrupted by this.
+          const maxBoxWidthPx = containerSize.width * MAX_BOX_RENDER_FRACTION;
+          const maxBoxHeightPx = containerSize.height * MAX_BOX_RENDER_FRACTION;
+          const boxCenterXPx = edgeClampedLeftPx + edgeClampedWidthPx / 2;
+          const boxCenterYPx = edgeClampedTopPx + edgeClampedHeightPx / 2;
+          const boxWidthPx = Math.min(edgeClampedWidthPx, maxBoxWidthPx);
+          const boxHeightPx = Math.min(edgeClampedHeightPx, maxBoxHeightPx);
+          const boxLeftPx = Math.max(0, Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - boxWidthPx));
+          const boxTopPx = Math.max(
+            insets.top,
+            Math.min(boxCenterYPx - boxHeightPx / 2, containerSize.height - boxHeightPx)
+          );
           const lockColor = isEmergency ? "#DC2626" : isSelected ? "#22D3EE" : speedLockColor(box);
           // Keeps the type/speed labels fully on-screen even when the detected box itself
           // extends past an edge -- a vehicle filling most of the frame very plausibly has its
