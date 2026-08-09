@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, LayoutChangeEvent } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, LayoutChangeEvent, useWindowDimensions } from "react-native";
+import * as ScreenOrientation from "expo-screen-orientation";
 import {
   Camera,
   useCameraDevice,
@@ -273,6 +274,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // can report how long the native camera session genuinely took to come up.
   const mountTimeRef = useRef(Date.now());
   const insets = useSafeAreaInsets();
+  // Landscape add-on only -- pure layout signal for the HUD reflow below (banner/detail panel
+  // side-anchored instead of spanning full-width, safe-area padding on both sides). Updates
+  // live as the device physically rotates, same as any other window-size-driven layout in RN.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscapeLayout = windowWidth > windowHeight;
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice("back");
   // photoResolution raised again, to real 4K (3840x2160) -- per explicit request for a
@@ -356,6 +362,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // from before this rewrite -- it's still just "the pixel space the boxes are in."
   const [photoSize, setPhotoSize] = useState<{ width: number; height: number } | null>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
+  // Landscape add-on only -- see the box-render loop's own comment below for why this exists.
+  // frame.orientation/width/height (the RAW, pre-upright-rotation sensor dimensions -- see the
+  // Frame Processor's own comment on frame.width/height) are only ever READ here, never fed
+  // into detection/tracking itself, so nothing about how a vehicle actually gets detected,
+  // tracked, or speed-estimated changes -- this is purely about where the already-correct boxes
+  // get DRAWN once the device is physically rotated.
+  const [rawFrameInfo, setRawFrameInfo] = useState<{
+    width: number;
+    height: number;
+    orientation: string;
+  } | null>(null);
   // Plate text (plus the real estimated region it was actually cropped from -- see
   // plateLocator.ts -- so the on-screen frame can be sized/positioned to the real plate instead
   // of a generic floating label) is display-only -- keyed by track id, never written anywhere
@@ -397,6 +414,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   useEffect(() => {
     return () => {
       unmountedRef.current = true;
+    };
+  }, []);
+  // Portrait everywhere else in the app stays locked (see App.tsx's own lockAsync) -- this
+  // screen alone unlocks rotation for as long as it's open, per explicit request to add
+  // landscape as an ADD-ON here without touching how any other screen (or this screen's own
+  // portrait behavior) already works. Re-locks back to portrait on close so the rest of the app
+  // never sees anything but portrait, exactly as before this screen ever existed.
+  useEffect(() => {
+    ScreenOrientation.unlockAsync().catch(() => {});
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     };
   }, []);
   const speedTrackerRef = useRef(createSpeedTracker());
@@ -502,10 +530,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // plate OCR or lightbar sampling here -- see captureForPlateAndLightbar's own comment for why
   // those stay on the separate, slower side loop.
   const onDetections = useRunOnJS(
-    (detections: RawDetection[], frameWidth: number, frameHeight: number) => {
+    (
+      detections: RawDetection[],
+      frameWidth: number,
+      frameHeight: number,
+      rawWidth: number,
+      rawHeight: number,
+      orientation: string
+    ) => {
       if (unmountedRef.current) return;
       setPhotoSize({ width: frameWidth, height: frameHeight });
       frameSizeRef.current = { width: frameWidth, height: frameHeight };
+      setRawFrameInfo({ width: rawWidth, height: rawHeight, orientation });
       const suppressed = suppressOverlappingDetections(detections);
       const tracked = speedTrackerRef.current.update(
         suppressed,
@@ -654,8 +690,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
 
       // Only the parsed, tiny result array (plus the upright frame dimensions the boxes are
       // relative to) crosses back to JS here -- never the raw frame or the raw output tensors,
-      // per the explicit Phase 2 spec this rewrite followed.
-      onDetections(detections, uprightWidth, uprightHeight);
+      // per the explicit Phase 2 spec this rewrite followed. frame.width/height/orientation
+      // (the RAW, pre-rotation sensor info -- see this worklet's own comment above) also cross
+      // over now, landscape add-on only -- see rawFrameInfo's own comment for why the render
+      // side needs them.
+      onDetections(detections, uprightWidth, uprightHeight, frame.width, frame.height, frame.orientation);
     },
     [resize, onDetections]
   );
@@ -903,12 +942,28 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     );
   }
 
+  // Landscape add-on only -- box.bbox/plateInfo.region are always in the Frame Processor's own
+  // UPRIGHT coordinate space (rotated there for the model's sake regardless of how the phone is
+  // physically held -- see that worklet's own comment, untouched by any of this). The native
+  // camera PREVIEW, though, shows the RAW sensor orientation, not that upright rotation -- while
+  // physically portrait the two happen to be the same space, which is exactly why this was never
+  // an issue before. Once physically landscape they're a 90-degree-rotated space apart, so boxes
+  // now need mapping into raw-space (via the same mapUprightBoxToRawPhoto already used for photo
+  // captures below) before they're scaled against the container, or they'd float in the wrong
+  // place relative to what's actually on screen. "portrait"/"portrait-upside-down" fall straight
+  // through unchanged -- isLandscapeFrame is false, displaySize is exactly photoSize, same as
+  // before this add-on existed.
+  const isLandscapeFrame =
+    rawFrameInfo?.orientation === "landscape-left" || rawFrameInfo?.orientation === "landscape-right";
+  const displaySize =
+    isLandscapeFrame && rawFrameInfo ? { width: rawFrameInfo.width, height: rawFrameInfo.height } : photoSize;
+
   const scale =
-    photoSize && containerSize
-      ? Math.max(containerSize.width / photoSize.width, containerSize.height / photoSize.height)
+    displaySize && containerSize
+      ? Math.max(containerSize.width / displaySize.width, containerSize.height / displaySize.height)
       : 1;
-  const offsetX = photoSize && containerSize ? (containerSize.width - photoSize.width * scale) / 2 : 0;
-  const offsetY = photoSize && containerSize ? (containerSize.height - photoSize.height * scale) / 2 : 0;
+  const offsetX = displaySize && containerSize ? (containerSize.width - displaySize.width * scale) / 2 : 0;
+  const offsetY = displaySize && containerSize ? (containerSize.height - displaySize.height * scale) / 2 : 0;
 
   // Tapping a locked box opens this detail panel -- every field below is read straight off
   // that vehicle's own live tracked state (the same `boxes`/`plateTexts`/`emergencyTrackIds`
@@ -968,7 +1023,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       <Pressable
         style={({ pressed }) => [
           styles.zoomToggle,
-          { top: insets.top + spacing.md + 140 },
+          // insets.right is always 0 in portrait, so this is identical to the old static
+          // `right: spacing.md` there -- only actually shifts once physically landscape, where
+          // a notch/camera cutout can land on either side depending on which way it's rotated.
+          { top: insets.top + spacing.md + 140, right: insets.right + spacing.md },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={toggleZoom}
@@ -981,7 +1039,21 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       {photoSize &&
         containerSize &&
         boxes.map((box) => {
-          const [x, y, w, h] = box.bbox;
+          // See displaySize's own comment above -- box.bbox itself is never touched (still the
+          // exact upright-space value the tracker/speed math uses), this is a display-only
+          // remap applied only while physically landscape.
+          const displayBbox =
+            isLandscapeFrame && photoSize
+              ? mapUprightBoxToRawPhoto(
+                  box.bbox,
+                  photoSize.width,
+                  photoSize.height,
+                  displaySize!.width,
+                  displaySize!.height,
+                  rawFrameInfo!.orientation
+                )
+              : box.bbox;
+          const [x, y, w, h] = displayBbox;
           const isEmergency = emergencyTrackIds.has(box.id);
           const isSelected = selectedTrackId === box.id;
           const plateInfo = plateTexts.get(box.id);
@@ -1134,14 +1206,27 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                   source photo. */}
               {plateInfo &&
                 (() => {
+                  // Same landscape remap as the vehicle box above -- plateInfo.region is also in
+                  // the Frame Processor's own upright coordinate space, not raw/display space.
+                  const displayPlateRegion =
+                    isLandscapeFrame && photoSize
+                      ? mapUprightBoxToRawPhoto(
+                          [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h],
+                          photoSize.width,
+                          photoSize.height,
+                          displaySize!.width,
+                          displaySize!.height,
+                          rawFrameInfo!.orientation
+                        )
+                      : [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h];
                   // Same off-screen-edge clamp as the vehicle box above -- a plate region is
                   // normally a small sub-crop well inside the vehicle box, but on a vehicle box
                   // that's itself mostly off-screen (a close vehicle at 5x zoom) the plate region
                   // can still start off-screen too.
-                  const rawPlateLeftPx = plateInfo.region.x * scale + offsetX;
-                  const rawPlateTopPx = plateInfo.region.y * scale + offsetY;
-                  const rawPlateRightPx = rawPlateLeftPx + plateInfo.region.w * scale;
-                  const rawPlateBottomPx = rawPlateTopPx + plateInfo.region.h * scale;
+                  const rawPlateLeftPx = displayPlateRegion[0] * scale + offsetX;
+                  const rawPlateTopPx = displayPlateRegion[1] * scale + offsetY;
+                  const rawPlateRightPx = rawPlateLeftPx + displayPlateRegion[2] * scale;
+                  const rawPlateBottomPx = rawPlateTopPx + displayPlateRegion[3] * scale;
                   const plateLeftPx = Math.max(0, Math.min(rawPlateLeftPx, containerSize.width));
                   const plateTopPx = Math.max(0, Math.min(rawPlateTopPx, containerSize.height));
                   const plateWidthPx = Math.max(0, Math.min(rawPlateRightPx, containerSize.width) - plateLeftPx);
@@ -1184,7 +1269,22 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         })}
 
       {(status !== "running" || !infoDismissed) && (
-      <View style={[styles.banner, { top: insets.top + spacing.md }]}>
+      <View
+        style={[
+          styles.banner,
+          isLandscapeLayout && styles.bannerLandscape,
+          {
+            top: insets.top + spacing.md,
+            // Side-anchored (right, capped width) instead of spanning the full width once
+            // landscape -- a full-width explainer banner would otherwise stretch across almost
+            // the entire wide frame, covering far more of the live camera view than it needs to.
+            // insets.right/left are always 0 in portrait, so the portrait case is unchanged.
+            ...(isLandscapeLayout
+              ? { right: insets.right + spacing.lg }
+              : { left: insets.left + spacing.lg, right: insets.right + spacing.lg }),
+          },
+        ]}
+      >
         {status === "loading-model" && (
           <>
             <ActivityIndicator color="#fff" />
@@ -1244,7 +1344,21 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           Tapping the same box again (or its own close) clears the selection, same as tapping
           it once already does for the on-box highlight. */}
       {selectedBox && (
-        <View style={[styles.detailPanel, { bottom: insets.bottom + spacing.xl + 64 }]}>
+        <View
+          style={[
+            styles.detailPanel,
+            isLandscapeLayout && styles.detailPanelLandscape,
+            {
+              bottom: insets.bottom + spacing.xl + 64,
+              // Side-anchored (right, capped width) instead of spanning the full width once
+              // landscape, same reasoning as the explainer banner above. insets.right/left are
+              // always 0 in portrait, so that case is unchanged.
+              ...(isLandscapeLayout
+                ? { right: insets.right + spacing.lg }
+                : { left: insets.left + spacing.lg, right: insets.right + spacing.lg }),
+            },
+          ]}
+        >
           <View style={styles.detailPanelHeader}>
             <Text style={styles.detailPanelTitle}>{selectedBox.label}</Text>
             <Pressable onPress={() => setSelectedTrackId(null)} hitSlop={10} accessibilityLabel="Close vehicle details">
@@ -1536,14 +1650,20 @@ const styles = StyleSheet.create({
   },
   banner: {
     position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
+    // left/right deliberately NOT set here -- always supplied inline at the call site (which
+    // differs between portrait, full-width, and landscape, side-anchored-only) so there's never
+    // a stale value from this base style left un-overridden.
     backgroundColor: "rgba(17, 24, 39, 0.85)",
     borderRadius: radius.md,
     padding: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm + 2,
+  },
+  // Landscape add-on only -- see the call site's own comment.
+  bannerLandscape: {
+    width: "48%",
+    maxWidth: 420,
   },
   bannerText: {
     color: "#fff",
@@ -1568,8 +1688,7 @@ const styles = StyleSheet.create({
   },
   detailPanel: {
     position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
+    // left/right deliberately NOT set here -- see banner's own comment, same reasoning.
     // Lightened way down from a near-opaque slab (was rgba(...,0.94)) per explicit request for
     // a more professional look that doesn't just block out the camera feed behind it -- the
     // subtle border (rather than a heavy fill) is what now gives the panel its shape/definition.
@@ -1579,6 +1698,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     ...shadow.high,
+  },
+  // Landscape add-on only -- see the call site's own comment.
+  detailPanelLandscape: {
+    width: "46%",
+    maxWidth: 380,
   },
   detailPanelHeader: {
     flexDirection: "row",

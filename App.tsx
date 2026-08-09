@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/context/AuthContext";
@@ -34,6 +35,16 @@ initSentry();
 const DIAGNOSTIC_DISABLE_APP_OPEN_AD = false;
 
 function App() {
+  // Portrait everywhere in the app by default -- app.config.js's own `orientation` had to move
+  // from a hard "portrait" to "default" so the AI Detection screen can rotate at all (see its
+  // own comment), which means the native layer alone no longer keeps every OTHER screen locked
+  // to portrait -- this JS-side lock is what does that now. VehicleDetectionScreen unlocks on
+  // its own mount and re-locks back to this on unmount, so this effect only ever needs to run
+  // once here, not on every screen change.
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

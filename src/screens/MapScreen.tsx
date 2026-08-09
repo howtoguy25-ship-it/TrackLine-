@@ -2876,7 +2876,17 @@ export function MapScreen() {
           native capture calls, especially colliding with a facing switch). Gating the child on
           `detectionOpen` too means Close now genuinely unmounts it -- camera session torn down,
           interval cleared, no work left running once the modal is gone. */}
-      <Modal visible={detectionOpen} animationType="slide" onRequestClose={() => setDetectionOpen(false)}>
+      <Modal
+        visible={detectionOpen}
+        animationType="slide"
+        onRequestClose={() => setDetectionOpen(false)}
+        // iOS-only, defaults to just ["portrait"] when omitted -- real, confirmed gotcha: without
+        // this, the Modal itself would refuse to rotate no matter what VehicleDetectionScreen's
+        // own expo-screen-orientation unlock does, since the Modal's own native presentation
+        // controller is what ultimately decides what orientations it'll actually allow while
+        // visible. Landscape add-on only -- every other screen's Modal usage is untouched.
+        supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]}
+      >
         {detectionOpen && (
           <VehicleDetectionErrorBoundary onClose={() => setDetectionOpen(false)}>
             <VehicleDetectionScreen onClose={() => setDetectionOpen(false)} isNavigating={!!route} />

@@ -22,7 +22,13 @@ module.exports = {
     // Bumped from 1.0.0 now that REV checks + real IAP monetization landed -- a genuine feature
     // milestone, not just an internal TestFlight build tick.
     version: "1.1.0",
-    orientation: "portrait",
+    // "default" (was "portrait") -- a portrait-only native Info.plist blocks ANY runtime
+    // rotation regardless of JS calls, no matter what expo-screen-orientation does. The app
+    // itself still only ever JS-locks to portrait everywhere except the AI Detection screen
+    // (see App.tsx's own lockAsync(PORTRAIT_UP) on mount, and VehicleDetectionScreen's own
+    // unlockAsync while it's open) -- this just gives the native layer permission to allow
+    // that one screen's rotation at all.
+    orientation: "default",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
     assetBundlePatterns: ["**/*"],
