@@ -5,8 +5,8 @@
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
@@ -53,6 +53,7 @@
     "firebase": "^12.16.0",
     "gtfs-realtime-bindings": "^2.2.0",
     "jpeg-js": "^0.4.4",
+    "live-activity": "file:./modules/liveActivity",
     "map3d": "file:./modules/map3d",
     "react": "19.2.3",
     "react-native": "0.86.0",
@@ -75,6 +76,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
+    "@bacons/apple-targets": "^5.0.0",
     "@types/react": "~19.2.4",
     "babel-plugin-module-resolver": "^5.0.2",
     "dotenv": "^16.4.5",

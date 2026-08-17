@@ -38,7 +38,14 @@ module.exports = {
       // separate set of iPad screenshots for a form factor the app isn't really designed for.
       supportsTablet: false,
       bundleIdentifier: "com.trackline.navigate",
+      // Required by @bacons/apple-targets (see the targets/liveActivity plugin below) to
+      // resolve code signing for the new widget-extension target during prebuild/EAS Build.
+      appleTeamId: "9C85Z8Z8BD",
       infoPlist: {
+        // Real, required Info.plist key for Live Activities -- per Apple's own docs, without
+        // this on the MAIN app's Info.plist (not the widget extension's), Activity.request()
+        // silently fails to start anything at all, no error surfaced anywhere.
+        NSSupportsLiveActivities: true,
         NSLocationWhenInUseUsageDescription:
           "TrackLine uses your location to show your position on the map and provide turn-by-turn navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
@@ -160,6 +167,11 @@ module.exports = {
         },
       ],
       "./modules/map3d/plugin/withGoogleMaps3DSignatureFix.js",
+      // Generates the real iOS widget-extension target (targets/liveActivity) that hosts
+      // TrackLine's background navigation Live Activity -- see that target's own
+      // expo-target.config.js and modules/liveActivity for the real ActivityKit code this
+      // wires in. No-op on Android (there's no Android build here to affect).
+      "@bacons/apple-targets",
       "expo-apple-authentication",
       ...googleSigninPlugins,
       // Only uploads debug symbols/source maps during EAS builds once org/project/authToken

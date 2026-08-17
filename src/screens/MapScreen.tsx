@@ -87,6 +87,7 @@ import { containsBlockedLanguage, clampToWordLimit, MAX_ALERT_COMMENT_WORDS } fr
 import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmTrafficData } from "@/services/osmTrafficData";
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
 import { setNavigationActive } from "@/services/navState";
+import { startLiveActivity, updateLiveActivity, endLiveActivity, maneuverToSfSymbol } from "live-activity";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
 import type { AlertDoc, AlertType } from "@/types/alert";
@@ -1593,6 +1594,22 @@ export function MapScreen() {
     setAcceptedSuggestionOriginalRoute(null);
     setDestinationLatLng(pendingDestination.location);
     navStartedAtRef.current = Date.now();
+    // Real native Live Activity (see modules/liveActivity) -- starts the moment a trip actually
+    // begins, per explicit request to keep navigating visible on the Lock Screen/Dynamic Island
+    // once the driver leaves the app. iOS-only and a safe no-op everywhere else (Android, an
+    // unsupported OS version, or the user has Live Activities off in Settings) -- see the
+    // module's own isSupported()/try-catch guards. The first real content follows a moment later
+    // from the guidance effect below, once activeStep/etaText are actually available for this
+    // fresh route; this call only needs a destination name and a placeholder first line.
+    startLiveActivity(pendingDestination.name, {
+      instruction: chosen.steps[0]?.instruction ?? "Starting navigation",
+      maneuverSymbol: maneuverToSfSymbol(chosen.steps[0]?.maneuver),
+      distanceText: chosen.distanceText,
+      etaText: chosen.etaInTrafficText ?? chosen.etaText,
+      roadName: "",
+      currentSpeedKmh: null,
+      speedLimitKmh: null,
+    });
     setFollowTilt(true);
     mapRef.current?.fitToCoordinates(chosen.polyline, {
       edgePadding: { top: 120, right: 60, bottom: 120, left: 60 },
@@ -1647,6 +1664,10 @@ export function MapScreen() {
     setStopLocation(null);
     setDestinationLatLng(null);
     setAcceptedSuggestionOriginalRoute(null);
+    // Ends the real native Live Activity started in confirmRoute -- fire-and-forget, same
+    // reasoning as endLiveShare below (nothing useful to block exit on; a safe no-op on
+    // Android/unsupported iOS versions/no activity currently running).
+    endLiveActivity();
     // Per explicit user answer ("Until navigation ends"), a share started this trip stops
     // updating right here -- fire-and-forget since there's nothing useful to block exit on.
     if (liveShareIdRef.current) {
@@ -1943,6 +1964,36 @@ export function MapScreen() {
     () => (route ? formatArrivalClock(Date.now() + remainingDurationSeconds * 1000) : ""),
     [route, remainingDurationSeconds]
   );
+
+  // Keeps the real native Live Activity (Lock Screen/Dynamic Island, started in confirmRoute)
+  // showing genuinely current data -- immediately whenever the active turn actually changes
+  // (activeStepIndex), and otherwise on a plain 15s tick while a trip is live, same throttling
+  // idea as the AI Detection screen's own side-capture loop: real live data, but not hammering
+  // a system API on every single GPS tick. All values read fresh at call time (useCallback with
+  // no stale-closure risk since every dependency below is itself already live render state).
+  const pushLiveActivityUpdate = useCallback(() => {
+    if (!route) return;
+    const step = route.steps[activeStepIndex];
+    updateLiveActivity({
+      instruction: step?.instruction ?? "Continue on route",
+      maneuverSymbol: maneuverToSfSymbol(step?.maneuver),
+      distanceText: `${(remainingDistanceMeters / 1000).toFixed(1)} km`,
+      etaText: route.etaInTrafficText ?? route.etaText,
+      roadName: currentRoadName ?? "",
+      currentSpeedKmh: currentSpeedKmh !== null ? Math.round(currentSpeedKmh) : null,
+      speedLimitKmh,
+    });
+  }, [route, activeStepIndex, remainingDistanceMeters, currentRoadName, currentSpeedKmh, speedLimitKmh]);
+
+  useEffect(() => {
+    if (!route) return;
+    pushLiveActivityUpdate();
+    const interval = setInterval(pushLiveActivityUpdate, 15000);
+    return () => clearInterval(interval);
+    // Deliberately re-runs (firing an immediate update + resetting the 15s tick) on every
+    // activeStepIndex change -- a fresh turn instruction reaching the Lock Screen right away
+    // matters more here than the interval staying perfectly aligned.
+  }, [route, activeStepIndex, pushLiveActivityUpdate]);
 
   // Real live-tracking link: the first tap creates a liveShares Firestore doc and a periodic
   // effect (below) keeps it updated with position/ETA every REFRESH_MS while navigating; a
