@@ -42,6 +42,8 @@ import { AlertDetailSheet } from "@/screens/AlertDetailSheet";
 import { PlaceInfoSheet } from "@/screens/PlaceInfoSheet";
 import { OsmMarkerSheet, type OsmMarkerKind } from "@/screens/OsmMarkerSheet";
 import { LiveCameraSheet } from "@/screens/LiveCameraSheet";
+import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
+import { HotelsSheet } from "@/screens/HotelsSheet";
 import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 import {
   getDirections,
@@ -161,6 +163,8 @@ export function MapScreen() {
   const placeInfoSheetRef = useRef<BottomSheet>(null);
   const osmMarkerSheetRef = useRef<BottomSheet>(null);
   const liveCameraSheetRef = useRef<BottomSheet>(null);
+  const restaurantsSheetRef = useRef<BottomSheet>(null);
+  const hotelsSheetRef = useRef<BottomSheet>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
 
@@ -190,6 +194,17 @@ export function MapScreen() {
   // is a reasonable fallback for the one frame before the first real measurement lands.
   const [bottomBarHeight, setBottomBarHeight] = useState(76);
   const guidanceRef = useRef(createGuidanceState());
+  // Real, confirmed cause of the reported "volume glitching while adjusting it during
+  // navigation": the guidance-advancement effect below used to list voiceVolume as a dependency
+  // just so its own speak() call could read the current value -- meaning every single tick of
+  // dragging the in-app volume slider (many times a second) re-ran the ENTIRE guidance
+  // evaluation (evaluateGuidance, which mutates guidanceRef's own shared state) even though the
+  // driver's position hadn't changed at all. That's a lot of redundant native TTS-adjacent work
+  // firing in a tight loop exactly while the slider is being dragged. A ref instead of a
+  // dependency lets speak() still read the live volume without the effect needing to re-run
+  // (and re-touch guidance state) just because volume changed.
+  const voiceVolumeRef = useRef(voiceVolume);
+  voiceVolumeRef.current = voiceVolume;
   // True only while a fresh route is actively being fetched after drifting off the current one
   // -- drives the small "Rerouting..." banner below.
   const [rerouting, setRerouting] = useState(false);
@@ -267,6 +282,8 @@ export function MapScreen() {
   const [osmMarkerSheetOpen, setOsmMarkerSheetOpen] = useState(false);
   const [liveCameraSheetOpen, setLiveCameraSheetOpen] = useState(false);
   const [navOptionsSheetOpen, setNavOptionsSheetOpen] = useState(false);
+  const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
+  const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const anySheetOpen =
     reportSheetOpen ||
     detailSheetOpen ||
@@ -274,7 +291,9 @@ export function MapScreen() {
     osmMarkerSheetOpen ||
     liveCameraSheetOpen ||
     directionsSheetOpen ||
-    navOptionsSheetOpen;
+    navOptionsSheetOpen ||
+    restaurantsSheetOpen ||
+    hotelsSheetOpen;
   const [alertPlacementLatLng, setAlertPlacementLatLng] = useState<LatLng | null>(null);
   // Real, confirmed cause of alerts appearing twice: confirmAlertPlacement is async
   // (reportAlert is a real Firestore write), and nothing previously stopped a second tap on
@@ -844,9 +863,9 @@ export function MapScreen() {
     );
     if (nextIndex !== activeStepIndex) setActiveStepIndex(nextIndex);
     if (stepToSpeak && voiceEnabled) {
-      speak(stepToSpeak.instruction, voiceVolume);
+      speak(stepToSpeak.instruction, voiceVolumeRef.current);
     }
-  }, [currentLatLng, route, voiceEnabled, voiceVolume, activeStepIndex]);
+  }, [currentLatLng, route, voiceEnabled, activeStepIndex]);
 
   // Real, automatic reroute -- previously guidance (above) only ever advanced *forward* through
   // the existing route's own steps; if a turn/exit was missed entirely, the current step's end
@@ -2370,6 +2389,8 @@ export function MapScreen() {
           onDestinationSelected={onDestinationSelected}
           onFindNearestStation={onFindNearestStation}
           findingNearestStation={findingNearestStation}
+          onFindRestaurants={() => restaurantsSheetRef.current?.expand()}
+          onFindHotels={() => hotelsSheetRef.current?.expand()}
           originLabel={routeOriginLabel}
           onPressOrigin={() => setPickingOrigin(true)}
         />
@@ -2998,6 +3019,24 @@ export function MapScreen() {
         camera={selectedLiveCamera}
         onClose={() => liveCameraSheetRef.current?.close()}
         onSheetChange={(index) => setLiveCameraSheetOpen(index >= 0)}
+      />
+      <RestaurantsSheet
+        ref={restaurantsSheetRef}
+        location={currentLatLng}
+        onSelect={(place) => {
+          restaurantsSheetRef.current?.close();
+          onDestinationSelected(place);
+        }}
+        onSheetChange={(index) => setRestaurantsSheetOpen(index >= 0)}
+      />
+      <HotelsSheet
+        ref={hotelsSheetRef}
+        location={currentLatLng}
+        onSelect={(place) => {
+          hotelsSheetRef.current?.close();
+          onDestinationSelected(place);
+        }}
+        onSheetChange={(index) => setHotelsSheetOpen(index >= 0)}
       />
       <RouteDirectionsSheet
         ref={directionsSheetRef}

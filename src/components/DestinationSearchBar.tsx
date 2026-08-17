@@ -40,6 +40,12 @@ interface Props {
   // secondary "add a stop"/mid-nav search bars, where it wouldn't make sense.
   onFindNearestStation?: () => void;
   findingNearestStation?: boolean;
+  // Same idea/gating as onFindNearestStation above -- opens RestaurantsSheet instead of routing
+  // anywhere directly, since picking a restaurant is its own real list (rating, price, distance)
+  // rather than a single "closest one" shortcut.
+  onFindRestaurants?: () => void;
+  // Same again, opens HotelsSheet.
+  onFindHotels?: () => void;
   // "My Location" row at the top of the idle dropdown, Apple/Google-Maps-style -- only passed
   // where picking the device's own live position as the result makes real sense (the "choose
   // starting point" bar). See MY_LOCATION_PLACE_ID above for how the caller tells it apart from
@@ -64,6 +70,8 @@ export function DestinationSearchBar({
   onCancel,
   onFindNearestStation,
   findingNearestStation,
+  onFindRestaurants,
+  onFindHotels,
   showMyLocation,
   myLocationAddress,
   originLabel,
@@ -197,6 +205,8 @@ export function DestinationSearchBar({
 
   const showHistory = historyVisible && !query.trim() && predictions.length === 0 && history.length > 0;
   const showQuickActions = historyVisible && !query.trim() && predictions.length === 0 && !!onFindNearestStation;
+  const showRestaurantsAction = historyVisible && !query.trim() && predictions.length === 0 && !!onFindRestaurants;
+  const showHotelsAction = historyVisible && !query.trim() && predictions.length === 0 && !!onFindHotels;
   const showMyLocationRow =
     historyVisible && !query.trim() && predictions.length === 0 && !!showMyLocation && !!biasLocation;
   const visibleHistory = historyExpanded ? history : history.slice(0, COLLAPSED_HISTORY_COUNT);
@@ -289,6 +299,24 @@ export function DestinationSearchBar({
             <Text style={styles.quickActionText}>
               {findingNearestStation ? "Finding nearest station…" : "Nearest train/bus station"}
             </Text>
+          </Pressable>
+        )}
+        {showRestaurantsAction && (
+          <Pressable
+            style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
+            onPress={onFindRestaurants}
+          >
+            <Ionicons name="restaurant-outline" size={18} color={colors.accent} />
+            <Text style={styles.quickActionText}>Restaurants nearby</Text>
+          </Pressable>
+        )}
+        {showHotelsAction && (
+          <Pressable
+            style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
+            onPress={onFindHotels}
+          >
+            <Ionicons name="bed-outline" size={18} color={colors.accent} />
+            <Text style={styles.quickActionText}>Hotels nearby</Text>
           </Pressable>
         )}
         {predictions.length > 0 && (

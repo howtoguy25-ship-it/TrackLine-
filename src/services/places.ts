@@ -248,6 +248,129 @@ export async function reverseGeocode(location: LatLng): Promise<string | null> {
   return best?.formatted_address ?? null;
 }
 
+export interface NearbyPlace {
+  placeId: string;
+  name: string;
+  vicinity: string;
+  location: LatLng;
+  rating?: number;
+  userRatingsTotal?: number;
+  // Google's own 0-4 scale ($ to $$$$) -- undefined means Google itself has no price data for
+  // this place, never guessed/defaulted to a specific level.
+  priceLevel?: number;
+  openNow?: boolean;
+  // A real, directly-usable Google Places Photo API URL (this app's own API key already
+  // embedded), or null when Google has no photo for this place -- never a placeholder image.
+  photoUrl: string | null;
+  distanceMeters: number;
+}
+
+function nearbyPlacePhotoUrl(photoReference: string | undefined): string | null {
+  if (!photoReference) return null;
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=480&photo_reference=${photoReference}&key=${env.googlePlacesApiKey}`;
+}
+
+// Real distance (haversine), not Google's own ranking order -- Nearby Search's `rankby=distance`
+// mode already sorts by this, but the app still needs the actual meters figure to show/format
+// per result, which Google's response doesn't include directly.
+function haversineMeters(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Real nearby food search -- `type=restaurant` covers Google's own broad food-venue category
+// (cafes, dessert bars, and fast food all commonly get tagged under it alongside sit-down
+// restaurants), ranked genuinely closest-first via rankby=distance (same reasoning as
+// findNearestPlace above for why that needs a type/keyword, not a bare radius search). Fetched
+// ONCE per screen open -- the search bar's own live, letter-by-letter filtering happens
+// client-side against this real result set (see RestaurantsSheet), not a fresh API call per
+// keystroke.
+export async function searchNearbyRestaurants(location: LatLng): Promise<NearbyPlace[]> {
+  const params = new URLSearchParams({
+    location: `${location.latitude},${location.longitude}`,
+    rankby: "distance",
+    type: "restaurant",
+    key: env.googlePlacesApiKey,
+  });
+
+  const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
+  const json = await res.json();
+
+  if (json.status === "ZERO_RESULTS") return [];
+  if (json.status !== "OK") {
+    Sentry.logger.error("places: nearby restaurants request failed", {
+      status: json.status,
+      errorMessage: json.error_message,
+    });
+    throw new PlacesApiError(json.status, json.error_message);
+  }
+
+  return (json.results ?? []).map((r: any) => {
+    const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
+    return {
+      placeId: r.place_id,
+      name: r.name,
+      vicinity: r.vicinity ?? "",
+      location: placeLocation,
+      rating: r.rating,
+      userRatingsTotal: r.user_ratings_total,
+      priceLevel: r.price_level,
+      openNow: r.opening_hours?.open_now,
+      photoUrl: nearbyPlacePhotoUrl(r.photos?.[0]?.photo_reference),
+      distanceMeters: haversineMeters(location, placeLocation),
+    };
+  });
+}
+
+// Same shape/reasoning as searchNearbyRestaurants above, `type=lodging` instead -- Google's own
+// catch-all for hotels/motels/B&Bs. Real names, real photos, real ratings, real price LEVEL
+// (Google's own 0-4 $-to-$$$$ scale) -- what this does NOT and cannot provide is a live
+// per-night price or a bookable checkout link, since Google Places has no such data; that needs
+// a real hotel-booking API relationship (Booking.com/Expedia/etc.), a business decision, not
+// something this function can fabricate. See HotelsSheet's own comment for how it presents that
+// gap honestly instead of inventing a price.
+export async function searchNearbyHotels(location: LatLng): Promise<NearbyPlace[]> {
+  const params = new URLSearchParams({
+    location: `${location.latitude},${location.longitude}`,
+    rankby: "distance",
+    type: "lodging",
+    key: env.googlePlacesApiKey,
+  });
+
+  const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
+  const json = await res.json();
+
+  if (json.status === "ZERO_RESULTS") return [];
+  if (json.status !== "OK") {
+    Sentry.logger.error("places: nearby hotels request failed", {
+      status: json.status,
+      errorMessage: json.error_message,
+    });
+    throw new PlacesApiError(json.status, json.error_message);
+  }
+
+  return (json.results ?? []).map((r: any) => {
+    const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
+    return {
+      placeId: r.place_id,
+      name: r.name,
+      vicinity: r.vicinity ?? "",
+      location: placeLocation,
+      rating: r.rating,
+      userRatingsTotal: r.user_ratings_total,
+      priceLevel: r.price_level,
+      openNow: r.opening_hours?.open_now,
+      photoUrl: nearbyPlacePhotoUrl(r.photos?.[0]?.photo_reference),
+      distanceMeters: haversineMeters(location, placeLocation),
+    };
+  });
+}
+
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
   const params = new URLSearchParams({
     place_id: placeId,

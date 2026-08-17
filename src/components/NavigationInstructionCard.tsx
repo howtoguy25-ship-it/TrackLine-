@@ -151,14 +151,15 @@ export function NavigationInstructionCard({
               <Ionicons name={icon} size={collapsed ? 22 : 30} color={theme.iconColor} />
             </View>
             <View style={{ flex: 1 }}>
-              {/* No line cap when expanded -- a capped numberOfLines was cutting long instructions
-                  (e.g. "Head east on Old Kent Rd towards ...") off mid-word with "...", hiding the
-                  actual road name a driver needs to read. onHeightChange already reports this
-                  card's real rendered height to callers below it, so letting the text grow to
-                  however many lines it actually needs is safe -- nothing here assumes a fixed
-                  height anymore. Collapsed still caps to 1 line by design (that's the whole point
-                  of collapsing). */}
-              <Text style={[styles.instruction, { color: theme.text }, textShadow]} numberOfLines={collapsed ? 1 : undefined}>
+              {/* No line cap at all, collapsed or not -- a capped numberOfLines was cutting long
+                  instructions (e.g. "Head east on Old Kent Rd towards ...") off mid-word with
+                  "...", hiding the actual road name a driver needs to read. This used to still
+                  cap to 1 line while collapsed (by design, to keep that state compact), but per
+                  explicit request the full instruction must always be readable with nothing cut
+                  off, even collapsed -- onHeightChange already reports this card's real rendered
+                  height to callers below it, so letting the text grow to however many lines it
+                  actually needs (rare for the collapsed case in practice) is safe. */}
+              <Text style={[styles.instruction, { color: theme.text }, textShadow]}>
                 {step.instruction}
               </Text>
               {!collapsed && (

@@ -249,6 +249,14 @@ export const ROUTE_PROFILE_LABELS: Record<RouteProfileKey, string> = {
 // itself is willing to route through.
 const SAFEST_OPTIONS: DirectionsOptions = { avoidTolls: true };
 
+// Same physical road path, not just similar -- two genuinely different real routes between the
+// same two points essentially never coincidentally match both distance and duration this
+// closely. Cheaper and more robust than comparing polyline point-by-point (which can differ by
+// float noise even for what's really the same route Google just re-encoded slightly).
+function isSameRoute(a: Route, b: Route): boolean {
+  return Math.abs(a.distanceMeters - b.distanceMeters) < 20 && Math.abs(a.durationSeconds - b.durationSeconds) < 15;
+}
+
 /** Fetches all 3 route profiles in parallel for the route-choice picker. Each is a real,
  *  independently-fetched Google Directions result (not one call's `alternatives` alone for
  *  normal/safest) so "safest" can ask for a specific character (tolls-free) that a plain
@@ -262,18 +270,32 @@ const SAFEST_OPTIONS: DirectionsOptions = { avoidTolls: true };
  *  three traffic-aware, "fastest" is then computed as the genuine minimum across every
  *  candidate seen (the alternatives pool *and* normal's and safest's own routes) -- so it's
  *  provably never slower than what's shown as Normal or Safest, guaranteed by construction
- *  rather than by hoping the alternatives search happened to include the quickest option. */
+ *  rather than by hoping the alternatives search happened to include the quickest option.
+ *
+ *  Real, confirmed complaint this last part fixes: for a short trip with no tolls on Google's
+ *  own default path, "safest" (avoidTolls) and "fastest" (the genuine minimum, which is often
+ *  just "normal" itself) both silently collapsed to the exact same route as "normal" -- all
+ *  three showing identical time/distance/path, reading as broken rather than "these truly are
+ *  the same." fastest is NEVER swapped for a different route here -- it must stay genuinely the
+ *  fastest, full stop. safest, if it lands on the identical path to normal, instead falls back
+ *  to the first genuinely different real alternative Google itself already offered (from the
+ *  same alternatives search fastest's own candidates come from) -- still a real, Google-vetted
+ *  drivable road, just one that's actually a distinct option to look at, rather than pretending
+ *  the exact same path is a meaningfully different "safest" choice. */
 export async function getRouteOptions(
   origin: LatLng,
   destination: LatLng,
   waypoint?: LatLng
 ): Promise<Record<RouteProfileKey, Route>> {
-  const [normal, safest, fastestCandidates] = await Promise.all([
+  const [normal, safestRaw, fastestCandidates] = await Promise.all([
     getDirections(origin, destination, { waypoint, useTraffic: true }),
     getDirections(origin, destination, { ...SAFEST_OPTIONS, waypoint, useTraffic: true }),
     getFastestRouteCandidates(origin, destination, waypoint),
   ]);
-  const fastest = [normal, safest, ...fastestCandidates].reduce(fasterOf);
+  const fastest = [normal, safestRaw, ...fastestCandidates].reduce(fasterOf);
+  const safest = isSameRoute(safestRaw, normal)
+    ? (fastestCandidates.find((c) => !isSameRoute(c, normal)) ?? safestRaw)
+    : safestRaw;
   return { normal, fastest, safest };
 }
 
