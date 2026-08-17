@@ -1282,7 +1282,12 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                   const isSaved = savedTrackIds.has(box.id);
                   return (
                     <View
-                      pointerEvents="none"
+                      // "box-none" (not "none") -- per explicit request that a confirmed plate
+                      // "automatically displays it and users can have option to revcheck" right
+                      // there, not only after first tapping the vehicle box to open the detail
+                      // panel below. The frame/label themselves still pass touches through (no
+                      // onPress of their own), only the new Rev Check pill actually captures one.
+                      pointerEvents="box-none"
                       style={[
                         styles.plateFrame,
                         { left: plateLeftPx, top: plateTopPx, width: plateWidthPx, height: plateHeightPx },
@@ -1294,11 +1299,42 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                           styles.plateFrameLabelWrap,
                           { left: plateLabelLeftPx, top: plateLabelAbove ? -26 : 6 },
                         ]}
+                        pointerEvents="none"
                       >
                         <Text style={styles.plateFrameLabelText} numberOfLines={1}>
                           {plateInfo.text}
                         </Text>
                       </View>
+                      {/* Every plateInfo here is already a CONFIRMED read (plateTexts only ever
+                          holds one after PLATE_CONFIRM_COUNT -- see captureForPlateAndLightbar's
+                          own comment), so this never needs a disabled/"waiting" state the way the
+                          detail panel's own Rev Check button below does. Same destination/params
+                          as that button, just reachable in one tap straight off the live plate
+                          instead of needing to select the box first. */}
+                      <Pressable
+                        onPress={() =>
+                          navigation.navigate("RevCheck", {
+                            plate: plateInfo.text,
+                            vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
+                            speedKmh: box.state === "parked" ? 0 : box.speedKmh,
+                            speedKind: box.state === "parked" ? "absolute" : box.speedKind,
+                          })
+                        }
+                        hitSlop={8}
+                        style={({ pressed }) => [
+                          styles.plateRevCheckPill,
+                          // Always anchored off the frame's own bottom edge -- the label above
+                          // sits near the TOP of the frame either way it's positioned (see
+                          // plateLabelAbove's own comment), so the bottom stays clear regardless.
+                          // Same left clamp as the label above, so it never renders off-screen
+                          // when the frame itself is partly off the left edge.
+                          { top: plateHeightPx + 6, left: plateLabelLeftPx },
+                          pressed && { opacity: pressedOpacity },
+                        ]}
+                      >
+                        <Ionicons name="search" size={10} color="#FFFFFF" />
+                        <Text style={styles.plateRevCheckPillText}>Rev Check</Text>
+                      </Pressable>
                       {isSaved && (
                         <View style={styles.savedBadge} pointerEvents="none">
                           <View style={styles.savedBadgeInner}>
@@ -1671,13 +1707,34 @@ const styles = StyleSheet.create({
   },
   savedBadge: {
     position: "absolute",
-    bottom: -20,
+    // Pushed further down (was -20) to sit clear below the new plateRevCheckPill row, which now
+    // occupies the space just under the plate frame -- see that style's own top offset.
+    bottom: -44,
     left: 0,
     right: 0,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 3,
+  },
+  plateRevCheckPill: {
+    position: "absolute",
+    // No left:0/right:0 -- this is a real, content-sized pill (like plateFrameLabelWrap's own
+    // Text above it), not a full-width bar, so it doesn't stretch to an oddly wide blue strip
+    // under a narrow plate frame. `left` is supplied inline at the call site (the same
+    // plateLabelLeftPx clamp the label above already uses).
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#2563EB",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  plateRevCheckPillText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
   savedBadgeInner: {
     flexDirection: "row",
