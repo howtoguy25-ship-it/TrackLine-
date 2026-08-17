@@ -8,12 +8,12 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": { "image": "latest" },
-      "cache": { "key": "cocoapods-trunk-v1", "paths": ["~/.cocoapods"] }
+      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
     },
     "preview": {
       "distribution": "internal",
       "ios": { "image": "latest" },
-      "cache": { "key": "cocoapods-trunk-v1", "paths": ["~/.cocoapods"] }
+      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
     },
     "production": {
       "autoIncrement": true,
@@ -21,12 +21,12 @@
       "env": {
         "RCT_USE_PREBUILT_RNCORE": "0"
       },
-      "cache": { "key": "cocoapods-trunk-v1", "paths": ["~/.cocoapods"] }
+      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
     },
     "productionDebug": {
       "autoIncrement": true,
       "ios": { "image": "latest", "buildConfiguration": "Debug" },
-      "cache": { "key": "cocoapods-trunk-v1", "paths": ["~/.cocoapods"] }
+      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
     }
   },
   "submit": {
