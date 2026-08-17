@@ -154,20 +154,18 @@ function suppressOverlappingDetections(detections: RawDetection[]): RawDetection
   return kept;
 }
 
-// Four corner brackets instead of a plain solid rectangle -- reads as a real targeting
-// lock (the same visual language as a camera's autofocus/tracking reticle) rather than a
-// generic selection outline, per explicit request for the box to look "professionally
-// placed/locked." Purely cosmetic on top of the same real bbox math below -- the actual
-// detected region a bracket set outlines is unchanged.
+// Plain thin rectangle outline, per explicit request matching a real reference screenshot of
+// the exact look wanted -- a clean, tight box hugging the vehicle's own visible silhouette, not
+// the four-corner-bracket "camera focus reticle" style this used to be (that was itself an
+// earlier explicit request, since superseded by this one). Kept as its own named component
+// (not inlined at each call site) since it's still shared by both the vehicle box and the plate
+// frame below, just simplified to a single bordered rect instead of four separate corner pieces.
 function TargetCorners({ width, height, color }: { width: number; height: number; color: string }) {
-  const len = Math.max(10, Math.min(22, Math.min(width, height) * 0.3));
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={[styles.corner, styles.cornerTL, { width: len, height: len, borderColor: color }]} />
-      <View style={[styles.corner, styles.cornerTR, { width: len, height: len, borderColor: color }]} />
-      <View style={[styles.corner, styles.cornerBL, { width: len, height: len, borderColor: color }]} />
-      <View style={[styles.corner, styles.cornerBR, { width: len, height: len, borderColor: color }]} />
-    </View>
+    <View
+      pointerEvents="none"
+      style={[styles.targetRect, { width, height, borderColor: color }]}
+    />
   );
 }
 
@@ -1149,7 +1147,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                 hitSlop={16}
                 style={[
                   styles.box,
-                  isEmergency && styles.boxEmergency,
+                  // Emergency coloring is carried entirely by lockColor (fed into targetRect
+                  // below) now that box itself has no border of its own to separately color.
                   isSelected && styles.boxSelected,
                   {
                     left: boxLeftPx,
@@ -1169,13 +1168,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                 >
                   {isEmergency ? `${box.label} — lights active` : `${box.label} ${Math.round(box.score * 100)}%`}
                 </Text>
-                {/* Top-center, just outside the box edge -- separate from the type/
-                    confidence label at top-left so it never overlaps, and updates live every
-                    frame the tracker emits a speed (at the Frame Processor's own detection
-                    cadence, see FRAME_PROCESSOR_THROTTLE_MS above). */}
+                {/* Bottom-center, just outside the box's own bottom edge -- per explicit
+                    request matching a real reference screenshot (speed as small live text
+                    under the vehicle, not layered inside/above the box with the type/
+                    confidence label). Never a guessed number -- this is the exact same live
+                    speedLabel value the tracker just computed for this frame, same as before
+                    this only moved where it renders. */}
                 {speedLabel && (
                   <View
-                    style={[styles.speedLabelWrap, { top: labelAboveBox ? -24 : 6 }]}
+                    style={[styles.speedLabelWrap, { top: boxHeightPx + 6 }]}
                     pointerEvents="none"
                   >
                     {/* Every tracked vehicle renders its own independent badge here -- state
@@ -1525,26 +1526,24 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
     marginTop: 8,
   },
+  // No border of its own -- targetRect (rendered as this box's child) is the single, correctly
+  // colored outline now, matching the plain thin rectangle in the reference screenshots. This
+  // used to also carry its own faint static border (from the old four-corner-bracket look,
+  // which needed a separate "always visible" outline connecting the brackets) -- redundant now
+  // that targetRect is a full rectangle already, and it fought with targetRect's own sharper
+  // corners at the edges.
   box: {
     position: "absolute",
-    borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.35)",
-    // Rounded lock outline (a "rounded square," per explicit request) instead of a sharp
-    // rectangle -- the corner brackets below are rounded to match (borderTopLeftRadius etc.)
-    // so they read as one continuous rounded lock frame around the vehicle, not brackets
-    // floating over a square edge.
-    borderRadius: 14,
   },
-  corner: {
+  // Thin, tight rectangle -- see TargetCorners' own comment for why this replaced the old
+  // four-corner-bracket style. 1.5px keeps it reading as a clean tracking outline, not a bulky
+  // block that eats into the vehicle it's supposed to be hugging.
+  targetRect: {
     position: "absolute",
-    borderColor: "#F59E0B",
-  },
-  cornerTL: { top: -1, left: -1, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 12 },
-  cornerTR: { top: -1, right: -1, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 12 },
-  cornerBL: { bottom: -1, left: -1, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 12 },
-  cornerBR: { bottom: -1, right: -1, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 12 },
-  boxEmergency: {
-    borderColor: "#DC2626",
+    top: 0,
+    left: 0,
+    borderWidth: 1.5,
+    borderRadius: 2,
   },
   boxSelected: {
     borderColor: "#22D3EE",
@@ -1581,7 +1580,9 @@ const styles = StyleSheet.create({
   },
   speedLabelWrap: {
     position: "absolute",
-    top: -22,
+    // top always supplied inline at the call site (boxHeightPx + gap, so it sits just under
+    // the box regardless of that box's own height) -- this is just a safe fallback.
+    top: 0,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -1607,11 +1608,10 @@ const styles = StyleSheet.create({
   },
   // Sized/positioned to the real estimated plate rectangle (see the render call site) -- an
   // exact frame around the actual plate, not a generic fixed-size badge floating near it.
+  // No border of its own -- same reasoning as the vehicle box above, targetRect (rendered as
+  // this frame's child) is the single rectangle outline around the plate now.
   plateFrame: {
     position: "absolute",
-    borderWidth: 2,
-    borderColor: "#22D3EE",
-    borderRadius: 3,
   },
   // On top of the plate's own target rectangle (not below it) -- reads as a real label
   // tagging the locked-on plate, per explicit request.
