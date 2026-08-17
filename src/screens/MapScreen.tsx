@@ -63,7 +63,13 @@ import {
   type PlaceDetails,
   type PlaceInfo,
 } from "@/services/places";
-import { distanceKm, bearingDegrees, distanceToPolylineMeters, pointAheadOnPolylineMeters } from "@/utils/geo";
+import {
+  distanceKm,
+  bearingDegrees,
+  distanceToPolylineMeters,
+  pointAheadOnPolylineMeters,
+  offsetLatLngByHeading,
+} from "@/utils/geo";
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance } from "@/services/navigationGuidance";
 import { speak, stopSpeaking } from "@/services/voice";
@@ -1662,6 +1668,29 @@ export function MapScreen() {
   // placingAlert is true; the pin view itself never moves, the map moves under it.
   const pendingAlertTypeRef = useRef<AlertType | null>(null);
 
+  // Real, confirmed complaint: an alert set while driving was landing exactly on the reporter's
+  // own live GPS fix -- which, by the time the type-picker tap and the sheet-close animation
+  // above have both happened, is already a couple of seconds (and, at highway speed, dozens of
+  // meters) behind where the actual hazard/camera/police car is relative to the direction of
+  // travel. Nudged forward along the driver's own current heading before the fixed center pin
+  // ever appears, so "Set" without touching the map at all lands the alert genuinely ahead on
+  // the road, not behind -- the real fix for "the set alert doesn't set in its direction placed".
+  // Only ever offsets using a real, current GPS-reported heading (location.coords.heading, not
+  // the derived-from-movement fallback `heading` used for the nav arrow elsewhere) -- that
+  // fallback defaults to 0/north the moment the driver hasn't moved yet, and offsetting toward a
+  // fabricated "north" would be worse than not offsetting at all. No real GPS heading yet (just
+  // opened the app, stationary, or no fix) -- falls back to the exact live coordinate, same as
+  // before this existed.
+  const ALERT_AHEAD_OFFSET_METERS = 25;
+  const initialAlertPlacement = useCallback(
+    (fallback: LatLng): LatLng => {
+      const gpsHeading = location?.coords.heading;
+      if (gpsHeading == null || gpsHeading < 0) return fallback;
+      return offsetLatLngByHeading(fallback.latitude, fallback.longitude, gpsHeading, ALERT_AHEAD_OFFSET_METERS);
+    },
+    [location]
+  );
+
   const openAlertTypePicker = useCallback(() => {
     reportSheetRef.current?.expand();
   }, []);
@@ -1684,7 +1713,7 @@ export function MapScreen() {
       if (!currentLatLng) return;
       pendingAlertTypeRef.current = type;
       reportSheetRef.current?.close();
-      setAlertPlacementLatLng(currentLatLng);
+      setAlertPlacementLatLng(initialAlertPlacement(currentLatLng));
       setPlacingAlert(true);
       // Snap the map to center on the current location so the fixed center pin starts exactly
       // where alertPlacementLatLng says it is, even if the user had panned away beforehand.
@@ -1693,7 +1722,7 @@ export function MapScreen() {
         300
       );
     },
-    [currentLatLng]
+    [currentLatLng, initialAlertPlacement]
   );
 
   // Optional `overrideLocation` -- the "Set at my location" button below passes the driver's
@@ -1746,13 +1775,15 @@ export function MapScreen() {
   }, [alertPlacementLatLng, user, settings.alertExpiryMs, alertComment]);
 
   // "Set at my location" -- per explicit request, a one-tap shortcut beside Cancel/Set that
-  // places AND immediately confirms the alert at the driver's own real live GPS position,
-  // without needing the fixed-center pin to already be panned there first. The normal "pan the
-  // map to place it anywhere" flow is untouched -- this is an addition, not a replacement.
+  // places AND immediately confirms the alert at the driver's own real live GPS position
+  // (nudged ahead along their real current heading -- see initialAlertPlacement's own comment,
+  // same reasoning applies here since this also skips the fixed-center pin entirely), without
+  // needing the fixed-center pin to already be panned there first. The normal "pan the map to
+  // place it anywhere" flow is untouched -- this is an addition, not a replacement.
   const confirmAlertPlacementAtMyLocation = useCallback(() => {
     if (!currentLatLng) return;
-    confirmAlertPlacement(currentLatLng);
-  }, [currentLatLng, confirmAlertPlacement]);
+    confirmAlertPlacement(initialAlertPlacement(currentLatLng));
+  }, [currentLatLng, confirmAlertPlacement, initialAlertPlacement]);
 
   const cancelAlertPlacement = useCallback(() => {
     pendingAlertTypeRef.current = null;
@@ -2044,14 +2075,24 @@ export function MapScreen() {
         onPanDrag={onMapPanDrag}
         onMapReady={() => setMapReady(true)}
       >
+        {/* Upgraded route line style, per explicit request -- a wider white "casing" line drawn
+            first (underneath), then the real colored route on top slightly narrower, the same
+            layered-outline look Google/Apple Maps use so the route reads as a single bold,
+            polished band against any map style/theme instead of a flat single-color stroke.
+            zIndex keeps the casing strictly below the colored line even though both are drawn
+            back-to-back here. */}
         {route && remainingPolyline.length > 1 && (
-          <Polyline
-            coordinates={remainingPolyline}
-            strokeWidth={8}
-            strokeColor="#2563EB"
-            tappable
-            onPress={enterOverviewMode}
-          />
+          <>
+            <Polyline coordinates={remainingPolyline} strokeWidth={14} strokeColor="#FFFFFF" zIndex={1} />
+            <Polyline
+              coordinates={remainingPolyline}
+              strokeWidth={9}
+              strokeColor="#2563EB"
+              tappable
+              onPress={enterOverviewMode}
+              zIndex={2}
+            />
+          </>
         )}
         {/* Real mid-trip add-a-stop preview, per explicit request: the route through the new
             stop draws in green, right alongside the still-live blue route above -- a genuine
@@ -2128,16 +2169,24 @@ export function MapScreen() {
           ROUTE_PROFILE_ORDER.map((key) => {
             const isSelected = key === selectedProfile;
             return (
-              <Polyline
-                key={key}
-                coordinates={routeOptions[key].polyline}
-                strokeWidth={isSelected ? 7 : 4}
-                strokeColor={isSelected ? "#DC2626" : "rgba(107, 114, 128, 0.55)"}
-                lineDashPattern={isSelected ? [10, 7] : undefined}
-                tappable
-                onPress={() => setSelectedProfile(key)}
-                zIndex={isSelected ? 2 : 1}
-              />
+              <React.Fragment key={key}>
+                {/* Same white-casing treatment as the committed route above, only for the
+                    currently-selected preview -- keeps the unselected two clearly secondary
+                    (thin, flat gray, no casing) while the highlighted one reads as the same bold,
+                    polished band the app now uses everywhere else a route is drawn. */}
+                {isSelected && (
+                  <Polyline coordinates={routeOptions[key].polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
+                )}
+                <Polyline
+                  coordinates={routeOptions[key].polyline}
+                  strokeWidth={isSelected ? 8 : 5}
+                  strokeColor={isSelected ? "#DC2626" : "rgba(107, 114, 128, 0.55)"}
+                  lineDashPattern={isSelected ? [10, 7] : undefined}
+                  tappable
+                  onPress={() => setSelectedProfile(key)}
+                  zIndex={isSelected ? 2 : 1}
+                />
+              </React.Fragment>
             );
           })}
         {/* Small floating ETA pill per route, per explicit request -- "clear enough to see,
@@ -2175,12 +2224,16 @@ export function MapScreen() {
             so picking Bike/Walk/Transit showed just the bare map with no line until Start was
             actually pressed. */}
         {modeRoute && !routeOptions && (
-          <Polyline
-            coordinates={modeRoute.polyline}
-            strokeWidth={7}
-            strokeColor="#DC2626"
-            lineDashPattern={[10, 7]}
-          />
+          <>
+            <Polyline coordinates={modeRoute.polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
+            <Polyline
+              coordinates={modeRoute.polyline}
+              strokeWidth={8}
+              strokeColor="#DC2626"
+              lineDashPattern={[10, 7]}
+              zIndex={2}
+            />
+          </>
         )}
         {/* Highlighted arrival spot -- the exact picked destination (not wherever the
             polyline decoder's last point happens to land), so it's obvious exactly which

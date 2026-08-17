@@ -47,15 +47,27 @@ import { Sentry } from "@/services/sentry";
 // never cleared the bar to start being tracked at all). Same real trade as before: a few more
 // false positives for meaningfully fewer real, partially-visible vehicles going undetected.
 const MIN_DETECTION_SCORE = 0.3;
+// Real, confirmed complaint (new screenshot evidence): boxes barely clearing MIN_DETECTION_SCORE
+// (a "Vehicle 30%" that's mostly roof/sky, a "Vehicle 33%" that's mostly trees) were being drawn
+// on screen looking like a broken/misfit box, even though tracking them internally at that low a
+// bar is still genuinely useful (keeps a partial vehicle's track alive through TRACK_GRACE_MS
+// once it does clear a real detection -- see MIN_DETECTION_SCORE's own comment). Separating "good
+// enough to track" from "good enough to actually draw" fixes the visible symptom without undoing
+// that earlier fix: a track can exist and keep its speed estimate warm below this bar, it just
+// doesn't render a box the user has to look at until the read is solid enough to trust the shape.
+const MIN_RENDER_SCORE = 0.45;
 // Real, confirmed complaint: a low-confidence detection box spanning almost the entire frame
 // (a misclassified shadow/road surface/dashboard reflection, not an actual close-up vehicle)
 // rendered as a giant box "covering the whole screen" instead of locking to the real car body.
 // A genuinely huge box IS possible at very close range (a phone mounted right next to traffic, or
 // a near-collision) -- so this doesn't reject big boxes outright, it just requires a much higher
 // score to accept one that large, same principle as MIN_DETECTION_SCORE but scaled to how much
-// of the frame the box claims to cover.
-const OVERSIZED_BOX_FRAME_FRACTION = 0.75;
-const MIN_SCORE_FOR_OVERSIZED_BOX = 0.65;
+// of the frame the box claims to cover. Tightened again after new screenshot evidence of a
+// "Heavy Vehicle 69%" box sprawled across two parked cars, a shed, and open sky -- a real
+// detection existed under there somewhere, but the box regression itself wasn't trustworthy at
+// that size/score combination, so both the size trigger and the score bar it has to clear went up.
+const OVERSIZED_BOX_FRAME_FRACTION = 0.6;
+const MIN_SCORE_FOR_OVERSIZED_BOX = 0.8;
 // Belt-and-suspenders on top of the score gate above -- caps how much of the screen the drawn
 // box is ever allowed to visually cover, applied at render time (see its call site). Catches the
 // same "box covering the whole screen" complaint even for a detection that did clear the score
@@ -940,28 +952,26 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     );
   }
 
-  // Landscape add-on only -- box.bbox/plateInfo.region are always in the Frame Processor's own
-  // UPRIGHT coordinate space (rotated there for the model's sake regardless of how the phone is
-  // physically held -- see that worklet's own comment, untouched by any of this). The native
-  // camera PREVIEW, though, shows the RAW sensor orientation, not that upright rotation -- while
-  // physically portrait the two happen to be the same space, which is exactly why this was never
-  // an issue before. Once physically landscape they're a 90-degree-rotated space apart, so boxes
-  // now need mapping into raw-space (via the same mapUprightBoxToRawPhoto already used for photo
-  // captures below) before they're scaled against the container, or they'd float in the wrong
-  // place relative to what's actually on screen. "portrait"/"portrait-upside-down" fall straight
-  // through unchanged -- isLandscapeFrame is false, displaySize is exactly photoSize, same as
-  // before this add-on existed.
-  const isLandscapeFrame =
-    rawFrameInfo?.orientation === "landscape-left" || rawFrameInfo?.orientation === "landscape-right";
-  const displaySize =
-    isLandscapeFrame && rawFrameInfo ? { width: rawFrameInfo.width, height: rawFrameInfo.height } : photoSize;
-
+  // CORRECTED from an earlier, wrong assumption this session: this used to remap box.bbox from
+  // the Frame Processor's UPRIGHT space into the RAW pre-rotation sensor space whenever
+  // physically landscape, on the theory that the native preview only ever shows the raw sensor
+  // orientation. Checked directly against react-native-vision-camera's own source
+  // (Camera.tsx's onPreviewOrientationChanged + RotationHelper.ts): the preview view tracks
+  // `previewOrientation`, which the native side updates live as the device physically rotates --
+  // i.e. the preview auto-rotates to stay upright for the user, the exact opposite of "always
+  // raw." That extra remap was therefore double-rotating the box relative to what's actually on
+  // screen once landscape -- the real, confirmed cause of "the box bugs out when horizontal
+  // turned." box.bbox (in photoSize's upright space) already matches what the auto-rotated
+  // preview shows in every orientation, so it's scaled directly against the container here, same
+  // as the portrait path always was -- no orientation branch needed. rawFrameInfo is still kept
+  // (state, and mapUprightBoxToRawPhoto below) purely for the still-photo capture path, which
+  // really is reading a separate, non-auto-rotated raw buffer -- that use is unaffected.
   const scale =
-    displaySize && containerSize
-      ? Math.max(containerSize.width / displaySize.width, containerSize.height / displaySize.height)
+    photoSize && containerSize
+      ? Math.max(containerSize.width / photoSize.width, containerSize.height / photoSize.height)
       : 1;
-  const offsetX = displaySize && containerSize ? (containerSize.width - displaySize.width * scale) / 2 : 0;
-  const offsetY = displaySize && containerSize ? (containerSize.height - displaySize.height * scale) / 2 : 0;
+  const offsetX = photoSize && containerSize ? (containerSize.width - photoSize.width * scale) / 2 : 0;
+  const offsetY = photoSize && containerSize ? (containerSize.height - photoSize.height * scale) / 2 : 0;
 
   // Tapping a locked box opens this detail panel -- every field below is read straight off
   // that vehicle's own live tracked state (the same `boxes`/`plateTexts`/`emergencyTrackIds`
@@ -1047,22 +1057,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
 
       {photoSize &&
         containerSize &&
-        boxes.map((box) => {
-          // See displaySize's own comment above -- box.bbox itself is never touched (still the
-          // exact upright-space value the tracker/speed math uses), this is a display-only
-          // remap applied only while physically landscape.
-          const displayBbox =
-            isLandscapeFrame && photoSize
-              ? mapUprightBoxToRawPhoto(
-                  box.bbox,
-                  photoSize.width,
-                  photoSize.height,
-                  displaySize!.width,
-                  displaySize!.height,
-                  rawFrameInfo!.orientation
-                )
-              : box.bbox;
-          const [x, y, w, h] = displayBbox;
+        boxes
+          // Tracking (speedTrackerRef, above) still runs against the full MIN_DETECTION_SCORE
+          // bar -- only what actually gets DRAWN is held to the higher MIN_RENDER_SCORE, so a
+          // weak read never disappears from tracking, it just doesn't put a shaky box on screen
+          // until it's a read worth trusting.
+          .filter((box) => box.score >= MIN_RENDER_SCORE)
+          .map((box) => {
+          // See the scale/offsetX/offsetY comment above -- box.bbox is already in the same
+          // upright space the auto-rotated preview shows, in every orientation, so it's used
+          // directly here with no remap.
+          const [x, y, w, h] = box.bbox;
           const isEmergency = emergencyTrackIds.has(box.id);
           const isSelected = selectedTrackId === box.id;
           const plateInfo = plateTexts.get(box.id);
@@ -1218,19 +1223,14 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                   source photo. */}
               {plateInfo &&
                 (() => {
-                  // Same landscape remap as the vehicle box above -- plateInfo.region is also in
-                  // the Frame Processor's own upright coordinate space, not raw/display space.
-                  const displayPlateRegion =
-                    isLandscapeFrame && photoSize
-                      ? mapUprightBoxToRawPhoto(
-                          [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h],
-                          photoSize.width,
-                          photoSize.height,
-                          displaySize!.width,
-                          displaySize!.height,
-                          rawFrameInfo!.orientation
-                        )
-                      : [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h];
+                  // Same as the vehicle box above -- plateInfo.region is already in photoSize's
+                  // upright space, which matches the auto-rotated preview directly, no remap.
+                  const displayPlateRegion: [number, number, number, number] = [
+                    plateInfo.region.x,
+                    plateInfo.region.y,
+                    plateInfo.region.w,
+                    plateInfo.region.h,
+                  ];
                   // Same off-screen-edge clamp as the vehicle box above -- a plate region is
                   // normally a small sub-crop well inside the vehicle box, but on a vehicle box
                   // that's itself mostly off-screen (a close vehicle at 5x zoom) the plate region

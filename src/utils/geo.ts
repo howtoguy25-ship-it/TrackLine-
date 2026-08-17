@@ -51,6 +51,43 @@ export function bearingDegrees(lat1: number, lon1: number, lat2: number, lon2: n
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
+/** Real great-circle destination point (not a flat-plane approximation), given a start point,
+ *  an initial bearing in degrees, and a distance in meters -- the direct inverse of
+ *  bearingDegrees/distanceKm above (start + bearing + distance -> end point, instead of two
+ *  points -> bearing/distance). Used to place a live alert a short distance AHEAD of the
+ *  driver's own current heading rather than exactly on top of their live GPS fix -- a report
+ *  genuinely reflects a real hazard on the ROAD ahead, and placing it exactly at the reporter's
+ *  own coordinate (their live GPS fix, itself always a little stale, plus however many seconds
+ *  the type-picker/confirm tap sequence took) was landing pins measurably behind where the
+ *  hazard actually is relative to the direction traffic is moving -- the real, confirmed
+ *  complaint behind "the set alert doesn't set in its direction placed". */
+export function offsetLatLngByHeading(
+  lat: number,
+  lon: number,
+  headingDeg: number,
+  distanceMeters: number
+): { latitude: number; longitude: number } {
+  const R = 6371000; // mean Earth radius, meters
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const lat1 = toRad(lat);
+  const lon1 = toRad(lon);
+  const brng = toRad(headingDeg);
+  const angularDist = distanceMeters / R;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDist) + Math.cos(lat1) * Math.sin(angularDist) * Math.cos(brng)
+  );
+  const lon2 =
+    lon1 +
+    Math.atan2(
+      Math.sin(brng) * Math.sin(angularDist) * Math.cos(lat1),
+      Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2)
+    );
+
+  return { latitude: toDeg(lat2), longitude: ((toDeg(lon2) + 540) % 360) - 180 };
+}
+
 /** Shortest distance in meters from a point to a polyline (the minimum over every segment's
  *  point-to-segment distance) -- the real signal for "has the driver actually left the route,"
  *  not just "is the current step's endpoint getting farther away" (which never fires at all if
