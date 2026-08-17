@@ -1,6 +1,6 @@
 import React, { forwardRef, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image } from "react-native";
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import BottomSheet, { BottomSheetView, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import type { PlaceInfo } from "@/services/places";
@@ -86,7 +86,11 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
               )}
             </View>
 
-            <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+            {/* BottomSheetScrollView, not a plain ScrollView -- inside @gorhom/bottom-sheet, the
+                sheet's own pan gesture handler intercepts drag touches meant for a plain
+                ScrollView's content, so scrolling silently does nothing unless the library's own
+                gesture-aware scroll component is used. */}
+            <BottomSheetScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
               {place.photoUrls.length > 0 && (
                 <ScrollView
                   horizontal
@@ -158,7 +162,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                   ))}
                 </View>
               )}
-            </ScrollView>
+            </BottomSheetScrollView>
           </>
         )}
       </BottomSheetView>

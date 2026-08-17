@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator, Keyboard } from "react-native";
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, Keyboard } from "react-native";
+import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
@@ -29,7 +29,10 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   { location, onViewDetails, onSheetChange },
   ref
 ) {
-  const snapPoints = useMemo(() => ["70%"], []);
+  // Real, confirmed complaint: 70% left the sheet covering most of the screen -- capped to a
+  // shorter default (matching PlaceInfoSheet's own 50%) with a second, taller snap point so it
+  // can still be dragged up to see more results instead of being stuck at one large fixed size.
+  const snapPoints = useMemo(() => ["50%", "88%"], []);
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
@@ -119,7 +122,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
           </View>
         )}
 
-        <FlatList
+        <BottomSheetFlatList
           data={filteredPlaces}
           keyExtractor={(item) => item.placeId}
           contentContainerStyle={styles.listContent}

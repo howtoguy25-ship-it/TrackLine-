@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, FlatList, ActivityIndicator, Keyboard } from "react-native";
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   searchNearbyPetrolStations,
@@ -34,7 +34,9 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   { location, onSelect, onViewDetails, onSheetChange },
   ref
 ) {
-  const snapPoints = useMemo(() => ["70%"], []);
+  // Same fix as RestaurantsSheet/HotelsSheet -- capped to a shorter default, draggable up to a
+  // taller point instead of a single large fixed size.
+  const snapPoints = useMemo(() => ["50%", "88%"], []);
   const [fuelStations, setFuelStations] = useState<FuelStation[]>([]);
   const [fallbackStations, setFallbackStations] = useState<NearbyPlace[]>([]);
   const [mode, setMode] = useState<"live" | "fallback" | null>(null);
@@ -148,7 +150,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
             )}
 
           {mode === "live" && (
-            <FlatList
+            <BottomSheetFlatList
               data={fuelStations}
               keyExtractor={(item) => item.stationId}
               contentContainerStyle={styles.listContent}
@@ -200,7 +202,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
           )}
 
           {mode === "fallback" && (
-            <FlatList
+            <BottomSheetFlatList
               data={fallbackStations}
               keyExtractor={(item) => item.placeId}
               contentContainerStyle={styles.listContent}

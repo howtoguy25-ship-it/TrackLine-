@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator, Linking, Keyboard } from "react-native";
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, Linking, Keyboard } from "react-native";
+import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyHotels, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
@@ -36,7 +36,8 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
   { location, onSelect, onViewDetails, onSheetChange },
   ref
 ) {
-  const snapPoints = useMemo(() => ["75%"], []);
+  // Same fix as RestaurantsSheet -- capped to a shorter default, draggable up to a taller point.
+  const snapPoints = useMemo(() => ["50%", "88%"], []);
   const [query, setQuery] = useState("");
   const [hotels, setHotels] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
@@ -179,7 +180,7 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
           </View>
         )}
 
-        <FlatList
+        <BottomSheetFlatList
           data={visibleHotels}
           keyExtractor={(item) => item.placeId}
           contentContainerStyle={styles.listContent}

@@ -1275,6 +1275,10 @@ export function MapScreen() {
   const onViewVenueDetails = useCallback((placeId: string) => {
     restaurantsSheetRef.current?.close();
     hotelsSheetRef.current?.close();
+    // Real, confirmed bug: fuel stations opened via FuelStationsSheet's own fallback rows landed
+    // here too (same handler), but this never closed that sheet -- PlaceInfoSheet opened on top
+    // of it still visible underneath, requiring a drag down to see the newly opened detail.
+    fuelStationsSheetRef.current?.close();
     setPlaceInfoLoading(true);
     getPlaceInfo(placeId)
       .then((info) => {
@@ -2540,9 +2544,12 @@ export function MapScreen() {
           <MapTopPillRow
             alertsEnabled={settings.alertsEnabled}
             onToggleAlerts={() => updateSettings({ alertsEnabled: !settings.alertsEnabled })}
-            onFindRestaurants={() => restaurantsSheetRef.current?.expand()}
-            onFindHotels={() => hotelsSheetRef.current?.expand()}
-            onFindPetrol={() => fuelStationsSheetRef.current?.expand()}
+            // snapToIndex(0), not expand() -- these three sheets now have two snap points
+            // (["50%", "88%"]), and expand() jumps straight to the largest one. Opening at
+            // index 0 lands on the shorter default; dragging the handle still reaches 88%.
+            onFindRestaurants={() => restaurantsSheetRef.current?.snapToIndex(0)}
+            onFindHotels={() => hotelsSheetRef.current?.snapToIndex(0)}
+            onFindPetrol={() => fuelStationsSheetRef.current?.snapToIndex(0)}
           />
           <DestinationSearchBar
             biasLocation={routeOriginLatLng ?? undefined}
