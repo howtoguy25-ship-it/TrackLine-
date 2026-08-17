@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
@@ -67,6 +67,14 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   return (
     <BottomSheet ref={ref} index={-1} snapPoints={snapPoints} enablePanDownToClose onChange={onSheetChange}>
       <BottomSheetView style={styles.content}>
+        {/* Real, confirmed complaint: tapping blank space anywhere in this sheet (the title, the
+            notice area, empty space between rows) left the keyboard sitting up over the results
+            with no way to dismiss it except the list's own on-drag dismiss below -- this inner
+            Pressable catches every tap that isn't already claimed by a more specific control
+            (the search input itself, the clear button, a result row) and blurs the keyboard. A
+            plain Pressable, not a wholesale replacement of BottomSheetView -- that component
+            still owns the sheet's own gesture/measurement integration. */}
+        <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
         <Text style={styles.title}>Restaurants nearby</Text>
         <View style={styles.searchRow}>
           <Ionicons name="search" size={16} color={colors.textMuted} />
@@ -77,6 +85,8 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             placeholderTextColor={colors.textFaint}
             style={styles.searchInput}
             autoCorrect={false}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
@@ -110,6 +120,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
           keyExtractor={(item) => item.placeId}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           renderItem={({ item }) => (
             <Pressable
               style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
@@ -159,6 +170,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             </Pressable>
           )}
         />
+        </Pressable>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -166,6 +178,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
 
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
+  pressableFill: { flex: 1 },
   title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
   searchRow: {
     flexDirection: "row",

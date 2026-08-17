@@ -1,5 +1,5 @@
 import React, { forwardRef, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -69,6 +69,19 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
             </View>
 
             <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+              {place.photoUrls.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.photoRow}
+                  contentContainerStyle={styles.photoRowContent}
+                >
+                  {place.photoUrls.map((url) => (
+                    <Image key={url} source={{ uri: url }} style={styles.photo} />
+                  ))}
+                </ScrollView>
+              )}
+
               {place.weekdayText && place.weekdayText.length > 0 && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Hours</Text>
@@ -196,6 +209,18 @@ const styles = StyleSheet.create({
   },
   scroll: {
     marginTop: spacing.md,
+  },
+  photoRow: {
+    marginBottom: spacing.md,
+  },
+  photoRowContent: {
+    gap: spacing.sm,
+  },
+  photo: {
+    width: 140,
+    height: 100,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
   },
   section: {
     marginBottom: spacing.lg,

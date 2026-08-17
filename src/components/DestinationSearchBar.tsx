@@ -61,6 +61,10 @@ interface Props {
   // search bar; the add-a-stop and mid-nav bars have no "from" to show.
   originLabel?: string;
   onPressOrigin?: () => void;
+  // Extra px pushed onto this bar's own top offset -- lets a caller stack something else (e.g.
+  // MapTopPillRow) above it without this component needing to know anything about what that is.
+  // Defaults to 0 -- every existing call site keeps its exact previous position.
+  topOffset?: number;
 }
 
 export function DestinationSearchBar({
@@ -76,6 +80,7 @@ export function DestinationSearchBar({
   myLocationAddress,
   originLabel,
   onPressOrigin,
+  topOffset = 0,
 }: Props) {
   const [query, setQuery] = useState("");
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -223,7 +228,7 @@ export function DestinationSearchBar({
       {(historyVisible || predictions.length > 0) && (
         <Pressable style={StyleSheet.absoluteFill} onPress={dismissSearch} />
       )}
-      <View style={[styles.container, { top: insets.top + spacing.md }]}>
+      <View style={[styles.container, { top: insets.top + spacing.md + topOffset }]}>
         <View style={hasOriginRow ? styles.fieldsCard : undefined}>
           {hasOriginRow && (
             <>
@@ -304,7 +309,15 @@ export function DestinationSearchBar({
         {showRestaurantsAction && (
           <Pressable
             style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
-            onPress={onFindRestaurants}
+            // Real, confirmed complaint: this search bar's own TextInput could still be focused
+            // (keyboard up) the moment this row is tapped -- unlike every other action in this
+            // file (see the Keyboard.dismiss() calls above), this one never blurred it, so the
+            // keyboard stayed up floating over the Restaurants sheet that opens underneath,
+            // even though its own search input was never actually tapped.
+            onPress={() => {
+              Keyboard.dismiss();
+              onFindRestaurants?.();
+            }}
           >
             <Ionicons name="restaurant-outline" size={18} color={colors.accent} />
             <Text style={styles.quickActionText}>Restaurants nearby</Text>
@@ -313,7 +326,10 @@ export function DestinationSearchBar({
         {showHotelsAction && (
           <Pressable
             style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
-            onPress={onFindHotels}
+            onPress={() => {
+              Keyboard.dismiss();
+              onFindHotels?.();
+            }}
           >
             <Ionicons name="bed-outline" size={18} color={colors.accent} />
             <Text style={styles.quickActionText}>Hotels nearby</Text>

@@ -83,6 +83,9 @@ export interface PlaceInfo extends PlaceDetails {
   phoneNumber?: string;
   website?: string;
   reviews: PlaceReview[];
+  // Real Google Places photos for this business -- up to PLACE_INFO_MAX_PHOTOS, empty array
+  // (never fabricated) when Google has none on file for it.
+  photoUrls: string[];
 }
 
 // Real POI-tap-to-info requires *some* place near the tapped coordinate to look up.
@@ -170,12 +173,17 @@ export async function findNearestTransitStation(location: LatLng): Promise<Place
   };
 }
 
+// Capped, same reasoning as RestaurantsSheet's own review cap below -- a real business can have
+// dozens of Places photos; a horizontal strip of a handful is what a driver glancing at this
+// sheet actually looks at, not an unbounded gallery.
+const PLACE_INFO_MAX_PHOTOS = 6;
+
 export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
   const params = new URLSearchParams({
     place_id: placeId,
     key: env.googlePlacesApiKey,
     fields:
-      "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews",
+      "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews,photos",
   });
 
   const res = await fetch(
@@ -213,6 +221,10 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
       relativeTime: r.relative_time_description,
       text: r.text,
     })),
+    photoUrls: (result.photos ?? [])
+      .slice(0, PLACE_INFO_MAX_PHOTOS)
+      .map((p: any) => nearbyPlacePhotoUrl(p.photo_reference))
+      .filter((url: string | null): url is string => url !== null),
   };
 }
 

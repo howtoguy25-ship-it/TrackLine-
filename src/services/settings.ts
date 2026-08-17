@@ -3,6 +3,8 @@ import type { AlertType } from "@/types/alert";
 import type { MapThemeKey } from "@/utils/mapStyle";
 import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import type { AuRegionCode } from "@/utils/auStates";
+import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
+import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 
 export const ALL_ALERT_TYPES: AlertType[] = [
   "police",
@@ -54,6 +56,11 @@ export interface AppSettings {
   // traffic light, 24h for camera), matching behavior before this setting existed. Set in
   // milliseconds so services/alerts.ts's reportAlert can use it directly without reconverting.
   alertExpiryMs: number | null;
+  // Which real vector icon pack alert markers render with -- see utils/alertIconThemes.ts.
+  alertIconTheme: AlertIconThemeKey;
+  // Which real vehicle icon the driver's own live-position marker renders as -- see
+  // utils/mapMarkerStyles.ts.
+  mapMarkerStyle: MapMarkerStyleKey;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -72,6 +79,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mapTheme: "normal",
   navCardTheme: "dark",
   alertExpiryMs: null,
+  alertIconTheme: "default",
+  mapMarkerStyle: "default",
 };
 
 const STORAGE_KEY = "@trackline/settings";

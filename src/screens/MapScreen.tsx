@@ -28,6 +28,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { MuteButton } from "@/components/MuteButton";
 import { CarNavArrow, PersonLocationDot } from "@/components/LocationMarkers";
 import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/DestinationSearchBar";
+import { MapTopPillRow, MAP_TOP_PILL_ROW_HEIGHT } from "@/components/MapTopPillRow";
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
@@ -2196,7 +2197,7 @@ export function MapScreen() {
             other static marker in this app. */}
         {route && currentLatLng && (
           <Marker coordinate={currentLatLng} anchor={{ x: 0.5, y: 0.5 }} flat rotation={heading} tracksViewChanges={false}>
-            <CarNavArrow />
+            <CarNavArrow markerStyle={settings.mapMarkerStyle} />
           </Marker>
         )}
         {/* Real person/location marker for the normal (not navigating) map view -- replacing
@@ -2496,16 +2497,26 @@ export function MapScreen() {
       )}
 
       {!route && !pendingDestination && !placingAlert && !pickingOrigin && (
-        <DestinationSearchBar
-          biasLocation={routeOriginLatLng ?? undefined}
-          onDestinationSelected={onDestinationSelected}
-          onFindNearestStation={onFindNearestStation}
-          findingNearestStation={findingNearestStation}
-          onFindRestaurants={() => restaurantsSheetRef.current?.expand()}
-          onFindHotels={() => hotelsSheetRef.current?.expand()}
-          originLabel={routeOriginLabel}
-          onPressOrigin={() => setPickingOrigin(true)}
-        />
+        <>
+          {/* Moved out of the search bar's own idle dropdown, per explicit request -- a
+              persistent row at the very top of the map instead of something only visible once
+              the search box is tapped first. */}
+          <MapTopPillRow
+            alertsEnabled={settings.alertsEnabled}
+            onToggleAlerts={() => updateSettings({ alertsEnabled: !settings.alertsEnabled })}
+            onFindRestaurants={() => restaurantsSheetRef.current?.expand()}
+            onFindHotels={() => hotelsSheetRef.current?.expand()}
+          />
+          <DestinationSearchBar
+            biasLocation={routeOriginLatLng ?? undefined}
+            onDestinationSelected={onDestinationSelected}
+            onFindNearestStation={onFindNearestStation}
+            findingNearestStation={findingNearestStation}
+            originLabel={routeOriginLabel}
+            onPressOrigin={() => setPickingOrigin(true)}
+            topOffset={MAP_TOP_PILL_ROW_HEIGHT + spacing.sm}
+          />
+        </>
       )}
 
       {!route && pendingDestination && pickingStop && !pickingOrigin && (

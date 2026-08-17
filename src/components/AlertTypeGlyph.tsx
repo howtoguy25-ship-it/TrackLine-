@@ -2,6 +2,8 @@ import React from "react";
 import { Text } from "react-native";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { ALERT_ICONS, type AlertType } from "@/types/alert";
+import { ALERT_ICON_THEMES } from "@/utils/alertIconThemes";
+import { useSettings } from "@/context/SettingsContext";
 
 // "Police" reads far better as a real pictograph than any vector glyph available -- there's no
 // "police car" (a car with lights, not just a badge/shield) glyph in MaterialCommunityIcons,
@@ -18,10 +20,23 @@ const ALERT_EMOJI_OVERRIDE: Partial<Record<AlertType, string>> = {
 interface Props {
   type: AlertType;
   size: number;
+  // Overrides whatever the driver has actually picked in Settings -- only ever passed by the
+  // theme picker UI itself, so it can render a live preview of a pack that isn't selected yet
+  // without needing to actually change the setting first. Every real call site (map markers,
+  // report sheet, detail sheet) omits this and gets the driver's real chosen theme instead.
   color: string;
+  themeOverride?: import("@/utils/alertIconThemes").AlertIconThemeKey;
 }
 
-export function AlertTypeGlyph({ type, size, color }: Props) {
+export function AlertTypeGlyph({ type, size, color, themeOverride }: Props) {
+  const { settings } = useSettings();
+  const theme = themeOverride ?? settings.alertIconTheme;
+
+  if (theme !== "default") {
+    const spec = ALERT_ICON_THEMES[theme][type];
+    return <MaterialCommunityIcons name={spec.name as any} size={size} color={color} />;
+  }
+
   const emoji = ALERT_EMOJI_OVERRIDE[type];
   if (emoji) {
     return <Text style={{ fontSize: size, lineHeight: size * 1.15 }}>{emoji}</Text>;

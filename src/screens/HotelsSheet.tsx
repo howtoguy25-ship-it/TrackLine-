@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator, Linking } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator, Linking, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyHotels, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
@@ -83,6 +83,9 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
   return (
     <BottomSheet ref={ref} index={-1} snapPoints={snapPoints} enablePanDownToClose onChange={onSheetChange}>
       <BottomSheetView style={styles.content}>
+        {/* Same keyboard-dismiss-on-background-tap fix as RestaurantsSheet -- see its own
+            comment for why this is a plain Pressable, not a BottomSheetView replacement. */}
+        <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
         <Text style={styles.title}>Hotels nearby</Text>
         {/* Honest, per explicit request that nothing here be fake -- Google Places has real
             names/photos/ratings/price LEVEL for every hotel below, but no live per-night price
@@ -107,6 +110,8 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
             placeholderTextColor={colors.textFaint}
             style={styles.searchInput}
             autoCorrect={false}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
@@ -172,8 +177,21 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
           keyExtractor={(item) => item.placeId}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           renderItem={({ item }) => (
-            <View style={styles.row}>
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
+              // Real, confirmed complaint: unlike RestaurantsSheet's identical-looking row, this
+              // row had no tap handler of its own at all -- only the two small "Directions"/"Open
+              // in Maps" text buttons at the bottom responded, so tapping the photo/name/address
+              // area (the natural place to tap, especially since it looks and lays out exactly
+              // like a Restaurants row) silently did nothing. Whole row now defaults to the same
+              // Directions action; the two explicit buttons below still work independently for
+              // anyone who wants a specific action without hitting the broader row target.
+              onPress={() =>
+                onSelect({ placeId: item.placeId, name: item.name, address: item.vicinity, location: item.location })
+              }
+            >
               {item.photoUrl ? (
                 <Image source={{ uri: item.photoUrl }} style={styles.photo} />
               ) : (
@@ -185,9 +203,18 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
                 <Text style={styles.name} numberOfLines={1}>
                   {item.name}
                 </Text>
-                <Text style={styles.vicinity} numberOfLines={1}>
-                  {item.vicinity}
-                </Text>
+                {/* Google's own `vicinity` field for a smaller/private lodging listing can come
+                    back as just the bare country name ("Australia") instead of a real street-
+                    level address -- a real value Google returned, not something this app
+                    generated wrong, but showing it as-is reads as broken/fake. Hidden whenever
+                    it doesn't look like a real street-level address (no digit and no comma),
+                    same "never show something misleading" principle as the rest of this sheet --
+                    the distance chip below still tells the driver how far it is either way. */}
+                {/^.*\d/.test(item.vicinity) || item.vicinity.includes(",") ? (
+                  <Text style={styles.vicinity} numberOfLines={1}>
+                    {item.vicinity}
+                  </Text>
+                ) : null}
                 <View style={styles.metaRow}>
                   {item.rating !== undefined && (
                     <View style={styles.metaChip}>
@@ -223,9 +250,10 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
                   </Pressable>
                 </View>
               </View>
-            </View>
+            </Pressable>
           )}
         />
+        </Pressable>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -233,6 +261,7 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
 
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
+  pressableFill: { flex: 1 },
   title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
   noticeBox: {
     flexDirection: "row",

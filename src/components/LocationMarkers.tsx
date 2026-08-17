@@ -1,7 +1,9 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, shadow } from "@/theme/tokens";
+import { MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 
 // Real, professionally-drawn vector icons (react-native-svg), replacing the earlier photo-based
 // markers -- per explicit request to move back to an app-designed look, and a real technical
@@ -20,17 +22,26 @@ const ARROW_PATH = "M12 1.5 L21 21.5 L12 17 L3 21.5 Z";
  * The live navigation puck -- rendered inside a Marker with flat + rotation={heading} by the
  * caller (see MapScreen.tsx), so this component itself never rotates on its own; it just draws
  * the stationary "nose up" glyph that rotation then turns to match the direction of travel.
+ * `markerStyle` (see utils/mapMarkerStyles.ts) swaps the original hand-drawn SVG arrow for a
+ * real vehicle icon inside the exact same rotating circular badge, per explicit request to let a
+ * driver pick how they appear on the map -- "default" (the arrow) is completely unchanged, so
+ * every existing user's marker looks identical to before this setting existed.
  */
-export function CarNavArrow() {
+export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMarkerStyleKey }) {
+  const iconSpec = markerStyle !== "default" ? MAP_MARKER_STYLE_ICONS[markerStyle] : null;
   return (
-    <View style={styles.navBadge}>
+    <View style={[styles.navBadge, iconSpec && { backgroundColor: iconSpec.color }]}>
       {/* Soft top-left highlight -- a cheap fake-gloss touch (an offset, partially-transparent
           circle) since RN's View styling has no true gradient support without another native
           dependency; this alone is enough to keep the badge from reading as a single flat disc. */}
       <View style={styles.navBadgeHighlight} pointerEvents="none" />
-      <Svg width={22} height={22} viewBox="0 0 24 24">
-        <Path d={ARROW_PATH} fill="#FFFFFF" stroke={colors.accent} strokeWidth={1} strokeLinejoin="round" />
-      </Svg>
+      {iconSpec ? (
+        <MaterialCommunityIcons name={iconSpec.name as any} size={18} color="#FFFFFF" />
+      ) : (
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Path d={ARROW_PATH} fill="#FFFFFF" stroke={colors.accent} strokeWidth={1} strokeLinejoin="round" />
+        </Svg>
+      )}
     </View>
   );
 }

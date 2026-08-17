@@ -34,6 +34,9 @@ import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, type MapThemeKey } from "@/utils/mapStyle";
 import { NAV_CARD_THEME_LABELS, NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
+import { MAP_MARKER_STYLE_LABELS, MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
+import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 
@@ -76,6 +79,21 @@ const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
 };
 
 const NAV_CARD_THEME_ORDER: NavCardThemeKey[] = ["dark", "light", "aqua"];
+const MAP_MARKER_STYLE_ORDER: MapMarkerStyleKey[] = [
+  "default",
+  "car",
+  "taxi",
+  "policeCar",
+  "ambulance",
+  "fireTruck",
+  "bus",
+  "truck",
+  "motorbike",
+];
+const ALERT_ICON_THEME_ORDER: AlertIconThemeKey[] = ["default", "outline", "bold", "shield"];
+// A representative sample (not every AlertType) for the alert-icon-theme preview tiles below --
+// enough to show a pack's own distinct glyph/color identity without a 6-icon-wide tile.
+const ALERT_ICON_PREVIEW_TYPES: AlertType[] = ["police", "crash", "hazard", "traffic_light"];
 
 export function SettingsScreen() {
   const { settings, updateSettings } = useSettings();
@@ -325,6 +343,16 @@ export function SettingsScreen() {
 
   const onNavCardThemeSelect = useCallback(
     (theme: NavCardThemeKey) => updateSettings({ navCardTheme: theme }),
+    [updateSettings]
+  );
+
+  const onMapMarkerStyleSelect = useCallback(
+    (style: MapMarkerStyleKey) => updateSettings({ mapMarkerStyle: style }),
+    [updateSettings]
+  );
+
+  const onAlertIconThemeSelect = useCallback(
+    (theme: AlertIconThemeKey) => updateSettings({ alertIconTheme: theme }),
     [updateSettings]
   );
 
@@ -616,6 +644,75 @@ export function SettingsScreen() {
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {NAV_CARD_THEME_LABELS[theme]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Section>
+
+      <Section title="Your map marker">
+        <Text style={styles.helperText}>
+          How you appear on the map -- the arrow rotates live to show your direction of travel no
+          matter which one you pick.
+        </Text>
+        <View style={styles.themeGrid}>
+          {MAP_MARKER_STYLE_ORDER.map((style) => {
+            const isSelected = settings.mapMarkerStyle === style;
+            const iconSpec = style !== "default" ? MAP_MARKER_STYLE_ICONS[style] : null;
+            return (
+              <Pressable
+                key={style}
+                onPress={() => onMapMarkerStyleSelect(style)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${MAP_MARKER_STYLE_LABELS[style]} map marker`}
+              >
+                <View style={[styles.themeSwatch, styles.iconSwatch, iconSpec && { backgroundColor: iconSpec.color }]}>
+                  {iconSpec ? (
+                    <MaterialCommunityIcons name={iconSpec.name as any} size={22} color="#FFFFFF" />
+                  ) : (
+                    <Ionicons name="navigate" size={22} color={colors.accent} />
+                  )}
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {MAP_MARKER_STYLE_LABELS[style]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Section>
+
+      <Section title="Alert icons">
+        <Text style={styles.helperText}>
+          How police/crash/hazard/camera/traffic-light alerts look on the map -- every pack uses
+          real, distinct icons and colors, previewed below with a sample of the alert types.
+        </Text>
+        <View style={styles.themeGrid}>
+          {ALERT_ICON_THEME_ORDER.map((theme) => {
+            const isSelected = settings.alertIconTheme === theme;
+            return (
+              <Pressable
+                key={theme}
+                onPress={() => onAlertIconThemeSelect(theme)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${ALERT_ICON_THEME_LABELS[theme]} alert icon pack`}
+              >
+                <View style={[styles.themeSwatch, styles.iconSwatch, styles.alertPreviewSwatch]}>
+                  {ALERT_ICON_PREVIEW_TYPES.map((type) => (
+                    <AlertTypeGlyph key={type} type={type} size={18} color={colors.text} themeOverride={theme} />
+                  ))}
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {ALERT_ICON_THEME_LABELS[theme]}
                 </Text>
               </Pressable>
             );
@@ -1169,6 +1266,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     overflow: "hidden",
     justifyContent: "flex-end",
+  },
+  iconSwatch: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
+  },
+  alertPreviewSwatch: {
+    flexDirection: "row",
+    gap: spacing.xs + 2,
   },
   themeSwatchAccent: {
     height: 12,
