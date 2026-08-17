@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
@@ -40,6 +40,10 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   const [fuelStations, setFuelStations] = useState<FuelStation[]>([]);
   const [fallbackStations, setFallbackStations] = useState<NearbyPlace[]>([]);
   const [mode, setMode] = useState<"live" | "fallback" | null>(null);
+  // Real, confirmed request -- same live, letter-by-letter filter-against-already-fetched-results
+  // pattern as RestaurantsSheet/HotelsSheet, matched against name AND address/vicinity (station
+  // title and place), not just a fetch trigger.
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [fetchedFor, setFetchedFor] = useState<string | null>(null);
@@ -97,11 +101,43 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
     }
   }, [location, fetchedFor, fuelCheckConfigured]);
 
+  const filteredFuelStations = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return fuelStations;
+    return fuelStations.filter(
+      (s) => (s.name ?? "").toLowerCase().includes(q) || (s.address ?? "").toLowerCase().includes(q) || (s.brand ?? "").toLowerCase().includes(q)
+    );
+  }, [fuelStations, query]);
+
+  const filteredFallbackStations = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return fallbackStations;
+    return fallbackStations.filter((s) => s.name.toLowerCase().includes(q) || s.vicinity.toLowerCase().includes(q));
+  }, [fallbackStations, query]);
+
   return (
     <BottomSheet ref={ref} index={-1} snapPoints={snapPoints} enablePanDownToClose onChange={onSheetChange}>
       <BottomSheetView style={styles.content}>
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
           <Text style={styles.title}>Petrol stations nearby</Text>
+          <View style={styles.searchRow}>
+            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search petrol stations…"
+              placeholderTextColor={colors.textFaint}
+              style={styles.searchInput}
+              autoCorrect={false}
+              returnKeyType="search"
+              onSubmitEditing={() => Keyboard.dismiss()}
+            />
+            {query.length > 0 && (
+              <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
+                <Ionicons name="close-circle" size={18} color={colors.textFaint} />
+              </Pressable>
+            )}
+          </View>
 
           {mode === "live" && (
             <View style={styles.noticeBox}>
@@ -135,23 +171,27 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
           {!loading &&
             !errorText &&
             mode === "live" &&
-            fuelStations.length === 0 && (
+            filteredFuelStations.length === 0 && (
               <View style={styles.centerRow}>
-                <Text style={styles.centerText}>Nothing found nearby yet.</Text>
+                <Text style={styles.centerText}>
+                  {fuelStations.length === 0 ? "Nothing found nearby yet." : "No matches for that search."}
+                </Text>
               </View>
             )}
           {!loading &&
             !errorText &&
             mode === "fallback" &&
-            fallbackStations.length === 0 && (
+            filteredFallbackStations.length === 0 && (
               <View style={styles.centerRow}>
-                <Text style={styles.centerText}>Nothing found nearby yet.</Text>
+                <Text style={styles.centerText}>
+                  {fallbackStations.length === 0 ? "Nothing found nearby yet." : "No matches for that search."}
+                </Text>
               </View>
             )}
 
           {mode === "live" && (
             <BottomSheetFlatList
-              data={fuelStations}
+              data={filteredFuelStations}
               keyExtractor={(item) => item.stationId}
               contentContainerStyle={styles.listContent}
               renderItem={({ item }) => {
@@ -203,7 +243,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
 
           {mode === "fallback" && (
             <BottomSheetFlatList
-              data={fallbackStations}
+              data={filteredFallbackStations}
               keyExtractor={(item) => item.placeId}
               contentContainerStyle={styles.listContent}
               renderItem={({ item }) => (
@@ -246,6 +286,17 @@ const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
   pressableFill: { flex: 1 },
   title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+    marginBottom: spacing.sm,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: colors.text },
   noticeBox: {
     flexDirection: "row",
     gap: spacing.xs + 2,
