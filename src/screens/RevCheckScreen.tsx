@@ -5,8 +5,9 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { useIAP, ErrorCode, type Purchase } from "react-native-iap";
-import { recordManualCheck, recordRevCheckResult, getVehicleHistory } from "@/services/vehicleHistory";
+import { recordManualCheck, recordRevCheckResult, recordPlateLookupResult, getVehicleHistory } from "@/services/vehicleHistory";
 import { runRevCheck, subscribeRevCheckProviderStatus, type RevCheckResult } from "@/services/revCheck";
+import { runPlateLookup, subscribePlateLookupProviderStatus, type PlateLookupResult } from "@/services/plateLookup";
 import { AU_STATES, DEFAULT_AU_STATE } from "@/utils/auStates";
 import { REV_CHECK_PRODUCT_ID, REV_CHECK_FALLBACK_PRICE_LABEL } from "@/services/iap";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -50,6 +51,11 @@ export function RevCheckScreen() {
   const [checking, setChecking] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [result, setResult] = useState<RevCheckResult | null>(null);
+  // Real, second result -- the plate+state lookup (make/model/year/body/engine/etc., see
+  // plateLookup.ts), kept separate from `result` (the VIN-only PPSR stolen/written-off/finance/
+  // odometer check) since they're genuinely different data sources that can each succeed, fail,
+  // or simply not have been asked for (no VIN entered) independently of the other.
+  const [plateResult, setPlateResult] = useState<PlateLookupResult | null>(null);
   // Set only when `result` came from a PAST paid check loaded off this vehicle's history entry
   // (see the load effect below), never from a check just run this instant -- lets the render
   // show an honest "last checked X ago" instead of implying a stale result just happened live.
@@ -61,6 +67,8 @@ export function RevCheckScreen() {
   // lands.
   const [providerConfigured, setProviderConfigured] = useState(false);
   useEffect(() => subscribeRevCheckProviderStatus(setProviderConfigured), []);
+  const [plateProviderConfigured, setPlateProviderConfigured] = useState(false);
+  useEffect(() => subscribePlateLookupProviderStatus(setPlateProviderConfigured), []);
 
   // Holds a purchase that has been PAID for but not yet delivered a successful check result --
   // see the header comment above. A ref (not just state) because it's read from inside the
@@ -74,29 +82,52 @@ export function RevCheckScreen() {
     async (purchase: Purchase | null, finishTransactionFn: (args: { purchase: Purchase; isConsumable: boolean }) => Promise<void>) => {
       const trimmedVin = vin.trim().toUpperCase();
       const trimmedPlate = plate.trim().toUpperCase();
-      if (!trimmedVin) return;
+      if (!trimmedPlate) return;
       setChecking(true);
       setPurchasing(false);
       setResult(null);
+      setPlateResult(null);
       setCachedResultAt(null);
       try {
-        await recordManualCheck(trimmedPlate, state, trimmedVin);
-        const outcome = await runRevCheck(trimmedVin);
-        setResult(outcome);
-        if (outcome.outcome === "success") {
+        await recordManualCheck(trimmedPlate, state, trimmedVin || null);
+
+        // Always runs -- the real plate+state lookup (make/model/year/etc.), per explicit
+        // request that a check work from just a plate. Independent of the VIN check below: one
+        // can succeed while the other fails/isn't asked for, and each is reported honestly on
+        // its own.
+        const plateOutcome = await runPlateLookup(trimmedPlate, state);
+        setPlateResult(plateOutcome);
+        if (plateOutcome.outcome === "success") {
+          await recordPlateLookupResult(trimmedPlate, { vehicle: plateOutcome.vehicle });
+        }
+
+        // Only runs when a VIN was actually entered -- stolen/written-off/finance/odometer stay
+        // real PPSR data, which genuinely requires a VIN (see revCheck.ts's own header), not a
+        // guess derived from the plate lookup above.
+        let vinOutcome: RevCheckResult | null = null;
+        if (trimmedVin) {
+          vinOutcome = await runRevCheck(trimmedVin);
+          setResult(vinOutcome);
+        }
+
+        const delivered = plateOutcome.outcome === "success" || vinOutcome?.outcome === "success";
+        if (vinOutcome?.outcome === "success") {
           await recordRevCheckResult(trimmedPlate, trimmedVin, {
-            vehicle: outcome.vehicle,
-            securedInterestCount: outcome.securedInterestCount,
-            certificateUrl: outcome.certificateUrl,
+            vehicle: vinOutcome.vehicle,
+            securedInterestCount: vinOutcome.securedInterestCount,
+            certificateUrl: vinOutcome.certificateUrl,
           });
-          // Value actually delivered -- now (and only now) is it honest to consume the purchase.
+        }
+        if (delivered) {
+          // Real value actually delivered (from either source) -- now (and only now) is it
+          // honest to consume the purchase.
           if (purchase) {
             await finishTransactionFn({ purchase, isConsumable: true });
           }
           pendingPurchaseRef.current = null;
           setHasPendingPaidRetry(false);
         } else if (purchase) {
-          // Paid, but the real check didn't deliver -- keep the transaction open so "Retry" can
+          // Paid, but neither real check delivered -- keep the transaction open so "Retry" can
           // reuse it for free instead of charging the driver again for a check that never ran.
           pendingPurchaseRef.current = purchase;
           setHasPendingPaidRetry(true);
@@ -154,6 +185,9 @@ export function RevCheckScreen() {
         });
         setCachedResultAt(match.lastResult.checkedAt);
       }
+      if (match?.lastPlateLookup) {
+        setPlateResult({ outcome: "success", message: "Lookup complete.", vehicle: match.lastPlateLookup.vehicle });
+      }
     });
     return () => {
       cancelled = true;
@@ -173,7 +207,7 @@ export function RevCheckScreen() {
   }, [navigation]);
 
   const onStart = useCallback(async () => {
-    if (!vin.trim()) return;
+    if (!plate.trim()) return;
 
     // Already paid for a prior attempt that failed after payment -- retry the same real check
     // for free instead of buying it again.
@@ -182,10 +216,11 @@ export function RevCheckScreen() {
       return;
     }
 
-    // No provider connected at all means this can only ever return the honest "not connected"
-    // placeholder -- charging real money for a check that's guaranteed not to deliver real data
-    // would be dishonest, so this path never touches the purchase flow.
-    if (!providerConfigured) {
+    // Neither provider connected at all means this can only ever return the honest "not
+    // connected" placeholder from both sources -- charging real money for a check guaranteed
+    // not to deliver anything real would be dishonest, so this path never touches the purchase
+    // flow. Either one alone is enough to charge for, since it can still deliver real value.
+    if (!providerConfigured && !plateProviderConfigured) {
       runCheck(null, finishTransaction);
       return;
     }
@@ -201,7 +236,7 @@ export function RevCheckScreen() {
     } catch {
       setPurchasing(false);
     }
-  }, [vin, providerConfigured, requestPurchase, finishTransaction, runCheck]);
+  }, [plate, providerConfigured, plateProviderConfigured, requestPurchase, finishTransaction, runCheck]);
 
   const onOpenCertificate = useCallback((url: string) => {
     Linking.openURL(url).catch(() => {});
@@ -213,8 +248,8 @@ export function RevCheckScreen() {
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>Vehicle REV Check</Text>
           <Text style={styles.subtitle}>
-            Stolen / written-off / money-owing status &amp; NEVDIS vehicle data -- Australia only,
-            searched by VIN.
+            Enter a plate + state for real model/spec data. Add a VIN too for stolen /
+            written-off / money-owing status -- Australia only.
           </Text>
         </View>
         <Pressable
@@ -249,24 +284,7 @@ export function RevCheckScreen() {
       )}
 
       <View style={styles.formCard}>
-        <Text style={styles.fieldLabel}>VIN (required for a real check)</Text>
-        <TextInput
-          value={vin}
-          onChangeText={(t) => setVin(t.toUpperCase())}
-          placeholder="e.g. ZAM57YTA0T0000042"
-          placeholderTextColor={colors.textFaint}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={17}
-          style={styles.plateInput}
-        />
-        <Text style={styles.helperText}>
-          The 17-character chassis number -- on the rego papers, or the compliance plate visible
-          through the windshield. PPSR searches by VIN, not plate, since a plate can change on
-          re-registration.
-        </Text>
-
-        <Text style={styles.fieldLabel}>NUMBER PLATE (for your own records)</Text>
+        <Text style={styles.fieldLabel}>NUMBER PLATE (required)</Text>
         <TextInput
           value={plate}
           onChangeText={(t) => setPlate(t.toUpperCase())}
@@ -301,11 +319,28 @@ export function RevCheckScreen() {
           })}
         </View>
         <Text style={styles.helperText}>
-          Kept with this record for your own reference -- not sent to the PPSR search itself,
-          which is a national (not state-based) register.
+          Real make/model/year/body/engine data comes back from just the plate + state above.
         </Text>
 
-        {providerConfigured && !hasPendingPaidRetry && (
+        <Text style={styles.fieldLabel}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
+        <TextInput
+          value={vin}
+          onChangeText={(t) => setVin(t.toUpperCase())}
+          placeholder="e.g. ZAM57YTA0T0000042"
+          placeholderTextColor={colors.textFaint}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={17}
+          style={styles.plateInput}
+        />
+        <Text style={styles.helperText}>
+          The 17-character chassis number -- on the rego papers, or the compliance plate visible
+          through the windshield. Stolen/written-off/money-owing status only ever comes from a
+          real PPSR search, which searches by VIN, not plate (a plate can change on
+          re-registration) -- leave this blank to just see model/spec data from the plate above.
+        </Text>
+
+        {(providerConfigured || plateProviderConfigured) && !hasPendingPaidRetry && (
           <View style={styles.costNotice}>
             <MaterialCommunityIcons name="currency-usd" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
@@ -324,11 +359,11 @@ export function RevCheckScreen() {
 
         <Pressable
           onPress={onStart}
-          disabled={!vin.trim() || checking || purchasing}
+          disabled={!plate.trim() || checking || purchasing}
           style={({ pressed }) => [
             styles.startButton,
-            (!vin.trim() || checking || purchasing) && styles.startButtonDisabled,
-            pressed && !checking && !purchasing && vin.trim() && { opacity: pressedOpacity },
+            (!plate.trim() || checking || purchasing) && styles.startButtonDisabled,
+            pressed && !checking && !purchasing && plate.trim() && { opacity: pressedOpacity },
           ]}
         >
           {checking || purchasing ? (
@@ -337,13 +372,66 @@ export function RevCheckScreen() {
             <Text style={styles.startButtonText}>
               {hasPendingPaidRetry
                 ? "Retry REV Check (already paid)"
-                : providerConfigured
+                : providerConfigured || plateProviderConfigured
                   ? `Pay ${priceLabel} & Start REV Check`
                   : "Start REV Check"}
             </Text>
           )}
         </Pressable>
       </View>
+
+      {plateResult && plateResult.outcome === "success" && plateResult.vehicle && (
+        <View style={styles.successCard}>
+          <View style={styles.successHeader}>
+            <MaterialCommunityIcons name="car-info" size={20} color={colors.accent} />
+            <Text style={styles.successHeaderText}>Real vehicle data from plate + state</Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Vehicle</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.year, plateResult.vehicle.make, plateResult.vehicle.model]
+                .filter(Boolean)
+                .join(" ") || "—"}
+            </Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Body / engine</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.bodyType, plateResult.vehicle.engineSize].filter(Boolean).join(" · ") || "—"}
+            </Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Transmission / fuel</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.transmission, plateResult.vehicle.fuelType].filter(Boolean).join(" · ") || "—"}
+            </Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Doors / seats</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.numberOfDoors, plateResult.vehicle.numberOfSeats].filter(Boolean).join(" · ") || "—"}
+            </Text>
+          </View>
+          {!vin.trim() && (
+            <Text style={styles.helperText}>
+              Add a VIN above and run the check again for stolen/written-off/money-owing status too.
+            </Text>
+          )}
+        </View>
+      )}
+
+      {plateResult && plateResult.outcome !== "success" && (
+        <View
+          style={[styles.resultCard, plateResult.outcome === "error" ? styles.resultCardError : styles.resultCardWarn]}
+        >
+          <MaterialCommunityIcons
+            name={plateResult.outcome === "error" ? "alert-circle-outline" : "information-outline"}
+            size={20}
+            color={plateResult.outcome === "error" ? colors.danger : colors.warning}
+          />
+          <Text style={styles.resultText}>{plateResult.message}</Text>
+        </View>
+      )}
 
       {result && result.outcome === "success" && (
         <View style={styles.successCard}>

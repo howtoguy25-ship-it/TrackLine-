@@ -285,3 +285,115 @@ exports.runRevCheck = onCall(async (request) => {
     };
   }
 });
+
+// Real, second vehicle-data source, per explicit request to let a driver run a check from just
+// a NUMBER PLATE + state -- PPSR (runRevCheck above) only ever searches by VIN (a deliberate,
+// correct limit of PPSR itself, not something this works around), so getting real data off a
+// plate alone needs a genuinely different provider. RegCheck's CheckAustralia operation (the
+// same service carregistrationapi.com.au resells) is real and plate-based: confirmed from its
+// own live WSDL (regcheck.org.uk/api/reg.asmx?wsdl) -- CheckAustralia(RegistrationNumber, State,
+// username), with an HTTP GET binding alongside SOAP, which is what's used here (no SOAP
+// envelope needed for that binding). This ONLY ever returns vehicle SPECS (make/model/year/
+// body/engine/transmission/fuel/seats/doors/drive side) -- confirmed from that same WSDL
+// introspection, it has no stolen/written-off/finance/odometer fields at all, so those stay
+// PPSR-VIN-only (see runRevCheck above); this is a real, additive data source, not a replacement.
+const PLATE_LOOKUP_URL = "http://www.regcheck.org.uk/api/reg.asmx/CheckAustralia";
+
+// The ASMX HTTP GET binding returns an XML envelope wrapping a `vehicleJson` element that is
+// itself a JSON *string* (confirmed from the WSDL's own Vehicle complex type) -- a real, if
+// unusual, quirk of this specific API, not a parsing shortcut taken here. A small, targeted
+// regex extraction (not a general XML parser, which this function has no dependency for and
+// doesn't need for one known, narrow tag) plus standard XML entity unescaping, since the JSON
+// string's own quotes/brackets arrive XML-escaped inside the outer envelope.
+function extractVehicleJson(xmlText) {
+  const match = xmlText.match(/<vehicleJson>([\s\S]*?)<\/vehicleJson>/i);
+  if (!match) return null;
+  const unescaped = match[1]
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+  try {
+    return JSON.parse(unescaped);
+  } catch {
+    return null;
+  }
+}
+
+// RegCheck's own JSON shape wraps most fields as { CurrentTextValue: "..." } rather than plain
+// strings (a documented quirk of this API, consistent across its many region operations) --
+// this reads either shape defensively so a provider response that doesn't match the expected
+// wrapper still yields the plain value instead of "[object Object]".
+function textValue(field) {
+  if (field == null) return null;
+  if (typeof field === "string") return field.trim() || null;
+  if (typeof field === "object" && typeof field.CurrentTextValue === "string") {
+    return field.CurrentTextValue.trim() || null;
+  }
+  return null;
+}
+
+exports.runPlateLookup = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+
+  const plate = typeof request.data?.plate === "string" ? request.data.plate.trim().toUpperCase() : "";
+  const state = typeof request.data?.state === "string" ? request.data.state.trim().toUpperCase() : "";
+  if (!plate || !state) {
+    return { outcome: "error", message: "Enter a plate and state to run a real lookup." };
+  }
+
+  const db = getFirestore();
+  const providerSnap = await db.doc("config/plateLookupProvider").get();
+  const username = (providerSnap.exists ? providerSnap.data().username : "")?.trim();
+  if (!username) {
+    return {
+      outcome: "not_connected",
+      message: "No plate lookup provider connected yet -- try again once the owner has one set up.",
+    };
+  }
+
+  const url = `${PLATE_LOOKUP_URL}?RegistrationNumber=${encodeURIComponent(plate)}&State=${encodeURIComponent(state)}&username=${encodeURIComponent(username)}`;
+
+  try {
+    const resp = await fetch(url);
+    const xmlText = await resp.text();
+    if (!resp.ok) {
+      return {
+        outcome: "error",
+        message: `Plate lookup provider rejected the request (HTTP ${resp.status}).`,
+      };
+    }
+    const parsed = extractVehicleJson(xmlText);
+    const data = parsed?.Description !== undefined ? parsed : parsed?.vehicleData ?? parsed;
+    if (!data) {
+      console.error("runPlateLookup: couldn't parse provider response", xmlText.slice(0, 500));
+      return { outcome: "error", message: "No vehicle data came back for that plate/state -- check they're correct." };
+    }
+
+    return {
+      outcome: "success",
+      message: "Lookup complete.",
+      vehicle: {
+        make: textValue(data.CarMake),
+        model: textValue(data.CarModel),
+        year: textValue(data.RegistrationYear),
+        bodyType: textValue(data.BodyStyle),
+        engineSize: textValue(data.EngineSize),
+        transmission: textValue(data.Transmission),
+        fuelType: textValue(data.FuelType),
+        numberOfDoors: textValue(data.NumberOfDoors),
+        numberOfSeats: textValue(data.NumberOfSeats),
+        driverSide: textValue(data.DriverSide),
+      },
+    };
+  } catch (err) {
+    console.error("runPlateLookup: request failed", err);
+    return {
+      outcome: "error",
+      message: `Couldn't reach the plate lookup provider: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+});

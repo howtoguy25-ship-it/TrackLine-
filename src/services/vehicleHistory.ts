@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { RevCheckVehicle } from "@/services/revCheck";
+import type { PlateLookupVehicle } from "@/services/plateLookup";
 
 // Persistent log of vehicles this device has actually seen -- either fully identified by the
 // live AI detector (a confirmed, on-device plate read, same confirm logic
@@ -30,6 +31,13 @@ export interface VehicleHistoryEntry {
     vehicle?: RevCheckVehicle;
     securedInterestCount?: number;
     certificateUrl?: string | null;
+    checkedAt: number;
+  } | null;
+  // Same caching idea as lastResult above, for the separate plate+state lookup (make/model/
+  // year/body/etc., see plateLookup.ts) -- kept as its own field since it's a genuinely
+  // different data source/result shape that can succeed independently of the VIN-based check.
+  lastPlateLookup: {
+    vehicle?: PlateLookupVehicle;
     checkedAt: number;
   } | null;
 }
@@ -100,6 +108,7 @@ export async function upsertDetectedVehicle(
       timesSeen: 1,
       source: "detected",
       lastResult: null,
+      lastPlateLookup: null,
     });
   }
   return writeHistory(current);
@@ -145,6 +154,7 @@ export async function recordManualCheck(
       timesSeen: 1,
       source: "manual",
       lastResult: null,
+      lastPlateLookup: null,
     });
   }
   return writeHistory(current);
@@ -170,6 +180,26 @@ export async function recordRevCheckResult(
   current[existingIndex] = {
     ...current[existingIndex],
     lastResult: { ...result, checkedAt: Date.now() },
+  };
+  return writeHistory(current);
+}
+
+/** Same idea/timing as recordRevCheckResult above, for the separate plate+state lookup. Called
+ *  the instant that real lookup succeeds so re-opening this vehicle later shows the last real
+ *  model/spec data immediately -- this one isn't gated behind the paid IAP purchase the way the
+ *  VIN check is, but caching it anyway means one less real network call on every re-open. */
+export async function recordPlateLookupResult(
+  rawPlate: string,
+  result: { vehicle?: PlateLookupVehicle }
+): Promise<VehicleHistoryEntry[]> {
+  const plate = normalizePlate(rawPlate);
+  if (!plate) return getVehicleHistory();
+  const current = await getVehicleHistory();
+  const existingIndex = current.findIndex((e) => e.plate === plate);
+  if (existingIndex < 0) return current;
+  current[existingIndex] = {
+    ...current[existingIndex],
+    lastPlateLookup: { ...result, checkedAt: Date.now() },
   };
   return writeHistory(current);
 }

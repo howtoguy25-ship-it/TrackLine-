@@ -26,6 +26,7 @@ import { env } from "@/config/env";
 import { Sentry } from "@/services/sentry";
 import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
+import { getPlateLookupProviderConfig, savePlateLookupProviderConfig } from "@/services/plateLookupAdmin";
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -399,6 +400,43 @@ export function SettingsScreen() {
       setSavingKeys(false);
     }
   }, [ppsrKeyDraft, nevdisKeyDraft]);
+
+  // Same owner-only pattern as the PPSR/NEVDIS keys above, for the separate plate-based lookup
+  // provider (RegCheck/carregistrationapi.com.au -- see runPlateLookup in
+  // firebase/functions/index.js). Real self-serve signup: create a free/paid account at
+  // carregistrationapi.com.au to get this username.
+  const [plateLookupUsernameDraft, setPlateLookupUsernameDraft] = useState("");
+  const [plateLookupKeyLoaded, setPlateLookupKeyLoaded] = useState(false);
+  const [plateLookupKeySavedFlash, setPlateLookupKeySavedFlash] = useState(false);
+  const [savingPlateLookupKey, setSavingPlateLookupKey] = useState(false);
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    getPlateLookupProviderConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setPlateLookupUsernameDraft(config.username);
+      })
+      .catch((err) => console.warn("[settings] failed to load plate lookup provider config", err))
+      .finally(() => {
+        if (!cancelled) setPlateLookupKeyLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwner]);
+  const onSavePlateLookupKey = useCallback(async () => {
+    setSavingPlateLookupKey(true);
+    try {
+      await savePlateLookupProviderConfig({ username: plateLookupUsernameDraft });
+      setPlateLookupKeySavedFlash(true);
+      setTimeout(() => setPlateLookupKeySavedFlash(false), 2000);
+    } catch (err) {
+      Alert.alert("Couldn't save", err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingPlateLookupKey(false);
+    }
+  }, [plateLookupUsernameDraft]);
 
   // Real, live battery reading (not a static disclaimer) -- AI Vehicle Detection runs a real
   // camera + on-device AI analysis several times a second, which is genuinely one of the
@@ -883,6 +921,53 @@ export function SettingsScreen() {
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <Text style={styles.customExpiryApplyText}>{keysSavedFlash ? "Saved" : "Save keys"}</Text>
+                  )}
+                </Pressable>
+              </>
+            )}
+
+            {/* Real, separate provider -- searches by PLATE + STATE instead of VIN (make/model/
+                year/body/engine/etc. only, no stolen/written-off/finance/odometer -- see
+                runPlateLookup's own comment in firebase/functions/index.js for why that split is
+                real, not arbitrary). Sign up for a real account at carregistrationapi.com.au to
+                get this username. */}
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>
+              Plate lookup provider (owner only)
+            </Text>
+            <Text style={styles.helperText}>
+              Real make/model/year/body/engine data by plate + state alone -- a different,
+              separate provider from PPSR/NEVDIS above (carregistrationapi.com.au). Sign up there
+              for a real account, then paste the username it gives you below.
+            </Text>
+            {!plateLookupKeyLoaded ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : (
+              <>
+                <TextInput
+                  value={plateLookupUsernameDraft}
+                  onChangeText={setPlateLookupUsernameDraft}
+                  placeholder="Plate lookup provider username"
+                  placeholderTextColor={colors.textFaint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  style={styles.customExpiryInput}
+                />
+                <Pressable
+                  onPress={onSavePlateLookupKey}
+                  disabled={savingPlateLookupKey}
+                  style={({ pressed }) => [
+                    styles.customExpiryApply,
+                    { alignItems: "center" },
+                    pressed && !savingPlateLookupKey && { opacity: pressedOpacity },
+                  ]}
+                >
+                  {savingPlateLookupKey ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.customExpiryApplyText}>
+                      {plateLookupKeySavedFlash ? "Saved" : "Save username"}
+                    </Text>
                   )}
                 </Pressable>
               </>
