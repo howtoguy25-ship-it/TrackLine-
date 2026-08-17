@@ -7,26 +7,22 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "image": "latest" },
-      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
+      "ios": { "image": "latest" }
     },
     "preview": {
       "distribution": "internal",
-      "ios": { "image": "latest" },
-      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
+      "ios": { "image": "latest" }
     },
     "production": {
       "autoIncrement": true,
       "ios": { "image": "latest" },
       "env": {
         "RCT_USE_PREBUILT_RNCORE": "0"
-      },
-      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
+      }
     },
     "productionDebug": {
       "autoIncrement": true,
-      "ios": { "image": "latest", "buildConfiguration": "Debug" },
-      "cache": { "key": "cocoapods-trunk-v2", "paths": ["$HOME/.cocoapods"] }
+      "ios": { "image": "latest", "buildConfiguration": "Debug" }
     }
   },
   "submit": {
