@@ -123,6 +123,25 @@ const TRAFFIC_SUGGESTION_DISPLAY_MS = 10_000;
 // nowhere near the driver yet).
 const NEAR_TERM_TRAFFIC_CHECK_METERS = 1000;
 
+// Driving's 3-way route picker order -- same order/keys RouteOptionsCard.tsx's own local
+// PROFILE_ORDER uses for its list rows, kept here too (not shared/exported) since this is the
+// only other place that needs it and duplicating one small array beats a wider shared-module
+// refactor for it.
+const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
+// Where along each route's own polyline its floating ETA pill lands -- staggered per profile
+// (not all at the literal midpoint) so three pills sitting on largely overlapping road sections
+// don't all render in exactly the same spot. Index-matched to ROUTE_PROFILE_ORDER.
+const ROUTE_ETA_PILL_FRACTIONS = [0.35, 0.5, 0.65];
+
+// Index-based (not distance-based) point along a polyline -- good enough for placing a small
+// floating label roughly along a route's own path without needing real cumulative-distance
+// walking the way pointAheadOnPolylineMeters (used for live driving position) does.
+function pointAtPolylineFraction(polyline: LatLng[], fraction: number): LatLng | null {
+  if (polyline.length === 0) return null;
+  const idx = Math.min(polyline.length - 1, Math.max(0, Math.floor(polyline.length * fraction)));
+  return polyline[idx];
+}
+
 export function MapScreen() {
   const { location } = useLocation();
   const { user } = useAuth();
@@ -2080,14 +2099,57 @@ export function MapScreen() {
             street. Dashed on top of that so it's still visually distinct from the solid
             committed-route line (the two are mutually exclusive: `route` is only ever set once
             routeOptions has been cleared by confirmRoute). */}
-        {routeOptions && (
-          <Polyline
-            coordinates={routeOptions[selectedProfile].polyline}
-            strokeWidth={7}
-            strokeColor="#DC2626"
-            lineDashPattern={[10, 7]}
-          />
-        )}
+        {/* All three route options drawn at once, per explicit request (like Apple/Google
+            Maps' own route picker) instead of only ever showing the currently-selected one --
+            the selected route highlighted (thicker, red, on top so it's never covered by the
+            other two -- see zIndex), the other two muted gray and thinner so they still read as
+            real, tappable alternatives rather than clutter. Tapping any of the three (line or
+            ETA pill below) selects it, same as tapping its row in the RouteOptionsCard sheet. */}
+        {routeOptions &&
+          ROUTE_PROFILE_ORDER.map((key) => {
+            const isSelected = key === selectedProfile;
+            return (
+              <Polyline
+                key={key}
+                coordinates={routeOptions[key].polyline}
+                strokeWidth={isSelected ? 7 : 4}
+                strokeColor={isSelected ? "#DC2626" : "rgba(107, 114, 128, 0.55)"}
+                lineDashPattern={isSelected ? [10, 7] : undefined}
+                tappable
+                onPress={() => setSelectedProfile(key)}
+                zIndex={isSelected ? 2 : 1}
+              />
+            );
+          })}
+        {/* Small floating ETA pill per route, per explicit request -- "clear enough to see,
+            not overlaying the map." Positioned at a different fraction along each route's own
+            polyline (not all at the literal midpoint) so three pills sitting on largely
+            overlapping road sections don't all land in exactly the same spot. Never a static
+            label -- etaInTrafficText/etaText are the same real, live Google Directions figures
+            RouteOptionsCard's own rows already show. */}
+        {routeOptions &&
+          ROUTE_PROFILE_ORDER.map((key, i) => {
+            const r = routeOptions[key];
+            const labelPoint = pointAtPolylineFraction(r.polyline, ROUTE_ETA_PILL_FRACTIONS[i]);
+            if (!labelPoint) return null;
+            const isSelected = key === selectedProfile;
+            return (
+              <Marker
+                key={`${key}-eta`}
+                coordinate={labelPoint}
+                anchor={{ x: 0.5, y: 0.5 }}
+                onPress={() => setSelectedProfile(key)}
+                tracksViewChanges={false}
+                zIndex={isSelected ? 4 : 3}
+              >
+                <View style={[styles.routeEtaPill, isSelected && styles.routeEtaPillSelected]}>
+                  <Text style={[styles.routeEtaPillText, isSelected && styles.routeEtaPillTextSelected]}>
+                    {r.etaInTrafficText ?? r.etaText}
+                  </Text>
+                </View>
+              </Marker>
+            );
+          })}
         {/* Same preview treatment for walking/bicycling/transit -- these modes only ever have
             one `modeRoute` (see RouteOptionsCard) instead of the 3-way `routeOptions` picker
             above, but that meant this preview line's condition never matched for them at all,
@@ -2980,6 +3042,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     ...shadow.medium,
+  },
+  // Small, clear pointed pill for each route option's live ETA -- deliberately compact (not a
+  // full card) so it reads at a glance without covering meaningful map area, per explicit
+  // request. Unselected pills stay light/neutral so the selected one's red is what actually
+  // draws the eye, matching the selected route line's own highlight color.
+  routeEtaPill: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: "rgba(107, 114, 128, 0.55)",
+    ...shadow.low,
+  },
+  routeEtaPillSelected: {
+    backgroundColor: "#DC2626",
+    borderColor: "#DC2626",
+  },
+  routeEtaPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  routeEtaPillTextSelected: {
+    color: "#FFFFFF",
   },
   // Wide, soft, translucent "flashlight" cone -- apex (the narrow point) sits at the puck's
   // exact coordinate (see the Marker's anchor: {y: 1} above) and fans out in whichever
