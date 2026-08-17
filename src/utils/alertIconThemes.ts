@@ -11,13 +11,15 @@ import type { AlertType } from "@/types/alert";
  * special cases, still honored only for this theme) -- picking it is a true no-op for every
  * existing user.
  */
-export type AlertIconThemeKey = "default" | "outline" | "bold" | "shield";
+export type AlertIconThemeKey = "default" | "outline" | "bold" | "shield" | "vivid" | "night";
 
 export const ALERT_ICON_THEME_LABELS: Record<AlertIconThemeKey, string> = {
   default: "Default",
   outline: "Outline",
   bold: "Bold",
   shield: "Shield",
+  vivid: "Vivid",
+  night: "Night",
 };
 
 export interface AlertIconSpec {
@@ -52,5 +54,21 @@ export const ALERT_ICON_THEMES: Record<Exclude<AlertIconThemeKey, "default">, Re
     camera: { name: "camera", color: "#A855F7" },
     crash: { name: "shield-star-outline", color: "#F97316" },
     traffic_light: { name: "traffic-light", color: "#14B8A6" },
+  },
+  vivid: {
+    police: { name: "police-station", color: "#3B82F6" },
+    emergency_vehicle: { name: "car-emergency", color: "#EF4444" },
+    hazard: { name: "alert-rhombus", color: "#FACC15" },
+    camera: { name: "camera-iris", color: "#D946EF" },
+    crash: { name: "car-multiple", color: "#FB923C" },
+    traffic_light: { name: "traffic-light", color: "#22D3EE" },
+  },
+  night: {
+    police: { name: "shield-sun", color: "#93C5FD" },
+    emergency_vehicle: { name: "ambulance", color: "#FCA5A5" },
+    hazard: { name: "alert-box-outline", color: "#FDE68A" },
+    camera: { name: "cctv-off", color: "#C4B5FD" },
+    crash: { name: "car-back", color: "#FDBA74" },
+    traffic_light: { name: "traffic-light-outline", color: "#5EEAD4" },
   },
 };

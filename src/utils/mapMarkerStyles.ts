@@ -15,7 +15,10 @@ export type MapMarkerStyleKey =
   | "fireTruck"
   | "bus"
   | "truck"
-  | "motorbike";
+  | "motorbike"
+  | "sportsCar"
+  | "helicopter"
+  | "tank";
 
 export const MAP_MARKER_STYLE_LABELS: Record<MapMarkerStyleKey, string> = {
   default: "Default",
@@ -27,6 +30,9 @@ export const MAP_MARKER_STYLE_LABELS: Record<MapMarkerStyleKey, string> = {
   bus: "Bus",
   truck: "Truck",
   motorbike: "Motorbike",
+  sportsCar: "Sports Car",
+  helicopter: "Helicopter",
+  tank: "Tank",
 };
 
 export interface MapMarkerIconSpec {
@@ -44,4 +50,7 @@ export const MAP_MARKER_STYLE_ICONS: Record<Exclude<MapMarkerStyleKey, "default"
   bus: { name: "bus", color: "#16A34A" },
   truck: { name: "truck", color: "#6B7280" },
   motorbike: { name: "motorbike", color: "#111827" },
+  sportsCar: { name: "car-sports", color: "#DB2777" },
+  helicopter: { name: "helicopter", color: "#0891B2" },
+  tank: { name: "tank", color: "#4D7C0F" },
 };

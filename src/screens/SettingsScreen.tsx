@@ -78,7 +78,7 @@ const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
   greenYellow: ["#0f2417", "#facc15"],
 };
 
-const NAV_CARD_THEME_ORDER: NavCardThemeKey[] = ["dark", "light", "aqua"];
+const NAV_CARD_THEME_ORDER: NavCardThemeKey[] = ["dark", "light", "transparentDark", "midnight", "sunset", "forest"];
 const MAP_MARKER_STYLE_ORDER: MapMarkerStyleKey[] = [
   "default",
   "car",
@@ -89,8 +89,11 @@ const MAP_MARKER_STYLE_ORDER: MapMarkerStyleKey[] = [
   "bus",
   "truck",
   "motorbike",
+  "sportsCar",
+  "helicopter",
+  "tank",
 ];
-const ALERT_ICON_THEME_ORDER: AlertIconThemeKey[] = ["default", "outline", "bold", "shield"];
+const ALERT_ICON_THEME_ORDER: AlertIconThemeKey[] = ["default", "outline", "bold", "shield", "vivid", "night"];
 // A representative sample (not every AlertType) for the alert-icon-theme preview tiles below --
 // enough to show a pack's own distinct glyph/color identity without a 6-icon-wide tile.
 const ALERT_ICON_PREVIEW_TYPES: AlertType[] = ["police", "crash", "hazard", "traffic_light"];
@@ -607,8 +610,10 @@ export function SettingsScreen() {
                 ]}
                 accessibilityLabel={`${MAP_THEME_LABELS[theme]} map theme`}
               >
-                <View style={[styles.themeSwatch, { backgroundColor: bg }]}>
-                  <View style={[styles.themeSwatchAccent, { backgroundColor: accent }]} />
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, { backgroundColor: bg }]}>
+                    <View style={[styles.themeSwatchAccent, { backgroundColor: accent }]} />
+                  </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {MAP_THEME_LABELS[theme]}
@@ -639,8 +644,10 @@ export function SettingsScreen() {
                 ]}
                 accessibilityLabel={`${NAV_CARD_THEME_LABELS[theme]} navigation card theme`}
               >
-                <View style={[styles.themeSwatch, { backgroundColor: themeColors.background }]}>
-                  <Text style={[styles.navCardSwatchText, { color: themeColors.text }]}>Aa</Text>
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, { backgroundColor: themeColors.background }]}>
+                    <Text style={[styles.navCardSwatchText, { color: themeColors.text }]}>Aa</Text>
+                  </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {NAV_CARD_THEME_LABELS[theme]}
@@ -671,12 +678,14 @@ export function SettingsScreen() {
                 ]}
                 accessibilityLabel={`${MAP_MARKER_STYLE_LABELS[style]} map marker`}
               >
-                <View style={[styles.themeSwatch, styles.iconSwatch, iconSpec && { backgroundColor: iconSpec.color }]}>
-                  {iconSpec ? (
-                    <MaterialCommunityIcons name={iconSpec.name as any} size={22} color="#FFFFFF" />
-                  ) : (
-                    <Ionicons name="navigate" size={22} color={colors.accent} />
-                  )}
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.iconSwatch, iconSpec && { backgroundColor: iconSpec.color }]}>
+                    {iconSpec ? (
+                      <MaterialCommunityIcons name={iconSpec.name as any} size={22} color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="navigate" size={22} color={colors.accent} />
+                    )}
+                  </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {MAP_MARKER_STYLE_LABELS[style]}
@@ -706,10 +715,12 @@ export function SettingsScreen() {
                 ]}
                 accessibilityLabel={`${ALERT_ICON_THEME_LABELS[theme]} alert icon pack`}
               >
-                <View style={[styles.themeSwatch, styles.iconSwatch, styles.alertPreviewSwatch]}>
-                  {ALERT_ICON_PREVIEW_TYPES.map((type) => (
-                    <AlertTypeGlyph key={type} type={type} size={18} color={colors.text} themeOverride={theme} />
-                  ))}
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.iconSwatch, styles.alertPreviewSwatch]}>
+                    {ALERT_ICON_PREVIEW_TYPES.map((type) => (
+                      <AlertTypeGlyph key={type} type={type} size={18} color={colors.text} themeOverride={theme} />
+                    ))}
+                  </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {ALERT_ICON_THEME_LABELS[theme]}
@@ -1259,6 +1270,16 @@ const styles = StyleSheet.create({
   themeTileSelected: {
     borderColor: colors.accent,
     backgroundColor: colors.surfaceMuted,
+  },
+  // Real elevation, per explicit request for a "more realistic" picker -- a plain flat-color
+  // swatch read as a cheap placeholder rather than a genuine preview of the actual marker/card
+  // it represents. Wrapped in its own View (see the render call sites) since the swatch itself
+  // has overflow:hidden (needed to clip the icon/accent bar to its rounded corners), and RN
+  // shadows don't render through a clipped parent.
+  themeSwatchShadowWrap: {
+    width: "100%",
+    borderRadius: radius.sm,
+    ...shadow.medium,
   },
   themeSwatch: {
     width: "100%",

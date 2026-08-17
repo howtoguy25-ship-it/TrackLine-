@@ -109,18 +109,21 @@ export function NavigationInstructionCard({
   // Real collapse toggle -- tapping the chevron drops this down to just the icon + a single
   // line of instruction text (plus the road/speed row below, still live), so a driver who
   // wants to see more of the actual route/map underneath can do that without losing turn
-  // guidance altogether. Defaults open (matches the card's previous always-expanded behavior)
-  // -- this is an opt-in "give me more screen" action, not a new default.
-  const [collapsed, setCollapsed] = useState(false);
+  // guidance altogether. Defaults CLOSED now -- real, confirmed complaint that the always-open
+  // card (full multi-line instruction + distance pill + road/speed row all stacked) was simply
+  // too big, covering too much of the map. A small "island" pill by default, tapped open for
+  // the full detail, rather than the reverse.
+  const [collapsed, setCollapsed] = useState(true);
 
-  // Real background-transparency toggle -- the small circle button in the header. Off (normal)
-  // by default every time navigation starts; tapping it switches the card to a translucent
-  // version of the same theme (see navCardTheme.ts's backgroundTransparent) so the live map
-  // shows through behind it, and turns the button itself blue as a clear "this is now on"
-  // indicator. Text stays the same theme color either way -- textShadowColor (also part of the
-  // theme) is what actually keeps it readable over a transparent, uncontrolled background,
-  // not the background opacity alone.
-  const [transparent, setTransparent] = useState(false);
+  // Real background-transparency toggle -- the small circle button in the header. Starts
+  // wherever the picked theme itself says to (see navCardTheme.ts's startsTransparent -- only
+  // "Transparent Dark" sets this, every other theme keeps the previous "off by default, tap to
+  // turn on" behavior). Tapping it switches the card to a translucent version of the same theme
+  // (see navCardTheme.ts's backgroundTransparent) so the live map shows through behind it, and
+  // turns the button itself blue as a clear "this is now on" indicator. Text stays the same
+  // theme color either way -- textShadowColor (also part of the theme) is what actually keeps
+  // it readable over a transparent, uncontrolled background, not the background opacity alone.
+  const [transparent, setTransparent] = useState(!!theme.startsTransparent);
 
   if (!step) return null;
   const icon = (step.maneuver && MANEUVER_ICONS[step.maneuver]) || "arrow-up";
@@ -164,7 +167,9 @@ export function NavigationInstructionCard({
                   off, even collapsed -- onHeightChange already reports this card's real rendered
                   height to callers below it, so letting the text grow to however many lines it
                   actually needs (rare for the collapsed case in practice) is safe. */}
-              <Text style={[styles.instruction, { color: theme.text }, textShadow]}>
+              <Text
+                style={[styles.instruction, collapsed && styles.instructionCollapsed, { color: theme.text }, textShadow]}
+              >
                 {step.instruction}
               </Text>
               {!collapsed && (
@@ -294,6 +299,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     letterSpacing: 0.2,
+  },
+  // Real, confirmed complaint: the collapsed "island" state still used full-size text, so a
+  // long instruction (still shown in full, never truncated -- see the comment above) could keep
+  // the card just as tall as expanded. A smaller, tighter size specifically for the collapsed
+  // state keeps it genuinely compact for the common case while never hiding any of the text.
+  instructionCollapsed: {
+    fontSize: 13,
+    lineHeight: 17,
   },
   // Own pill, not just bigger plain text -- a real visual break from the instruction line above
   // it (which already carries its own weight/color), so the distance reads as its own distinct,

@@ -1,16 +1,21 @@
 /**
  * Color themes for the navigation instruction card (see NavigationInstructionCard.tsx) --
  * separate from the map's own color themes (mapStyle.ts), this only recolors the card itself.
- * Picked in Settings; "aqua" specifically uses a muted, low-saturation yellow for its text per
- * explicit request ("yellow is clear and not bright") -- a full-saturation yellow reads as
- * harsh/glary against a bright background, especially at night.
+ * Picked in Settings. Expanded per explicit request for more real color variety (the original
+ * "aqua" teal-background/yellow-text combo is gone, replaced with several new richer themes) and
+ * a genuine "transparent dark" preset (transparentDark) that starts translucent by default --
+ * previously that look only existed behind the card's own manual transparency toggle, on top of
+ * whichever theme was picked.
  */
-export type NavCardThemeKey = "dark" | "light" | "aqua";
+export type NavCardThemeKey = "dark" | "light" | "transparentDark" | "midnight" | "sunset" | "forest";
 
 export const NAV_CARD_THEME_LABELS: Record<NavCardThemeKey, string> = {
   dark: "Black & White",
   light: "White & Black",
-  aqua: "Aqua & Yellow",
+  transparentDark: "Transparent Dark",
+  midnight: "Midnight Blue",
+  sunset: "Sunset",
+  forest: "Forest",
 };
 
 export interface NavCardThemeColors {
@@ -19,6 +24,10 @@ export interface NavCardThemeColors {
   // map/live camera behind the card stays visible through it. textShadowColor below is what
   // keeps text readable at this opacity, not the background alone.
   backgroundTransparent: string;
+  // True only for "transparentDark" -- the card STARTS in its own transparent state rather than
+  // requiring the manual eye-icon toggle first, a real, dedicated "always see-through" preset
+  // rather than something only reachable as a side effect of another theme.
+  startsTransparent?: boolean;
   text: string;
   textSecondary: string;
   // Opposite-toned shadow behind every piece of text -- gives real legibility over whatever
@@ -66,19 +75,65 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     toggleBg: "rgba(17,24,39,0.08)",
     toggleIcon: "#111827",
   },
-  aqua: {
-    background: "#0E7A8C",
-    backgroundTransparent: "rgba(14,122,140,0.38)",
-    text: "#F5DE83",
-    textSecondary: "#E4F3EE",
+  transparentDark: {
+    background: "rgba(10,14,24,0.55)",
+    backgroundTransparent: "rgba(10,14,24,0.28)",
+    startsTransparent: true,
+    text: "#FFFFFF",
+    textSecondary: "#CBD5E1",
+    textShadowColor: "rgba(0,0,0,0.9)",
+    iconWrapBg: "#38BDF8",
+    iconColor: "#0A0E18",
+    actionBg: "rgba(255,255,255,0.1)",
+    actionText: "#FFFFFF",
+    exitButtonBg: "#FFFFFF",
+    exitButtonIcon: "#0A0E18",
+    toggleBg: "rgba(255,255,255,0.16)",
+    toggleIcon: "#FFFFFF",
+  },
+  midnight: {
+    background: "#1E1B4B",
+    backgroundTransparent: "rgba(30,27,75,0.4)",
+    text: "#E0E7FF",
+    textSecondary: "#A5B4FC",
     textShadowColor: "rgba(0,0,0,0.85)",
-    iconWrapBg: "#0B5C6B",
-    iconColor: "#F5DE83",
-    actionBg: "rgba(245,222,131,0.14)",
-    actionText: "#F5DE83",
-    exitButtonBg: "#F5DE83",
-    exitButtonIcon: "#0E7A8C",
-    toggleBg: "rgba(245,222,131,0.18)",
-    toggleIcon: "#F5DE83",
+    iconWrapBg: "#6366F1",
+    iconColor: "#FFFFFF",
+    actionBg: "rgba(224,231,255,0.1)",
+    actionText: "#E0E7FF",
+    exitButtonBg: "#E0E7FF",
+    exitButtonIcon: "#1E1B4B",
+    toggleBg: "rgba(224,231,255,0.16)",
+    toggleIcon: "#E0E7FF",
+  },
+  sunset: {
+    background: "#431407",
+    backgroundTransparent: "rgba(67,20,7,0.4)",
+    text: "#FED7AA",
+    textSecondary: "#FDBA74",
+    textShadowColor: "rgba(0,0,0,0.85)",
+    iconWrapBg: "#EA580C",
+    iconColor: "#FFFFFF",
+    actionBg: "rgba(254,215,170,0.12)",
+    actionText: "#FED7AA",
+    exitButtonBg: "#FED7AA",
+    exitButtonIcon: "#431407",
+    toggleBg: "rgba(254,215,170,0.18)",
+    toggleIcon: "#FED7AA",
+  },
+  forest: {
+    background: "#052E16",
+    backgroundTransparent: "rgba(5,46,22,0.4)",
+    text: "#BBF7D0",
+    textSecondary: "#86EFAC",
+    textShadowColor: "rgba(0,0,0,0.85)",
+    iconWrapBg: "#16A34A",
+    iconColor: "#FFFFFF",
+    actionBg: "rgba(187,247,208,0.12)",
+    actionText: "#BBF7D0",
+    exitButtonBg: "#BBF7D0",
+    exitButtonIcon: "#052E16",
+    toggleBg: "rgba(187,247,208,0.18)",
+    toggleIcon: "#BBF7D0",
   },
 };

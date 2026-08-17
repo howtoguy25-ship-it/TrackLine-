@@ -85,11 +85,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 const STORAGE_KEY = "@trackline/settings";
 
+// "aqua" was a real, selectable NAV_CARD_THEMES key before it was replaced with several new
+// themes this session (see navCardTheme.ts's own comment) -- a device that had actually picked
+// it has that exact string sitting in AsyncStorage right now. Left as-is, `{ ...DEFAULT_SETTINGS,
+// ...JSON.parse(raw) }` below would overwrite the safe "dark" default with that now-nonexistent
+// key, and NAV_CARD_THEMES["aqua"] is undefined -- every component reading `.text`/`.background`
+// etc. off it would throw. Real, confirmed migration, not a hypothetical.
+const RETIRED_NAV_CARD_THEME_KEYS = new Set(["aqua"]);
+
 export async function loadSettings(): Promise<AppSettings> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    if (RETIRED_NAV_CARD_THEME_KEYS.has(parsed.navCardTheme)) {
+      delete parsed.navCardTheme;
+    }
+    return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {
     return DEFAULT_SETTINGS;
   }
