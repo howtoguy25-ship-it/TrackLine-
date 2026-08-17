@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput, Keyboard } from "react-native";
 import MapView, {
   PROVIDER_GOOGLE,
   Polyline,
@@ -999,6 +999,13 @@ export function MapScreen() {
   // explicit request, instead of every route always starting from the driver's own live position.
   const fetchRouteOptions = useCallback(
     async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, mode: TravelMode) => {
+      // Belt-and-suspenders on top of DestinationSearchBar's own Keyboard.dismiss() in
+      // selectPlace -- real, confirmed screenshot evidence of the "Choose a route" card coming
+      // up with the keyboard still visible behind it. Every real caller of fetchRouteOptions is
+      // about to show RouteOptionsCard (which has no text input of its own to want the keyboard
+      // for), so dismissing here too costs nothing and closes the gap regardless of which exact
+      // path a destination got picked through.
+      Keyboard.dismiss();
       setLoadingRouteOptions(true);
       setRouteOptionsError(null);
       try {
