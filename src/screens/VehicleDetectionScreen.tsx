@@ -952,26 +952,45 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     );
   }
 
-  // CORRECTED from an earlier, wrong assumption this session: this used to remap box.bbox from
-  // the Frame Processor's UPRIGHT space into the RAW pre-rotation sensor space whenever
-  // physically landscape, on the theory that the native preview only ever shows the raw sensor
-  // orientation. Checked directly against react-native-vision-camera's own source
-  // (Camera.tsx's onPreviewOrientationChanged + RotationHelper.ts): the preview view tracks
-  // `previewOrientation`, which the native side updates live as the device physically rotates --
-  // i.e. the preview auto-rotates to stay upright for the user, the exact opposite of "always
-  // raw." That extra remap was therefore double-rotating the box relative to what's actually on
-  // screen once landscape -- the real, confirmed cause of "the box bugs out when horizontal
-  // turned." box.bbox (in photoSize's upright space) already matches what the auto-rotated
-  // preview shows in every orientation, so it's scaled directly against the container here, same
-  // as the portrait path always was -- no orientation branch needed. rawFrameInfo is still kept
-  // (state, and mapUprightBoxToRawPhoto below) purely for the still-photo capture path, which
-  // really is reading a separate, non-auto-rotated raw buffer -- that use is unaffected.
+  // Went through two wrong single-answer theories this session before landing on this -- worth
+  // recording both, since real screenshot evidence (a mounted/near-flat phone: status bar and
+  // "X"/zoom buttons all still in their normal PORTRAIT positions, while the actual scene content
+  // -- including a real "AKAI" label visible in one of the reports -- is rotated 90°) disproved
+  // BOTH of them on their own:
+  //   1. "The preview always shows the RAW sensor orientation" (the original assumption) --
+  //      wrong whenever the interface genuinely does rotate (actively turning the phone by hand),
+  //      where vision-camera's own preview auto-rotates via `previewOrientation` (confirmed from
+  //      its source, Camera.tsx's onPreviewOrientationChanged/RotationHelper.ts) and remapping on
+  //      top of that double-rotates the box.
+  //   2. "The preview always auto-rotates to match the physical device" (this session's first
+  //      fix) -- wrong for a phone mounted close to flat (a dashboard/window-sill dashcam mount,
+  //      the actual real-world case a driving app hits constantly): iOS's own interface
+  //      orientation is gravity-derived and a shallow mount angle often never confidently commits
+  //      to landscape at all, so nothing ever tells vision-camera's preview to rotate -- it's
+  //      still showing the raw, un-rotated sensor buffer, exactly like the screenshots show.
+  // The real signal isn't "is the phone physically landscape" (rawFrameInfo.orientation) OR
+  // "did the interface visually rotate" (isLandscapeLayout, from useWindowDimensions) in
+  // isolation -- it's whether the two AGREE. frame.orientation is read directly off the camera's
+  // own sensor/motion signal (unaffected by whether the app's interface ever actually rotates --
+  // it's already proven reliable for the Frame Processor's own model-feeding rotation above, no
+  // complaints there), while isLandscapeLayout only flips once iOS's interface genuinely commits.
+  // They match whenever the preview really did auto-rotate (case 1) -- no remap needed, box.bbox
+  // already lines up. They DISAGREE exactly in the flat-mount case (2) -- sensor says landscape,
+  // interface never moved, so the preview is still raw -- and that's exactly when the remap is
+  // needed, same math as the still-photo capture path already uses for its own separate raw
+  // buffer below.
+  const isLandscapeFrame =
+    rawFrameInfo?.orientation === "landscape-left" || rawFrameInfo?.orientation === "landscape-right";
+  const previewLikelyUnrotated = isLandscapeFrame && !isLandscapeLayout;
+  const displaySize =
+    previewLikelyUnrotated && rawFrameInfo ? { width: rawFrameInfo.width, height: rawFrameInfo.height } : photoSize;
+
   const scale =
-    photoSize && containerSize
-      ? Math.max(containerSize.width / photoSize.width, containerSize.height / photoSize.height)
+    displaySize && containerSize
+      ? Math.max(containerSize.width / displaySize.width, containerSize.height / displaySize.height)
       : 1;
-  const offsetX = photoSize && containerSize ? (containerSize.width - photoSize.width * scale) / 2 : 0;
-  const offsetY = photoSize && containerSize ? (containerSize.height - photoSize.height * scale) / 2 : 0;
+  const offsetX = displaySize && containerSize ? (containerSize.width - displaySize.width * scale) / 2 : 0;
+  const offsetY = displaySize && containerSize ? (containerSize.height - displaySize.height * scale) / 2 : 0;
 
   // Tapping a locked box opens this detail panel -- every field below is read straight off
   // that vehicle's own live tracked state (the same `boxes`/`plateTexts`/`emergencyTrackIds`
@@ -1064,10 +1083,20 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // until it's a read worth trusting.
           .filter((box) => box.score >= MIN_RENDER_SCORE)
           .map((box) => {
-          // See the scale/offsetX/offsetY comment above -- box.bbox is already in the same
-          // upright space the auto-rotated preview shows, in every orientation, so it's used
-          // directly here with no remap.
-          const [x, y, w, h] = box.bbox;
+          // See the scale/offsetX/offsetY comment above -- only remapped into raw-sensor space
+          // when the preview is confirmed likely un-rotated (sensor landscape, interface never
+          // moved); otherwise box.bbox already matches what the auto-rotated preview shows.
+          const displayBbox = previewLikelyUnrotated
+            ? mapUprightBoxToRawPhoto(
+                box.bbox,
+                photoSize.width,
+                photoSize.height,
+                displaySize!.width,
+                displaySize!.height,
+                rawFrameInfo!.orientation
+              )
+            : box.bbox;
+          const [x, y, w, h] = displayBbox;
           const isEmergency = emergencyTrackIds.has(box.id);
           const isSelected = selectedTrackId === box.id;
           const plateInfo = plateTexts.get(box.id);
@@ -1223,14 +1252,19 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                   source photo. */}
               {plateInfo &&
                 (() => {
-                  // Same as the vehicle box above -- plateInfo.region is already in photoSize's
-                  // upright space, which matches the auto-rotated preview directly, no remap.
-                  const displayPlateRegion: [number, number, number, number] = [
-                    plateInfo.region.x,
-                    plateInfo.region.y,
-                    plateInfo.region.w,
-                    plateInfo.region.h,
-                  ];
+                  // Same remap condition as the vehicle box above -- plateInfo.region is also in
+                  // photoSize's upright space, so it needs the same raw-sensor-space remap
+                  // exactly when the preview is confirmed likely un-rotated.
+                  const displayPlateRegion: [number, number, number, number] = previewLikelyUnrotated
+                    ? mapUprightBoxToRawPhoto(
+                        [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h],
+                        photoSize.width,
+                        photoSize.height,
+                        displaySize!.width,
+                        displaySize!.height,
+                        rawFrameInfo!.orientation
+                      )
+                    : [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h];
                   // Same off-screen-edge clamp as the vehicle box above -- a plate region is
                   // normally a small sub-crop well inside the vehicle box, but on a vehicle box
                   // that's itself mostly off-screen (a close vehicle at 5x zoom) the plate region
