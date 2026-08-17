@@ -147,6 +147,19 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Same two-doc split again, for the NSW FuelCheck live fuel-price provider (see
+    // getFuelPrices in firebase/functions/index.js) -- a real, free NSW Government API, but
+    // still a real registered credential (apiKey + apiSecret) the owner has to sign up for and
+    // manage the same way as the two providers above.
+    match /config/fuelCheckProvider {
+      allow read, write: if isAdmin();
+    }
+
+    match /config/fuelCheckStatus {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // Real card payment for web REV checks (Stripe) -- the web equivalent of mobile's Apple/
     // Google IAP purchase, since there's no app store to lean on for a website. Owner only,
     // both ways, same reasoning as config/revCheckProvider above: createRevCheckCheckout and

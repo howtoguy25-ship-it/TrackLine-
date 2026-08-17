@@ -27,6 +27,7 @@ import { Sentry } from "@/services/sentry";
 import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
 import { getPlateLookupProviderConfig, savePlateLookupProviderConfig } from "@/services/plateLookupAdmin";
+import { getFuelCheckProviderConfig, saveFuelCheckProviderConfig } from "@/services/fuelPricesAdmin";
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -437,6 +438,44 @@ export function SettingsScreen() {
       setSavingPlateLookupKey(false);
     }
   }, [plateLookupUsernameDraft]);
+
+  // Same owner-only pattern again, for the NSW Government's own FuelCheck live fuel-price API
+  // (see getFuelPrices in firebase/functions/index.js). Real self-serve signup: register a free
+  // account at api.nsw.gov.au to get this apiKey + apiSecret pair.
+  const [fuelCheckKeyDraft, setFuelCheckKeyDraft] = useState("");
+  const [fuelCheckSecretDraft, setFuelCheckSecretDraft] = useState("");
+  const [fuelCheckKeyLoaded, setFuelCheckKeyLoaded] = useState(false);
+  const [fuelCheckKeySavedFlash, setFuelCheckKeySavedFlash] = useState(false);
+  const [savingFuelCheckKey, setSavingFuelCheckKey] = useState(false);
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    getFuelCheckProviderConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setFuelCheckKeyDraft(config.apiKey);
+        setFuelCheckSecretDraft(config.apiSecret);
+      })
+      .catch((err) => console.warn("[settings] failed to load fuel check provider config", err))
+      .finally(() => {
+        if (!cancelled) setFuelCheckKeyLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwner]);
+  const onSaveFuelCheckKey = useCallback(async () => {
+    setSavingFuelCheckKey(true);
+    try {
+      await saveFuelCheckProviderConfig({ apiKey: fuelCheckKeyDraft, apiSecret: fuelCheckSecretDraft });
+      setFuelCheckKeySavedFlash(true);
+      setTimeout(() => setFuelCheckKeySavedFlash(false), 2000);
+    } catch (err) {
+      Alert.alert("Couldn't save", err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingFuelCheckKey(false);
+    }
+  }, [fuelCheckKeyDraft, fuelCheckSecretDraft]);
 
   // Real, live battery reading (not a static disclaimer) -- AI Vehicle Detection runs a real
   // camera + on-device AI analysis several times a second, which is genuinely one of the
@@ -967,6 +1006,61 @@ export function SettingsScreen() {
                   ) : (
                     <Text style={styles.customExpiryApplyText}>
                       {plateLookupKeySavedFlash ? "Saved" : "Save username"}
+                    </Text>
+                  )}
+                </Pressable>
+              </>
+            )}
+
+            {/* Real, separate provider again -- the NSW Government's own FuelCheck live fuel
+                price API (see getFuelPrices in firebase/functions/index.js). NSW-only today; no
+                equivalent official live-price API found for any other state. Register a real,
+                free account at api.nsw.gov.au to get this apiKey + apiSecret pair. */}
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>
+              Fuel price provider (owner only)
+            </Text>
+            <Text style={styles.helperText}>
+              Live NSW petrol prices via the NSW Government's own FuelCheck API -- register a real
+              account at api.nsw.gov.au, then paste the apiKey and apiSecret it gives you below.
+            </Text>
+            {!fuelCheckKeyLoaded ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : (
+              <>
+                <TextInput
+                  value={fuelCheckKeyDraft}
+                  onChangeText={setFuelCheckKeyDraft}
+                  placeholder="FuelCheck API key"
+                  placeholderTextColor={colors.textFaint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  style={styles.customExpiryInput}
+                />
+                <TextInput
+                  value={fuelCheckSecretDraft}
+                  onChangeText={setFuelCheckSecretDraft}
+                  placeholder="FuelCheck API secret"
+                  placeholderTextColor={colors.textFaint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  style={styles.customExpiryInput}
+                />
+                <Pressable
+                  onPress={onSaveFuelCheckKey}
+                  disabled={savingFuelCheckKey}
+                  style={({ pressed }) => [
+                    styles.customExpiryApply,
+                    { alignItems: "center" },
+                    pressed && !savingFuelCheckKey && { opacity: pressedOpacity },
+                  ]}
+                >
+                  {savingFuelCheckKey ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.customExpiryApplyText}>
+                      {fuelCheckKeySavedFlash ? "Saved" : "Save keys"}
                     </Text>
                   )}
                 </Pressable>

@@ -10,10 +10,15 @@ interface Props {
   place: PlaceInfo | null;
   onClose: () => void;
   onSheetChange?: (index: number) => void;
+  // Real, confirmed gap -- this sheet had photos/rating/hours/phone/website/reviews but no way
+  // to actually route there, forcing a driver to close it and re-search the same place by name.
+  // Optional so a caller that only wants read-only info (none exist today, but kept honest to
+  // the real shape) doesn't have to wire a no-op.
+  onGetDirections?: (place: PlaceInfo) => void;
 }
 
 export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoSheet(
-  { place, onClose, onSheetChange },
+  { place, onClose, onSheetChange, onGetDirections },
   ref
 ) {
   const insets = useSafeAreaInsets();
@@ -65,6 +70,19 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                 <Text style={[styles.openNowText, { color: place.openNow ? "#16A34A" : colors.danger }]}>
                   {place.openNow ? "Open now" : "Closed"}
                 </Text>
+              )}
+              {onGetDirections && (
+                <Pressable
+                  onPress={() => onGetDirections(place)}
+                  style={({ pressed }) => [
+                    styles.directionsButton,
+                    { marginLeft: "auto" },
+                    pressed && { opacity: pressedOpacity },
+                  ]}
+                >
+                  <Ionicons name="navigate" size={14} color="#FFFFFF" />
+                  <Text style={styles.directionsButtonText}>Directions</Text>
+                </Pressable>
               )}
             </View>
 
@@ -206,6 +224,20 @@ const styles = StyleSheet.create({
   openNowText: {
     fontSize: 13,
     fontWeight: "600",
+  },
+  directionsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+  },
+  directionsButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   scroll: {
     marginTop: spacing.md,

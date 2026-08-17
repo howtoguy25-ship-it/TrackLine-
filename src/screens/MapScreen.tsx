@@ -28,7 +28,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { MuteButton } from "@/components/MuteButton";
 import { CarNavArrow, PersonLocationDot } from "@/components/LocationMarkers";
 import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/DestinationSearchBar";
-import { MapTopPillRow, MAP_TOP_PILL_ROW_HEIGHT } from "@/components/MapTopPillRow";
+import { MapTopPillRow, MAP_TOP_PILL_ROW_HEIGHT, MAP_TOP_PILL_ROW_TOP_MARGIN } from "@/components/MapTopPillRow";
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
@@ -45,6 +45,7 @@ import { OsmMarkerSheet, type OsmMarkerKind } from "@/screens/OsmMarkerSheet";
 import { LiveCameraSheet } from "@/screens/LiveCameraSheet";
 import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
+import { FuelStationsSheet } from "@/screens/FuelStationsSheet";
 import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 import {
   getDirections,
@@ -173,6 +174,7 @@ export function MapScreen() {
   const liveCameraSheetRef = useRef<BottomSheet>(null);
   const restaurantsSheetRef = useRef<BottomSheet>(null);
   const hotelsSheetRef = useRef<BottomSheet>(null);
+  const fuelStationsSheetRef = useRef<BottomSheet>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
 
@@ -292,6 +294,7 @@ export function MapScreen() {
   const [navOptionsSheetOpen, setNavOptionsSheetOpen] = useState(false);
   const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
+  const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
   const anySheetOpen =
     reportSheetOpen ||
     detailSheetOpen ||
@@ -301,7 +304,8 @@ export function MapScreen() {
     directionsSheetOpen ||
     navOptionsSheetOpen ||
     restaurantsSheetOpen ||
-    hotelsSheetOpen;
+    hotelsSheetOpen ||
+    fuelStationsSheetOpen;
   const [alertPlacementLatLng, setAlertPlacementLatLng] = useState<LatLng | null>(null);
   // Real, confirmed cause of alerts appearing twice: confirmAlertPlacement is async
   // (reportAlert is a real Firestore write), and nothing previously stopped a second tap on
@@ -1262,6 +1266,27 @@ export function MapScreen() {
     },
     [placingAlert, anySheetOpen]
   );
+
+  // Shared by RestaurantsSheet/HotelsSheet's own row taps -- opens the exact same real detail
+  // sheet a map POI tap does (photos/rating/hours/phone/website/reviews, see PlaceInfoSheet),
+  // straight off the placeId those lists already have (no distance-sanity-check needed here
+  // the way onMapPress's own nearest-place guess needs one -- this placeId came directly from a
+  // real Nearby Search result, not an inferred "closest thing to this coordinate").
+  const onViewVenueDetails = useCallback((placeId: string) => {
+    restaurantsSheetRef.current?.close();
+    hotelsSheetRef.current?.close();
+    setPlaceInfoLoading(true);
+    getPlaceInfo(placeId)
+      .then((info) => {
+        setPlaceInfo(info);
+        placeInfoSheetRef.current?.expand();
+      })
+      .catch((err) => {
+        console.warn("[map] venue detail lookup failed", err);
+        Sentry.logger.error("map: venue detail lookup failed", { error: String(err) });
+      })
+      .finally(() => setPlaceInfoLoading(false));
+  }, []);
 
   const onDestinationSelected = useCallback(
     (place: PlaceDetails) => {
@@ -2503,16 +2528,21 @@ export function MapScreen() {
         />
       )}
 
-      {!route && !pendingDestination && !placingAlert && !pickingOrigin && (
+      {!route && !pendingDestination && !placingAlert && !pickingOrigin && !anySheetOpen && (
         <>
           {/* Moved out of the search bar's own idle dropdown, per explicit request -- a
               persistent row at the very top of the map instead of something only visible once
-              the search box is tapped first. */}
+              the search box is tapped first. Real, confirmed bug this !anySheetOpen guard fixes:
+              Restaurants/Hotels (both included in anySheetOpen) only ever snap to 70-75% height,
+              leaving the top of the screen (where this row lives) still visible -- without this
+              guard the row kept floating on top of/overlapping that sheet's own header/notice
+              text instead of getting out of the way while it's open. */}
           <MapTopPillRow
             alertsEnabled={settings.alertsEnabled}
             onToggleAlerts={() => updateSettings({ alertsEnabled: !settings.alertsEnabled })}
             onFindRestaurants={() => restaurantsSheetRef.current?.expand()}
             onFindHotels={() => hotelsSheetRef.current?.expand()}
+            onFindPetrol={() => fuelStationsSheetRef.current?.expand()}
           />
           <DestinationSearchBar
             biasLocation={routeOriginLatLng ?? undefined}
@@ -2521,7 +2551,11 @@ export function MapScreen() {
             findingNearestStation={findingNearestStation}
             originLabel={routeOriginLabel}
             onPressOrigin={() => setPickingOrigin(true)}
-            topOffset={MAP_TOP_PILL_ROW_HEIGHT + spacing.sm}
+            // Real total space the pill row above consumes (its own top margin beyond the safe
+            // area, plus its height, plus a small gap) minus this bar's own base top margin
+            // (spacing.md, see DestinationSearchBar's own `top` calc) -- keeps the two stacked
+            // with a consistent gap even if the row's own margin/height ever changes.
+            topOffset={MAP_TOP_PILL_ROW_TOP_MARGIN - spacing.md + MAP_TOP_PILL_ROW_HEIGHT + spacing.sm}
           />
         </>
       )}
@@ -3136,6 +3170,10 @@ export function MapScreen() {
         ref={placeInfoSheetRef}
         place={placeInfo}
         onClose={() => placeInfoSheetRef.current?.close()}
+        onGetDirections={(p) => {
+          placeInfoSheetRef.current?.close();
+          onDestinationSelected(p);
+        }}
         onSheetChange={(index) => setPlaceInfoSheetOpen(index >= 0)}
       />
       <OsmMarkerSheet
@@ -3154,10 +3192,7 @@ export function MapScreen() {
       <RestaurantsSheet
         ref={restaurantsSheetRef}
         location={currentLatLng}
-        onSelect={(place) => {
-          restaurantsSheetRef.current?.close();
-          onDestinationSelected(place);
-        }}
+        onViewDetails={onViewVenueDetails}
         onSheetChange={(index) => setRestaurantsSheetOpen(index >= 0)}
       />
       <HotelsSheet
@@ -3167,7 +3202,18 @@ export function MapScreen() {
           hotelsSheetRef.current?.close();
           onDestinationSelected(place);
         }}
+        onViewDetails={onViewVenueDetails}
         onSheetChange={(index) => setHotelsSheetOpen(index >= 0)}
+      />
+      <FuelStationsSheet
+        ref={fuelStationsSheetRef}
+        location={currentLatLng}
+        onSelect={(place) => {
+          fuelStationsSheetRef.current?.close();
+          onDestinationSelected(place);
+        }}
+        onViewDetails={onViewVenueDetails}
+        onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
       />
       <RouteDirectionsSheet
         ref={directionsSheetRef}

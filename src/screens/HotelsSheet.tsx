@@ -8,7 +8,14 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 
 interface Props {
   location: LatLng | null;
+  // Explicit "Directions" action only now (routes straight there) -- the row's own tap opens
+  // the full detail view instead (see onViewDetails below), matching RestaurantsSheet.
   onSelect: (place: PlaceDetails) => void;
+  // Real, confirmed request -- tapping a row (the photo/name/address area) now opens the full
+  // detail view (photos, rating, hours, phone, website, reviews -- see PlaceInfoSheet), which
+  // also has its own Directions button, instead of routing straight there with no way to
+  // actually see anything about the hotel first.
+  onViewDetails: (placeId: string) => void;
   onSheetChange?: (index: number) => void;
 }
 
@@ -26,7 +33,7 @@ function priceLevelText(level: number | undefined): string | null {
 }
 
 export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
-  { location, onSelect, onSheetChange },
+  { location, onSelect, onViewDetails, onSheetChange },
   ref
 ) {
   const snapPoints = useMemo(() => ["75%"], []);
@@ -184,13 +191,11 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
               // Real, confirmed complaint: unlike RestaurantsSheet's identical-looking row, this
               // row had no tap handler of its own at all -- only the two small "Directions"/"Open
               // in Maps" text buttons at the bottom responded, so tapping the photo/name/address
-              // area (the natural place to tap, especially since it looks and lays out exactly
-              // like a Restaurants row) silently did nothing. Whole row now defaults to the same
-              // Directions action; the two explicit buttons below still work independently for
-              // anyone who wants a specific action without hitting the broader row target.
-              onPress={() =>
-                onSelect({ placeId: item.placeId, name: item.name, address: item.vicinity, location: item.location })
-              }
+              // area (the natural place to tap) silently did nothing. Whole row now opens the
+              // full detail view (photos/rating/hours/phone/reviews, with its own Directions
+              // button inside) -- the two explicit buttons below still work independently for
+              // anyone who wants a specific action without opening details first.
+              onPress={() => onViewDetails(item.placeId)}
             >
               {item.photoUrl ? (
                 <Image source={{ uri: item.photoUrl }} style={styles.photo} />

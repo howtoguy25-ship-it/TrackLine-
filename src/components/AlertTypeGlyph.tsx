@@ -34,7 +34,19 @@ export function AlertTypeGlyph({ type, size, color, themeOverride }: Props) {
 
   if (theme !== "default") {
     const spec = ALERT_ICON_THEMES[theme][type];
-    return <MaterialCommunityIcons name={spec.name as any} size={size} color={color} />;
+    // Real, confirmed complaint: every non-default pack's preview swatch in Settings rendered
+    // as a flat black/dark icon, none of the real distinct colors each pack actually defines
+    // (see alertIconThemes.ts). Root cause -- this always used the incoming `color` prop, which
+    // real on-map rendering deliberately passes as a fixed white (the icon sits on top of its
+    // own colored circular pin there, from ALERT_COLORS -- see AlertMarker.tsx -- so it needs to
+    // stay white for contrast regardless of which pack is picked). The Settings preview has no
+    // colored pin behind it at all, so it needs the pack's own color to actually show anything
+    // distinct. themeOverride is ONLY ever passed by that preview (see its own comment above),
+    // never by real map/report/detail-sheet rendering, so it's the one safe, exact signal to
+    // switch on here without touching the real on-map look at all.
+    return (
+      <MaterialCommunityIcons name={spec.name as any} size={size} color={themeOverride ? spec.color : color} />
+    );
   }
 
   const emoji = ALERT_EMOJI_OVERRIDE[type];

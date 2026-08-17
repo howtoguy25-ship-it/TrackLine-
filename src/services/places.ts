@@ -285,7 +285,7 @@ function nearbyPlacePhotoUrl(photoReference: string | undefined): string | null 
 // Real distance (haversine), not Google's own ranking order -- Nearby Search's `rankby=distance`
 // mode already sorts by this, but the app still needs the actual meters figure to show/format
 // per result, which Google's response doesn't include directly.
-function haversineMeters(a: LatLng, b: LatLng): number {
+export function haversineMeters(a: LatLng, b: LatLng): number {
   const R = 6371000;
   const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
   const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
@@ -360,6 +360,50 @@ export async function searchNearbyHotels(location: LatLng): Promise<NearbyPlace[
   if (json.status === "ZERO_RESULTS") return [];
   if (json.status !== "OK") {
     Sentry.logger.error("places: nearby hotels request failed", {
+      status: json.status,
+      errorMessage: json.error_message,
+    });
+    throw new PlacesApiError(json.status, json.error_message);
+  }
+
+  return (json.results ?? []).map((r: any) => {
+    const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
+    return {
+      placeId: r.place_id,
+      name: r.name,
+      vicinity: r.vicinity ?? "",
+      location: placeLocation,
+      rating: r.rating,
+      userRatingsTotal: r.user_ratings_total,
+      priceLevel: r.price_level,
+      openNow: r.opening_hours?.open_now,
+      photoUrl: nearbyPlacePhotoUrl(r.photos?.[0]?.photo_reference),
+      distanceMeters: haversineMeters(location, placeLocation),
+    };
+  });
+}
+
+// Same shape/reasoning as searchNearbyRestaurants/Hotels above, `type=gas_station` instead --
+// real station names/addresses/locations from Google Places. This is the FALLBACK source for a
+// petrol station's real location/name outside NSW, where fuelPrices.ts's own real live-price
+// provider (NSW FuelCheck) has no coverage -- see FuelStationsSheet's own honest handling of
+// that split. Google Places has no live fuel price data at all (not this app's own gap -- Google
+// genuinely doesn't have that data for any station), so priceLevel/rating here mean the same
+// generic Google fields every other NearbyPlace has, not a fuel price.
+export async function searchNearbyPetrolStations(location: LatLng): Promise<NearbyPlace[]> {
+  const params = new URLSearchParams({
+    location: `${location.latitude},${location.longitude}`,
+    rankby: "distance",
+    type: "gas_station",
+    key: env.googlePlacesApiKey,
+  });
+
+  const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
+  const json = await res.json();
+
+  if (json.status === "ZERO_RESULTS") return [];
+  if (json.status !== "OK") {
+    Sentry.logger.error("places: nearby petrol stations request failed", {
       status: json.status,
       errorMessage: json.error_message,
     });

@@ -2,13 +2,17 @@ import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, FlatList, Image, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
-import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
+import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
   location: LatLng | null;
-  onSelect: (place: PlaceDetails) => void;
+  // Real, confirmed request -- tapping a row now opens the full detail view (photos, rating,
+  // hours, phone, website, reviews -- see PlaceInfoSheet) instead of routing straight there with
+  // no way to actually see anything about the place first. Directions is still one tap away
+  // from inside that detail sheet.
+  onViewDetails: (placeId: string) => void;
   onSheetChange?: (index: number) => void;
 }
 
@@ -22,7 +26,7 @@ function priceLevelText(level: number | undefined): string | null {
 }
 
 export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function RestaurantsSheet(
-  { location, onSelect, onSheetChange },
+  { location, onViewDetails, onSheetChange },
   ref
 ) {
   const snapPoints = useMemo(() => ["70%"], []);
@@ -124,9 +128,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
           renderItem={({ item }) => (
             <Pressable
               style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
-              onPress={() =>
-                onSelect({ placeId: item.placeId, name: item.name, address: item.vicinity, location: item.location })
-              }
+              onPress={() => onViewDetails(item.placeId)}
             >
               {item.photoUrl ? (
                 <Image source={{ uri: item.photoUrl }} style={styles.photo} />
