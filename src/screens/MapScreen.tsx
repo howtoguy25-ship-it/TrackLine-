@@ -564,6 +564,14 @@ export function MapScreen() {
       ? location.coords.heading
       : derivedHeadingRef.current;
 
+  // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
+  // coords.speed is m/s, converted here once rather than in the display component so every
+  // caller gets the same real km/h number. null whenever there's no current fix or the OS hasn't
+  // resolved a speed yet (a real "unknown", never coerced to 0 and shown as if the car were
+  // stopped).
+  const currentSpeedKmh =
+    location?.coords.speed != null && location.coords.speed >= 0 ? location.coords.speed * 3.6 : null;
+
   // Real posted speed limit for the road the driver is currently on, from OpenStreetMap's
   // maxspeed tags (see osmTrafficData.ts's fetchSpeedLimitNear) -- mirrors the web app's own
   // implementation (web/src/App.tsx). Refetched after moving ~50m (a live GPS track shouldn't
@@ -2486,6 +2494,7 @@ export function MapScreen() {
           step={activeStep}
           roadName={currentRoadName}
           speedLimitKmh={speedLimitKmh}
+          currentSpeedKmh={currentSpeedKmh}
           themeKey={settings.navCardTheme}
           onExit={exitNavigation}
           onExpandDirections={() => directionsSheetRef.current?.expand()}

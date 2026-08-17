@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RouteStep } from "@/services/directions";
 import { SpeedLimitSign } from "@/components/SpeedLimitSign";
+import { CurrentSpeedDial } from "@/components/CurrentSpeedDial";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { radius, spacing, shadow, pressedOpacity } from "@/theme/tokens";
 
@@ -46,6 +47,9 @@ interface Props {
   // real lookup resolves one (never a guess).
   roadName: string | null;
   speedLimitKmh: number | null;
+  // Real live GPS speed (already converted to km/h, already rounded/clamped by the caller) --
+  // null whenever there's no current fix, same "never a guess" rule as speedLimitKmh.
+  currentSpeedKmh: number | null;
   themeKey: NavCardThemeKey;
   onExit: () => void;
   // Opens the full turn-by-turn directions list -- the whole icon+text area is tappable for
@@ -65,6 +69,7 @@ export function NavigationInstructionCard({
   step,
   roadName,
   speedLimitKmh,
+  currentSpeedKmh,
   themeKey,
   onExit,
   onExpandDirections,
@@ -213,8 +218,20 @@ export function NavigationInstructionCard({
           dedicated row of its own so neither ever overlaps the turn instruction or the actions
           below it. Only rendered once a real lookup has actually resolved something (never a
           placeholder/guess), and stays visible even collapsed since it's one compact row. */}
-      {(roadName || speedLimitKmh !== null) && (
+      {(roadName || speedLimitKmh !== null || currentSpeedKmh !== null) && (
         <View style={styles.roadRow}>
+          {/* Live speed dial + posted-limit sign, side by side -- matches the paired
+              "your speed / the limit" readout every dedicated speed-alert app (the explicit
+              visual reference this was built to match) shows during active navigation. The dial
+              itself flags red the moment the driver's live speed exceeds the known limit. */}
+          {currentSpeedKmh !== null && (
+            <View style={styles.roadRowSpeedSign}>
+              <CurrentSpeedDial
+                kmh={currentSpeedKmh}
+                overLimit={speedLimitKmh !== null && currentSpeedKmh > speedLimitKmh + 2}
+              />
+            </View>
+          )}
           {speedLimitKmh !== null && (
             <View style={styles.roadRowSpeedSign}>
               <SpeedLimitSign kmh={speedLimitKmh} />
