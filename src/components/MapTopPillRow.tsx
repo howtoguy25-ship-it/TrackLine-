@@ -82,7 +82,12 @@ const styles = StyleSheet.create({
   wrap: {
     position: "absolute",
     left: 0,
-    right: 0,
+    // Real, confirmed bug: right: 0 let this row's scrollable viewport run all the way to the
+    // screen edge, straight underneath MapScreen's fixed settings-gear button (topRightControls
+    // -- right: spacing.sm, width 40) -- the last pill (Petrol) scrolled to sit behind/colliding
+    // with it instead of stopping cleanly beside Hotels. Reserving that same width (+ margins)
+    // clips this row's own visible area short of the gear button entirely.
+    right: 40 + spacing.sm * 2,
     zIndex: 5,
   },
   row: {
