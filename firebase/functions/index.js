@@ -255,6 +255,16 @@ exports.runRevCheck = onCall(async (request) => {
                 stolen: !!vehicleData.stolen,
                 writtenOff: !!vehicleData.writtenOff,
                 safetyRecalls: vehicleData.safetyRecalls ?? null,
+                // Always null today -- PPSR Searches API's own nevdisData response has no
+                // odometer field at all (confirmed against its actual response shape above),
+                // and odometer history is genuinely fragmented by Australian state regardless of
+                // provider (NSW records it via annual roadworthy checks, several other states
+                // have no equivalent mandatory check to record it from in the first place). This
+                // is a real placeholder, not a bug -- see RevCheckVehicle's own comment in
+                // src/services/revCheck.ts for the full picture. Kept as an explicit field (not
+                // just omitted) so mobile's null-check renders the honest "not available" state
+                // instead of silently having no key to check at all.
+                odometerReadings: null,
               }
             : undefined,
           securedInterestCount: Array.isArray(data.registrations) ? data.registrations.length : 0,

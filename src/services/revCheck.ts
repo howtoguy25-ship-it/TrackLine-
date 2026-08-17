@@ -13,6 +13,11 @@ import { db, functions } from "@/services/firebase";
 // the public config/revCheckStatus.enabled flag (see subscribeRevCheckProviderStatus) so the
 // UI can keep showing an honest "not connected" without ever needing the real key itself.
 
+export interface OdometerReading {
+  date: string;
+  km: number;
+}
+
 export interface RevCheckVehicle {
   vin: string;
   make: string | null;
@@ -25,6 +30,19 @@ export interface RevCheckVehicle {
   stolen: boolean;
   writtenOff: boolean;
   safetyRecalls: unknown;
+  // null (not an empty array) means "no odometer data for this vehicle at all" -- distinct from
+  // a real but empty reading list, which this provider never actually returns today. Genuinely
+  // fragmented by state in Australia (confirmed against real state-check correspondence and a
+  // vehicle-data provider's own official API docs): NSW records the last 3 annual roadworthy-
+  // check odometer readings and exposes them via Service NSW's own public lookup, while several
+  // other states (VIC among them) have no equivalent mandatory check at all, so there's often
+  // nothing to record in the first place -- not just a gap in this app's own data source. Neither
+  // BusinessAPI.com.au's PPSR Searches API (the provider actually wired into runRevCheck below)
+  // nor the Car Registration API (a separate provider evaluated but not connected) return this
+  // field for any Australian state today, so it's always null until a real odometer-capable
+  // source is wired in server-side -- RevCheckScreen renders that honestly rather than assuming
+  // a future field will just start populating itself.
+  odometerReadings: OdometerReading[] | null;
 }
 
 export interface RevCheckResult {

@@ -388,6 +388,33 @@ export function RevCheckScreen() {
                   {result.vehicle.writtenOff ? "YES" : "No"}
                 </Text>
               </View>
+
+              {/* Real readings when a connected provider actually returns them (none does today
+                  -- see RevCheckVehicle's own comment in revCheck.ts), never a guess. State-aware
+                  copy for the "no data" case since odometer coverage is genuinely fragmented by
+                  Australian state, not just a gap in this app -- NSW records it via annual
+                  roadworthy checks, several other states have no equivalent check to record it
+                  from at all. */}
+              <View style={styles.odometerSection}>
+                <Text style={styles.odometerSectionTitle}>Odometer history</Text>
+                {result.vehicle.odometerReadings && result.vehicle.odometerReadings.length > 0 ? (
+                  result.vehicle.odometerReadings.map((reading, i) => (
+                    <View key={`${reading.date}-${i}`} style={styles.detailRowLight}>
+                      <Text style={styles.detailLabelLight}>{reading.date}</Text>
+                      <Text style={styles.detailValueLight}>{reading.km.toLocaleString()} km</Text>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.odometerUnavailable}>
+                    <MaterialCommunityIcons name="information-outline" size={14} color={colors.textFaint} />
+                    <Text style={styles.odometerUnavailableText}>
+                      {state === "NSW"
+                        ? "Not returned by the connected provider yet. NSW itself records the last 3 annual roadworthy-check readings via Service NSW -- a future data source could surface them here."
+                        : `Odometer history isn't available for ${state} through any connected provider yet -- most states don't run a mandatory check that records it.`}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </>
           ) : (
             <Text style={styles.resultText}>
@@ -582,6 +609,23 @@ const styles = StyleSheet.create({
   detailLabelLight: { fontSize: 13, color: colors.textMuted },
   detailValueLight: { fontSize: 13, fontWeight: "700", color: colors.text },
   detailValueDanger: { color: colors.danger },
+  odometerSection: { marginTop: spacing.sm },
+  odometerSectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  odometerUnavailable: {
+    flexDirection: "row",
+    gap: spacing.xs + 2,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+  },
+  odometerUnavailableText: { flex: 1, fontSize: 12, color: colors.textFaint, lineHeight: 16 },
   certButton: {
     flexDirection: "row",
     alignItems: "center",
