@@ -123,7 +123,9 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
     >
       <BottomSheetView style={styles.content}>
         {/* Same keyboard-dismiss-on-background-tap fix as RestaurantsSheet -- see its own
-            comment for why this is a plain Pressable, not a BottomSheetView replacement. */}
+            comment for why this is a plain Pressable, not a BottomSheetView replacement, and why
+            it deliberately stops before the list (BottomSheetFlatList) below instead of wrapping
+            it -- real, confirmed two-fingers-to-scroll bug otherwise. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
         <Text style={styles.title}>Hotels nearby</Text>
         {/* Honest, per explicit request that nothing here be fake -- Google Places has real
@@ -210,6 +212,7 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
             <Text style={styles.centerText}>{hotels.length === 0 ? "Nothing found nearby yet." : "No matches for this filter."}</Text>
           </View>
         )}
+        </Pressable>
 
         <BottomSheetFlatList
           data={visibleHotels}
@@ -291,7 +294,6 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
             </Pressable>
           )}
         />
-        </Pressable>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -299,7 +301,10 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
 
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
-  pressableFill: { flex: 1 },
+  // No longer flex:1 -- this now wraps only the static header (title/notice/search/filters),
+  // not the list, so it sizes to its own natural content height and leaves the list (its own
+  // flex:1 sibling, see listFlex) to fill the rest of the sheet.
+  pressableFill: {},
   title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
   noticeBox: {
     flexDirection: "row",

@@ -2429,11 +2429,13 @@ export function MapScreen() {
                 {isSelected && (
                   <Polyline coordinates={routeOptions[key].polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
                 )}
+                {/* Real, confirmed request -- solid line, not dashed (read as "train tracks"
+                    on the map). A real, attractive color band is enough to mark the selected
+                    route without a dash pattern breaking it up. */}
                 <Polyline
                   coordinates={routeOptions[key].polyline}
                   strokeWidth={isSelected ? 8 : 5}
                   strokeColor={isSelected ? ROUTE_PROFILE_COLORS[key] : ROUTE_PROFILE_COLORS_GHOST[key]}
-                  lineDashPattern={isSelected ? [10, 7] : undefined}
                   tappable
                   onPress={() => setSelectedProfile(key)}
                   zIndex={isSelected ? 2 : 1}
@@ -2490,13 +2492,10 @@ export function MapScreen() {
         {modeRoute && !routeOptions && (
           <>
             <Polyline coordinates={modeRoute.polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
-            <Polyline
-              coordinates={modeRoute.polyline}
-              strokeWidth={8}
-              strokeColor="#DC2626"
-              lineDashPattern={[10, 7]}
-              zIndex={2}
-            />
+            {/* Solid, not dashed (see the 3-way driving preview's own comment above for why) --
+                blue to match the app's own accent color instead of red, which this screen
+                otherwise reserves for the emergency/lightbar-confirmed AI detection state. */}
+            <Polyline coordinates={modeRoute.polyline} strokeWidth={8} strokeColor="#2563EB" zIndex={2} />
           </>
         )}
         {/* Highlighted arrival spot -- the exact picked destination (not wherever the

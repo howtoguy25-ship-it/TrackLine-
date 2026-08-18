@@ -173,6 +173,9 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>
+        {/* Same real fix as HotelsSheet/RestaurantsSheet -- this Pressable (tap blank header
+            space to dismiss the keyboard) deliberately stops before either BottomSheetFlatList
+            below instead of wrapping it -- real, confirmed two-fingers-to-scroll bug otherwise. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
           <Text style={styles.title}>Petrol stations nearby</Text>
           <View style={styles.searchRow}>
@@ -243,8 +246,9 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
                 </Text>
               </View>
             )}
+        </Pressable>
 
-          {mode === "live" && (
+        {mode === "live" && (
             <BottomSheetFlatList
               data={filteredFuelStations}
               keyExtractor={(item) => item.stationId}
@@ -332,8 +336,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
                 </Pressable>
               )}
             />
-          )}
-        </Pressable>
+        )}
       </BottomSheetView>
     </BottomSheet>
   );
@@ -341,7 +344,10 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
 
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
-  pressableFill: { flex: 1 },
+  // No longer flex:1 -- this now wraps only the static header (title/search/notices), not
+  // either list, so it sizes to its own natural content height and leaves whichever list is
+  // active (its own flex:1 sibling, see listFlex) to fill the rest of the sheet.
+  pressableFill: {},
   title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
   searchRow: {
     flexDirection: "row",

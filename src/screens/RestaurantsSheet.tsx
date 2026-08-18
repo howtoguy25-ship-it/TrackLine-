@@ -103,13 +103,17 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>
-        {/* Real, confirmed complaint: tapping blank space anywhere in this sheet (the title, the
-            notice area, empty space between rows) left the keyboard sitting up over the results
-            with no way to dismiss it except the list's own on-drag dismiss below -- this inner
-            Pressable catches every tap that isn't already claimed by a more specific control
-            (the search input itself, the clear button, a result row) and blurs the keyboard. A
-            plain Pressable, not a wholesale replacement of BottomSheetView -- that component
-            still owns the sheet's own gesture/measurement integration. */}
+        {/* Real, confirmed complaint: tapping blank space in the header (the title, the notice
+            area) left the keyboard sitting up with no way to dismiss it -- this Pressable
+            catches those taps and blurs the keyboard. Deliberately does NOT wrap the
+            BottomSheetFlatList below anymore -- real, confirmed bug (screenshot evidence: the
+            list needed two fingers to scroll): a plain RN Pressable's own touch responder,
+            nested around the list's real-native-gesture-handler-based scroll, was winning the
+            very first touch instead of ceding it to the list, so an ordinary single-finger drag
+            never reached the FlatList's own scroll gesture at all -- only a second, simultaneous
+            touch point did. The list already has its own "tap a row" Pressables and
+            keyboardShouldPersistTaps/on-drag dismiss handling, so it never needed this wrapper's
+            help to begin with. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
         <Text style={styles.title}>Restaurants nearby</Text>
         <View style={styles.searchRow}>
@@ -150,6 +154,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             </Text>
           </View>
         )}
+        </Pressable>
 
         <BottomSheetFlatList
           data={filteredPlaces}
@@ -205,7 +210,6 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             </Pressable>
           )}
         />
-        </Pressable>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -213,7 +217,10 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
 
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
-  pressableFill: { flex: 1 },
+  // No longer flex:1 -- this now wraps only the static header (title/search/notices), not the
+  // list, so it should size to its own natural content height and leave the list (its own
+  // flex:1 sibling, see listFlex) to fill the rest of the sheet.
+  pressableFill: {},
   title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
   searchRow: {
     flexDirection: "row",
