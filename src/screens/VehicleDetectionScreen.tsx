@@ -94,8 +94,12 @@ const MAX_BOX_RENDER_FRACTION = 0.7;
 // side, on top of the one speedTracker.ts already applies to box.bbox itself.
 const MIN_DISPLAY_ASPECT_RATIO = 1.4;
 // This model's own fixed TFLite_Detection_PostProcess output size (see
-// assets/models/tflite_ssd_mobilenet_v1) -- it never returns more than this many candidate
-// detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE.
+// assets/models/tflite_ssd_mobilenet_v2) -- it never returns more than this many candidate
+// detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE. Left
+// unchanged across the v1->v2 model swap -- purely a self-imposed cap on how many of the
+// model's own candidates this app ever processes per frame, not something that needs to match
+// whatever max the model itself was actually converted with; capping lower than the model's own
+// real limit is always safe, just a ceiling on this app's own per-frame work.
 const MAX_MODEL_DETECTIONS = 10;
 // Frame Processor throttle -- unlike the old JS-thread cadence, this no longer has to leave
 // headroom for touch handling (it's not competing with the JS thread at all), so it can run
@@ -736,11 +740,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // This model's standard TFLite_Detection_PostProcess output: 4 tensors, all float32
       // regardless of the quantized input -- [0] normalized [ymin,xmin,ymax,xmax] boxes,
       // [1] class ids, [2] scores, [3] a single-element detection count. See
-      // assets/models/tflite_ssd_mobilenet_v1/labelmap.txt for the full class list; this model
-      // was converted with the background class already excluded from its outputs, so labelmap
-      // line N (1-indexed) corresponds to output class id N-1. Since the frame fed to the model
-      // was already rotated upright above, these normalized coordinates are already in that
-      // same upright space -- scale against uprightWidth/uprightHeight, not the raw sideways
+      // assets/models/tflite_ssd_mobilenet_v2/labelmap.txt for the full class list. Real,
+      // confirmed DIFFERENT indexing than the v1 model this replaced: v1's labelmap excluded the
+      // background class from its outputs (line N, 1-indexed, was output class id N-1); this
+      // Coral-distributed v2 model's raw output class ids match labelmap.txt's own printed
+      // numbers directly, RAW, no offset -- confirmed against Coral's own official pycoral
+      // example (detect_image.py: `labels.get(obj.id, obj.id)`, i.e. the raw model output id is
+      // used as the labelmap lookup key as-is), not assumed. Since the frame fed to the model was
+      // already rotated upright above, these normalized coordinates are already in that same
+      // upright space -- scale against uprightWidth/uprightHeight, not the raw sideways
       // frame.width/frame.height.
       const boxesArr = new Float32Array(outputs[0]);
       const classesArr = new Float32Array(outputs[1]);
@@ -753,10 +761,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         const score = scoresArr[i];
         if (score < MIN_DETECTION_SCORE) continue;
         const classId = Math.round(classesArr[i]);
-        // car=3, motorcycle=4, bus=6, truck=8 -- see labelmap.txt.
+        // car=2, motorcycle=3, bus=5, truck=7 -- see labelmap.txt (raw ids, no offset -- see
+        // this block's own comment above for why that differs from the old v1 model).
         let label: "Vehicle" | "Heavy Vehicle" | null = null;
-        if (classId === 3 || classId === 4) label = "Vehicle";
-        else if (classId === 6 || classId === 8) label = "Heavy Vehicle";
+        if (classId === 2 || classId === 3) label = "Vehicle";
+        else if (classId === 5 || classId === 7) label = "Heavy Vehicle";
         if (!label) continue;
 
         const ymin = boxesArr[i * 4 + 0];
