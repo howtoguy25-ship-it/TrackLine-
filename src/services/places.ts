@@ -6,6 +6,13 @@ export interface PlacePrediction {
   placeId: string;
   primaryText: string;
   secondaryText: string;
+  // Real distance from biasLocation -- only present when biasLocation was actually passed (see
+  // the `origin` param below, a real, documented Autocomplete API field: passing `origin` makes
+  // Google compute and return this itself, not something calculated client-side from a guess).
+  distanceMeters?: number;
+  // Google's own real place-type tags (e.g. "train_station", "locality", "university") -- used
+  // to pick a real, category-appropriate icon instead of one generic pin for every result.
+  types?: string[];
 }
 
 export interface PlaceDetails {
@@ -37,6 +44,11 @@ export async function searchPlaces(query: string, biasLocation?: LatLng): Promis
   if (biasLocation) {
     params.set("location", `${biasLocation.latitude},${biasLocation.longitude}`);
     params.set("radius", "50000");
+    // Real, documented Autocomplete API field -- passing `origin` (distinct from the `location`
+    // bias above, which only affects ranking/relevance) makes Google compute and return a real
+    // `distance_meters` per prediction, straight from the same real point every other "near me"
+    // search in this app already uses. Not a client-side estimate.
+    params.set("origin", `${biasLocation.latitude},${biasLocation.longitude}`);
   }
 
   const res = await fetch(
@@ -65,6 +77,8 @@ export async function searchPlaces(query: string, biasLocation?: LatLng): Promis
     placeId: p.place_id,
     primaryText: p.structured_formatting?.main_text ?? p.description,
     secondaryText: p.structured_formatting?.secondary_text ?? "",
+    distanceMeters: typeof p.distance_meters === "number" ? p.distance_meters : undefined,
+    types: Array.isArray(p.types) ? p.types : undefined,
   }));
 }
 

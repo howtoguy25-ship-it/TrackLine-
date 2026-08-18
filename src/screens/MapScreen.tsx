@@ -2278,6 +2278,12 @@ export function MapScreen() {
         // hybrid imagery has no styleable roads/land polygons to restyle, so Google/Apple just
         // ignore it there. Safe to always pass. Theme picked in Settings (see mapStyle.ts).
         customMapStyle={mapCustomStyle}
+        // Real, confirmed request -- Google Maps SDK's own live traffic layer (real congestion
+        // data, yellow/orange/red segments on the actual roads -- the same data Apple/Google
+        // Maps' own apps show), not a fabricated overlay. Only on while a route/route-choice is
+        // actually relevant (picking or following a route) rather than always-on, which would
+        // clutter idle map browsing with congestion data nobody's using yet.
+        showsTraffic={!!pendingDestination || !!route}
         style={StyleSheet.absoluteFill}
         // Always false -- the native blue dot is fully replaced by custom markers below (the
         // car puck while navigating, the person marker otherwise), not just swapped in during

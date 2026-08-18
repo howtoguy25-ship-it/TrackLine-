@@ -22,6 +22,34 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 // stored history (see searchHistory.ts's own cap) and collapses back to this.
 const COLLAPSED_HISTORY_COUNT = 3;
 
+// Real, confirmed request -- match Apple Maps' own search result styling: a category-colored
+// icon circle per result type instead of one generic pin for every row. Reads straight off
+// Google's own real place `types` tags (see places.ts), not guessed from the name text.
+function predictionIconFor(types: string[] | undefined): { name: keyof typeof Ionicons.glyphMap; bg: string } {
+  const t = new Set(types ?? []);
+  if (t.has("train_station") || t.has("transit_station") || t.has("subway_station") || t.has("light_rail_station")) {
+    return { name: "train", bg: "#2563EB" };
+  }
+  if (t.has("bus_station")) return { name: "bus", bg: "#2563EB" };
+  if (t.has("airport")) return { name: "airplane", bg: "#2563EB" };
+  if (t.has("university") || t.has("school")) return { name: "school", bg: "#92400E" };
+  if (t.has("lodging")) return { name: "bed", bg: "#7C3AED" };
+  if (t.has("restaurant") || t.has("cafe") || t.has("food")) return { name: "restaurant", bg: "#EA580C" };
+  if (t.has("park")) return { name: "leaf", bg: "#16A34A" };
+  if (t.has("hospital") || t.has("pharmacy")) return { name: "medkit", bg: "#DC2626" };
+  if (t.has("shopping_mall") || t.has("store")) return { name: "cart", bg: "#0891B2" };
+  if (t.has("locality") || t.has("political") || t.has("administrative_area_level_1") || t.has("administrative_area_level_2")) {
+    return { name: "business", bg: "#6B7280" };
+  }
+  return { name: "location", bg: "#DC2626" };
+}
+
+// Same m/km formatting convention as every other real distance shown in this app (see the
+// Hotels/Restaurants/Fuel sheets' own formatDistance).
+function formatPredictionDistance(meters: number): string {
+  return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
 // Sentinel placeId for the "My Location" quick row below -- lets a caller tell "pick my live,
 // continuously-updating GPS position" apart from a real place that merely happens to be near it
 // (a frozen PlaceDetails.location snapshot would go stale the instant the driver moves).
@@ -341,18 +369,34 @@ export function DestinationSearchBar({
             keyExtractor={(item) => item.placeId}
             style={styles.list}
             keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <Pressable
-                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                onPress={() => onSelectPrediction(item)}
-              >
-                <Ionicons name="location-outline" size={16} color={colors.textMuted} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.primaryText}>{item.primaryText}</Text>
-                  {!!item.secondaryText && <Text style={styles.secondaryText}>{item.secondaryText}</Text>}
-                </View>
-              </Pressable>
-            )}
+            renderItem={({ item }) => {
+              const { name: iconName, bg: iconBg } = predictionIconFor(item.types);
+              return (
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                  onPress={() => onSelectPrediction(item)}
+                >
+                  <View style={[styles.predictionIconWrap, { backgroundColor: iconBg }]}>
+                    <Ionicons name={iconName} size={16} color="#FFFFFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.predictionTitleRow}>
+                      <Text style={styles.primaryText} numberOfLines={1}>
+                        {item.primaryText}
+                      </Text>
+                      {item.distanceMeters !== undefined && (
+                        <Text style={styles.predictionDistance}>{formatPredictionDistance(item.distanceMeters)}</Text>
+                      )}
+                    </View>
+                    {!!item.secondaryText && (
+                      <Text style={styles.secondaryText} numberOfLines={1}>
+                        {item.secondaryText}
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            }}
           />
         )}
         {showHistory && (
@@ -557,10 +601,30 @@ const styles = StyleSheet.create({
   rowPressed: {
     backgroundColor: colors.surfaceMuted,
   },
+  // Real, confirmed request -- category-colored icon circle per result, matching Apple Maps'
+  // own search result style instead of one flat generic pin for every row.
+  predictionIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  predictionTitleRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.xs + 2,
+  },
+  predictionDistance: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textMuted,
+  },
   primaryText: {
+    flexShrink: 1,
     fontSize: 15,
     color: colors.text,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   secondaryText: {
     fontSize: 12,
