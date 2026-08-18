@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput, Keyboard } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput, Keyboard, Platform } from "react-native";
 import MapView, {
   PROVIDER_GOOGLE,
   Polyline,
@@ -2138,21 +2138,22 @@ export function MapScreen() {
       {DIAGNOSTIC_DISABLE_MAPVIEW ? (
         <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder]} />
       ) : (
-      // Google provider on every platform, iOS included. iOS defaulting to Apple's native
-      // MapKit (provider left unset) used to be deliberate here, reasoned as "Google needs a
-      // custom dev client on iOS, unavailable in Expo Go" -- true for Expo Go, but this app is
-      // never run in Expo Go; it's always a real EAS-built binary, so that caveat never actually
-      // applied to it. The real, confirmed cost of leaving iOS on Apple Maps: customMapStyle
-      // (the map color theme picker in Settings) is a silent no-op on Apple's native renderer --
-      // it has no equivalent JSON styling mechanism at all, so every theme *looked* identical
-      // (Apple's own fixed light/dark palette) regardless of which one was selected. The
-      // react-native-maps Google config plugin + a real GOOGLE_MAPS_IOS_API_KEY (confirmed set
-      // in EAS's production env) are already wired in app.config.js, so this is switching on
-      // infrastructure that was already fully built, not adding new native surface from
-      // scratch.
+      // Apple's native MapKit on iOS (provider left unset), Google kept on Android (still
+      // needed there for the custom Map3DView native module -- see isMap3DSupported/Map3DView
+      // above, Android-only). Switched back per explicit request for iOS speed -- Apple's
+      // first-party renderer doesn't pay the Google Maps SDK bridge overhead Google's does.
+      // iOS's own 3D-buildings toggle (see show3D below) is a standard MapView camera
+      // pitch call, not the custom native module, so it's unaffected either way -- if
+      // anything Apple's renderer has more native tilt support than Google's did.
+      // Real, confirmed, KNOWINGLY ACCEPTED cost: customMapStyle (the map color theme picker in
+      // Settings) is a silent no-op on Apple's renderer -- it has no equivalent JSON styling
+      // mechanism, so on iOS every theme now *looks* identical (Apple's own fixed light/dark
+      // palette) regardless of which one is picked in Settings. This was tried and reverted
+      // once before for exactly this reason; re-enabled this time as an explicit, informed
+      // tradeoff for the real speed gain, not an oversight.
       <MapView
         ref={mapRef}
-        provider={PROVIDER_GOOGLE}
+        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
         mapType={mapType}
         // The custom theme style only ever applies to the "standard" map type -- satellite/
         // hybrid imagery has no styleable roads/land polygons to restyle, so Google/Apple just
@@ -2194,14 +2195,25 @@ export function MapScreen() {
             layered-outline look Google/Apple Maps use so the route reads as a single bold,
             polished band against any map style/theme instead of a flat single-color stroke.
             zIndex keeps the casing strictly below the colored line even though both are drawn
-            back-to-back here. */}
+            back-to-back here. Thickened again (14/9 -> 22/16) with rounded caps/joins per
+            explicit request for a bolder, Waze-style band -- meaningfully chunkier than the
+            original "just visible" line, easier to read at a glance while driving. */}
         {route && remainingPolyline.length > 1 && (
           <>
-            <Polyline coordinates={remainingPolyline} strokeWidth={14} strokeColor="#FFFFFF" zIndex={1} />
             <Polyline
               coordinates={remainingPolyline}
-              strokeWidth={9}
+              strokeWidth={22}
+              strokeColor="#FFFFFF"
+              lineCap="round"
+              lineJoin="round"
+              zIndex={1}
+            />
+            <Polyline
+              coordinates={remainingPolyline}
+              strokeWidth={16}
               strokeColor="#2563EB"
+              lineCap="round"
+              lineJoin="round"
               tappable
               onPress={enterOverviewMode}
               zIndex={2}

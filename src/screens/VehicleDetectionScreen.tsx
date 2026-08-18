@@ -313,16 +313,16 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const isLandscapeLayout = windowWidth > windowHeight;
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice("back");
-  // Real, confirmed regression from the earlier 4K (3840x2160) bump: real-device lag, exactly
-  // the risk this comment used to flag as still needing a real device test pass before treating
-  // it as final -- that test came back negative. decodePhotoForDetection's pure-JS jpeg-js
-  // decode (used for lightbar flash sampling) has to churn through the ENTIRE still photo every
-  // ~0.9-1.4s cadence tick, and a 4K frame is ~4x the raw pixel count of 1080p for that decode to
-  // block the JS thread on, repeatedly, for as long as this screen stays open -- a real,
-  // continuous cost, not a one-off. Brought back down to 1920x1080 -- still a meaningful step up
-  // in plate detail over the original 1280x720 (the plate crop itself reads via native,
-  // hardware-accelerated cropping, see plateOcr.ts, so it still gets every pixel this resolution
-  // has), without the 4K decode tax that was the real, direct cause of the lag.
+  // Real, confirmed regression from the earlier 4K (3840x2160) bump: real-device lag, caused by
+  // decodePhotoForDetection's pure-JS jpeg-js decode (used for lightbar flash sampling) churning
+  // through the ENTIRE still photo every ~0.9-1.4s cadence tick -- a real, continuous cost for as
+  // long as this screen stays open, not a one-off. Brought down to 1080p to fix that, then raised
+  // to this 2560x1440 middle ground per explicit request after 1080p felt like a bigger plate-
+  // detail step down than wanted -- roughly half the raw pixel count of full 4K (meaningfully
+  // less JS-decode cost than the version that caused the lag) while still giving the plate crop
+  // (native, hardware-accelerated cropping, see plateOcr.ts -- unaffected by the JS decode cost)
+  // more real detail than 1080p did. Genuinely untested on-device at this exact value yet -- real
+  // evidence from here decides whether it needs to move again in either direction.
   //
   // videoResolution deliberately NOT raised to match -- unlike the still-photo path above, the
   // Frame Processor's video stream feeds the live TFLite model, which the resize plugin always
@@ -333,7 +333,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // can't use any of those extra pixels -- real, ongoing cost for zero detection-accuracy
   // benefit. 1280x720 already gives the model everything it can actually use.
   const format = useCameraFormat(device, [
-    { photoResolution: { width: 1920, height: 1080 } },
+    { photoResolution: { width: 2560, height: 1440 } },
     { videoResolution: { width: 1280, height: 720 } },
   ]);
   // Real camera zoom -- vision-camera's `zoom` prop drives the actual native capture session
