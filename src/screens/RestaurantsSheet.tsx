@@ -86,7 +86,17 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   }, [places, query]);
 
   return (
-    <BottomSheet ref={ref} index={-1} snapPoints={snapPoints} enablePanDownToClose onChange={onSheetChange}>
+    <BottomSheet
+      ref={ref}
+      index={-1}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      // Same real fix as HotelsSheet/FuelStationsSheet -- see that file's own comment: without
+      // this, dragging the list rubber-banded the whole sheet (title included) past its own
+      // tallest snap point instead of just scrolling the list underneath it.
+      enableOverDrag={false}
+      onChange={onSheetChange}
+    >
       <BottomSheetView style={styles.content}>
         {/* Real, confirmed complaint: tapping blank space anywhere in this sheet (the title, the
             notice area, empty space between rows) left the keyboard sitting up over the results

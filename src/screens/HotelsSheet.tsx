@@ -99,7 +99,20 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
   }, [hotels, query, priceSort, minStars]);
 
   return (
-    <BottomSheet ref={ref} index={-1} snapPoints={snapPoints} enablePanDownToClose onChange={onSheetChange}>
+    <BottomSheet
+      ref={ref}
+      index={-1}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      // Real, confirmed bug: dragging on the list rubber-banded the WHOLE sheet past its own
+      // tallest snap point (88%), pulling the title/search/filters up along with it until
+      // "Hotels nearby" itself slid in under the status bar -- not a scroll issue at all, the
+      // sheet itself was over-dragging past its defined bounds. Disabling that hard-clamps it
+      // to the snap points above, so only the list content underneath can ever move once the
+      // sheet is already at its max.
+      enableOverDrag={false}
+      onChange={onSheetChange}
+    >
       <BottomSheetView style={styles.content}>
         {/* Same keyboard-dismiss-on-background-tap fix as RestaurantsSheet -- see its own
             comment for why this is a plain Pressable, not a BottomSheetView replacement. */}

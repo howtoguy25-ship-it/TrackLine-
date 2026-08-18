@@ -142,7 +142,17 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   }, [fallbackStations, query]);
 
   return (
-    <BottomSheet ref={ref} index={-1} snapPoints={snapPoints} enablePanDownToClose onChange={onSheetChange}>
+    <BottomSheet
+      ref={ref}
+      index={-1}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      // Same real fix as HotelsSheet/RestaurantsSheet -- see that file's own comment: without
+      // this, dragging the list rubber-banded the whole sheet (title included) past its own
+      // tallest snap point instead of just scrolling the list underneath it.
+      enableOverDrag={false}
+      onChange={onSheetChange}
+    >
       <BottomSheetView style={styles.content}>
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
           <Text style={styles.title}>Petrol stations nearby</Text>
