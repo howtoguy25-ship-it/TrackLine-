@@ -271,9 +271,10 @@ function isSameRoute(a: Route, b: Route): boolean {
  *  "Fastest: 19 mins" next to "Normal: 10 mins" for a *shorter* trip -- not actually a routing
  *  bug, just two different numbers being compared as if they were the same thing. With all
  *  three traffic-aware, "fastest" is then computed as the genuine minimum across every
- *  candidate seen (the alternatives pool *and* normal's and safest's own routes) -- so it's
- *  provably never slower than what's shown as Normal or Safest, guaranteed by construction
- *  rather than by hoping the alternatives search happened to include the quickest option.
+ *  candidate seen (the alternatives pool, a dedicated avoid-highways/back-streets request, *and*
+ *  normal's and safest's own routes) -- so it's provably never slower than what's shown as
+ *  Normal or Safest, guaranteed by construction rather than by hoping the alternatives search
+ *  happened to include the quickest option.
  *
  *  Real, confirmed complaint this last part fixes: for a short trip with no tolls on Google's
  *  own default path, "safest" (avoidTolls) and "fastest" (the genuine minimum, which is often
@@ -290,14 +291,31 @@ export async function getRouteOptions(
   destination: LatLng,
   waypoint?: LatLng
 ): Promise<Record<RouteProfileKey, Route>> {
-  const [normal, safestRaw, fastestCandidates] = await Promise.all([
+  const [normal, safestRaw, fastestCandidates, backStreetsRoute] = await Promise.all([
     getDirections(origin, destination, { waypoint, useTraffic: true }),
     getDirections(origin, destination, { ...SAFEST_OPTIONS, waypoint, useTraffic: true }),
     getFastestRouteCandidates(origin, destination, waypoint),
+    // Real, confirmed request -- a dedicated `avoid=highways` request (a genuine, documented
+    // Google Directions parameter, not a guess) explicitly forces Google to compute a real
+    // surface-streets/back-roads/lanes path instead of hoping the plain `alternatives=true`
+    // search above happens to surface one on its own. Still held to the exact same honest bar
+    // as every other candidate below (fasterOf, real traffic-aware duration) -- it only ever
+    // becomes "Fastest" if it's genuinely quicker right now, never swapped in just because it's
+    // a different/more interesting-looking path. Wrapped in its own try/catch: some trips
+    // genuinely have no viable highway-free path (a river crossing with only one bridge, say),
+    // which is a real, expected failure for THIS specific request, not a reason to fail the
+    // other three that don't depend on it.
+    getDirections(origin, destination, { avoidHighways: true, waypoint, useTraffic: true }).catch((err) => {
+      Sentry.logger.info("directions: no viable back-streets alternative for this trip", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }),
   ]);
-  const fastest = [normal, safestRaw, ...fastestCandidates].reduce(fasterOf);
+  const allFastestCandidates = backStreetsRoute ? [...fastestCandidates, backStreetsRoute] : fastestCandidates;
+  const fastest = [normal, safestRaw, ...allFastestCandidates].reduce(fasterOf);
   const safest = isSameRoute(safestRaw, normal)
-    ? (fastestCandidates.find((c) => !isSameRoute(c, normal)) ?? safestRaw)
+    ? (allFastestCandidates.find((c) => !isSameRoute(c, normal)) ?? safestRaw)
     : safestRaw;
   return { normal, fastest, safest };
 }
