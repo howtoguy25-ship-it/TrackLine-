@@ -46,6 +46,7 @@ import { LiveCameraSheet } from "@/screens/LiveCameraSheet";
 import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet } from "@/screens/FuelStationsSheet";
+import type { SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 import {
   getDirections,
@@ -201,9 +202,9 @@ export function MapScreen() {
   const placeInfoSheetRef = useRef<BottomSheet>(null);
   const osmMarkerSheetRef = useRef<BottomSheet>(null);
   const liveCameraSheetRef = useRef<BottomSheet>(null);
-  const restaurantsSheetRef = useRef<BottomSheet>(null);
-  const hotelsSheetRef = useRef<BottomSheet>(null);
-  const fuelStationsSheetRef = useRef<BottomSheet>(null);
+  const restaurantsSheetRef = useRef<SimpleBottomSheetRef>(null);
+  const hotelsSheetRef = useRef<SimpleBottomSheetRef>(null);
+  const fuelStationsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
 

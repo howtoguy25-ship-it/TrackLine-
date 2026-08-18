@@ -1,8 +1,8 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
-import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, FlatList, Keyboard } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import {
   searchNearbyPetrolStations,
   PlacesApiError,
@@ -13,7 +13,7 @@ import {
 import { getFuelPrices, subscribeFuelCheckProviderStatus, type FuelStation } from "@/services/fuelPrices";
 import { classifyAuRegion } from "@/utils/auStates";
 import type { LatLng } from "@/utils/polyline";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
 
 const SEARCH_FOCUS_KEY = "fuel";
@@ -34,19 +34,20 @@ function formatDistance(meters: number): string {
 // feed for any other Australian state/territory found. Checked here, not guessed.
 const LIVE_PRICE_REGION = "NSW";
 
-export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelStationsSheet(
+export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(function FuelStationsSheet(
   { location, onSelect, onViewDetails, onSheetChange },
   ref
 ) {
   const insets = useSafeAreaInsets();
   // Same fix as RestaurantsSheet/HotelsSheet -- capped to a shorter default, draggable up to a
   // taller point instead of a single large fixed size.
-  const snapPoints = useMemo(() => ["50%", "88%"], []);
+  const snapFractions: [number, number] = [0.5, 0.88];
 
-  // Same real bug fix as RestaurantsSheet/HotelsSheet -- the keyboard-avoidance snap to the
-  // taller point otherwise sticks around after the keyboard closes. Gated on isActiveSearchFocus
-  // -- see RestaurantsSheet's own comment for the scroll-reset bug this prevents (ANY of the
-  // three place sheets' keyboards hiding used to resnap ALL of them, not just its own).
+  // Same real bug fix/history as RestaurantsSheet/HotelsSheet -- see SimpleBottomSheet.tsx's own
+  // header comment for the full account of why this no longer uses @gorhom/bottom-sheet at all.
+  // Gated on isActiveSearchFocus -- see RestaurantsSheet's own comment for the scroll-reset bug
+  // this prevents (ANY of the three place sheets' keyboards hiding used to resnap ALL of them,
+  // not just its own).
   useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidHide", () => {
       if (!isActiveSearchFocus(SEARCH_FOCUS_KEY)) return;
@@ -175,38 +176,19 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   }, [fallbackStations, query]);
 
   return (
-    <BottomSheet
+    <SimpleBottomSheet
       ref={ref}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      // Same real fix as HotelsSheet/RestaurantsSheet -- see that file's own comment: without
-      // this, dragging the list rubber-banded the whole sheet (title included) past its own
-      // tallest snap point instead of just scrolling the list underneath it.
-      enableOverDrag={false}
-      // Same real fix as HotelsSheet -- see that file's own comment: without this, a single
-      // finger dragging on the list was captured by the sheet's own content-pan gesture instead
-      // of the list's native scroll (only two fingers actually scrolled it). Leaves only the
-      // drag handle draggable for resize/dismiss.
-      enableContentPanningGesture={false}
-      // Same real root-cause fix as RestaurantsSheet/HotelsSheet -- see RestaurantsSheet's own
-      // comment: v5's default enableDynamicSizing=true re-measures the sheet's content height
-      // off a nested BottomSheetFlatList (whose own height keeps changing as rows mount/unmount
-      // via windowing while scrolling) and re-syncs the scroll offset against it, producing the
-      // "scrolls fine for a few seconds then snaps back to the top" symptom.
-      enableDynamicSizing={false}
-      // Same real fix as RestaurantsSheet/HotelsSheet -- keeps the header below the real
-      // safe-area top at the taller 88% snap point instead of sliding in under the status bar.
+      snapFractions={snapFractions}
       topInset={insets.top}
       onChange={(index) => {
         setSheetIndex(index);
         onSheetChange?.(index);
       }}
     >
-      <BottomSheetView style={styles.content}>
+      <View style={styles.content}>
         {/* Same real fix as HotelsSheet/RestaurantsSheet -- this Pressable (tap blank header
-            space to dismiss the keyboard) deliberately stops before either BottomSheetFlatList
-            below instead of wrapping it -- real, confirmed two-fingers-to-scroll bug otherwise. */}
+            space to dismiss the keyboard) deliberately stops before either list below instead of
+            wrapping it -- real, confirmed two-fingers-to-scroll bug otherwise. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>Petrol stations nearby</Text>
@@ -234,7 +216,10 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
               autoCorrect={false}
               returnKeyType="search"
               onSubmitEditing={() => Keyboard.dismiss()}
-              onFocus={() => setActiveSearchFocus(SEARCH_FOCUS_KEY)}
+              onFocus={() => {
+                setActiveSearchFocus(SEARCH_FOCUS_KEY);
+                if (ref && typeof ref !== "function") ref.current?.snapToIndex(1);
+              }}
             />
             {query.length > 0 && (
               <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
@@ -294,12 +279,14 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
             )}
         </Pressable>
 
+        {/* Plain, un-wrapped FlatLists -- see SimpleBottomSheet.tsx's own header comment for why
+            these now have zero gesture composition with the sheet at all. */}
         {mode === "live" && (
-            <BottomSheetFlatList
+            <FlatList
               data={filteredFuelStations}
               keyExtractor={(item) => item.stationId}
               style={styles.listFlex}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl }]}
               // Real, explicit request -- Android-specific nested-scroll fix for a list living
               // inside the sheet's own gesture-handler view hierarchy.
               nestedScrollEnabled
@@ -351,11 +338,11 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
           )}
 
           {mode === "fallback" && (
-            <BottomSheetFlatList
+            <FlatList
               data={filteredFallbackStations}
               keyExtractor={(item) => item.placeId}
               style={styles.listFlex}
-              contentContainerStyle={styles.listContent}
+              contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl }]}
               // Real, explicit request -- Android-specific nested-scroll fix for a list living
               // inside the sheet's own gesture-handler view hierarchy.
               nestedScrollEnabled
@@ -389,8 +376,8 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
               )}
             />
         )}
-      </BottomSheetView>
-    </BottomSheet>
+      </View>
+    </SimpleBottomSheet>
   );
 });
 

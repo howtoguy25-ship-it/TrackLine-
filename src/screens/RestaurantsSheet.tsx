@@ -1,11 +1,11 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, Keyboard } from "react-native";
-import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, FlatList, Keyboard } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
 
 const SEARCH_FOCUS_KEY = "restaurants";
@@ -29,7 +29,7 @@ function priceLevelText(level: number | undefined): string | null {
   return "$".repeat(Math.max(1, level));
 }
 
-export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function RestaurantsSheet(
+export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function RestaurantsSheet(
   { location, onViewDetails, onSheetChange },
   ref
 ) {
@@ -37,24 +37,17 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   // Real, confirmed complaint: 70% left the sheet covering most of the screen -- capped to a
   // shorter default (matching PlaceInfoSheet's own 50%) with a second, taller snap point so it
   // can still be dragged up to see more results instead of being stuck at one large fixed size.
-  const snapPoints = useMemo(() => ["50%", "88%"], []);
+  const snapFractions: [number, number] = [0.5, 0.88];
 
-  // Real, confirmed bug: @gorhom/bottom-sheet's own keyboard-avoidance snaps this sheet up to
-  // its taller point while the search input is focused (so the keyboard doesn't cover it) --
-  // correct while typing, but it then STAYS at that taller point after the keyboard closes,
-  // since nothing else ever tells it to come back down. Re-snapping to the compact default the
-  // moment the keyboard hides fixes the "stuck covering the whole screen" complaint without
-  // losing the keyboard-avoidance itself.
-  //
-  // Real, confirmed SECOND bug this guards against now (video evidence: a scroll that was
-  // progressing normally suddenly reset to the top with no matching gesture): `keyboardDidHide`
-  // is a GLOBAL event, not scoped to this sheet's own input -- Restaurants/Hotels/Petrol are all
-  // mounted at once (see MapScreen.tsx), so any keyboard closing for ANY reason (another sheet's
-  // search box losing focus, a stray OS predictive-text blink) used to resnap ALL THREE sheets
-  // back to 50%, even ones with no keyboard of their own open at all -- including one being
-  // actively scrolled through at 88% at that exact moment. Gated on isActiveSearchFocus so only
-  // the one sheet whose own search input most recently gained focus ever reacts -- see
-  // activeSearchFocus.ts's own comment for the full mechanism.
+  // Real, confirmed bug history (see SimpleBottomSheet.tsx's own header comment for the full
+  // account, and why this screen no longer uses @gorhom/bottom-sheet at all): its own automatic
+  // keyboard-avoidance snapped this sheet up to its taller point while the search input was
+  // focused, but stayed there after the keyboard closed, AND its own `keyboardDidHide` was a
+  // GLOBAL event fired by ANY of the three place sheets, resnapping every mounted one regardless
+  // of whose keyboard actually closed. SimpleBottomSheet doesn't do any of that automatically --
+  // both directions are handled explicitly and only ever for THIS sheet's own input: expand on
+  // focus (search's own onFocus below), collapse back on hide, gated by isActiveSearchFocus so a
+  // keyboard closing for a different sheet's input never touches this one.
   useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidHide", () => {
       if (!isActiveSearchFocus(SEARCH_FOCUS_KEY)) return;
@@ -120,53 +113,24 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   }, [places, query]);
 
   return (
-    <BottomSheet
+    <SimpleBottomSheet
       ref={ref}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      // Same real fix as HotelsSheet/FuelStationsSheet -- see that file's own comment: without
-      // this, dragging the list rubber-banded the whole sheet (title included) past its own
-      // tallest snap point instead of just scrolling the list underneath it.
-      enableOverDrag={false}
-      // Same real fix as HotelsSheet -- see that file's own comment: without this, a single
-      // finger dragging on the list was captured by the sheet's own content-pan gesture instead
-      // of the list's native scroll (only two fingers actually scrolled it). Leaves only the
-      // drag handle draggable for resize/dismiss.
-      enableContentPanningGesture={false}
-      // Real, confirmed contributor to "scroll works fine for a few seconds then snaps back to
-      // the very top": v5 of this library defaults enableDynamicSizing to true, which keeps
-      // re-measuring the sheet's own content height off the mounted layout and re-syncing its
-      // internal scrollable offset against that measurement -- fighting a nested
-      // BottomSheetFlatList whose own content height changes constantly as rows mount/unmount
-      // via windowing while scrolling. Explicit snapPoints below already define this sheet's
-      // real sizing; disabling dynamic sizing stops it from fighting the list for control of the
-      // scroll offset. Confirmed NOT sufficient on its own -- see the keyboardDidHide fix above
-      // and the sheet-open-gated fetch below for the two other real, independent causes of the
-      // exact same symptom found after this alone didn't resolve it.
-      enableDynamicSizing={false}
-      // Real, confirmed complaint: at the taller 88% snap point the header ("Restaurants
-      // nearby") could render up under the status bar/notch with no margin. topInset keeps the
-      // sheet's own maximum extent below the real safe-area top on every device instead of a
-      // guessed fixed pixel value.
+      snapFractions={snapFractions}
       topInset={insets.top}
       onChange={(index) => {
         setSheetIndex(index);
         onSheetChange?.(index);
       }}
     >
-      <BottomSheetView style={styles.content}>
+      <View style={styles.content}>
         {/* Real, confirmed complaint: tapping blank space in the header (the title, the notice
             area) left the keyboard sitting up with no way to dismiss it -- this Pressable
-            catches those taps and blurs the keyboard. Deliberately does NOT wrap the
-            BottomSheetFlatList below anymore -- real, confirmed bug (screenshot evidence: the
-            list needed two fingers to scroll): a plain RN Pressable's own touch responder,
-            nested around the list's real-native-gesture-handler-based scroll, was winning the
-            very first touch instead of ceding it to the list, so an ordinary single-finger drag
-            never reached the FlatList's own scroll gesture at all -- only a second, simultaneous
-            touch point did. The list already has its own "tap a row" Pressables and
-            keyboardShouldPersistTaps/on-drag dismiss handling, so it never needed this wrapper's
-            help to begin with. */}
+            catches those taps and blurs the keyboard. Deliberately does NOT wrap the list below
+            -- real, confirmed bug (screenshot evidence: the list needed two fingers to scroll):
+            a plain RN Pressable's own touch responder, nested around the list's scroll, was
+            winning the very first touch instead of ceding it to the list. The list already has
+            its own "tap a row" Pressables and keyboardShouldPersistTaps/on-drag dismiss
+            handling, so it never needed this wrapper's help to begin with. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>Restaurants nearby</Text>
@@ -196,7 +160,13 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             autoCorrect={false}
             returnKeyType="search"
             onSubmitEditing={() => Keyboard.dismiss()}
-            onFocus={() => setActiveSearchFocus(SEARCH_FOCUS_KEY)}
+            onFocus={() => {
+              setActiveSearchFocus(SEARCH_FOCUS_KEY);
+              // Real replacement for gorhom's own automatic keyboard-avoidance (expanding so the
+              // keyboard doesn't cover the input) -- see this file's own useEffect above for the
+              // matching collapse-back-down on hide.
+              if (ref && typeof ref !== "function") ref.current?.snapToIndex(1);
+            }}
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
@@ -226,15 +196,16 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
         )}
         </Pressable>
 
-        <BottomSheetFlatList
+        {/* Plain, un-wrapped FlatList -- see SimpleBottomSheet.tsx's own header comment for why
+            this now has zero gesture composition with the sheet at all, the real, final fix for
+            the "scroll works fine for a few seconds then resets" bug across all its causes. */}
+        <FlatList
           data={filteredPlaces}
           keyExtractor={(item) => item.placeId}
           style={styles.listFlex}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          // Real, explicit request -- Android-specific nested-scroll fix for a list living
-          // inside the sheet's own gesture-handler view hierarchy.
           nestedScrollEnabled
           renderItem={({ item }) => (
             <Pressable
@@ -283,8 +254,8 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             </Pressable>
           )}
         />
-      </BottomSheetView>
-    </BottomSheet>
+      </View>
+    </SimpleBottomSheet>
   );
 });
 
