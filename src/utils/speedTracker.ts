@@ -284,7 +284,8 @@ export function createSpeedTracker() {
     // pass null/undefined and every box still gets a real (just differently-labeled) speed
     // reading -- see combineWithEgoSpeed.
     egoSpeedMps?: number | null,
-    // The camera's actual current zoom factor (1 = normal/neutral, 5 = the app's 5x toggle) --
+    // The camera's actual current zoom factor (1 = normal/neutral, up to 3 = the app's real
+    // 1x-3x zoom slider, fully continuous, not just fixed steps) --
     // see estimateDistanceM's, NOISE_THRESHOLD_RATIO's, and CLOSING_RATE_DEADZONE_KMH's own
     // comments for why the distance estimate, the parked-vehicle noise floor, AND the closing-
     // rate noise floor all need to know this. Defaults to 1 (normal zoom) so existing callers

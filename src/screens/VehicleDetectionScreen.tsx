@@ -10,6 +10,7 @@ import {
   type PhotoFile,
 } from "react-native-vision-camera";
 import { useResizePlugin } from "vision-camera-resize-plugin";
+import Slider from "@react-native-community/slider";
 import { useSharedValue, useRunOnJS } from "react-native-worklets-core";
 import type { BoxedHybridObject } from "react-native-nitro-modules";
 import type { TensorflowModel } from "react-native-fast-tflite";
@@ -19,7 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { decodePhotoForDetection } from "@/services/vehicleDetection";
+import { decodePhotoForLightbarSampling } from "@/services/vehicleDetection";
 import { loadBoxedTFLiteModel, TFLITE_INPUT_SIZE } from "@/services/tfliteVehicleModel";
 import { sampleLightbarActivity, pruneLightbarTracks } from "@/utils/lightbarDetector";
 import { createSpeedTracker, type TrackedBox } from "@/utils/speedTracker";
@@ -336,45 +337,48 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // single frame at the Frame Processor's own ~3fps cadence, for a fixed-size model input that
   // can't use any of those extra pixels -- real, ongoing cost for zero detection-accuracy
   // benefit. 1280x720 already gives the model everything it can actually use.
+  // Real, confirmed complaint: distant/small vehicles weren't registering at all -- the fixed
+  // 1.3x zoom bump below (this screen's previous approach) put only marginally more pixels on a
+  // far-away car than bare 1x. vision-camera's `zoom` prop narrows the actual native capture
+  // session's field of view (not a digital crop after the fact), so a genuinely far vehicle that
+  // was too small for the model to register at 1x can become detectable once the driver zooms
+  // in on it -- a fixed small bump can't help with that the way a real, user-controlled range
+  // can. photoResolution raised to true 4K (3840x2160, the still-photo/plate-crop path only --
+  // see the comment on videoResolution below for why that one stays untouched) so the picture
+  // stays genuinely sharp at 3x instead of visibly softening once it's cropped in that far.
   const format = useCameraFormat(device, [
-    { photoResolution: { width: 2560, height: 1440 } },
+    { photoResolution: { width: 3840, height: 2160 } },
     { videoResolution: { width: 1280, height: 720 } },
   ]);
   // Real camera zoom -- vision-camera's `zoom` prop drives the actual native capture session
   // (AVCaptureDevice/CameraX), not just the on-screen preview, so both takePhoto() and the Frame
-  // Processor's own video stream genuinely see the zoomed-in frame. Removed the normal/5x toggle
-  // per explicit request -- 5x was too aggressive/blurry to leave on by default, so this is now a
-  // single fixed zoom level, a modest step in from the device's own neutral (1x) rather than
-  // either extreme: enough to put a few more real pixels on a vehicle than bare 1x without the
-  // softness/shake sensitivity 5x had. Clamped to the device's own maxZoom for devices that can't
-  // reach even this modest bump (rare, but real on some older/budget hardware). Starts from the
-  // device's own neutralZoom (1x on a single-camera device; the wide-angle "normal" zoom on a
-  // multi-camera one -- never the ultra-wide fish-eye lens, which would distort vehicles and hurt
-  // detection, not help it), not a hardcoded 1.0.
-  const ZOOM_BUMP_FACTOR = 1.3;
-  const [normalZoomFactor, setNormalZoomFactor] = useState(1);
+  // Processor's own video stream genuinely see the zoomed-in frame; a distant vehicle too small
+  // to register at 1x can move above MIN_DETECTION_SCORE once zoomed in on. Real, explicit
+  // request: a real 1x-3x slider the driver drags themselves, not a single fixed bump -- 3x
+  // (not the old 5x toggle) since 5x was already confirmed too aggressive/blurry to leave
+  // reachable at all in an earlier round. minZoomFactor/maxZoomFactor are the device's own
+  // neutralZoom (1x on a single-camera device; the wide-angle "normal" zoom on a multi-camera
+  // one -- never the ultra-wide fish-eye lens, which would distort vehicles and hurt detection,
+  // not help it) and neutralZoom*3 clamped to the device's own real maxZoom, so the slider's own
+  // range can never ask the camera for a zoom level it doesn't actually support.
+  const [zoomFactor, setZoomFactor] = useState(1);
+  const minZoomFactor = device && Number.isFinite(device.neutralZoom) && device.neutralZoom > 0 ? device.neutralZoom : 1;
+  const maxZoomFactor =
+    device && Number.isFinite(device.maxZoom) && device.maxZoom > 0
+      ? Math.max(Math.min(minZoomFactor * 3, device.maxZoom), minZoomFactor)
+      : minZoomFactor;
   useEffect(() => {
     if (!device) return;
-    // Real, confirmed regression: on at least one real device, this produced zero detections at
-    // all (not just weaker ones) -- almost certainly because clamping straight to device.maxZoom
-    // without a floor could land below device.neutralZoom itself if maxZoom is ever reported
-    // smaller than neutralZoom*1.3 (a real, seen device data quirk), feeding the Frame Processor
-    // a near-zero/invalid zoom value that breaks its input silently instead of crashing visibly.
-    // Explicit finite/positive checks first -- Math.max/Math.min silently propagate NaN if either
-    // input ever comes back undefined/NaN on some device, which the naive version didn't guard
-    // against at all. Falls back to a plain neutral 1x (skipping the zoom bump entirely) rather
-    // than risk feeding the camera any unvalidated number if the device's own reported values
-    // ever look wrong.
-    const neutral = device.neutralZoom;
-    const max = device.maxZoom;
-    if (!Number.isFinite(neutral) || neutral <= 0 || !Number.isFinite(max) || max <= 0) {
-      setNormalZoomFactor(1);
-      return;
-    }
-    const target = Math.min(neutral * ZOOM_BUMP_FACTOR, max);
-    setNormalZoomFactor(Math.max(target, neutral));
+    // Seeds the slider at plain 1x (the device's own neutral zoom) once it's known -- same
+    // explicit finite/positive validation as the fixed-bump version this replaced, so a device
+    // that ever reports an invalid neutralZoom still falls back to a safe, real 1.0 instead of
+    // feeding the camera an unvalidated number.
+    setZoomFactor(Number.isFinite(device.neutralZoom) && device.neutralZoom > 0 ? device.neutralZoom : 1);
   }, [device]);
-  const zoomFactor = normalZoomFactor;
+  // Real measured height of the vertical zoom slider's own track area -- see its render site's
+  // own comment for why this can't be a guessed constant. 220 is just a reasonable first-paint
+  // fallback before the real onLayout measurement lands.
+  const [zoomTrackHeight, setZoomTrackHeight] = useState(220);
   // Same ref pattern as egoSpeedRef below -- onDetections runs from the Frame Processor bridge,
   // not a normal re-render, so it needs a ref (always current by the time the next frame lands)
   // rather than closing over the zoomFactor value from whenever it was first created. Feeds
@@ -806,14 +810,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       );
       if (!photoFile || unmountedRef.current) return;
       const photo = { uri: toFileUri(photoFile.path), width: photoFile.width, height: photoFile.height };
-      const decoded = await withTimeout(
-        decodePhotoForDetection(photo.uri),
+      // Real, confirmed regression already hit once at full 4K (see photoResolution's own
+      // comment above) -- decoding the FULL still photo in pure JS on every tick doesn't scale
+      // with photoResolution. Only the lightbar sampler actually needs decoded pixels at all;
+      // it gets its own small, natively-resized decode (see LIGHTBAR_SAMPLE_WIDTH's own comment
+      // in vehicleDetection.ts) instead of the full-size one this used to share with the
+      // plate-crop coordinate math below -- that math only ever needed the photo's known
+      // width/height, already available from photoFile itself with no decode at all.
+      const lightbarPhotoPromise = withTimeout(
+        decodePhotoForLightbarSampling(photo.uri),
         SIDE_DECODE_TIMEOUT_MS,
-        "decodePhotoForDetection"
+        "decodePhotoForLightbarSampling"
       );
-      if (unmountedRef.current) return;
-      consecutiveFailuresRef.current = 0;
-      setRecovering(false);
 
       // The vehicle box (box.bbox) is in the Frame Processor's own UPRIGHT coordinate space
       // (frameSizeRef, corrected -- see the Frame Processor's own comment on frame.orientation).
@@ -823,12 +831,12 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // landscape-left") and from expo-image-manipulator's own crop implementation (its bounds
       // check compares against the EXIF-corrected UIImage.size, but the actual crop runs
       // against the raw, PRE-rotation CGImage buffer -- so the rect it needs is really in that
-      // raw space, not the upright one the size check implies). decodePhotoForDetection's JPEG
-      // decode (used for lightbar sampling below) reads that same raw, pre-rotation buffer too.
-      // mapUprightBoxToRawPhoto (below) does the same rotation the Frame Processor's own
-      // resize() call does, just inverted -- upright box -> raw photo pixel space -- so both
-      // the lightbar sampler and the plate crop end up reading the actual pixels they're meant
-      // to, not an axis-swapped or rotated region.
+      // raw space, not the upright one the size check implies). mapUprightBoxToRawPhoto (below)
+      // does the same rotation the Frame Processor's own resize() call does, just inverted --
+      // upright box -> raw photo pixel space -- against photo.width/height (PhotoFile's own
+      // known metadata, matching the ACTUAL full-resolution capture the plate crop reads from),
+      // so the plate crop ends up reading the actual pixels it's meant to, not an axis-swapped
+      // or rotated region.
       const frameSize = frameSizeRef.current;
       const photoOrientation = photoFile.orientation;
 
@@ -837,19 +845,33 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       const nextEmergencyIds = new Set<number>();
       const plateReadPromises: Promise<void>[] = [];
 
+      // Awaited once, up front, rather than inline in the loop below -- every tracked box in
+      // this tick's frame needs the SAME decoded small photo for its own lightbar sample, so
+      // there's no reason to re-await (or, worse, re-trigger) it per box. Checked for unmount
+      // AFTER awaiting (same as the original single-decode version this replaced), since that's
+      // the point real time has actually passed and the component could have gone away.
+      const lightbarPhoto = await lightbarPhotoPromise;
+      if (unmountedRef.current) return;
+      consecutiveFailuresRef.current = 0;
+      setRecovering(false);
+      // Scales a rawBbox (already mapped into the FULL photo's raw pixel space, matching
+      // photo.width/height) down into the lightbar sampler's own smaller decoded space --
+      // decodePhotoForLightbarSampling resizes width-only, preserving aspect ratio, so a single
+      // uniform scale factor (not two independent ones) is always correct here.
+      const lightbarScale = photo.width > 0 ? lightbarPhoto.width / photo.width : 1;
+
       for (const box of boxesRef.current) {
         const rawBbox = frameSize
-          ? mapUprightBoxToRawPhoto(
-              box.bbox,
-              frameSize.width,
-              frameSize.height,
-              decoded.width,
-              decoded.height,
-              photoOrientation
-            )
+          ? mapUprightBoxToRawPhoto(box.bbox, frameSize.width, frameSize.height, photo.width, photo.height, photoOrientation)
           : box.bbox;
+        const lightbarBbox: [number, number, number, number] = [
+          rawBbox[0] * lightbarScale,
+          rawBbox[1] * lightbarScale,
+          rawBbox[2] * lightbarScale,
+          rawBbox[3] * lightbarScale,
+        ];
 
-        if (sampleLightbarActivity(decoded, box.id, rawBbox, nowMs)) {
+        if (sampleLightbarActivity(lightbarPhoto, box.id, lightbarBbox, nowMs)) {
           nextEmergencyIds.add(box.id);
         }
 
@@ -869,8 +891,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               [region.x, region.y, region.w, region.h],
               frameSize.width,
               frameSize.height,
-              decoded.width,
-              decoded.height,
+              photo.width,
+              photo.height,
               photoOrientation
             )
           : [region.x, region.y, region.w, region.h];
@@ -1130,6 +1152,41 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           })
         }
       />
+
+      {/* Real, explicit request: a real, user-draggable 1x-3x zoom slider (see zoomFactor's own
+          comment above for why a fixed bump wasn't enough) -- vertical, right-edge-anchored so
+          it sits naturally under the driver's thumb without covering the live vehicle boxes in
+          the center of frame. Only shown once the device's real zoom range is known and actually
+          offers something to drag between; a device stuck at a single zoom level (min===max)
+          would just show a slider that visibly does nothing. */}
+      {maxZoomFactor > minZoomFactor && (
+        <View
+          pointerEvents="box-none"
+          style={[styles.zoomSliderWrap, { top: insets.top + spacing.xl * 3, bottom: insets.bottom + spacing.xl * 3 }]}
+        >
+          <Text style={styles.zoomSliderLabel}>{(maxZoomFactor / minZoomFactor).toFixed(0)}x</Text>
+          {/* @react-native-community/slider is horizontal-only -- rotated -90deg to read as a
+              vertical zoom dial (matching real camera-app convention). Its `width` becomes the
+              rotated control's visual LENGTH, so it has to equal the wrap's own real measured
+              height, not a guessed constant -- onLayout below feeds that back in since the wrap
+              area is genuinely different heights across devices/orientations (insets vary). */}
+          <View style={styles.zoomSliderTrack} onLayout={(e) => setZoomTrackHeight(e.nativeEvent.layout.height)}>
+            <Slider
+              style={[styles.zoomSlider, { width: zoomTrackHeight }]}
+              minimumValue={minZoomFactor}
+              maximumValue={maxZoomFactor}
+              value={zoomFactor}
+              onValueChange={setZoomFactor}
+              minimumTrackTintColor="#FFFFFF"
+              maximumTrackTintColor="rgba(255,255,255,0.35)"
+              thumbTintColor="#FFFFFF"
+            />
+          </View>
+          <View style={styles.zoomReadout}>
+            <Text style={styles.zoomReadoutText}>{(zoomFactor / minZoomFactor).toFixed(1)}x</Text>
+          </View>
+        </View>
+      )}
 
       {photoSize &&
         containerSize &&
@@ -1413,9 +1470,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               "0 km/h" once a vehicle has been still for a couple of seconds. A plate number
               only appears once the same on-device text read comes back at least twice in a
               row — it's never stored or sent anywhere, just shown live while that vehicle
-              stays in view. Tap any box for its full details. Use the 1x/5x button on the right
-              to zoom in on a distant vehicle — this zooms the real camera capture, not just the
-              preview, so it can genuinely help detect something too far away to register at 1x.
+              stays in view. Tap any box for its full details. Drag the zoom slider on the right
+              (1x-3x) to zoom in on a distant vehicle — this zooms the real camera capture, not
+              just the preview, so it can genuinely help detect something too far away to
+              register at 1x.
             </Text>
             <Pressable onPress={dismissInfo} hitSlop={12} accessibilityLabel="Dismiss">
               <Ionicons name="close" size={20} color="#fff" />
@@ -1869,5 +1927,39 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(17, 24, 39, 0.45)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  zoomSliderWrap: {
+    position: "absolute",
+    right: spacing.sm,
+    width: 44,
+    alignItems: "center",
+  },
+  zoomSliderLabel: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: spacing.xs,
+  },
+  zoomSliderTrack: {
+    flex: 1,
+    width: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  zoomSlider: {
+    height: 40,
+    transform: [{ rotate: "-90deg" }],
+  },
+  zoomReadout: {
+    marginTop: spacing.xs,
+    backgroundColor: "rgba(17, 24, 39, 0.55)",
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  zoomReadoutText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
   },
 });
