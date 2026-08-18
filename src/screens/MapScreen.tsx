@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput, Keyboard, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput, Keyboard } from "react-native";
 import MapView, {
   PROVIDER_GOOGLE,
   Polyline,
@@ -2138,22 +2138,15 @@ export function MapScreen() {
       {DIAGNOSTIC_DISABLE_MAPVIEW ? (
         <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder]} />
       ) : (
-      // Apple's native MapKit on iOS (provider left unset), Google kept on Android (still
-      // needed there for the custom Map3DView native module -- see isMap3DSupported/Map3DView
-      // above, Android-only). Switched back per explicit request for iOS speed -- Apple's
-      // first-party renderer doesn't pay the Google Maps SDK bridge overhead Google's does.
-      // iOS's own 3D-buildings toggle (see show3D below) is a standard MapView camera
-      // pitch call, not the custom native module, so it's unaffected either way -- if
-      // anything Apple's renderer has more native tilt support than Google's did.
-      // Real, confirmed, KNOWINGLY ACCEPTED cost: customMapStyle (the map color theme picker in
-      // Settings) is a silent no-op on Apple's renderer -- it has no equivalent JSON styling
-      // mechanism, so on iOS every theme now *looks* identical (Apple's own fixed light/dark
-      // palette) regardless of which one is picked in Settings. This was tried and reverted
-      // once before for exactly this reason; re-enabled this time as an explicit, informed
-      // tradeoff for the real speed gain, not an oversight.
+      // Google provider on every platform, iOS included -- reverted back per explicit request
+      // after briefly trying Apple's native MapKit on iOS for speed (see git history). Google
+      // keeps the Settings map-theme picker (customMapStyle) actually working on iOS, which
+      // Apple's renderer has no equivalent for -- that was the real, confirmed tradeoff Apple
+      // Maps cost, not worth it after all. Android was never affected either way (already
+      // Google, still needed there for the custom Map3DView native module).
       <MapView
         ref={mapRef}
-        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+        provider={PROVIDER_GOOGLE}
         mapType={mapType}
         // The custom theme style only ever applies to the "standard" map type -- satellite/
         // hybrid imagery has no styleable roads/land polygons to restyle, so Google/Apple just
