@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, TextInput, Alert, ActivityIndicator } from "react-native";
+import { StatusBar } from "expo-status-bar";
 import Slider from "@react-native-community/slider";
 import Constants from "expo-constants";
 import * as Application from "expo-application";
@@ -35,7 +36,7 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 import { ALL_ALERT_TYPES } from "@/services/settings";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
-import { MAP_THEME_LABELS, type MapThemeKey } from "@/utils/mapStyle";
+import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
 import { NAV_CARD_THEME_LABELS, NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { MAP_MARKER_STYLE_LABELS, MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
@@ -73,12 +74,36 @@ function formatExpiryMs(ms: number): string {
 
 // Small background/highway-accent pair per theme, just for the picker swatches below -- the
 // real, full styling lives in utils/mapStyle.ts; this is only a preview.
-const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow"];
+// Real, confirmed request -- black background for THIS screen specifically, not a global
+// dark-mode toggle. theme/tokens.ts stays a light palette for every other screen; this local
+// set replaces every color reference in this file's own StyleSheet only, so nothing else in
+// the app is affected by this screen going dark.
+const SETTINGS_BG = "#000000";
+const SETTINGS_SURFACE = "#111827";
+const SETTINGS_SURFACE_MUTED = "#1F2937";
+const SETTINGS_BORDER = "#374151";
+const SETTINGS_TEXT = "#F9FAFB";
+const SETTINGS_TEXT_MUTED = "#9CA3AF";
+const SETTINGS_TEXT_FAINT = "#6B7280";
+
+const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow", "blue", "light"];
 const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
   normal: ["#14201a", "#34d976"],
   purpleBlue: ["#1a1033", "#8b7cf6"],
   blueGrey: ["#232a35", "#5b9bf0"],
   greenYellow: ["#0f2417", "#facc15"],
+  blue: ["#0b1a33", "#3b9bff"],
+  light: ["#f5f7fa", "#2563eb"],
+};
+const ROAD_THICKNESS_ORDER: RoadThicknessKey[] = ["thin", "normal", "bold", "extraBold"];
+// Real relative proportions, not arbitrary -- scaled off the same ROAD_THICKNESS_MULTIPLIERS
+// (0.55/1/1.4/1.85) mapStyle.ts actually applies to road weight, so this swatch is a genuine
+// preview of the real thickness difference, not just four visually-similar bars.
+const ROAD_THICKNESS_SWATCH_HEIGHTS: Record<RoadThicknessKey, number> = {
+  thin: 3,
+  normal: 5.5,
+  bold: 7.5,
+  extraBold: 10,
 };
 
 const NAV_CARD_THEME_ORDER: NavCardThemeKey[] = ["dark", "light", "transparentDark", "midnight", "sunset", "forest"];
@@ -347,6 +372,11 @@ export function SettingsScreen() {
     [updateSettings]
   );
 
+  const onRoadThicknessSelect = useCallback(
+    (thickness: RoadThicknessKey) => updateSettings({ roadThickness: thickness }),
+    [updateSettings]
+  );
+
   const onNavCardThemeSelect = useCallback(
     (theme: NavCardThemeKey) => updateSettings({ navCardTheme: theme }),
     [updateSettings]
@@ -529,6 +559,12 @@ export function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Real, confirmed request -- black background for this screen. App.tsx's global
+          <StatusBar style="dark" /> assumes a light background everywhere else, which would
+          leave the status bar icons invisible against this screen's new black background --
+          this screen's own instance overrides it back to light icons while focused, and
+          expo-status-bar automatically restores the app-wide one the moment this unmounts. */}
+      <StatusBar style="light" />
       <Section title="Account">
         {isSignedIn ? (
           <>
@@ -579,7 +615,7 @@ export function SettingsScreen() {
           accessibilityLabel="Restore purchases"
         >
           {restoringPurchases ? (
-            <ActivityIndicator size="small" color={colors.text} />
+            <ActivityIndicator size="small" color={SETTINGS_TEXT} />
           ) : (
             <Text style={styles.restorePurchasesButtonText}>Restore purchases</Text>
           )}
@@ -592,7 +628,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.alertsEnabled}
             onValueChange={onAlertsEnabledToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Text style={styles.helperText}>
@@ -612,7 +648,7 @@ export function SettingsScreen() {
                 value={settings.visibleRegions.includes(state.code as AuRegionCode)}
                 onValueChange={(value) => onRegionToggle(state.code as AuRegionCode, value)}
                 disabled={!settings.alertsEnabled}
-                trackColor={{ true: colors.accent, false: colors.border }}
+                trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
               />
             </View>
           ))}
@@ -626,7 +662,7 @@ export function SettingsScreen() {
                 value={settings.visibleAlertTypes.includes(type)}
                 onValueChange={(value) => onAlertTypeToggle(type, value)}
                 disabled={!settings.alertsEnabled}
-                trackColor={{ true: colors.accent, false: colors.border }}
+                trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
               />
             </View>
           ))}
@@ -682,7 +718,7 @@ export function SettingsScreen() {
               value={customHoursText}
               onChangeText={setCustomHoursText}
               placeholder="Hours"
-              placeholderTextColor={colors.textFaint}
+              placeholderTextColor={SETTINGS_TEXT_FAINT}
               keyboardType="number-pad"
               style={styles.customExpiryInput}
             />
@@ -690,7 +726,7 @@ export function SettingsScreen() {
               value={customMinutesText}
               onChangeText={setCustomMinutesText}
               placeholder="Minutes"
-              placeholderTextColor={colors.textFaint}
+              placeholderTextColor={SETTINGS_TEXT_FAINT}
               keyboardType="number-pad"
               style={styles.customExpiryInput}
             />
@@ -732,6 +768,46 @@ export function SettingsScreen() {
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {MAP_THEME_LABELS[theme]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Real, confirmed request -- a dedicated road-thickness/design picker, separate from
+            the color theme above (see mapStyle.ts's own getMapStyle -- thickness is a real
+            multiplier applied on top of whichever theme is picked, not baked into one fixed
+            theme). Each swatch draws an actual bar at that preset's real relative thickness
+            (see ROAD_THICKNESS_SWATCH_HEIGHTS below) rather than just a text label, so it's a
+            genuine preview of what the road network will look like, not a guess. */}
+        <Text style={[styles.helperText, { marginTop: spacing.md }]}>Road thickness</Text>
+        <View style={styles.themeGrid}>
+          {ROAD_THICKNESS_ORDER.map((thickness) => {
+            const isSelected = settings.roadThickness === thickness;
+            return (
+              <Pressable
+                key={thickness}
+                onPress={() => onRoadThicknessSelect(thickness)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${ROAD_THICKNESS_LABELS[thickness]} road thickness`}
+              >
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.roadThicknessSwatch]}>
+                    <View
+                      style={[
+                        styles.roadThicknessBar,
+                        { height: ROAD_THICKNESS_SWATCH_HEIGHTS[thickness] },
+                        isSelected && styles.roadThicknessBarSelected,
+                      ]}
+                    />
+                  </View>
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {ROAD_THICKNESS_LABELS[thickness]}
                 </Text>
               </Pressable>
             );
@@ -833,7 +909,7 @@ export function SettingsScreen() {
                 <View style={styles.themeSwatchShadowWrap}>
                   <View style={[styles.themeSwatch, styles.iconSwatch, styles.alertPreviewSwatch]}>
                     {ALERT_ICON_PREVIEW_TYPES.map((type) => (
-                      <AlertTypeGlyph key={type} type={type} size={18} color={colors.text} themeOverride={theme} />
+                      <AlertTypeGlyph key={type} type={type} size={18} color={SETTINGS_TEXT} themeOverride={theme} />
                     ))}
                   </View>
                 </View>
@@ -854,7 +930,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.showTrafficLights}
             onValueChange={onShowTrafficLightsToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Row
@@ -864,7 +940,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.showSpeedCameras}
             onValueChange={onShowSpeedCamerasToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Row label={`Traffic light & speed camera radius — ${settings.osmLayerRadiusKm} km`}>
@@ -891,12 +967,12 @@ export function SettingsScreen() {
         <View style={styles.liveCameraBox}>
           <Row
             label="Live traffic cameras (NSW)"
-            icon={<MaterialCommunityIcons name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : colors.textMuted} />}
+            icon={<MaterialCommunityIcons name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : SETTINGS_TEXT_MUTED} />}
           >
             <Switch
               value={settings.showLiveCameras}
               onValueChange={onShowLiveCamerasToggle}
-              trackColor={{ true: colors.accent, false: colors.border }}
+              trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
             />
           </Row>
           <Text style={styles.helperText}>
@@ -919,14 +995,14 @@ export function SettingsScreen() {
           <MaterialCommunityIcons
             name={batteryLow ? "battery-alert" : "battery-heart-variant"}
             size={18}
-            color={batteryLow ? colors.warning : colors.textMuted}
+            color={batteryLow ? colors.warning : SETTINGS_TEXT_MUTED}
           />
           <Text style={batteryLow ? styles.warningText : styles.infoText}>
             {batteryPercent !== null
               ? `Battery is at ${batteryPercent}%${lowPowerMode ? " (Low Power Mode on)" : ""} — AI Vehicle Detection works best above 50%.`
               : "AI Vehicle Detection works best with your battery above 50%."}
           </Text>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textMuted} />
+          <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
       </Section>
 
@@ -943,7 +1019,7 @@ export function SettingsScreen() {
         >
           <MaterialCommunityIcons name="car-search" size={20} color={colors.accent} />
           <Text style={styles.revCheckLinkText}>View vehicle history & run a REV check</Text>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textMuted} />
+          <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
 
         {/* Owner-only, per explicit request -- a real, paid business API credential, not
@@ -962,14 +1038,14 @@ export function SettingsScreen() {
               account or the server-side check function -- no other user's device can read it.
             </Text>
             {!keysLoaded ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
             ) : (
               <>
                 <TextInput
                   value={ppsrKeyDraft}
                   onChangeText={setPpsrKeyDraft}
                   placeholder="PPSR provider API key"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -979,7 +1055,7 @@ export function SettingsScreen() {
                   value={nevdisKeyDraft}
                   onChangeText={setNevdisKeyDraft}
                   placeholder="NEVDIS provider API key"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -1017,14 +1093,14 @@ export function SettingsScreen() {
               for a real account, then paste the username it gives you below.
             </Text>
             {!plateLookupKeyLoaded ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
             ) : (
               <>
                 <TextInput
                   value={plateLookupUsernameDraft}
                   onChangeText={setPlateLookupUsernameDraft}
                   placeholder="Plate lookup provider username"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -1062,14 +1138,14 @@ export function SettingsScreen() {
               account at api.nsw.gov.au, then paste the apiKey and apiSecret it gives you below.
             </Text>
             {!fuelCheckKeyLoaded ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
             ) : (
               <>
                 <TextInput
                   value={fuelCheckKeyDraft}
                   onChangeText={setFuelCheckKeyDraft}
                   placeholder="FuelCheck API key"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -1079,7 +1155,7 @@ export function SettingsScreen() {
                   value={fuelCheckSecretDraft}
                   onChangeText={setFuelCheckSecretDraft}
                   placeholder="FuelCheck API secret"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -1121,14 +1197,14 @@ export function SettingsScreen() {
               for a real account, then paste the apiKey it gives you below.
             </Text>
             {!plateRecognizerKeyLoaded ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
             ) : (
               <>
                 <TextInput
                   value={plateRecognizerKeyDraft}
                   onChangeText={setPlateRecognizerKeyDraft}
                   placeholder="Plate Recognizer API key"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -1174,7 +1250,7 @@ export function SettingsScreen() {
                 hitSlop={12}
                 accessibilityLabel="Close"
               >
-                <Ionicons name="close" size={22} color={colors.textMuted} />
+                <Ionicons name="close" size={22} color={SETTINGS_TEXT_MUTED} />
               </Pressable>
             </View>
             <Text style={styles.modalBody}>
@@ -1219,7 +1295,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.autoShareDetections}
             onValueChange={onAutoShareToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Text style={styles.helperText}>
@@ -1241,7 +1317,7 @@ export function SettingsScreen() {
             value={settings.sirenSensitivity}
             onSlidingComplete={onSensitivityChange}
             minimumTrackTintColor={colors.accent}
-            maximumTrackTintColor={colors.border}
+            maximumTrackTintColor={SETTINGS_BORDER}
           />
           <View style={styles.sliderEndLabels}>
             <Text style={styles.sliderEndLabelText}>Low</Text>
@@ -1255,7 +1331,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.defaultVoiceEnabled}
             onValueChange={onDefaultVoiceToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
       </Section>
@@ -1327,15 +1403,15 @@ function OsmLayerIcon({
   const glyphSize = size * (marker.glyphSize / marker.badgeSize);
   // Real, second confirmed cause (beyond the size floor above): the glyph was hardcoded white
   // regardless of enabled state, which is fine against the marker's own real color when ON but
-  // near-invisible white-on-light-grey against colors.border when OFF -- not just small, actually
+  // near-invisible white-on-light-grey against SETTINGS_BORDER when OFF -- not just small, actually
   // low enough contrast to read as a blank circle. Dark when off, matching the same "muted until
   // enabled" intent the background color already has.
-  const glyphColor = enabled ? "#FFFFFF" : colors.textMuted;
+  const glyphColor = enabled ? "#FFFFFF" : SETTINGS_TEXT_MUTED;
   return (
     <View
       style={[
         styles.rowIconBadge,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : colors.border },
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : SETTINGS_BORDER },
       ]}
     >
       <MaterialCommunityIcons name={marker.icon as any} size={glyphSize} color={glyphColor} />
@@ -1344,10 +1420,10 @@ function OsmLayerIcon({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surfaceMuted },
+  container: { flex: 1, backgroundColor: SETTINGS_BG },
   content: { padding: spacing.xl, gap: spacing.xxl },
   section: {
-    backgroundColor: colors.surface,
+    backgroundColor: SETTINGS_SURFACE,
     borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.md + 2,
@@ -1356,7 +1432,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -1375,7 +1451,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 15,
     fontWeight: "500",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   sliderEndLabels: {
     flexDirection: "row",
@@ -1385,19 +1461,19 @@ const styles = StyleSheet.create({
   sliderEndLabelText: {
     fontSize: 11,
     fontWeight: "600",
-    color: colors.textFaint,
+    color: SETTINGS_TEXT_FAINT,
   },
   liveCameraBox: {
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: SETTINGS_BORDER,
     borderRadius: radius.lg,
     padding: spacing.md,
     gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
   },
   helperText: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     lineHeight: 17,
   },
   warningBox: {
@@ -1420,7 +1496,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
     borderRadius: radius.md,
     padding: spacing.md,
   },
@@ -1428,7 +1504,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: "500",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     lineHeight: 18,
   },
   modalBackdrop: {
@@ -1441,7 +1517,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 420,
-    backgroundColor: colors.surface,
+    backgroundColor: SETTINGS_SURFACE,
     borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.md,
@@ -1457,23 +1533,23 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: "700",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   modalBody: {
     fontSize: 13,
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     lineHeight: 19,
   },
   modalMeta: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   revCheckLinkRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
     borderRadius: radius.md,
     padding: spacing.md,
   },
@@ -1481,7 +1557,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: "600",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   signInButton: {
     backgroundColor: colors.accent,
@@ -1495,7 +1571,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   signOutButton: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
     borderRadius: radius.md,
     paddingVertical: spacing.md - 2,
     alignItems: "center",
@@ -1506,7 +1582,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   restorePurchasesButtonText: {
-    color: colors.text,
+    color: SETTINGS_TEXT,
     fontWeight: "700",
     fontSize: 14,
   },
@@ -1535,7 +1611,7 @@ const styles = StyleSheet.create({
   },
   themeTileSelected: {
     borderColor: colors.accent,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
   },
   // Real elevation, per explicit request for a "more realistic" picker -- a plain flat-color
   // swatch read as a cheap placeholder rather than a genuine preview of the actual marker/card
@@ -1557,7 +1633,7 @@ const styles = StyleSheet.create({
   iconSwatch: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
   },
   alertPreviewSwatch: {
     flexDirection: "row",
@@ -1578,11 +1654,24 @@ const styles = StyleSheet.create({
   themeTileLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
   },
   themeTileLabelSelected: {
     color: colors.accent,
     fontWeight: "700",
+  },
+  roadThicknessSwatch: {
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roadThicknessBar: {
+    width: "70%",
+    borderRadius: 6,
+    backgroundColor: SETTINGS_TEXT_MUTED,
+  },
+  roadThicknessBarSelected: {
+    backgroundColor: colors.accent,
   },
   alertTypeGrid: {
     gap: spacing.sm,
@@ -1595,7 +1684,7 @@ const styles = StyleSheet.create({
   },
   alertTypeLabel: {
     fontSize: 14,
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   expiryChipRow: {
     flexDirection: "row",
@@ -1606,7 +1695,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs + 2,
     paddingHorizontal: spacing.sm + 2,
     borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
     borderWidth: 1,
     borderColor: "transparent",
   },
@@ -1617,7 +1706,7 @@ const styles = StyleSheet.create({
   expiryChipText: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
   },
   expiryChipTextSelected: {
     color: "#FFFFFF",
@@ -1630,12 +1719,12 @@ const styles = StyleSheet.create({
   customExpiryInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: SETTINGS_BORDER,
     borderRadius: radius.md,
     paddingVertical: spacing.sm - 2,
     paddingHorizontal: spacing.sm + 2,
     fontSize: 14,
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   customExpiryApply: {
     backgroundColor: colors.accent,
@@ -1663,14 +1752,14 @@ const styles = StyleSheet.create({
   aboutName: {
     fontSize: 14,
     fontWeight: "700",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   aboutVersion: {
     fontSize: 12,
-    color: colors.textFaint,
+    color: SETTINGS_TEXT_FAINT,
   },
   aboutMeta: {
     fontSize: 12,
-    color: colors.textFaint,
+    color: SETTINGS_TEXT_FAINT,
   },
 });

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { AlertType } from "@/types/alert";
-import type { MapThemeKey } from "@/utils/mapStyle";
+import type { MapThemeKey, RoadThicknessKey } from "@/utils/mapStyle";
 import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import type { AuRegionCode } from "@/utils/auStates";
 import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
@@ -48,6 +48,9 @@ export interface AppSettings {
   osmLayerRadiusKm: number; // 1-200km
   // Which map color theme customMapStyle renders -- see utils/mapStyle.ts.
   mapTheme: MapThemeKey;
+  // Real, confirmed request -- a separate road-thickness/design preset, independent of the
+  // color theme above (see utils/mapStyle.ts's own getMapStyle/ROAD_THICKNESS_MULTIPLIERS).
+  roadThickness: RoadThicknessKey;
   // Which color theme the navigation instruction card renders -- see utils/navCardTheme.ts.
   navCardTheme: NavCardThemeKey;
   // Real override for how long an alert THIS device reports stays live before it auto-expires
@@ -77,6 +80,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showLiveCameras: false,
   osmLayerRadiusKm: 5,
   mapTheme: "normal",
+  roadThickness: "normal",
   navCardTheme: "dark",
   alertExpiryMs: null,
   alertIconTheme: "default",

@@ -18,7 +18,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
-import { MAP_THEME_STYLES } from "@/utils/mapStyle";
+import { getMapStyle } from "@/utils/mapStyle";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import { clusterPoints } from "@/utils/markerCluster";
 
@@ -157,6 +157,13 @@ export function MapScreen() {
   const { location } = useLocation();
   const { user } = useAuth();
   const { settings, updateSettings, voiceEnabled, voiceVolume } = useSettings();
+  // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
+  // memoized so a re-render that doesn't touch either doesn't rebuild this array (and every
+  // styler object inside it) from scratch on every frame.
+  const mapCustomStyle = useMemo(
+    () => getMapStyle(settings.mapTheme, settings.roadThickness),
+    [settings.mapTheme, settings.roadThickness]
+  );
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
 
@@ -2223,7 +2230,7 @@ export function MapScreen() {
         // The custom theme style only ever applies to the "standard" map type -- satellite/
         // hybrid imagery has no styleable roads/land polygons to restyle, so Google/Apple just
         // ignore it there. Safe to always pass. Theme picked in Settings (see mapStyle.ts).
-        customMapStyle={MAP_THEME_STYLES[settings.mapTheme]}
+        customMapStyle={mapCustomStyle}
         style={StyleSheet.absoluteFill}
         // Always false -- the native blue dot is fully replaced by custom markers below (the
         // car puck while navigating, the person marker otherwise), not just swapped in during

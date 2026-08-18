@@ -11,149 +11,229 @@
  * why the theme picker looked like it did nothing on iOS -- every theme rendered as Apple's own
  * fixed palette regardless of which one was selected.
  *
- * Real road-level styling, not just color: every theme now also sets a `weight` styler (line
- * thickness in pixels -- a genuine, documented property of Google's native style JSON, not
- * something invented here) per road class, so local/arterial/highway/freeway are visually
- * distinct in actual thickness, not color alone: local roads thinnest, arterials a step up,
- * named highways thicker again, and real freeways (road.highway.controlled_access -- a
- * distinct feature type from a plain named "highway" that just happens to be busy) thickest
- * and boldest of all, the same road-class hierarchy Waze/Google Maps' own default styles use.
- * Weights bumped again (1/2/3.5/4.5 -> 2/3.5/5.5/7) per explicit request for a bolder, more
- * custom look overall -- same relative hierarchy, just chunkier across the board.
+ * Real road-level styling, not just color: every theme sets a `weight` styler (line thickness
+ * in pixels -- a genuine, documented property of Google's native style JSON, not something
+ * invented here) per road class, so local/arterial/highway/freeway are visually distinct in
+ * actual thickness, not color alone. Road thickness is now a SEPARATE, user-picked axis from
+ * color theme (see RoadThicknessKey/buildMapStyle below) -- per explicit request for a
+ * dedicated road-thickness/design picker in Settings, independent of which color theme is
+ * active, rather than baking one fixed thickness into each theme.
  */
-export type MapThemeKey = "normal" | "purpleBlue" | "blueGrey" | "greenYellow";
+export type MapThemeKey = "normal" | "purpleBlue" | "blueGrey" | "greenYellow" | "blue" | "light";
+export type RoadThicknessKey = "thin" | "normal" | "bold" | "extraBold";
 
 export const MAP_THEME_LABELS: Record<MapThemeKey, string> = {
   normal: "Normal",
   purpleBlue: "Purple & Blue",
   blueGrey: "Blue & Grey",
   greenYellow: "Green & Yellow",
+  blue: "Blue",
+  light: "Light",
 };
 
-// TrackLine's original brand look -- black background, green highways/text. Lightened from the
-// original pure-black (#000000) background and dimmer greens -- real feedback: streets and
-// street names were hard to make out against how dark it was. Land is now a lighter charcoal
-// and every green (labels, arterial/local road fill, park) is a noticeably brighter shade, so
-// the road network and place names stand out clearly instead of blending into the background.
-const NORMAL_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#14201a" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0a120d" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#a3d6ac" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#dcf2e0" }] },
-  { featureType: "poi", stylers: [{ visibility: "simplified" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#7fa886" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#1c3324" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#79a681" }] },
-  // Real 3-tier road hierarchy via weight (line thickness), not just color -- Google's native
-  // style JSON supports a `weight` styler (pixels) on road geometry, which genuinely changes
-  // how thick each road class renders, on top of the color contrast already here. Local roads
-  // stay thin/dim, arterials step up, highways step up again, and real freeways (controlled-
-  // access, a distinct feature type from a plain "highway") get the thickest, boldest line --
-  // matching how Waze/Google Maps' own default styles visually separate a freeway from a busy
-  // arterial that just happens to be tagged "highway".
-  { featureType: "road.local", elementType: "geometry", stylers: [{ color: "#28352c", weight: 2 }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#28352c", weight: 2 }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#0a120d" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9dc4a4" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#324a39", weight: 3.5 }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#34d976", weight: 5.5 }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#0a120d" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#eafff1" }] },
-  { featureType: "road.highway", elementType: "labels.text.stroke", stylers: [{ color: "#0a120d" }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#34d976", weight: 7 }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry.stroke", stylers: [{ color: "#0a120d" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a2318" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#5c9c74" }] },
-];
+export const ROAD_THICKNESS_LABELS: Record<RoadThicknessKey, string> = {
+  thin: "Thin",
+  normal: "Normal",
+  bold: "Bold",
+  extraBold: "Extra Bold",
+};
 
-// Deep indigo/purple land, violet-blue water, bright lavender highways -- streets get a
-// visibly lighter purple than the land so they read clearly against it, matching the
-// dark-background-plus-bright-road-accent pattern the "Normal" theme already established.
-const PURPLE_BLUE_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#1a1033" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#1a1033" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#c7bdf0" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#e4defa" }] },
-  { featureType: "poi", stylers: [{ visibility: "simplified" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#9c8fd6" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#201545" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#a89ae0" }] },
-  { featureType: "road.local", elementType: "geometry", stylers: [{ color: "#2d2159", weight: 2 }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2d2159", weight: 2 }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#140b29" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#b3a6e8" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#392c68", weight: 3.5 }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#8b7cf6", weight: 5.5 }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#140b29" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f2eeff" }] },
-  { featureType: "road.highway", elementType: "labels.text.stroke", stylers: [{ color: "#140b29" }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#8b7cf6", weight: 7 }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry.stroke", stylers: [{ color: "#140b29" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#16224a" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#7d93d6" }] },
-];
+// Real multiplier applied to each theme's own base road weights below -- picking a thicker
+// preset in Settings scales every road class by the same factor, keeping the local/arterial/
+// highway/freeway hierarchy intact (a thin local road never gets thicker than a thin freeway)
+// while making the whole network chunkier or finer as a single, predictable choice.
+const ROAD_THICKNESS_MULTIPLIERS: Record<RoadThicknessKey, number> = {
+  thin: 0.55,
+  normal: 1,
+  bold: 1.4,
+  extraBold: 1.85,
+};
+
+// Base weights (pixels, at the "normal" multiplier) per road class -- same real Waze/Google
+// Maps-style hierarchy every theme already used: local roads thinnest, arterials a step up,
+// named highways thicker again, real freeways (road.highway.controlled_access -- a distinct
+// feature type from a plain named "highway" that just happens to be busy) thickest of all.
+const BASE_ROAD_WEIGHTS = { local: 2, arterial: 3.5, highway: 5.5, controlledAccess: 7 };
+
+interface ThemeColors {
+  background: string;
+  labelStroke: string;
+  labelFill: string;
+  localityLabel: string;
+  poiLabel: string;
+  parkGeometry: string;
+  parkLabel: string;
+  roadLocal: string;
+  roadStroke: string;
+  roadLabel: string;
+  roadArterial: string;
+  highway: string;
+  highwayLabel: string;
+  water: string;
+  waterLabel: string;
+}
+
+function buildMapStyle(c: ThemeColors, thicknessKey: RoadThicknessKey) {
+  const m = ROAD_THICKNESS_MULTIPLIERS[thicknessKey];
+  return [
+    { elementType: "geometry", stylers: [{ color: c.background }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: c.labelStroke }] },
+    { elementType: "labels.text.fill", stylers: [{ color: c.labelFill }] },
+    { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: c.localityLabel }] },
+    { featureType: "poi", stylers: [{ visibility: "simplified" }] },
+    { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: c.poiLabel }] },
+    { featureType: "poi.park", elementType: "geometry", stylers: [{ color: c.parkGeometry }] },
+    { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: c.parkLabel }] },
+    { featureType: "road.local", elementType: "geometry", stylers: [{ color: c.roadLocal, weight: BASE_ROAD_WEIGHTS.local * m }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: c.roadLocal, weight: BASE_ROAD_WEIGHTS.local * m }] },
+    { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: c.roadStroke }] },
+    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: c.roadLabel }] },
+    { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: c.roadArterial, weight: BASE_ROAD_WEIGHTS.arterial * m }] },
+    { featureType: "road.highway", elementType: "geometry", stylers: [{ color: c.highway, weight: BASE_ROAD_WEIGHTS.highway * m }] },
+    { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: c.roadStroke }] },
+    { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: c.highwayLabel }] },
+    { featureType: "road.highway", elementType: "labels.text.stroke", stylers: [{ color: c.roadStroke }] },
+    {
+      featureType: "road.highway.controlled_access",
+      elementType: "geometry",
+      stylers: [{ color: c.highway, weight: BASE_ROAD_WEIGHTS.controlledAccess * m }],
+    },
+    { featureType: "road.highway.controlled_access", elementType: "geometry.stroke", stylers: [{ color: c.roadStroke }] },
+    { featureType: "transit", stylers: [{ visibility: "off" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: c.water }] },
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: c.waterLabel }] },
+  ];
+}
+
+// TrackLine's original brand look -- black background, green highways/text.
+const NORMAL_COLORS: ThemeColors = {
+  background: "#14201a",
+  labelStroke: "#0a120d",
+  labelFill: "#a3d6ac",
+  localityLabel: "#dcf2e0",
+  poiLabel: "#7fa886",
+  parkGeometry: "#1c3324",
+  parkLabel: "#79a681",
+  roadLocal: "#28352c",
+  roadStroke: "#0a120d",
+  roadLabel: "#9dc4a4",
+  roadArterial: "#324a39",
+  highway: "#34d976",
+  highwayLabel: "#eafff1",
+  water: "#0a2318",
+  waterLabel: "#5c9c74",
+};
+
+// Deep indigo/purple land, violet-blue water, bright lavender highways.
+const PURPLE_BLUE_COLORS: ThemeColors = {
+  background: "#1a1033",
+  labelStroke: "#1a1033",
+  labelFill: "#c7bdf0",
+  localityLabel: "#e4defa",
+  poiLabel: "#9c8fd6",
+  parkGeometry: "#201545",
+  parkLabel: "#a89ae0",
+  roadLocal: "#2d2159",
+  roadStroke: "#140b29",
+  roadLabel: "#b3a6e8",
+  roadArterial: "#392c68",
+  highway: "#8b7cf6",
+  highwayLabel: "#f2eeff",
+  water: "#16224a",
+  waterLabel: "#7d93d6",
+};
 
 // Cool slate-grey land, deep blue water, bright sky-blue highways -- a neutral, low-glare
-// scheme (closest to a "night driving" feel) with the same bright-accent-on-dark-street
-// pattern for road hierarchy to stay obvious at a glance.
-const BLUE_GREY_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#232a35" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#232a35" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#b9c4d4" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#dde4ee" }] },
-  { featureType: "poi", stylers: [{ visibility: "simplified" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#8b98aa" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#1c2833" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#7f95a6" }] },
-  { featureType: "road.local", elementType: "geometry", stylers: [{ color: "#3a4451", weight: 2 }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#3a4451", weight: 2 }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#171d24" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9fadc0" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#48566a", weight: 3.5 }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#5b9bf0", weight: 5.5 }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#171d24" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#eaf3ff" }] },
-  { featureType: "road.highway", elementType: "labels.text.stroke", stylers: [{ color: "#171d24" }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#5b9bf0", weight: 7 }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry.stroke", stylers: [{ color: "#171d24" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#16273f" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#6f93bf" }] },
-];
+// scheme (closest to a "night driving" feel).
+const BLUE_GREY_COLORS: ThemeColors = {
+  background: "#232a35",
+  labelStroke: "#232a35",
+  labelFill: "#b9c4d4",
+  localityLabel: "#dde4ee",
+  poiLabel: "#8b98aa",
+  parkGeometry: "#1c2833",
+  parkLabel: "#7f95a6",
+  roadLocal: "#3a4451",
+  roadStroke: "#171d24",
+  roadLabel: "#9fadc0",
+  roadArterial: "#48566a",
+  highway: "#5b9bf0",
+  highwayLabel: "#eaf3ff",
+  water: "#16273f",
+  waterLabel: "#6f93bf",
+};
 
 // Deep forest-green land, teal water, bright gold/yellow highways -- the highest-contrast pair
-// of the four (yellow-on-dark-green), reserved for the highway/arterial accent only so it
-// reads as "the important road" rather than the whole map competing for attention.
-const GREEN_YELLOW_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#0f2417" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0f2417" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#c8e6b0" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#eef7de" }] },
-  { featureType: "poi", stylers: [{ visibility: "simplified" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#8fb877" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#173420" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#86b16d" }] },
-  { featureType: "road.local", elementType: "geometry", stylers: [{ color: "#243c26", weight: 2 }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#243c26", weight: 2 }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#0a1810" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#a8cf8f" }] },
-  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#33512f", weight: 3.5 }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#facc15", weight: 5.5 }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#0a1810" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#fffbe6" }] },
-  { featureType: "road.highway", elementType: "labels.text.stroke", stylers: [{ color: "#0a1810" }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#facc15", weight: 7 }] },
-  { featureType: "road.highway.controlled_access", elementType: "geometry.stroke", stylers: [{ color: "#0a1810" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a2e2a" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#4fa090" }] },
-];
-
-export const MAP_THEME_STYLES: Record<MapThemeKey, typeof NORMAL_STYLE> = {
-  normal: NORMAL_STYLE,
-  purpleBlue: PURPLE_BLUE_STYLE,
-  blueGrey: BLUE_GREY_STYLE,
-  greenYellow: GREEN_YELLOW_STYLE,
+// (yellow-on-dark-green), reserved for the highway/arterial accent only.
+const GREEN_YELLOW_COLORS: ThemeColors = {
+  background: "#0f2417",
+  labelStroke: "#0f2417",
+  labelFill: "#c8e6b0",
+  localityLabel: "#eef7de",
+  poiLabel: "#8fb877",
+  parkGeometry: "#173420",
+  parkLabel: "#86b16d",
+  roadLocal: "#243c26",
+  roadStroke: "#0a1810",
+  roadLabel: "#a8cf8f",
+  roadArterial: "#33512f",
+  highway: "#facc15",
+  highwayLabel: "#fffbe6",
+  water: "#0a2e2a",
+  waterLabel: "#4fa090",
 };
+
+// Real, confirmed request -- a pure, saturated blue theme distinct from Blue & Grey's muted
+// slate take: deep navy land/water, vivid electric-blue highways for a bolder, more "GPS
+// nav app" look.
+const BLUE_COLORS: ThemeColors = {
+  background: "#0b1a33",
+  labelStroke: "#0b1a33",
+  labelFill: "#a9c6f5",
+  localityLabel: "#dbe9ff",
+  poiLabel: "#7ea3e0",
+  parkGeometry: "#0f2445",
+  parkLabel: "#82a8dd",
+  roadLocal: "#173257",
+  roadStroke: "#081326",
+  roadLabel: "#a3c2f2",
+  roadArterial: "#1e4b8f",
+  highway: "#3b9bff",
+  highwayLabel: "#eaf4ff",
+  water: "#081a3d",
+  waterLabel: "#5389d6",
+};
+
+// Real, confirmed request -- the one genuinely LIGHT theme of the set (every other theme here
+// is dark-background-plus-bright-accent). White/light-grey land, pale blue water, a strong
+// dark-blue highway accent so the road hierarchy still reads clearly against a light
+// background instead of just inverting colors and losing contrast.
+const LIGHT_COLORS: ThemeColors = {
+  background: "#f5f7fa",
+  labelStroke: "#ffffff",
+  labelFill: "#3a4451",
+  localityLabel: "#1f2933",
+  poiLabel: "#6b7684",
+  parkGeometry: "#d9ecd9",
+  parkLabel: "#4a7a4a",
+  roadLocal: "#e2e6ec",
+  roadStroke: "#ffffff",
+  roadLabel: "#4a5568",
+  roadArterial: "#c7cfdb",
+  highway: "#2563eb",
+  highwayLabel: "#ffffff",
+  water: "#c9ddf5",
+  waterLabel: "#3b6ea8",
+};
+
+export function getMapStyle(themeKey: MapThemeKey, thicknessKey: RoadThicknessKey) {
+  const colors: Record<MapThemeKey, ThemeColors> = {
+    normal: NORMAL_COLORS,
+    purpleBlue: PURPLE_BLUE_COLORS,
+    blueGrey: BLUE_GREY_COLORS,
+    greenYellow: GREEN_YELLOW_COLORS,
+    blue: BLUE_COLORS,
+    light: LIGHT_COLORS,
+  };
+  return buildMapStyle(colors[themeKey], thicknessKey);
+}
