@@ -32,6 +32,21 @@ module.exports = {
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
     assetBundlePatterns: ["**/*"],
+    // Real OTA updates via EAS Update -- lets a JS-only change (most of what this app ships day
+    // to day: threshold tuning, UI fixes, copy) reach TestFlight users in seconds instead of a
+    // full ~10-15 minute EAS build + App Store processing cycle, and doesn't spend a build
+    // credit. "appVersion" runtimeVersion policy ties compatible updates to the `version` field
+    // above -- an update only ever gets offered to a build whose native code (via that version
+    // bump) is actually compatible with it, never silently applied against a mismatched native
+    // build. A change to native code itself (a new native module, an Info.plist key, anything
+    // outside pure JS) still needs a real EAS build either way -- OTA can only ever replace the
+    // JS bundle, not the native shell around it.
+    updates: {
+      url: "https://u.expo.dev/dd1665d0-24fa-41ce-99d8-d94adf93788d",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     ios: {
       // Phone-only -- TrackLine is a live driving/navigation app, not something meant to run
       // on an iPad mounted somewhere, and this avoids App Store Connect requiring a whole
