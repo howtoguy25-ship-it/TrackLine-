@@ -1,6 +1,7 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
@@ -29,6 +30,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   { location, onViewDetails, onSheetChange },
   ref
 ) {
+  const insets = useSafeAreaInsets();
   // Real, confirmed complaint: 70% left the sheet covering most of the screen -- capped to a
   // shorter default (matching PlaceInfoSheet's own 50%) with a second, taller snap point so it
   // can still be dragged up to see more results instead of being stuck at one large fixed size.
@@ -100,6 +102,21 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
       // of the list's native scroll (only two fingers actually scrolled it). Leaves only the
       // drag handle draggable for resize/dismiss.
       enableContentPanningGesture={false}
+      // Real, confirmed root cause of "scroll works fine for a few seconds then snaps back to
+      // the very top" (video evidence: list scrolled correctly through ~10 rows over several
+      // seconds, then reset instantly to row 1, same order, no user input driving it): v5 of
+      // this library defaults enableDynamicSizing to true, which keeps re-measuring the sheet's
+      // own content height off the mounted layout and re-syncing its internal scrollable offset
+      // against that measurement -- fighting a nested BottomSheetFlatList whose own content
+      // height changes constantly as rows mount/unmount via windowing while scrolling. Explicit
+      // snapPoints below already define this sheet's real sizing; disabling dynamic sizing stops
+      // it from fighting the list for control of the scroll offset.
+      enableDynamicSizing={false}
+      // Real, confirmed complaint: at the taller 88% snap point the header ("Restaurants
+      // nearby") could render up under the status bar/notch with no margin. topInset keeps the
+      // sheet's own maximum extent below the real safe-area top on every device instead of a
+      // guessed fixed pixel value.
+      topInset={insets.top}
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>
@@ -115,7 +132,23 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             keyboardShouldPersistTaps/on-drag dismiss handling, so it never needed this wrapper's
             help to begin with. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
-        <Text style={styles.title}>Restaurants nearby</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Restaurants nearby</Text>
+          {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss,
+              which isn't obvious, especially once the sheet is scrolled up under the status bar.
+              Same imperative .close() the "X" everywhere else in this file already uses. */}
+          <Pressable
+            onPress={() => {
+              Keyboard.dismiss();
+              if (ref && typeof ref !== "function") ref.current?.close();
+            }}
+            hitSlop={10}
+            accessibilityLabel="Close"
+            style={styles.closeButton}
+          >
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
+        </View>
         <View style={styles.searchRow}>
           <Ionicons name="search" size={16} color={colors.textMuted} />
           <TextInput
@@ -221,7 +254,16 @@ const styles = StyleSheet.create({
   // list, so it should size to its own natural content height and leave the list (its own
   // flex:1 sibling, see listFlex) to fill the rest of the sheet.
   pressableFill: {},
-  title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  title: { fontSize: 17, fontWeight: "800", color: colors.text },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
+  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

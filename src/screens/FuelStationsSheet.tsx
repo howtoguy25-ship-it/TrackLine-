@@ -1,6 +1,7 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   searchNearbyPetrolStations,
@@ -34,6 +35,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   { location, onSelect, onViewDetails, onSheetChange },
   ref
 ) {
+  const insets = useSafeAreaInsets();
   // Same fix as RestaurantsSheet/HotelsSheet -- capped to a shorter default, draggable up to a
   // taller point instead of a single large fixed size.
   const snapPoints = useMemo(() => ["50%", "88%"], []);
@@ -170,6 +172,15 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
       // of the list's native scroll (only two fingers actually scrolled it). Leaves only the
       // drag handle draggable for resize/dismiss.
       enableContentPanningGesture={false}
+      // Same real root-cause fix as RestaurantsSheet/HotelsSheet -- see RestaurantsSheet's own
+      // comment: v5's default enableDynamicSizing=true re-measures the sheet's content height
+      // off a nested BottomSheetFlatList (whose own height keeps changing as rows mount/unmount
+      // via windowing while scrolling) and re-syncs the scroll offset against it, producing the
+      // "scrolls fine for a few seconds then snaps back to the top" symptom.
+      enableDynamicSizing={false}
+      // Same real fix as RestaurantsSheet/HotelsSheet -- keeps the header below the real
+      // safe-area top at the taller 88% snap point instead of sliding in under the status bar.
+      topInset={insets.top}
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>
@@ -177,7 +188,21 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
             space to dismiss the keyboard) deliberately stops before either BottomSheetFlatList
             below instead of wrapping it -- real, confirmed two-fingers-to-scroll bug otherwise. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
-          <Text style={styles.title}>Petrol stations nearby</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Petrol stations nearby</Text>
+            {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss. */}
+            <Pressable
+              onPress={() => {
+                Keyboard.dismiss();
+                if (ref && typeof ref !== "function") ref.current?.close();
+              }}
+              hitSlop={10}
+              accessibilityLabel="Close"
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
           <View style={styles.searchRow}>
             <Ionicons name="search" size={16} color={colors.textMuted} />
             <TextInput
@@ -348,7 +373,16 @@ const styles = StyleSheet.create({
   // either list, so it sizes to its own natural content height and leaves whichever list is
   // active (its own flex:1 sibling, see listFlex) to fill the rest of the sheet.
   pressableFill: {},
-  title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  title: { fontSize: 17, fontWeight: "800", color: colors.text },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
+  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -1,6 +1,7 @@
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, Linking, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyHotels, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
@@ -36,6 +37,7 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
   { location, onSelect, onViewDetails, onSheetChange },
   ref
 ) {
+  const insets = useSafeAreaInsets();
   // Same fix as RestaurantsSheet -- capped to a shorter default, draggable up to a taller point.
   const snapPoints = useMemo(() => ["50%", "88%"], []);
 
@@ -119,6 +121,15 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
       // content area (the list included) now goes straight to native scrolling with nothing
       // competing for it.
       enableContentPanningGesture={false}
+      // Same real root-cause fix as RestaurantsSheet -- see that file's own comment: v5's
+      // default enableDynamicSizing=true re-measures the sheet's content height off a nested
+      // BottomSheetFlatList (whose own height keeps changing as rows mount/unmount via
+      // windowing while scrolling) and re-syncs the scroll offset against it, producing exactly
+      // the "scrolls fine for a few seconds then snaps back to the top" symptom.
+      enableDynamicSizing={false}
+      // Same real fix as RestaurantsSheet -- keeps the header below the real safe-area top at
+      // the taller 88% snap point instead of sliding in under the status bar/notch.
+      topInset={insets.top}
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>
@@ -127,7 +138,21 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
             it deliberately stops before the list (BottomSheetFlatList) below instead of wrapping
             it -- real, confirmed two-fingers-to-scroll bug otherwise. */}
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
-        <Text style={styles.title}>Hotels nearby</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Hotels nearby</Text>
+          {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss. */}
+          <Pressable
+            onPress={() => {
+              Keyboard.dismiss();
+              if (ref && typeof ref !== "function") ref.current?.close();
+            }}
+            hitSlop={10}
+            accessibilityLabel="Close"
+            style={styles.closeButton}
+          >
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
+        </View>
         {/* Honest, per explicit request that nothing here be fake -- Google Places has real
             names/photos/ratings/price LEVEL for every hotel below, but no live per-night price
             or a real booking checkout (that needs an actual hotel-booking API relationship,
@@ -305,7 +330,16 @@ const styles = StyleSheet.create({
   // not the list, so it sizes to its own natural content height and leaves the list (its own
   // flex:1 sibling, see listFlex) to fill the rest of the sheet.
   pressableFill: {},
-  title: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  title: { fontSize: 17, fontWeight: "800", color: colors.text },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceMuted,
+  },
   noticeBox: {
     flexDirection: "row",
     gap: spacing.xs + 2,

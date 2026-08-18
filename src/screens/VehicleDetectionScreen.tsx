@@ -88,6 +88,10 @@ const MIN_SCORE_FOR_OVERSIZED_BOX = 0.9;
 // gate above, without needing to guess the exact right score cutoff. Lowered alongside the gate
 // above (0.82 -> 0.7) for the same reason.
 const MAX_BOX_RENDER_FRACTION = 0.7;
+// Matches MIN_BOX_ASPECT_RATIO in speedTracker.ts exactly -- see this constant's own call site
+// (the box render below) for why the same floor needs re-applying a second time here, display-
+// side, on top of the one speedTracker.ts already applies to box.bbox itself.
+const MIN_DISPLAY_ASPECT_RATIO = 1.4;
 // This model's own fixed TFLite_Detection_PostProcess output size (see
 // assets/models/tflite_ssd_mobilenet_v1) -- it never returns more than this many candidate
 // detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE.
@@ -1210,8 +1214,34 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const maxBoxHeightPx = containerSize.height * MAX_BOX_RENDER_FRACTION;
           const boxCenterXPx = edgeClampedLeftPx + edgeClampedWidthPx / 2;
           const boxCenterYPx = edgeClampedTopPx + edgeClampedHeightPx / 2;
-          const boxWidthPx = Math.min(edgeClampedWidthPx, maxBoxWidthPx);
-          const boxHeightPx = Math.min(edgeClampedHeightPx, maxBoxHeightPx);
+          const clampedWidthPx = Math.min(edgeClampedWidthPx, maxBoxWidthPx);
+          const clampedHeightPx = Math.min(edgeClampedHeightPx, maxBoxHeightPx);
+          // Final display-only safety net, same MIN_BOX_ASPECT_RATIO floor and shrink-height
+          // (never widen) approach as enforceMinAspectRatio in speedTracker.ts -- see that
+          // function's own comment for why shrinking height, not widening width, is the right
+          // correction. box.bbox itself already goes through that exact same floor before it
+          // ever gets here, so in the ordinary case this is a no-op. It stops mattering here
+          // ONLY when displayBbox (above) came out of the previewLikelyUnrotated remap instead
+          // of box.bbox directly -- real, confirmed case (screenshot evidence: a stationary
+          // indoor test, phone held tilted down at a low-to-the-floor object) where
+          // frame.orientation's gravity reading genuinely can't be trusted to rule out a false
+          // "landscape" read for a physical hold angle that's neither fully flat (the dashboard
+          // case this remap is really for) nor fully upright. When that happens, the Frame
+          // Processor rotates the model's own INPUT frame by the same wrong 90 degrees, so the
+          // detector sees a real tall/narrow object (like this chair leg) appearing wide/short in
+          // its rotated input, draws a box that already satisfies the aspect floor THERE, and the
+          // later remap -- applying the same (wrong, but internally self-consistent) rotation
+          // back -- turns that wide/short box tall/narrow again on screen, silently passing the
+          // first floor entirely. Re-applying it here, after any remap and after the
+          // MAX_BOX_RENDER_FRACTION clamp above, is the one place guaranteed to see the box's
+          // final on-screen shape no matter which upstream step actually introduced the
+          // distortion -- this doesn't need to know why, only that a real vehicle's box should
+          // never render taller than it is wide by this much.
+          const boxWidthPx = clampedWidthPx;
+          const boxHeightPx =
+            clampedHeightPx > 0 && boxWidthPx / clampedHeightPx < MIN_DISPLAY_ASPECT_RATIO
+              ? boxWidthPx / MIN_DISPLAY_ASPECT_RATIO
+              : clampedHeightPx;
           const boxLeftPx = Math.max(0, Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - boxWidthPx));
           const boxTopPx = Math.max(
             insets.top,
