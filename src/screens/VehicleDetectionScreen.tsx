@@ -639,6 +639,21 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
 
   const { resize } = useResizePlugin();
   const lastFrameProcessedMs = useSharedValue(0);
+  // Real, confirmed root cause of an otherwise-obvious, close vehicle sometimes not detecting at
+  // all: frame.orientation is a raw, per-tick gravity-derived sensor reading, and iOS's own
+  // gravity sensing genuinely gets ambiguous/noisy at a near-flat dashboard mount angle -- a
+  // single momentary misread here (e.g. reporting "landscape-right" for one tick on a phone
+  // that's actually sitting in portrait the whole time) would rotate that tick's frame the WRONG
+  // way before it ever reaches the model, feeding it a sideways car shape the model was never
+  // trained to recognize -- a real, direct cause of a clean miss on an obvious vehicle, not a
+  // confidence-threshold issue. Debounced via SharedValues (persist across worklet calls, same
+  // pattern as lastFrameProcessedMs above) so a momentary flip has to hold for several
+  // consecutive ticks before the model-feeding rotation actually changes -- filters the sensor
+  // noise without meaningfully lagging behind a real physical rotation (under ~1.2s at this
+  // throttle).
+  const stableFrameOrientation = useSharedValue<string>("portrait");
+  const orientationStreak = useSharedValue(0);
+  const ORIENTATION_DEBOUNCE_TICKS = 4;
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -648,6 +663,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       const now = Date.now();
       if (now - lastFrameProcessedMs.value < FRAME_PROCESSOR_THROTTLE_MS) return;
       lastFrameProcessedMs.value = now;
+
+      if (frame.orientation === stableFrameOrientation.value) {
+        orientationStreak.value = 0;
+      } else {
+        orientationStreak.value += 1;
+        if (orientationStreak.value >= ORIENTATION_DEBOUNCE_TICKS) {
+          stableFrameOrientation.value = frame.orientation;
+          orientationStreak.value = 0;
+        }
+      }
+      const stableOrientation = stableFrameOrientation.value;
 
       // frame.width/frame.height are the RAW camera sensor buffer's dimensions (confirmed from
       // react-native-vision-camera's own native source -- CVPixelBufferGetWidth/Height on the
@@ -664,16 +690,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // read as fake motion), and the missing plate detection (locatePlateRegion estimating a
       // crop off the wrong box). Rotating here to upright before the model ever sees pixels
       // fixes the root cause once, instead of patching each downstream symptom separately.
+      // Reads the DEBOUNCED orientation above, not frame.orientation directly -- see its own
+      // comment for why.
       let rotation: "0deg" | "90deg" | "180deg" | "270deg" = "0deg";
       let uprightWidth = frame.width;
       let uprightHeight = frame.height;
-      if (frame.orientation === "portrait-upside-down") {
+      if (stableOrientation === "portrait-upside-down") {
         rotation = "180deg";
-      } else if (frame.orientation === "landscape-right") {
+      } else if (stableOrientation === "landscape-right") {
         rotation = "90deg";
         uprightWidth = frame.height;
         uprightHeight = frame.width;
-      } else if (frame.orientation === "landscape-left") {
+      } else if (stableOrientation === "landscape-left") {
         rotation = "270deg";
         uprightWidth = frame.height;
         uprightHeight = frame.width;
@@ -740,11 +768,14 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
 
       // Only the parsed, tiny result array (plus the upright frame dimensions the boxes are
       // relative to) crosses back to JS here -- never the raw frame or the raw output tensors,
-      // per the explicit Phase 2 spec this rewrite followed. frame.width/height/orientation
-      // (the RAW, pre-rotation sensor info -- see this worklet's own comment above) also cross
-      // over now, landscape add-on only -- see rawFrameInfo's own comment for why the render
-      // side needs them.
-      onDetections(detections, uprightWidth, uprightHeight, frame.width, frame.height, frame.orientation);
+      // per the explicit Phase 2 spec this rewrite followed. frame.width/height (the RAW,
+      // pre-rotation sensor info -- see this worklet's own comment above) also cross over now,
+      // landscape add-on only -- see rawFrameInfo's own comment for why the render side needs
+      // them. Reports the DEBOUNCED orientation (stableOrientation), not frame.orientation
+      // directly, so the render-side remap decision always matches whatever orientation the
+      // model itself actually rotated against this tick -- reporting the raw, possibly-noisier
+      // reading here would let the two sides disagree about which one is "true" for this frame.
+      onDetections(detections, uprightWidth, uprightHeight, frame.width, frame.height, stableOrientation);
     },
     [resize, onDetections]
   );
@@ -1019,6 +1050,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // interface never moved, so the preview is still raw -- and that's exactly when the remap is
   // needed, same math as the still-photo capture path already uses for its own separate raw
   // buffer below.
+  // frame.orientation reported here is already the Frame Processor worklet's own DEBOUNCED
+  // value (see stableFrameOrientation/orientationStreak in the worklet above) -- filtered at the
+  // source, not re-smoothed again here, so this always matches whatever orientation the model
+  // itself actually rotated against for the tick that produced these boxes.
   const isLandscapeFrame =
     rawFrameInfo?.orientation === "landscape-left" || rawFrameInfo?.orientation === "landscape-right";
   const previewLikelyUnrotated = isLandscapeFrame && !isLandscapeLayout;
