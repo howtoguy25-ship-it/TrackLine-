@@ -196,20 +196,20 @@ function TargetCorners({ width, height, color }: { width: number; height: number
 }
 
 // Color-codes the lock/target box by the vehicle's own real road speed, per explicit request:
-// under 50 km/h amber/orange (an uncertain/low reading -- also the neutral default below for any
-// speed that isn't a confirmed "absolute" reading at all), 50-70 green (normal, confident cruise
-// speed), over 70 red. Matches real fixed-camera traffic-radar convention (a driver glances at a
-// color, not a number, to gauge how fast someone's going). Only applied to a real "absolute"
-// road-speed reading (a genuine ego-GPS-combined estimate, or a stationary/mounted camera's own
-// closing rate treated as the target's real speed -- see speedTracker.ts's combineWithEgoSpeed);
-// a plain "closing" rate (no GPS fix at all yet, so whether the camera itself is moving is
-// genuinely unknown) isn't a confirmed speed measurement and stays the neutral default amber
-// rather than implying a threshold it can't actually back up.
+// under 60 km/h green (normal), 60-80 amber/orange (the "original" neutral color -- also the
+// default for parked vehicles or any speed that isn't a confirmed "absolute" reading at all),
+// over 80 red. Matches real fixed-camera traffic-radar convention (a driver glances at a color,
+// not a number, to gauge how fast someone's going). Only applied to a real "absolute" road-speed
+// reading (a genuine ego-GPS-combined estimate, or a stationary/mounted camera's own closing rate
+// treated as the target's real speed -- see speedTracker.ts's combineWithEgoSpeed); a plain
+// "closing" rate (no GPS fix at all yet, so whether the camera itself is moving is genuinely
+// unknown) isn't a confirmed speed measurement and stays the neutral default amber rather than
+// implying a threshold it can't actually back up.
 function speedLockColor(box: TrackedBox): string {
   if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return "#F59E0B";
   const abs = Math.abs(box.speedKmh);
-  if (abs > 70) return "#DC2626";
-  if (abs >= 50) return "#22C55E";
+  if (abs > 80) return "#DC2626";
+  if (abs < 60) return "#22C55E";
   return "#F59E0B";
 }
 
