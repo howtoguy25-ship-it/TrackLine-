@@ -145,9 +145,22 @@ export function RevCheckScreen() {
     },
     onPurchaseError: (error) => {
       setPurchasing(false);
-      if (error.code !== ErrorCode.UserCancelled) {
-        setResult({ outcome: "error", message: `Payment didn't go through: ${error.message}` });
+      if (error.code === ErrorCode.UserCancelled) return;
+      // Real, confirmed issue (not a code bug): SkuNotFound/ItemUnavailable means Apple's own
+      // App Store Connect doesn't yet have REV_CHECK_PRODUCT_ID (see iap.ts) as a live,
+      // purchasable in-app purchase for this app -- that's an App Store Connect configuration
+      // step (create the product, complete pricing/metadata, and the Paid Applications
+      // Agreement/banking+tax info must be active, or Apple blocks IAP entirely, sandbox
+      // included), not something fixable from this app's own code. Honest, distinct message so
+      // this doesn't read as a generic "your card was declined"-style failure.
+      if (error.code === ErrorCode.SkuNotFound || error.code === ErrorCode.ItemUnavailable) {
+        setResult({
+          outcome: "error",
+          message: "REV Check payments aren't set up yet on the App Store -- try again later.",
+        });
+        return;
       }
+      setResult({ outcome: "error", message: `Payment didn't go through: ${error.message}` });
     },
   });
 
@@ -158,6 +171,14 @@ export function RevCheckScreen() {
 
   const revCheckProduct = products.find((p) => p.id === REV_CHECK_PRODUCT_ID);
   const priceLabel = revCheckProduct?.displayPrice ?? REV_CHECK_FALLBACK_PRICE_LABEL;
+  // Real, confirmed gate: fetchProducts coming back with no match for REV_CHECK_PRODUCT_ID means
+  // Apple/Google's own store genuinely doesn't have this SKU live yet (see onPurchaseError's own
+  // comment) -- letting the button stay a normal-looking "Pay $14.99" tap that's guaranteed to
+  // fail with a cryptic native error is worse than being upfront that payment isn't ready yet.
+  // Only gates the PAID path -- the free "not connected" path (see onStart) never needed a real
+  // product to begin with.
+  const paymentRequired = providerConfigured || plateProviderConfigured;
+  const paymentReady = connected && !!revCheckProduct;
 
   // A real REV check costs real money (see the cost notice below) -- closing this screen (or the
   // driver just navigating away) must never lose a result they already paid for. Loads whatever
@@ -340,11 +361,21 @@ export function RevCheckScreen() {
           re-registration) -- leave this blank to just see model/spec data from the plate above.
         </Text>
 
-        {(providerConfigured || plateProviderConfigured) && !hasPendingPaidRetry && (
+        {paymentRequired && !hasPendingPaidRetry && paymentReady && (
           <View style={styles.costNotice}>
             <MaterialCommunityIcons name="currency-usd" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
               Running this check costs {priceLabel}, charged securely through the App Store.
+            </Text>
+          </View>
+        )}
+        {/* Real, confirmed gate -- see paymentReady's own comment. Honest "not ready yet"
+            state instead of a normal-looking price notice for a purchase guaranteed to fail. */}
+        {paymentRequired && !hasPendingPaidRetry && !paymentReady && (
+          <View style={styles.costNotice}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={14} color={colors.warning} />
+            <Text style={styles.costNoticeText}>
+              REV Check payments aren't available yet -- try again shortly.
             </Text>
           </View>
         )}
@@ -359,10 +390,11 @@ export function RevCheckScreen() {
 
         <Pressable
           onPress={onStart}
-          disabled={!plate.trim() || checking || purchasing}
+          disabled={!plate.trim() || checking || purchasing || (paymentRequired && !hasPendingPaidRetry && !paymentReady)}
           style={({ pressed }) => [
             styles.startButton,
-            (!plate.trim() || checking || purchasing) && styles.startButtonDisabled,
+            (!plate.trim() || checking || purchasing || (paymentRequired && !hasPendingPaidRetry && !paymentReady)) &&
+              styles.startButtonDisabled,
             pressed && !checking && !purchasing && plate.trim() && { opacity: pressedOpacity },
           ]}
         >
@@ -372,8 +404,10 @@ export function RevCheckScreen() {
             <Text style={styles.startButtonText}>
               {hasPendingPaidRetry
                 ? "Retry REV Check (already paid)"
-                : providerConfigured || plateProviderConfigured
-                  ? `Pay ${priceLabel} & Start REV Check`
+                : paymentRequired
+                  ? paymentReady
+                    ? `Pay ${priceLabel} & Start REV Check`
+                    : "Payments unavailable"
                   : "Start REV Check"}
             </Text>
           )}
