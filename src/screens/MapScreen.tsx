@@ -141,8 +141,13 @@ const NEAR_TERM_TRAFFIC_CHECK_METERS = 1000;
 const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
 // Where along each route's own polyline its floating ETA pill lands -- staggered per profile
 // (not all at the literal midpoint) so three pills sitting on largely overlapping road sections
-// don't all render in exactly the same spot. Index-matched to ROUTE_PROFILE_ORDER.
-const ROUTE_ETA_PILL_FRACTIONS = [0.35, 0.5, 0.65];
+// don't all render in exactly the same spot. Index-matched to ROUTE_PROFILE_ORDER. Widened
+// (0.35/0.5/0.65 -> 0.2/0.5/0.8) per explicit request/real screenshot evidence -- alternative
+// routes commonly share the same initial stretch of road (leaving from the same point), so a
+// narrow spread clustered near the middle still left pills crowded/overlapping right where
+// they diverge; placing them earlier and later along each route's own line gives them a much
+// better real chance of landing somewhere the routes have already visually separated.
+const ROUTE_ETA_PILL_FRACTIONS = [0.2, 0.5, 0.8];
 
 // Index-based (not distance-based) point along a polyline -- good enough for placing a small
 // floating label roughly along a route's own path without needing real cumulative-distance
