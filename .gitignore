@@ -18,5 +18,6 @@ npm-debug.*
 .metro-health-check*
 firebase-debug.log
 firestore-debug.log
+.firebase/
 functions/node_modules/
 functions/lib/
