@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
+import * as Updates from "expo-updates";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -43,6 +44,27 @@ function App() {
   // once here, not on every screen change.
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
+
+  // Real, confirmed gap: expo-updates' own default behavior only ever fetches a newly
+  // published OTA update in the background on a cold launch -- it does NOT apply it to the
+  // launch that just fetched it, only to the NEXT cold launch after that. With nothing here
+  // ever calling reloadAsync(), every OTA publish this app ships needed two full quit-and-
+  // reopens before a real device actually ran the new code, not one -- explaining reports of a
+  // fix "still not working" immediately after a single reopen, when the fix itself was fine.
+  // isEnabled is false in Expo Go/dev builds (no embedded update channel at all) -- skipped
+  // there rather than throwing. Best-effort: any failure (offline, no update published yet)
+  // just leaves the app running its current bundle, exactly like before this existed.
+  useEffect(() => {
+    if (!Updates.isEnabled) return;
+    Updates.checkForUpdateAsync()
+      .then((result) => (result.isAvailable ? Updates.fetchUpdateAsync() : null))
+      .then((fetched) => (fetched ? Updates.reloadAsync() : null))
+      .catch((err) => {
+        Sentry.logger.error("ota-update: check/fetch/reload failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
   }, []);
 
   return (
