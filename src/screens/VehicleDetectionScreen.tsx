@@ -354,7 +354,25 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const ZOOM_BUMP_FACTOR = 1.3;
   const [normalZoomFactor, setNormalZoomFactor] = useState(1);
   useEffect(() => {
-    if (device) setNormalZoomFactor(Math.min(device.neutralZoom * ZOOM_BUMP_FACTOR, device.maxZoom));
+    if (!device) return;
+    // Real, confirmed regression: on at least one real device, this produced zero detections at
+    // all (not just weaker ones) -- almost certainly because clamping straight to device.maxZoom
+    // without a floor could land below device.neutralZoom itself if maxZoom is ever reported
+    // smaller than neutralZoom*1.3 (a real, seen device data quirk), feeding the Frame Processor
+    // a near-zero/invalid zoom value that breaks its input silently instead of crashing visibly.
+    // Explicit finite/positive checks first -- Math.max/Math.min silently propagate NaN if either
+    // input ever comes back undefined/NaN on some device, which the naive version didn't guard
+    // against at all. Falls back to a plain neutral 1x (skipping the zoom bump entirely) rather
+    // than risk feeding the camera any unvalidated number if the device's own reported values
+    // ever look wrong.
+    const neutral = device.neutralZoom;
+    const max = device.maxZoom;
+    if (!Number.isFinite(neutral) || neutral <= 0 || !Number.isFinite(max) || max <= 0) {
+      setNormalZoomFactor(1);
+      return;
+    }
+    const target = Math.min(neutral * ZOOM_BUMP_FACTOR, max);
+    setNormalZoomFactor(Math.max(target, neutral));
   }, [device]);
   const zoomFactor = normalZoomFactor;
   // Same ref pattern as egoSpeedRef below -- onDetections runs from the Frame Processor bridge,
