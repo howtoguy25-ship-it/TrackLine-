@@ -235,12 +235,25 @@ function clampShrink(
 // cars/SUVs at typical dashcam distance).
 const MIN_BOX_ASPECT_RATIO = 1.4;
 
+// Real, confirmed bug (screenshot evidence): this used to always fix a too-narrow-for-its-height
+// box by WIDENING width to match that height. But the height is very often the axis the detector
+// actually got wrong -- a box bleeding into background (a fence, a shed roof, open sky) above/
+// below the real vehicle -- and widening based on an already-oversized height just made the box
+// even bigger, not tighter. Confirmed exactly this on a real vehicle box spanning nearly the full
+// frame height while barely wider than the car itself. Shrinks height down to match width
+// instead: width is generally the more trustworthy axis for a side/rear vehicle view (a car's
+// left/right edges are usually genuinely in-frame and contrasty against the road, while its top
+// edge blurs into whatever's directly behind/above it). Stays symmetric around the box's own
+// original vertical center, so this never drifts the box off the real vehicle -- display-only,
+// same principle as before: box.bbox itself (fed to estimateDistanceM/speed) is never touched by
+// a naive inflation.
 function enforceMinAspectRatio(bbox: [number, number, number, number]): [number, number, number, number] {
   const [x, y, w, h] = bbox;
   const minW = h * MIN_BOX_ASPECT_RATIO;
   if (w >= minW) return bbox;
-  const cx = x + w / 2;
-  return [cx - minW / 2, y, minW, h];
+  const maxH = w / MIN_BOX_ASPECT_RATIO;
+  const cy = y + h / 2;
+  return [x, cy - maxH / 2, w, maxH];
 }
 
 // Zooming in narrows the real field of view, which is exactly equivalent (in this pinhole
