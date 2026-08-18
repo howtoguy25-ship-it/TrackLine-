@@ -13,7 +13,7 @@ import { useResizePlugin } from "vision-camera-resize-plugin";
 import { useSharedValue, useRunOnJS } from "react-native-worklets-core";
 import type { BoxedHybridObject } from "react-native-nitro-modules";
 import type { TensorflowModel } from "react-native-fast-tflite";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
@@ -1125,16 +1125,20 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // with an explicit arrow (never presented as the vehicle's real speed) so it isn't
           // mistaken for the same thing. Never a fabricated number either way -- null shows
           // nothing at all.
+          // Format matches the exact reference design: plain "N KMH" (uppercase, no icon, no
+          // colored pill) -- real, confirmed request to replace the old icon+pill badge with
+          // small plain text in the box's bottom-right corner. Still the exact same live
+          // speedKmh/speedKind values the tracker computed, just displayed more plainly.
           const speedLabel =
             box.state === "parked"
-              ? "Parked"
+              ? "PARKED"
               : box.speedKmh === null
                 ? null
                 : box.speedKind === "absolute"
-                  ? `${Math.max(0, Math.round(box.speedKmh))} km/h`
+                  ? `${Math.max(0, Math.round(box.speedKmh))} KMH`
                   : Math.abs(box.speedKmh) < 3
-                    ? "steady"
-                    : `${box.speedKmh > 0 ? "▲" : "▼"} ${Math.round(Math.abs(box.speedKmh))} km/h`;
+                    ? "STEADY"
+                    : `${box.speedKmh > 0 ? "▲" : "▼"} ${Math.round(Math.abs(box.speedKmh))} KMH`;
           // Clamped to the visible container -- a close vehicle at 5x zoom (or just one that
           // fills most of the frame at 1x) very plausibly has a real box bigger than the screen
           // itself, with its edges landing well off-screen in every direction. Previously the
@@ -1211,42 +1215,37 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                 ]}
               >
                 <TargetCorners width={boxWidthPx} height={boxHeightPx} color={lockColor} />
-                <Text
-                  style={[
-                    styles.boxLabel,
-                    isEmergency && styles.boxLabelEmergency,
-                    { left: labelLeftPx, top: labelAboveBox ? -24 : 6 },
-                  ]}
+                {/* Real, confirmed rebuild matching an exact reference design: the vehicle type
+                    (and, once confirmed, the plate -- see the tag row below) now renders as a
+                    small plain white/black-border TAG attached to the box's own top-left
+                    corner, not a colored bar spanning the box's top edge with a confidence
+                    percentage baked in -- score still gates whether a box renders at all
+                    (MIN_RENDER_SCORE above), it's just no longer printed on screen. Emergency
+                    stays a real, distinct visual (red border + text) since that's a genuine
+                    safety signal, not cosmetic. */}
+                <View
+                  style={[styles.tagRow, { left: labelLeftPx, top: labelAboveBox ? -30 : 6 }]}
+                  pointerEvents="none"
                 >
-                  {isEmergency ? `${box.label} — lights active` : `${box.label} ${Math.round(box.score * 100)}%`}
-                </Text>
-                {/* Bottom-center, just outside the box's own bottom edge -- per explicit
-                    request matching a real reference screenshot (speed as small live text
-                    under the vehicle, not layered inside/above the box with the type/
-                    confidence label). Never a guessed number -- this is the exact same live
-                    speedLabel value the tracker just computed for this frame, same as before
-                    this only moved where it renders. */}
-                {speedLabel && (
-                  <View
-                    style={[styles.speedLabelWrap, { top: boxHeightPx + 6 }]}
-                    pointerEvents="none"
-                  >
-                    {/* Every tracked vehicle renders its own independent badge here -- state
-                        (parked vs moving) and speed are computed per-track in speedTracker.ts,
-                        never a single global reading -- so a parked car and a moving car sharing
-                        the same frame each show their own correct label at the same time. The
-                        small leading icon (parking-circle vs speedometer) makes that state
-                        readable at a glance, not just from the text/color, per explicit request
-                        for a more professional, neatly-designed badge. */}
-                    <View style={[styles.speedLabel, box.state === "parked" && styles.speedLabelParked]}>
-                      {box.state === "parked" ? (
-                        <MaterialCommunityIcons name="parking" size={11} color="#fff" />
-                      ) : (
-                        <Ionicons name="speedometer-outline" size={10} color="#fff" />
-                      )}
-                      <Text style={styles.speedLabelText}>{speedLabel}</Text>
-                    </View>
+                  <View style={[styles.vehicleTag, isEmergency && styles.vehicleTagEmergency]}>
+                    <Text style={[styles.vehicleTagText, isEmergency && styles.vehicleTagTextEmergency]}>
+                      {isEmergency ? `${box.label} — lights active` : box.label}
+                    </Text>
                   </View>
+                  {plateInfo && (
+                    <View style={styles.vehicleTag}>
+                      <Text style={styles.vehicleTagText}>- {plateInfo.text} -</Text>
+                    </View>
+                  )}
+                </View>
+                {/* Bottom-right corner, just outside the box's own bottom edge -- per explicit
+                    request matching an exact reference design: plain small text, no icon, no
+                    colored pill background. Never a guessed number -- this is the exact same
+                    live speedLabel value the tracker just computed for this frame. */}
+                {speedLabel && (
+                  <Text style={[styles.speedTextBottomRight, { top: boxHeightPx + 6 }]} pointerEvents="none">
+                    {speedLabel}
+                  </Text>
                 )}
                 {/* Tap a box to lock visual focus on it when several vehicles are in frame --
                     a this-screen, this-session UI aid only (like tapping to focus a camera).
@@ -1257,113 +1256,48 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                     <Ionicons name="checkmark" size={14} color="#FFFFFF" />
                   </View>
                 )}
-              </Pressable>
-              {/* Plate text only ever appears once on-device OCR actually confirms a real read
-                  (see plateOcr.ts) -- never a location guess with nothing behind it. Once
-                  confirmed it's also automatically written to the on-device vehicle history log
-                  (never sent off-device -- see vehicleHistory.ts and the small "Saved" badge
-                  below), not just held in this screen's own session state anymore. The frame
-                  itself is the *real* estimated plate rectangle (plateLocator.ts's region, the
-                  same crop OCR actually read from) in its own real position, not a generic label
-                  floating under the vehicle box -- rendered as a sibling of the vehicle box (not
-                  nested in it) since the plate region has its own independent coordinates in the
-                  source photo. */}
-              {plateInfo &&
-                (() => {
-                  // Same remap condition as the vehicle box above -- plateInfo.region is also in
-                  // photoSize's upright space, so it needs the same raw-sensor-space remap
-                  // exactly when the preview is confirmed likely un-rotated.
-                  const displayPlateRegion: [number, number, number, number] = previewLikelyUnrotated
-                    ? mapUprightBoxToRawPhoto(
-                        [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h],
-                        photoSize.width,
-                        photoSize.height,
-                        displaySize!.width,
-                        displaySize!.height,
-                        rawFrameInfo!.orientation
-                      )
-                    : [plateInfo.region.x, plateInfo.region.y, plateInfo.region.w, plateInfo.region.h];
-                  // Same off-screen-edge clamp as the vehicle box above -- a plate region is
-                  // normally a small sub-crop well inside the vehicle box, but on a vehicle box
-                  // that's itself mostly off-screen (a close vehicle at 5x zoom) the plate region
-                  // can still start off-screen too.
-                  const rawPlateLeftPx = displayPlateRegion[0] * scale + offsetX;
-                  const rawPlateTopPx = displayPlateRegion[1] * scale + offsetY;
-                  const rawPlateRightPx = rawPlateLeftPx + displayPlateRegion[2] * scale;
-                  const rawPlateBottomPx = rawPlateTopPx + displayPlateRegion[3] * scale;
-                  const plateLeftPx = Math.max(0, Math.min(rawPlateLeftPx, containerSize.width));
-                  const plateTopPx = Math.max(0, Math.min(rawPlateTopPx, containerSize.height));
-                  const plateWidthPx = Math.max(0, Math.min(rawPlateRightPx, containerSize.width) - plateLeftPx);
-                  const plateHeightPx = Math.max(0, Math.min(rawPlateBottomPx, containerSize.height) - plateTopPx);
-                  const plateLabelLeftPx = Math.max(0, -plateLeftPx);
-                  const plateLabelAbove = plateTopPx - 26 >= insets.top + spacing.xs;
-                  const isSaved = savedTrackIds.has(box.id);
-                  return (
-                    <View
-                      // "box-none" (not "none") -- per explicit request that a confirmed plate
-                      // "automatically displays it and users can have option to revcheck" right
-                      // there, not only after first tapping the vehicle box to open the detail
-                      // panel below. The frame/label themselves still pass touches through (no
-                      // onPress of their own), only the new Rev Check pill actually captures one.
-                      pointerEvents="box-none"
-                      style={[
-                        styles.plateFrame,
-                        { left: plateLeftPx, top: plateTopPx, width: plateWidthPx, height: plateHeightPx },
-                      ]}
-                    >
-                      <TargetCorners width={plateWidthPx} height={plateHeightPx} color="#22D3EE" />
+                {/* Real, confirmed rebuild matching an exact reference design: the confirmed
+                    plate text now shows directly in the tag row above (next to the vehicle
+                    type tag), not as a separate frame drawn around the actual plate's location
+                    in the image -- simpler, and matches the reference exactly. Rev Check + the
+                    "Saved" badge (real, on-device history write -- see vehicleHistory.ts) still
+                    render, just anchored below the tag row instead of below the old plate
+                    frame. Nested INSIDE the box's own Pressable (not a Fragment sibling like the
+                    old plate-region frame was) since labelLeftPx/labelAboveBox are offsets
+                    relative to the box's own local frame, not full container-relative pixels. */}
+                {plateInfo &&
+                  (() => {
+                    const isSaved = savedTrackIds.has(box.id);
+                    return (
                       <View
-                        style={[
-                          styles.plateFrameLabelWrap,
-                          { left: plateLabelLeftPx, top: plateLabelAbove ? -26 : 6 },
-                        ]}
-                        pointerEvents="none"
+                        pointerEvents="box-none"
+                        style={[styles.plateActionsWrap, { left: labelLeftPx, top: (labelAboveBox ? -30 : 6) + 32 }]}
                       >
-                        <Text style={styles.plateFrameLabelText} numberOfLines={1}>
-                          {plateInfo.text}
-                        </Text>
-                      </View>
-                      {/* Every plateInfo here is already a CONFIRMED read (plateTexts only ever
-                          holds one after PLATE_CONFIRM_COUNT -- see captureForPlateAndLightbar's
-                          own comment), so this never needs a disabled/"waiting" state the way the
-                          detail panel's own Rev Check button below does. Same destination/params
-                          as that button, just reachable in one tap straight off the live plate
-                          instead of needing to select the box first. */}
-                      <Pressable
-                        onPress={() =>
-                          navigation.navigate("RevCheck", {
-                            plate: plateInfo.text,
-                            vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
-                            speedKmh: box.state === "parked" ? 0 : box.speedKmh,
-                            speedKind: box.state === "parked" ? "absolute" : box.speedKind,
-                          })
-                        }
-                        hitSlop={8}
-                        style={({ pressed }) => [
-                          styles.plateRevCheckPill,
-                          // Always anchored off the frame's own bottom edge -- the label above
-                          // sits near the TOP of the frame either way it's positioned (see
-                          // plateLabelAbove's own comment), so the bottom stays clear regardless.
-                          // Same left clamp as the label above, so it never renders off-screen
-                          // when the frame itself is partly off the left edge.
-                          { top: plateHeightPx + 6, left: plateLabelLeftPx },
-                          pressed && { opacity: pressedOpacity },
-                        ]}
-                      >
-                        <Ionicons name="search" size={10} color="#FFFFFF" />
-                        <Text style={styles.plateRevCheckPillText}>Rev Check</Text>
-                      </Pressable>
-                      {isSaved && (
-                        <View style={styles.savedBadge} pointerEvents="none">
-                          <View style={styles.savedBadgeInner}>
+                        <Pressable
+                          onPress={() =>
+                            navigation.navigate("RevCheck", {
+                              plate: plateInfo.text,
+                              vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
+                              speedKmh: box.state === "parked" ? 0 : box.speedKmh,
+                              speedKind: box.state === "parked" ? "absolute" : box.speedKind,
+                            })
+                          }
+                          hitSlop={8}
+                          style={({ pressed }) => [styles.plateRevCheckPill, pressed && { opacity: pressedOpacity }]}
+                        >
+                          <Ionicons name="search" size={10} color="#FFFFFF" />
+                          <Text style={styles.plateRevCheckPillText}>Rev Check</Text>
+                        </Pressable>
+                        {isSaved && (
+                          <View style={styles.savedBadgeInner} pointerEvents="none">
                             <Ionicons name="checkmark-circle" size={12} color="#22C55E" />
                             <Text style={styles.savedBadgeText}>Saved</Text>
                           </View>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })()}
+                        )}
+                      </View>
+                    );
+                  })()}
+              </Pressable>
             </React.Fragment>
           );
         })}
@@ -1648,99 +1582,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  boxLabel: {
+  // Real, confirmed rebuild matching an exact reference design -- a plain white/black-border
+  // tag attached to the box's own top-left corner (row so a confirmed plate tag can sit right
+  // next to the vehicle-type tag), replacing the old colored bar-with-percentage label.
+  tagRow: {
     position: "absolute",
-    top: -22,
-    left: 0,
-    backgroundColor: "#F59E0B",
-    color: "#111827",
-    fontSize: 11,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    ...shadow.low,
-  },
-  boxLabelEmergency: {
-    backgroundColor: "#DC2626",
-    color: "#fff",
-  },
-  speedLabelWrap: {
-    position: "absolute",
-    // top always supplied inline at the call site (boxHeightPx + gap, so it sits just under
-    // the box regardless of that box's own height) -- this is just a safe fallback.
-    top: 0,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  speedLabel: {
     flexDirection: "row",
-    alignItems: "center",
     gap: 4,
-    backgroundColor: "#111827",
+  },
+  vehicleTag: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#000000",
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
     ...shadow.low,
   },
-  speedLabelText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  speedLabelParked: {
-    backgroundColor: "#4B5563",
-  },
-  // Sized/positioned to the real estimated plate rectangle (see the render call site) -- an
-  // exact frame around the actual plate, not a generic fixed-size badge floating near it.
-  // No border of its own -- same reasoning as the vehicle box above, targetRect (rendered as
-  // this frame's child) is the single rectangle outline around the plate now.
-  plateFrame: {
-    position: "absolute",
-  },
-  // On top of the plate's own target rectangle (not below it) -- reads as a real label
-  // tagging the locked-on plate, per explicit request.
-  plateFrameLabelWrap: {
-    position: "absolute",
-    top: -24,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  plateFrameLabelText: {
-    backgroundColor: "#22D3EE",
-    color: "#111827",
-    fontSize: 12,
+  vehicleTagText: {
+    color: "#000000",
+    fontSize: 15,
     fontWeight: "800",
-    fontFamily: "monospace",
-    letterSpacing: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    ...shadow.low,
   },
-  savedBadge: {
+  // Emergency stays a real, distinct visual (not cosmetic -- a genuine confirmed lightbar
+  // signature, see lightbarDetector.ts) even against the otherwise-neutral black/white tag.
+  vehicleTagEmergency: {
+    borderColor: "#DC2626",
+    backgroundColor: "#DC2626",
+  },
+  vehicleTagTextEmergency: {
+    color: "#FFFFFF",
+  },
+  // Bottom-right corner, just outside the box's own bottom edge -- plain text, no background/
+  // icon, matching an exact reference design (small grey "N KMH" under the vehicle).
+  speedTextBottomRight: {
     position: "absolute",
-    // Pushed further down (was -20) to sit clear below the new plateRevCheckPill row, which now
-    // occupies the space just under the plate frame -- see that style's own top offset.
-    bottom: -44,
-    left: 0,
     right: 0,
+    color: "#6B7280",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  plateActionsWrap: {
+    position: "absolute",
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    gap: 3,
+    gap: 6,
   },
   plateRevCheckPill: {
-    position: "absolute",
-    // No left:0/right:0 -- this is a real, content-sized pill (like plateFrameLabelWrap's own
-    // Text above it), not a full-width bar, so it doesn't stretch to an oddly wide blue strip
-    // under a narrow plate frame. `left` is supplied inline at the call site (the same
-    // plateLabelLeftPx clamp the label above already uses).
+    // No longer position:absolute -- now a plain flex-row sibling inside plateActionsWrap
+    // (which owns the absolute positioning below the tag row) alongside the Saved badge.
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
