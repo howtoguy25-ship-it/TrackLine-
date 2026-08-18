@@ -74,8 +74,13 @@ const MIN_RENDER_SCORE = 0.55;
 // the merely-loose-but-still-clearly-wrong medium-large boxes also being reported. Both the size
 // trigger and the score bar it has to clear went up again; a real close-range vehicle still gets
 // through since it'll score much higher than 88% once actually filling that much of the frame.
-const OVERSIZED_BOX_FRAME_FRACTION = 0.5;
-const MIN_SCORE_FOR_OVERSIZED_BOX = 0.88;
+// Explicit values requested after further testing: frame-fraction trigger moved back up to
+// 0.65 (from an intermediate 0.5 that was starting to flag genuinely close-range vehicles too),
+// while the score required to trust a box that large went up to 0.9 -- a real net tightening
+// overall (a 0.69-score box, the exact prior complaint, clears neither the old 0.8 nor this 0.9
+// bar).
+const OVERSIZED_BOX_FRAME_FRACTION = 0.65;
+const MIN_SCORE_FOR_OVERSIZED_BOX = 0.9;
 // Belt-and-suspenders on top of the score gate above -- caps how much of the screen the drawn
 // box is ever allowed to visually cover, applied at render time (see its call site). Catches the
 // same "box covering the whole screen" complaint even for a detection that did clear the score
