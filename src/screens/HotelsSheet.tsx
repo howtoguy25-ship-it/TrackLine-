@@ -111,6 +111,14 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
       // to the snap points above, so only the list content underneath can ever move once the
       // sheet is already at its max.
       enableOverDrag={false}
+      // Real, confirmed bug: a single finger dragging on the list itself was being captured by
+      // the sheet's own content-pan gesture (competing with the list's native scroll) instead of
+      // scrolling -- the list only actually scrolled with two fingers, since a second touch
+      // point isn't something the sheet's pan responder recognizes as its own gesture. Disabling
+      // this leaves ONLY the drag handle draggable for resize/dismiss; every touch inside the
+      // content area (the list included) now goes straight to native scrolling with nothing
+      // competing for it.
+      enableContentPanningGesture={false}
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>

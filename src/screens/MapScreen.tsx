@@ -139,6 +139,23 @@ const NEAR_TERM_TRAFFIC_CHECK_METERS = 1000;
 // only other place that needs it and duplicating one small array beats a wider shared-module
 // refactor for it.
 const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
+// Real, confirmed request -- each route profile gets its own fixed color (fastest green,
+// recommended/normal yellow, safest purple) instead of a shared red-when-selected/grey-
+// otherwise scheme, applied consistently to that route's own line AND its ETA pill -- never
+// reused for anything else, so a color always means the same profile everywhere on this screen.
+const ROUTE_PROFILE_COLORS: Record<RouteProfileKey, string> = {
+  normal: "#EAB308",
+  fastest: "#22C55E",
+  safest: "#8B5CF6",
+};
+// Translucent version of each profile color above, for the two NOT-currently-selected routes'
+// "ghost preview" lines/pills -- per explicit request (Apple Maps-style: every alternative stays
+// visible and colored, just visually secondary to whichever one is actually selected).
+const ROUTE_PROFILE_COLORS_GHOST: Record<RouteProfileKey, string> = {
+  normal: "rgba(234, 179, 8, 0.55)",
+  fastest: "rgba(34, 197, 94, 0.55)",
+  safest: "rgba(139, 92, 246, 0.55)",
+};
 // Where along each route's own polyline its floating ETA pill lands -- staggered per profile
 // (not all at the literal midpoint) so three pills sitting on largely overlapping road sections
 // don't all render in exactly the same spot. Index-matched to ROUTE_PROFILE_ORDER. Widened
@@ -2389,9 +2406,10 @@ export function MapScreen() {
             routeOptions has been cleared by confirmRoute). */}
         {/* All three route options drawn at once, per explicit request (like Apple/Google
             Maps' own route picker) instead of only ever showing the currently-selected one --
-            the selected route highlighted (thicker, red, on top so it's never covered by the
-            other two -- see zIndex), the other two muted gray and thinner so they still read as
-            real, tappable alternatives rather than clutter. Tapping any of the three (line or
+            the selected route highlighted (thicker, on top so it's never covered by the other
+            two -- see zIndex), the other two a translucent "ghost preview" of that SAME route's
+            own color (not a shared grey) so a color always means the same profile whether it's
+            the highlighted pick or one of the two previews. Tapping any of the three (line or
             ETA pill below) selects it, same as tapping its row in the RouteOptionsCard sheet. */}
         {routeOptions &&
           ROUTE_PROFILE_ORDER.map((key) => {
@@ -2400,15 +2418,15 @@ export function MapScreen() {
               <React.Fragment key={key}>
                 {/* Same white-casing treatment as the committed route above, only for the
                     currently-selected preview -- keeps the unselected two clearly secondary
-                    (thin, flat gray, no casing) while the highlighted one reads as the same bold,
-                    polished band the app now uses everywhere else a route is drawn. */}
+                    (thin, translucent, no casing) while the highlighted one reads as the same
+                    bold, polished band the app now uses everywhere else a route is drawn. */}
                 {isSelected && (
                   <Polyline coordinates={routeOptions[key].polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
                 )}
                 <Polyline
                   coordinates={routeOptions[key].polyline}
                   strokeWidth={isSelected ? 8 : 5}
-                  strokeColor={isSelected ? "#DC2626" : "rgba(107, 114, 128, 0.55)"}
+                  strokeColor={isSelected ? ROUTE_PROFILE_COLORS[key] : ROUTE_PROFILE_COLORS_GHOST[key]}
                   lineDashPattern={isSelected ? [10, 7] : undefined}
                   tappable
                   onPress={() => setSelectedProfile(key)}
@@ -2438,8 +2456,20 @@ export function MapScreen() {
                 tracksViewChanges={false}
                 zIndex={isSelected ? 4 : 3}
               >
-                <View style={[styles.routeEtaPill, isSelected && styles.routeEtaPillSelected]}>
-                  <Text style={[styles.routeEtaPillText, isSelected && styles.routeEtaPillTextSelected]}>
+                <View
+                  style={[
+                    styles.routeEtaPill,
+                    isSelected
+                      ? { backgroundColor: ROUTE_PROFILE_COLORS[key], borderColor: ROUTE_PROFILE_COLORS[key] }
+                      : { borderColor: ROUTE_PROFILE_COLORS[key] },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.routeEtaPillText,
+                      isSelected ? styles.routeEtaPillTextSelected : { color: ROUTE_PROFILE_COLORS[key] },
+                    ]}
+                  >
                     {r.etaInTrafficText ?? r.etaText}
                   </Text>
                 </View>
@@ -3422,12 +3452,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: "rgba(107, 114, 128, 0.55)",
     ...shadow.low,
-  },
-  routeEtaPillSelected: {
-    backgroundColor: "#DC2626",
-    borderColor: "#DC2626",
   },
   routeEtaPillText: {
     fontSize: 12,

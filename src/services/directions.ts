@@ -238,8 +238,11 @@ async function getFastestRouteCandidates(
 
 export type RouteProfileKey = "normal" | "fastest" | "safest";
 
+// "normal" -> "Recommended" per explicit request for a more professional name -- same real
+// route/key underneath (RouteProfileKey stays "normal" everywhere else in the codebase), just a
+// better-reading label for what this option actually is: Google's own default best route.
 export const ROUTE_PROFILE_LABELS: Record<RouteProfileKey, string> = {
-  normal: "Normal",
+  normal: "Recommended",
   fastest: "Fastest",
   safest: "Safest",
 };

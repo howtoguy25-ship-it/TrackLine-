@@ -165,6 +165,11 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
       // this, dragging the list rubber-banded the whole sheet (title included) past its own
       // tallest snap point instead of just scrolling the list underneath it.
       enableOverDrag={false}
+      // Same real fix as HotelsSheet -- see that file's own comment: without this, a single
+      // finger dragging on the list was captured by the sheet's own content-pan gesture instead
+      // of the list's native scroll (only two fingers actually scrolled it). Leaves only the
+      // drag handle draggable for resize/dismiss.
+      enableContentPanningGesture={false}
       onChange={onSheetChange}
     >
       <BottomSheetView style={styles.content}>
