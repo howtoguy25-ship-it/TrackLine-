@@ -233,6 +233,9 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          // Real, explicit request -- Android-specific nested-scroll fix for a list living
+          // inside the sheet's own gesture-handler view hierarchy.
+          nestedScrollEnabled
           renderItem={({ item }) => (
             <Pressable
               style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}

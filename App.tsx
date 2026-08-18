@@ -12,6 +12,7 @@ import { AppOpenAdManager } from "@/components/AppOpenAdManager";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { installCrashReporter } from "@/services/crashReporter";
 import { initSentry, Sentry } from "@/services/sentry";
+import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
 
 // Installed at module scope so it's active as early as this file is ever imported/evaluated
 // -- before any provider or component below even mounts. See crashReporter.ts for why this
@@ -44,6 +45,20 @@ function App() {
   // once here, not on every screen change.
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
+
+  // Real, explicit request: AI vehicle detection should start the instant that screen opens,
+  // not after a visible load delay. loadBoxedTFLiteModel() caches its result in a module-level
+  // promise (see tfliteVehicleModel.ts's own comment), so kicking it off here -- once, in the
+  // background, at app launch, well before the driver ever taps into detection -- means the
+  // model is very likely already loaded (or already most of the way through loading) by the
+  // time VehicleDetectionScreen mounts and calls the exact same function: that call just awaits
+  // this same in-flight/already-resolved promise instead of starting the real disk-read +
+  // interpreter-init work from zero. Errors are swallowed here on purpose -- VehicleDetectionScreen's
+  // own load effect already has a real, user-facing auto-retry loop for a genuine failure; this
+  // is purely a head start, never the only place this gets attempted.
+  useEffect(() => {
+    loadBoxedTFLiteModel().catch(() => {});
   }, []);
 
   // Real, confirmed gap: expo-updates' own default behavior only ever fetches a newly

@@ -300,6 +300,9 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
               keyExtractor={(item) => item.stationId}
               style={styles.listFlex}
               contentContainerStyle={styles.listContent}
+              // Real, explicit request -- Android-specific nested-scroll fix for a list living
+              // inside the sheet's own gesture-handler view hierarchy.
+              nestedScrollEnabled
               renderItem={({ item }) => {
                 const dist =
                   location && item.location.latitude != null && item.location.longitude != null
@@ -353,6 +356,9 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
               keyExtractor={(item) => item.placeId}
               style={styles.listFlex}
               contentContainerStyle={styles.listContent}
+              // Real, explicit request -- Android-specific nested-scroll fix for a list living
+              // inside the sheet's own gesture-handler view hierarchy.
+              nestedScrollEnabled
               renderItem={({ item }) => (
                 <Pressable
                   style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
