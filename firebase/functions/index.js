@@ -535,3 +535,67 @@ exports.getFuelPrices = onCall(async (request) => {
     };
   }
 });
+
+// Real, cloud OCR alternative to VehicleDetectionScreen's own on-device plate reader (rn-mlkit-
+// ocr, see plateOcr.ts), per explicit request to use Plate Recognizer (platerecognizer.com)
+// specifically. Only ever called when the client's own subscribePlateRecognizerProviderStatus
+// says a real provider is connected -- unconfigured, the app falls back to the existing
+// on-device path unchanged (see plateRecognizer.ts's own comment on the client side for why that
+// fallback matters: it means this feature is never a hard requirement for plate reading to work
+// at all). A real, confirmed real endpoint/auth contract (api.platerecognizer.com/v1/plate-
+// reader/, Authorization: Token <key>, multipart `upload` field) -- not guessed.
+const PLATE_RECOGNIZER_URL = "https://api.platerecognizer.com/v1/plate-reader/";
+
+exports.recognizePlate = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+
+  const imageBase64 = typeof request.data?.imageBase64 === "string" ? request.data.imageBase64 : "";
+  if (!imageBase64) {
+    return { outcome: "error", message: "No plate image was provided." };
+  }
+
+  const db = getFirestore();
+  const providerSnap = await db.doc("config/plateRecognizerProvider").get();
+  const apiKey = (providerSnap.exists ? providerSnap.data().apiKey : "")?.trim();
+  if (!apiKey) {
+    return { outcome: "not_connected", message: "No plate recognition provider connected yet." };
+  }
+
+  try {
+    const imageBuffer = Buffer.from(imageBase64, "base64");
+    const form = new FormData();
+    form.append("upload", new Blob([imageBuffer], { type: "image/jpeg" }), "plate.jpg");
+
+    const res = await fetch(PLATE_RECOGNIZER_URL, {
+      method: "POST",
+      headers: { Authorization: `Token ${apiKey}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return {
+        outcome: "error",
+        message: `Plate Recognizer rejected the request (HTTP ${res.status}).${body ? ` ${body.slice(0, 200)}` : ""}`,
+      };
+    }
+    const data = await res.json();
+    const best = Array.isArray(data.results) && data.results.length > 0 ? data.results[0] : null;
+    return {
+      outcome: "success",
+      // No candidate found in this crop -- an honest null, not an error (the exact same "OCR
+      // ran but found nothing plate-shaped" outcome plateOcr.ts's on-device path already
+      // returns), so the caller's own confirm-after-2-reads logic treats it identically either
+      // way.
+      plate: best ? String(best.plate).toUpperCase() : null,
+      confidence: best ? best.score : null,
+    };
+  } catch (err) {
+    console.error("recognizePlate: request failed", err);
+    return {
+      outcome: "error",
+      message: `Couldn't reach the plate recognition provider: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+});

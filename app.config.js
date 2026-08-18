@@ -52,8 +52,13 @@ module.exports = {
           "TrackLine can track your location in the background to keep navigation and nearby-alert notifications accurate.",
         NSMicrophoneUsageDescription:
           "TrackLine listens for emergency vehicle sirens near you. Audio is analyzed on-device in real time and is never recorded or stored.",
+        // Updated to honestly disclose the new, opt-in cloud plate-OCR path (Plate Recognizer,
+        // see plateRecognizer.ts) -- when that provider is connected, a small cropped image of
+        // a detected plate is sent to Plate Recognizer's own servers for reading, unlike the
+        // fully on-device default. The live camera feed/video itself is still never recorded or
+        // stored either way -- this doesn't change.
         NSCameraUsageDescription:
-          "TrackLine uses your camera for live AI Vehicle Detection, analyzed on-device in real time. Video is never recorded or stored.",
+          "TrackLine uses your camera for live AI Vehicle Detection, analyzed on-device in real time. Video is never recorded or stored. A cropped image of a detected number plate may be sent to a third-party plate-recognition service when that feature is enabled.",
         UIBackgroundModes: ["audio", "location", "fetch"],
         // App only uses standard HTTPS/TLS (Firebase, Google Maps, AdMob) -- no custom
         // encryption -- so it qualifies as exempt. Declaring this here answers Apple's

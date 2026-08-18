@@ -24,7 +24,7 @@ import { loadBoxedTFLiteModel, TFLITE_INPUT_SIZE } from "@/services/tfliteVehicl
 import { sampleLightbarActivity, pruneLightbarTracks } from "@/utils/lightbarDetector";
 import { createSpeedTracker, type TrackedBox } from "@/utils/speedTracker";
 import { locatePlateRegion, type PlateRegion } from "@/utils/plateLocator";
-import { readPlateText } from "@/services/plateOcr";
+import { readPlateTextSmart, subscribePlateRecognizerProviderStatus } from "@/services/plateRecognizer";
 import { useLocation } from "@/context/LocationContext";
 import { upsertDetectedVehicle } from "@/services/vehicleHistory";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -195,22 +195,29 @@ function TargetCorners({ width, height, color }: { width: number; height: number
   );
 }
 
-// Color-codes the lock/target box by the vehicle's own real road speed, per explicit request:
-// under 60 km/h green (normal), 60-80 amber/orange (the "original" neutral color -- also the
-// default for parked vehicles or any speed that isn't a confirmed "absolute" reading at all),
-// over 80 red. Matches real fixed-camera traffic-radar convention (a driver glances at a color,
-// not a number, to gauge how fast someone's going). Only applied to a real "absolute" road-speed
-// reading (a genuine ego-GPS-combined estimate, or a stationary/mounted camera's own closing rate
-// treated as the target's real speed -- see speedTracker.ts's combineWithEgoSpeed); a plain
-// "closing" rate (no GPS fix at all yet, so whether the camera itself is moving is genuinely
-// unknown) isn't a confirmed speed measurement and stays the neutral default amber rather than
-// implying a threshold it can't actually back up.
+// Color-codes the lock/target box by the vehicle's own real road speed, per explicit request
+// (exact hex values requested): under 60 km/h green (#22C55E), 100+ red (#EF4444), and yellow
+// (#EAB308) for the confirmed-cruise band in between -- the request itself only named 70-90 as
+// "yellow", leaving 60-70 and 90-100 as gaps; filled here by extending yellow to cover both,
+// the natural reading of a three-tier green/yellow/red system with those crossover points.
+// Matches real fixed-camera traffic-radar convention (a driver glances at a color, not a number,
+// to gauge how fast someone's going). Only applied to a real "absolute" road-speed reading (a
+// genuine ego-GPS-combined estimate, or a stationary/mounted camera's own closing rate treated as
+// the target's real speed -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate
+// (no GPS fix at all yet, so whether the camera itself is moving is genuinely unknown) isn't a
+// confirmed speed measurement, and neither is a parked vehicle's speed -- both stay a distinct
+// neutral amber (#F59E0B, deliberately different from the confirmed-cruise yellow above) so
+// "parked/uncertain" is never visually confused with "confirmed doing 60-100".
+const SPEED_COLOR_GREEN = "#22C55E";
+const SPEED_COLOR_YELLOW = "#EAB308";
+const SPEED_COLOR_RED = "#EF4444";
+const SPEED_COLOR_NEUTRAL = "#F59E0B";
 function speedLockColor(box: TrackedBox): string {
-  if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return "#F59E0B";
+  if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return SPEED_COLOR_NEUTRAL;
   const abs = Math.abs(box.speedKmh);
-  if (abs > 80) return "#DC2626";
-  if (abs < 60) return "#22C55E";
-  return "#F59E0B";
+  if (abs >= 100) return SPEED_COLOR_RED;
+  if (abs < 60) return SPEED_COLOR_GREEN;
+  return SPEED_COLOR_YELLOW;
 }
 
 // Maps a box from the Frame Processor's UPRIGHT coordinate space (frameWidth x frameHeight,
@@ -368,6 +375,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const { location } = useLocation();
   const egoSpeedRef = useRef<number | null>(null);
   egoSpeedRef.current = location?.coords.speed ?? null;
+  // Real cloud OCR alternative (Plate Recognizer, platerecognizer.com) to this screen's own
+  // on-device plate reader, per explicit request -- see readPlateTextSmart's own comment for why
+  // this stays a graceful fallback rather than a hard requirement. Same ref pattern as
+  // egoSpeedRef/zoomFactorRef above: captureForPlateAndLightbar runs from a stable useCallback,
+  // not a normal re-render, so it needs a ref to always see the current value.
+  const [plateRecognizerConfigured, setPlateRecognizerConfigured] = useState(false);
+  useEffect(() => subscribePlateRecognizerProviderStatus(setPlateRecognizerConfigured), []);
+  const plateRecognizerConfiguredRef = useRef(false);
+  plateRecognizerConfiguredRef.current = plateRecognizerConfigured;
   // No "error" state -- see the model-load effect and the two capture paths' catch blocks
   // below. Every failure mode here now auto-recovers on its own instead of ever stopping and
   // waiting on a manual tap.
@@ -824,7 +840,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         platesReadingRef.current.add(box.id);
         const trackId = box.id;
         plateReadPromises.push(
-          readPlateText(photo.uri, rawRegion)
+          readPlateTextSmart(photo.uri, rawRegion, plateRecognizerConfiguredRef.current)
             .then((text) => {
               if (!text || unmountedRef.current) return;
               // Confirm before ever showing anything -- see PLATE_CANDIDATE_WINDOW's own

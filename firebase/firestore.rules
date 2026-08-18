@@ -160,6 +160,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Same two-doc split again, for the Plate Recognizer cloud OCR provider (see recognizePlate
+    // in firebase/functions/index.js) -- a real, paid platerecognizer.com account, used as a
+    // cloud alternative to VehicleDetectionScreen's own on-device plate reader when connected.
+    match /config/plateRecognizerProvider {
+      allow read, write: if isAdmin();
+    }
+
+    match /config/plateRecognizerStatus {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // Real card payment for web REV checks (Stripe) -- the web equivalent of mobile's Apple/
     // Google IAP purchase, since there's no app store to lean on for a website. Owner only,
     // both ways, same reasoning as config/revCheckProvider above: createRevCheckCheckout and

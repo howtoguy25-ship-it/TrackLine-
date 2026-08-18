@@ -28,6 +28,7 @@ import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
 import { getPlateLookupProviderConfig, savePlateLookupProviderConfig } from "@/services/plateLookupAdmin";
 import { getFuelCheckProviderConfig, saveFuelCheckProviderConfig } from "@/services/fuelPricesAdmin";
+import { getPlateRecognizerProviderConfig, savePlateRecognizerProviderConfig } from "@/services/plateRecognizerAdmin";
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -476,6 +477,43 @@ export function SettingsScreen() {
       setSavingFuelCheckKey(false);
     }
   }, [fuelCheckKeyDraft, fuelCheckSecretDraft]);
+
+  // Same owner-only pattern again, for the Plate Recognizer cloud OCR provider (see
+  // recognizePlate in firebase/functions/index.js) -- a real, paid account at
+  // platerecognizer.com, used as a cloud alternative to on-device plate reading in AI Vehicle
+  // Detection when connected (see plateRecognizer.ts's own comment for the on-device fallback).
+  const [plateRecognizerKeyDraft, setPlateRecognizerKeyDraft] = useState("");
+  const [plateRecognizerKeyLoaded, setPlateRecognizerKeyLoaded] = useState(false);
+  const [plateRecognizerKeySavedFlash, setPlateRecognizerKeySavedFlash] = useState(false);
+  const [savingPlateRecognizerKey, setSavingPlateRecognizerKey] = useState(false);
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    getPlateRecognizerProviderConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setPlateRecognizerKeyDraft(config.apiKey);
+      })
+      .catch((err) => console.warn("[settings] failed to load plate recognizer provider config", err))
+      .finally(() => {
+        if (!cancelled) setPlateRecognizerKeyLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwner]);
+  const onSavePlateRecognizerKey = useCallback(async () => {
+    setSavingPlateRecognizerKey(true);
+    try {
+      await savePlateRecognizerProviderConfig({ apiKey: plateRecognizerKeyDraft });
+      setPlateRecognizerKeySavedFlash(true);
+      setTimeout(() => setPlateRecognizerKeySavedFlash(false), 2000);
+    } catch (err) {
+      Alert.alert("Couldn't save", err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingPlateRecognizerKey(false);
+    }
+  }, [plateRecognizerKeyDraft]);
 
   // Real, live battery reading (not a static disclaimer) -- AI Vehicle Detection runs a real
   // camera + on-device AI analysis several times a second, which is genuinely one of the
@@ -1061,6 +1099,55 @@ export function SettingsScreen() {
                   ) : (
                     <Text style={styles.customExpiryApplyText}>
                       {fuelCheckKeySavedFlash ? "Saved" : "Save keys"}
+                    </Text>
+                  )}
+                </Pressable>
+              </>
+            )}
+
+            {/* Real, separate provider again -- Plate Recognizer (platerecognizer.com), a cloud
+                OCR alternative to AI Vehicle Detection's own on-device plate reader. Connecting
+                this sends cropped plate images to Plate Recognizer's servers when a plate is
+                being read -- a genuine privacy trade-off from the fully on-device default,
+                disclosed in the app's own camera-usage description. Register a real, paid
+                account at platerecognizer.com, then paste the apiKey it gives you below. */}
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>
+              Plate recognition provider (owner only)
+            </Text>
+            <Text style={styles.helperText}>
+              Cloud OCR for AI Vehicle Detection's plate reads via Plate Recognizer -- a separate
+              provider from the ones above. When connected, cropped plate images are sent to
+              platerecognizer.com's own servers instead of staying fully on-device. Sign up there
+              for a real account, then paste the apiKey it gives you below.
+            </Text>
+            {!plateRecognizerKeyLoaded ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : (
+              <>
+                <TextInput
+                  value={plateRecognizerKeyDraft}
+                  onChangeText={setPlateRecognizerKeyDraft}
+                  placeholder="Plate Recognizer API key"
+                  placeholderTextColor={colors.textFaint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  style={styles.customExpiryInput}
+                />
+                <Pressable
+                  onPress={onSavePlateRecognizerKey}
+                  disabled={savingPlateRecognizerKey}
+                  style={({ pressed }) => [
+                    styles.customExpiryApply,
+                    { alignItems: "center" },
+                    pressed && !savingPlateRecognizerKey && { opacity: pressedOpacity },
+                  ]}
+                >
+                  {savingPlateRecognizerKey ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.customExpiryApplyText}>
+                      {plateRecognizerKeySavedFlash ? "Saved" : "Save key"}
                     </Text>
                   )}
                 </Pressable>
