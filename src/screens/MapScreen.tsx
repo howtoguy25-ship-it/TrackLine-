@@ -1377,6 +1377,18 @@ export function MapScreen() {
     fuelStationsSheetRef.current?.close();
   }, []);
 
+  // Real, permanent belt-and-suspenders on top of every individual call site above (also on
+  // onDestinationSelected/onFindNearestStation/onGetDirections/HotelsSheet+FuelStationsSheet's
+  // own onSelect) already calling closeAllPlaceSheets -- rather than trust every CURRENT and
+  // FUTURE way pendingDestination/route can become truthy to individually remember this, this
+  // watches both directly and force-closes all three the instant either is set, no matter which
+  // code path caused it. Redundant with the individual call sites on most paths (closing an
+  // already-closed sheet is a harmless no-op), but it's the one guarantee that actually can't be
+  // bypassed by a path this file doesn't know about yet.
+  useEffect(() => {
+    if (pendingDestination || route) closeAllPlaceSheets();
+  }, [pendingDestination, route, closeAllPlaceSheets]);
+
   // Shared by RestaurantsSheet/HotelsSheet's own row taps -- opens the exact same real detail
   // sheet a map POI tap does (photos/rating/hours/phone/website/reviews, see PlaceInfoSheet),
   // straight off the placeId those lists already have (no distance-sanity-check needed here

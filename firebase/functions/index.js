@@ -474,7 +474,17 @@ exports.getFuelPrices = onCall(async (request) => {
     if (!tokenResp.ok) {
       return { outcome: "error", message: `Fuel price provider rejected the credentials (HTTP ${tokenResp.status}).` };
     }
-    const tokenBody = await tokenResp.json();
+    // Real, confirmed bug: a 200 status only means the HTTP request itself succeeded -- it does
+    // NOT guarantee a non-empty body. Apigee (FuelCheck's gateway) has been observed returning a
+    // 200 with an EMPTY body under real, transient upstream conditions; calling .json() straight
+    // on that throws a raw "Unexpected end of JSON input" SyntaxError, which is exactly the
+    // confusing error users were seeing -- reading as text first and checking for real content
+    // turns that into a clear, honest, retry-friendly message instead.
+    const tokenText = await tokenResp.text();
+    if (!tokenText) {
+      return { outcome: "error", message: "Fuel price provider returned an empty response -- try again." };
+    }
+    const tokenBody = JSON.parse(tokenText);
     const accessToken = tokenBody?.access_token;
     if (!accessToken) {
       return { outcome: "error", message: "Fuel price provider didn't return an access token -- try again." };
@@ -504,7 +514,12 @@ exports.getFuelPrices = onCall(async (request) => {
         message: `Fuel price provider rejected the request (HTTP ${pricesResp.status}).${body ? ` ${body.slice(0, 200)}` : ""}`,
       };
     }
-    const pricesBody = await pricesResp.json();
+    // Same real, empty-body-on-200 protection as the token response above.
+    const pricesText = await pricesResp.text();
+    if (!pricesText) {
+      return { outcome: "error", message: "Fuel price provider returned an empty response -- try again." };
+    }
+    const pricesBody = JSON.parse(pricesText);
     const stations = Array.isArray(pricesBody?.stations) ? pricesBody.stations : [];
     const prices = Array.isArray(pricesBody?.prices) ? pricesBody.prices : [];
 

@@ -84,6 +84,29 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
     setLoading(true);
     setErrorText(null);
 
+    // Real, confirmed complaint: a live-price failure (the FuelCheck API/gateway hiccupping,
+    // a transient network error) used to leave the sheet showing only an error message with a
+    // totally empty list. Falling back to real Google Places station locations (no live price,
+    // same honest treatment a non-NSW region already gets) means a driver still sees real,
+    // useful nearby stations instead of nothing at all -- the error text still shows too, so
+    // it's never silently hidden, just no longer a dead end.
+    const fetchFallbackStations = () => {
+      searchNearbyPetrolStations(location)
+        .then((results) => {
+          setMode("fallback");
+          setFallbackStations(results.sort((a, b) => a.distanceMeters - b.distanceMeters));
+          setFetchedFor(key);
+        })
+        .catch((err) => {
+          setErrorText(
+            err instanceof PlacesApiError
+              ? `Couldn't load nearby petrol stations (${err.status})`
+              : "Couldn't load nearby petrol stations -- check your connection"
+          );
+        })
+        .finally(() => setLoading(false));
+    };
+
     if (region === LIVE_PRICE_REGION && fuelCheckConfigured) {
       getFuelPrices(location)
         .then((result) => {
@@ -103,27 +126,18 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
               })
             );
             setFetchedFor(key);
+            setLoading(false);
           } else {
             setErrorText(result.message);
+            fetchFallbackStations();
           }
         })
-        .catch(() => setErrorText("Couldn't load live fuel prices -- check your connection"))
-        .finally(() => setLoading(false));
+        .catch(() => {
+          setErrorText("Couldn't load live fuel prices -- showing nearby stations instead.");
+          fetchFallbackStations();
+        });
     } else {
-      searchNearbyPetrolStations(location)
-        .then((results) => {
-          setMode("fallback");
-          setFallbackStations(results.sort((a, b) => a.distanceMeters - b.distanceMeters));
-          setFetchedFor(key);
-        })
-        .catch((err) => {
-          setErrorText(
-            err instanceof PlacesApiError
-              ? `Couldn't load nearby petrol stations (${err.status})`
-              : "Couldn't load nearby petrol stations -- check your connection"
-          );
-        })
-        .finally(() => setLoading(false));
+      fetchFallbackStations();
     }
   }, [location, fetchedFor, fuelCheckConfigured, fuelCheckStatusReady]);
 
