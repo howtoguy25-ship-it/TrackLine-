@@ -37,6 +37,16 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   // Same fix as RestaurantsSheet/HotelsSheet -- capped to a shorter default, draggable up to a
   // taller point instead of a single large fixed size.
   const snapPoints = useMemo(() => ["50%", "88%"], []);
+
+  // Same real bug fix as RestaurantsSheet/HotelsSheet -- the keyboard-avoidance snap to the
+  // taller point otherwise sticks around after the keyboard closes.
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (ref && typeof ref !== "function") ref.current?.snapToIndex(0);
+    });
+    return () => sub.remove();
+  }, [ref]);
+
   const [fuelStations, setFuelStations] = useState<FuelStation[]>([]);
   const [fallbackStations, setFallbackStations] = useState<NearbyPlace[]>([]);
   const [mode, setMode] = useState<"live" | "fallback" | null>(null);
@@ -44,14 +54,30 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   // pattern as RestaurantsSheet/HotelsSheet, matched against name AND address/vicinity (station
   // title and place), not just a fetch trigger.
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  // Starts true (not false) -- avoids a blank flash while waiting for location and the
+  // FuelCheck-provider-status subscription to both resolve before the fetch effect can run.
+  const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [fetchedFor, setFetchedFor] = useState<string | null>(null);
   const [fuelCheckConfigured, setFuelCheckConfigured] = useState(false);
-  useEffect(() => subscribeFuelCheckProviderStatus(setFuelCheckConfigured), []);
+  // Real, confirmed bug: onSnapshot always delivers its first value asynchronously, but
+  // `location` is usually already available the instant this sheet opens (GPS tracking is
+  // already running) -- so the fetch effect below used to fire in fallback mode before this
+  // subscription's real value ever arrived, then never retried because `fetchedFor` was already
+  // set for that location. Gating the fetch on this flag means it waits for the real answer
+  // instead of racing it.
+  const [fuelCheckStatusReady, setFuelCheckStatusReady] = useState(false);
+  useEffect(
+    () =>
+      subscribeFuelCheckProviderStatus((enabled) => {
+        setFuelCheckConfigured(enabled);
+        setFuelCheckStatusReady(true);
+      }),
+    []
+  );
 
   useEffect(() => {
-    if (!location) return;
+    if (!location || !fuelCheckStatusReady) return;
     const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}`;
     if (key === fetchedFor) return;
     const region = classifyAuRegion(location.latitude, location.longitude);
@@ -99,7 +125,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
         })
         .finally(() => setLoading(false));
     }
-  }, [location, fetchedFor, fuelCheckConfigured]);
+  }, [location, fetchedFor, fuelCheckConfigured, fuelCheckStatusReady]);
 
   const filteredFuelStations = useMemo(() => {
     const q = query.trim().toLowerCase();

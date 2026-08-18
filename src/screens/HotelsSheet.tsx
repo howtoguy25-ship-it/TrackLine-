@@ -38,6 +38,16 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
 ) {
   // Same fix as RestaurantsSheet -- capped to a shorter default, draggable up to a taller point.
   const snapPoints = useMemo(() => ["50%", "88%"], []);
+
+  // Same real bug fix as RestaurantsSheet -- the keyboard-avoidance snap to the taller point
+  // otherwise sticks around after the keyboard closes. See that file's own comment for why.
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (ref && typeof ref !== "function") ref.current?.snapToIndex(0);
+    });
+    return () => sub.remove();
+  }, [ref]);
+
   const [query, setQuery] = useState("");
   const [hotels, setHotels] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);

@@ -33,6 +33,20 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   // shorter default (matching PlaceInfoSheet's own 50%) with a second, taller snap point so it
   // can still be dragged up to see more results instead of being stuck at one large fixed size.
   const snapPoints = useMemo(() => ["50%", "88%"], []);
+
+  // Real, confirmed bug: @gorhom/bottom-sheet's own keyboard-avoidance snaps this sheet up to
+  // its taller point while the search input is focused (so the keyboard doesn't cover it) --
+  // correct while typing, but it then STAYS at that taller point after the keyboard closes,
+  // since nothing else ever tells it to come back down. Re-snapping to the compact default the
+  // moment the keyboard hides fixes the "stuck covering the whole screen" complaint without
+  // losing the keyboard-avoidance itself.
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (ref && typeof ref !== "function") ref.current?.snapToIndex(0);
+    });
+    return () => sub.remove();
+  }, [ref]);
+
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
