@@ -219,6 +219,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
             <BottomSheetFlatList
               data={filteredFuelStations}
               keyExtractor={(item) => item.stationId}
+              style={styles.listFlex}
               contentContainerStyle={styles.listContent}
               renderItem={({ item }) => {
                 const dist =
@@ -271,6 +272,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
             <BottomSheetFlatList
               data={filteredFallbackStations}
               keyExtractor={(item) => item.placeId}
+              style={styles.listFlex}
               contentContainerStyle={styles.listContent}
               renderItem={({ item }) => (
                 <Pressable
@@ -334,6 +336,7 @@ const styles = StyleSheet.create({
   noticeText: { flex: 1, fontSize: 11, color: colors.textMuted, lineHeight: 15 },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { fontSize: 13, color: colors.textMuted },
+  listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
   row: {
     flexDirection: "row",

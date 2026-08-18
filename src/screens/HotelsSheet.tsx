@@ -193,6 +193,7 @@ export const HotelsSheet = forwardRef<BottomSheet, Props>(function HotelsSheet(
         <BottomSheetFlatList
           data={visibleHotels}
           keyExtractor={(item) => item.placeId}
+          style={styles.listFlex}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -314,6 +315,7 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: "#FFFFFF" },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { fontSize: 13, color: colors.textMuted },
+  listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
   row: {
     flexDirection: "row",

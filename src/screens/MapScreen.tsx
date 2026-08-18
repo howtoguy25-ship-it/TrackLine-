@@ -514,23 +514,38 @@ export function MapScreen() {
   }, [show3D, isMap3DSupported, currentLatLng, route]);
 
   // `initialRegion` above is a mount-time-only prop, so it never moves the map once the very
-  // first real GPS fix actually lands -- this is that correction, firing exactly once as soon
-  // as a real position exists (skipped while navigating since confirmRoute/the chase-cam
-  // effects already own the camera then). Without this, a location permission grant + first fix
-  // landing even a moment after the map's first render left the map stuck on the placeholder
-  // coordinate for the rest of the session -- the real, confirmed "why is it showing San
-  // Francisco" bug, not a rare edge case.
+  // first real GPS fix actually lands -- this is that correction (skipped while navigating since
+  // confirmRoute/the chase-cam effects already own the camera then). Without this, a location
+  // permission grant + first fix landing even a moment after the map's first render left the map
+  // stuck on the placeholder coordinate for the rest of the session -- the real, confirmed "why
+  // is it showing San Francisco" bug, not a rare edge case.
   //
-  // Also gated on mapReady, not just currentLatLng -- a real, confirmed second cause of the
-  // exact same symptom: on a fast GPS fix (already-granted permission from a previous session),
-  // currentLatLng can resolve before the native MapView has actually attached mapRef. Without
-  // this gate, the effect fired anyway, `mapRef.current?.animateCamera` silently no-op'd through
-  // the `?.`, and recenteredOnFixRef was already marked done -- a real correction that was
-  // supposed to happen just silently never did, permanently, for the rest of the session.
-  const recenteredOnFixRef = useRef(false);
+  // Also gated on mapReady, not just currentLatLng -- a real, confirmed second cause of the exact
+  // same symptom: on a fast GPS fix (already-granted permission from a previous session),
+  // currentLatLng can resolve before the native MapView has actually attached mapRef, so
+  // mapRef.current?.animateCamera silently no-op'd through the `?.`.
+  //
+  // Real, confirmed THIRD cause, still reported after both fixes above: this used to fire only
+  // ONCE EVER (a one-shot ref guard), consuming its only chance the instant mapReady+currentLatLng
+  // both happened to be true -- if that first currentLatLng value was itself still an early/
+  // rough fix (or any other reason animateCamera didn't visibly land), the map lost its chance to
+  // correct for the rest of the session even once later fixes (the same ones the address banner
+  // below independently keeps re-resolving from) confirmed the real position. Now keeps
+  // recentering on every currentLatLng update for a bounded window after the map first becomes
+  // ready (RECENTER_WINDOW_MS), not just the first one -- long enough to absorb a slow/rough
+  // first fix settling, short enough to never fight a driver who's deliberately panned away
+  // later in a long session. Stops early the moment the driver manually drags the map
+  // (userMovedMapRef, set in onMapPanDrag) -- same "manual gesture wins" convention as followTilt.
+  const RECENTER_WINDOW_MS = 8000;
+  const mapReadyAtRef = useRef<number | null>(null);
+  const userMovedMapRef = useRef(false);
   useEffect(() => {
-    if (recenteredOnFixRef.current || !currentLatLng || route || !mapReady) return;
-    recenteredOnFixRef.current = true;
+    if (!mapReady) return;
+    if (mapReadyAtRef.current === null) mapReadyAtRef.current = Date.now();
+  }, [mapReady]);
+  useEffect(() => {
+    if (!currentLatLng || route || !mapReady || userMovedMapRef.current) return;
+    if (mapReadyAtRef.current === null || Date.now() - mapReadyAtRef.current > RECENTER_WINDOW_MS) return;
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, mapReady]);
 
@@ -839,6 +854,9 @@ export function MapScreen() {
   // it, making manual 3D tilting feel broken even though the gesture itself works fine.
   const onMapPanDrag = useCallback(() => {
     if (followTilt) setFollowTilt(false);
+    // See the map-recenter effect below (userMovedMapRef) -- a manual drag stops the app from
+    // fighting the driver's own pan, same "manual gesture wins" convention as followTilt above.
+    userMovedMapRef.current = true;
   }, [followTilt]);
 
   // First-launch default: the moment a real GPS fix comes in, if the driver hasn't toggled on

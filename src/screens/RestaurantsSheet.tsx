@@ -139,6 +139,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
         <BottomSheetFlatList
           data={filteredPlaces}
           keyExtractor={(item) => item.placeId}
+          style={styles.listFlex}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -212,6 +213,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { fontSize: 13, color: colors.textMuted },
+  listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs },
   row: {
     flexDirection: "row",
