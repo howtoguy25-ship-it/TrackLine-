@@ -549,6 +549,22 @@ export function MapScreen() {
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, mapReady]);
 
+  // Real, confirmed request -- the idle (not-navigating) map used to open flat, top-down
+  // (pitch 0) until the driver manually two-finger-tilted it or started a route (the chase-cam
+  // effects further down apply their own pitch once navigating). Applies a default 3D angle a
+  // single time, right after the map is first ready, matching the always-tilted look Google/
+  // Apple Maps' own default view has. One-shot (idlePitchAppliedRef) and skipped once the
+  // driver's already interacted (userMovedMapRef, set on manual pan) or a route is active, so
+  // this never fights a real gesture or the chase-cam's own pitch ownership -- same "manual
+  // gesture wins, set-once" convention as every other camera effect on this screen.
+  const DEFAULT_IDLE_PITCH = 45;
+  const idlePitchAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!mapReady || route || userMovedMapRef.current || idlePitchAppliedRef.current) return;
+    idlePitchAppliedRef.current = true;
+    mapRef.current?.animateCamera({ pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
+  }, [mapReady, route]);
+
   // GPS "course" heading (location.coords.heading) is a real device/OS-reported value, but a
   // genuinely unreliable one -- iOS commonly reports it as -1 ("invalid") at low speed, right
   // after a stop, or for a few fixes after starting to move again, which is exactly when a
@@ -758,6 +774,62 @@ export function MapScreen() {
       { duration: 700 }
     );
   }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert]);
+
+  // Real, confirmed request -- a closer, tighter "one person mode" camera specifically while
+  // actually executing a highway exit/ramp/fork, matching how Waze/Google Maps zoom in tight
+  // on complex interchanges so it's obvious which lane/ramp to take, then pull back out to the
+  // normal driving view once past it. Reuses the exact same "set pitch/zoom once, let the
+  // per-tick effect above keep center/heading fresh" pattern the default chase-cam effect above
+  // already uses -- this only ever touches pitch/zoom, never center/heading, so it can't fight
+  // that effect's own continuous position tracking.
+  //
+  // Triggered by REAL route data, not a guess: Google's own maneuver codes already distinguish
+  // a highway off-ramp/fork (ramp-left/right, fork-left/right) from an ordinary turn, and the
+  // distance trigger is the real remaining distance to that step's own end location (the ramp
+  // itself), not an arbitrary timer -- so "for a certain amount of time" naturally falls out of
+  // how fast the vehicle is actually covering that real distance, and it reverts the instant the
+  // route's own activeStepIndex moves past the ramp (a real, GPS-driven event), not a guessed
+  // duration that could cut off early or run on after the exit is already done.
+  const EXIT_MANEUVERS = new Set(["ramp-left", "ramp-right", "fork-left", "fork-right"]);
+  const EXIT_ZOOM_TRIGGER_METERS = 400;
+  const exitZoomActiveRef = useRef(false);
+  useEffect(() => {
+    exitZoomActiveRef.current = false;
+  }, [route, followTilt]);
+  useEffect(() => {
+    if (!route || !followTilt || detectionOpen || placingAlert || !currentLatLng) return;
+    if (Date.now() - navStartedAtRef.current < 1200) return;
+    const step = route.steps[activeStepIndex];
+    const isExitStep = !!step && EXIT_MANEUVERS.has(step.maneuver ?? "");
+
+    if (isExitStep && !exitZoomActiveRef.current) {
+      const distanceToRampMeters =
+        distanceKm(
+          currentLatLng.latitude,
+          currentLatLng.longitude,
+          step.endLocation.latitude,
+          step.endLocation.longitude
+        ) * 1000;
+      if (distanceToRampMeters <= EXIT_ZOOM_TRIGGER_METERS) {
+        exitZoomActiveRef.current = true;
+        mapRef.current?.animateCamera({ center: currentLatLng, heading, pitch: 68, zoom: 19.5 }, { duration: 600 });
+      }
+      return;
+    }
+
+    if (!isExitStep && exitZoomActiveRef.current) {
+      // Real exit maneuver just passed (activeStepIndex advanced past it) -- back to whichever
+      // normal chase-cam pose was active before the exit-zoom override, same pitch/zoom values
+      // the default chase-cam effect above uses for each mode.
+      exitZoomActiveRef.current = false;
+      mapRef.current?.animateCamera(
+        overviewMode
+          ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
+          : { center: currentLatLng, heading, pitch: 60, zoom: 18 },
+        { duration: 700 }
+      );
+    }
+  }, [route, followTilt, activeStepIndex, detectionOpen, currentLatLng, heading, overviewMode, placingAlert]);
 
   const toggleFollowTilt = useCallback(() => {
     setFollowTilt((was) => {
