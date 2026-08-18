@@ -282,6 +282,51 @@ function nearbyPlacePhotoUrl(photoReference: string | undefined): string | null 
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=480&photo_reference=${photoReference}&key=${env.googlePlacesApiKey}`;
 }
 
+// Real, confirmed complaint: restaurants/hotels/petrol only ever showed the nearest ~20 results
+// (a single Nearby Search page) -- fine standing still, but nowhere near "all the restaurants
+// and hotels available" across the actual city/suburb a driver is in. Google's Nearby Search
+// paginates up to 3 pages (60 results total) via `next_page_token`, still ordered nearest-first
+// even under rankby=distance -- fetching all 3 genuinely widens real coverage out across the
+// broader area instead of an artificial radius (not a valid param alongside rankby=distance
+// anyway, per findNearestPlace's own comment above). Google's own real requirement: a freshly
+// issued next_page_token isn't valid for a short window after being issued -- an immediate
+// follow-up request reliably comes back INVALID_REQUEST, hence the delay before reusing one.
+const NEXT_PAGE_TOKEN_DELAY_MS = 2000;
+const MAX_NEARBY_PAGES = 3;
+
+async function fetchAllNearbyPages(baseParams: URLSearchParams, errorContext: string): Promise<any[]> {
+  const results: any[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < MAX_NEARBY_PAGES; page++) {
+    const params = new URLSearchParams(baseParams);
+    if (pageToken) {
+      params.set("pagetoken", pageToken);
+      await new Promise((resolve) => setTimeout(resolve, NEXT_PAGE_TOKEN_DELAY_MS));
+    }
+    const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
+    const json = await res.json();
+
+    if (json.status === "ZERO_RESULTS") break;
+    if (json.status !== "OK") {
+      Sentry.logger.error(`places: ${errorContext} page failed`, {
+        status: json.status,
+        errorMessage: json.error_message,
+        page,
+      });
+      // A later page failing (e.g. the token expired) shouldn't discard real results already
+      // fetched from earlier pages -- only a first-page failure has nothing real to fall back
+      // to, so that's the only case still worth throwing for the caller's own error UI.
+      if (page === 0) throw new PlacesApiError(json.status, json.error_message);
+      break;
+    }
+
+    results.push(...(json.results ?? []));
+    pageToken = json.next_page_token;
+    if (!pageToken) break;
+  }
+  return results;
+}
+
 // Real distance (haversine), not Google's own ranking order -- Nearby Search's `rankby=distance`
 // mode already sorts by this, but the app still needs the actual meters figure to show/format
 // per result, which Google's response doesn't include directly.
@@ -310,19 +355,9 @@ export async function searchNearbyRestaurants(location: LatLng): Promise<NearbyP
     key: env.googlePlacesApiKey,
   });
 
-  const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
-  const json = await res.json();
+  const results = await fetchAllNearbyPages(params, "nearby restaurants request");
 
-  if (json.status === "ZERO_RESULTS") return [];
-  if (json.status !== "OK") {
-    Sentry.logger.error("places: nearby restaurants request failed", {
-      status: json.status,
-      errorMessage: json.error_message,
-    });
-    throw new PlacesApiError(json.status, json.error_message);
-  }
-
-  return (json.results ?? []).map((r: any) => {
+  return results.map((r: any) => {
     const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
     return {
       placeId: r.place_id,
@@ -354,19 +389,9 @@ export async function searchNearbyHotels(location: LatLng): Promise<NearbyPlace[
     key: env.googlePlacesApiKey,
   });
 
-  const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
-  const json = await res.json();
+  const results = await fetchAllNearbyPages(params, "nearby hotels request");
 
-  if (json.status === "ZERO_RESULTS") return [];
-  if (json.status !== "OK") {
-    Sentry.logger.error("places: nearby hotels request failed", {
-      status: json.status,
-      errorMessage: json.error_message,
-    });
-    throw new PlacesApiError(json.status, json.error_message);
-  }
-
-  return (json.results ?? []).map((r: any) => {
+  return results.map((r: any) => {
     const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
     return {
       placeId: r.place_id,
@@ -398,19 +423,9 @@ export async function searchNearbyPetrolStations(location: LatLng): Promise<Near
     key: env.googlePlacesApiKey,
   });
 
-  const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
-  const json = await res.json();
+  const results = await fetchAllNearbyPages(params, "nearby petrol stations request");
 
-  if (json.status === "ZERO_RESULTS") return [];
-  if (json.status !== "OK") {
-    Sentry.logger.error("places: nearby petrol stations request failed", {
-      status: json.status,
-      errorMessage: json.error_message,
-    });
-    throw new PlacesApiError(json.status, json.error_message);
-  }
-
-  return (json.results ?? []).map((r: any) => {
+  return results.map((r: any) => {
     const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
     return {
       placeId: r.place_id,
