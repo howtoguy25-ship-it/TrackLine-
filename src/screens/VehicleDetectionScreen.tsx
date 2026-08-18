@@ -342,33 +342,28 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   ]);
   // Real camera zoom -- vision-camera's `zoom` prop drives the actual native capture session
   // (AVCaptureDevice/CameraX), not just the on-screen preview, so both takePhoto() and the Frame
-  // Processor's own video stream genuinely see the zoomed-in frame. Simplified to a single
-  // normal/5x toggle (previously a +/- fine control) per explicit request -- two clear, known-
-  // good states instead of a range that could land somewhere between them with no real benefit.
-  // 5x is capped to the device's own maxZoom for devices that can't reach it (rare, but a real
-  // possible value on some older/budget hardware) -- never higher, since digital zoom well past
-  // what the sensor can really resolve just produces a blurrier, less detectable frame, the
-  // opposite of the point. Starts at the device's own neutralZoom (1x on a single-camera device;
-  // the wide-angle "normal" zoom on a multi-camera one -- never the ultra-wide fish-eye lens,
-  // which would distort vehicles and hurt detection, not help it).
-  const ZOOM_5X = 5;
-  const [is5xZoom, setIs5xZoom] = useState(false);
+  // Processor's own video stream genuinely see the zoomed-in frame. Removed the normal/5x toggle
+  // per explicit request -- 5x was too aggressive/blurry to leave on by default, so this is now a
+  // single fixed zoom level, a modest step in from the device's own neutral (1x) rather than
+  // either extreme: enough to put a few more real pixels on a vehicle than bare 1x without the
+  // softness/shake sensitivity 5x had. Clamped to the device's own maxZoom for devices that can't
+  // reach even this modest bump (rare, but real on some older/budget hardware). Starts from the
+  // device's own neutralZoom (1x on a single-camera device; the wide-angle "normal" zoom on a
+  // multi-camera one -- never the ultra-wide fish-eye lens, which would distort vehicles and hurt
+  // detection, not help it), not a hardcoded 1.0.
+  const ZOOM_BUMP_FACTOR = 1.3;
   const [normalZoomFactor, setNormalZoomFactor] = useState(1);
   useEffect(() => {
-    if (device) setNormalZoomFactor(device.neutralZoom);
+    if (device) setNormalZoomFactor(Math.min(device.neutralZoom * ZOOM_BUMP_FACTOR, device.maxZoom));
   }, [device]);
-  const zoomFactor = is5xZoom ? Math.min(ZOOM_5X, device?.maxZoom ?? ZOOM_5X) : normalZoomFactor;
+  const zoomFactor = normalZoomFactor;
   // Same ref pattern as egoSpeedRef below -- onDetections runs from the Frame Processor bridge,
   // not a normal re-render, so it needs a ref (always current by the time the next frame lands)
   // rather than closing over the zoomFactor value from whenever it was first created. Feeds
   // speedTracker.ts's update() so parked-vehicle detection and distance/speed estimates both
-  // account for the real, current zoom -- see that file's own comments for why zoom-unaware math
-  // there was misreading handheld shake at 5x zoom as a moving vehicle.
+  // account for the real, current zoom.
   const zoomFactorRef = useRef(1);
   zoomFactorRef.current = zoomFactor;
-  const toggleZoom = useCallback(() => {
-    setIs5xZoom((v) => !v);
-  }, []);
   // Real ego GPS speed for turning a tracked vehicle's closing/receding rate into its own
   // actual road speed -- see speedTracker.ts's combineWithEgoSpeed. Reuses the SAME
   // app-wide location watcher LocationProvider already runs (App.tsx) rather than starting a
@@ -1082,28 +1077,6 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           })
         }
       />
-
-      {/* Real zoom -- changes the actual native capture session (see zoomFactor's own comment
-          above), so this isn't just a cosmetic preview crop: both the Frame Processor and
-          takePhoto() genuinely see the zoomed-in frame, giving the detector more real pixels on
-          a distant vehicle. A single normal/5x toggle, not a fine +/- control -- two clear,
-          always-good states rather than a range that could land somewhere in between with no
-          real benefit. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.zoomToggle,
-          // insets.right is always 0 in portrait, so this is identical to the old static
-          // `right: spacing.md` there -- only actually shifts once physically landscape, where
-          // a notch/camera cutout can land on either side depending on which way it's rotated.
-          { top: insets.top + spacing.md + 140, right: insets.right + spacing.md },
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={toggleZoom}
-        accessibilityLabel={is5xZoom ? "Switch to normal view" : "Switch to 5x zoom view"}
-        hitSlop={8}
-      >
-        <Text style={styles.zoomToggleText}>{is5xZoom ? "5x" : "1x"}</Text>
-      </Pressable>
 
       {photoSize &&
         containerSize &&
@@ -1928,20 +1901,5 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(17, 24, 39, 0.45)",
     alignItems: "center",
     justifyContent: "center",
-  },
-  zoomToggle: {
-    position: "absolute",
-    right: spacing.md,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(17, 24, 39, 0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  zoomToggleText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
   },
 });
