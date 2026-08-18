@@ -559,22 +559,24 @@ export function MapScreen() {
   // both happened to be true -- if that first currentLatLng value was itself still an early/
   // rough fix (or any other reason animateCamera didn't visibly land), the map lost its chance to
   // correct for the rest of the session even once later fixes (the same ones the address banner
-  // below independently keeps re-resolving from) confirmed the real position. Now keeps
-  // recentering on every currentLatLng update for a bounded window after the map first becomes
-  // ready (RECENTER_WINDOW_MS), not just the first one -- long enough to absorb a slow/rough
-  // first fix settling, short enough to never fight a driver who's deliberately panned away
-  // later in a long session. Stops early the moment the driver manually drags the map
-  // (userMovedMapRef, set in onMapPanDrag) -- same "manual gesture wins" convention as followTilt.
-  const RECENTER_WINDOW_MS = 8000;
-  const mapReadyAtRef = useRef<number | null>(null);
+  // below independently keeps re-resolving from) confirmed the real position.
+  //
+  // Real, confirmed FOURTH cause, still reported after all three fixes above (screenshot
+  // evidence: map genuinely stuck on the San Francisco placeholder with the real fix apparently
+  // never landing): the fix above only kept recentering for a bounded window (8s) after the map
+  // first became ready, then gave up permanently -- fine for a quick GPS fix, but a real cold
+  // GPS start (indoors, weak signal, first launch after a permission grant) can easily take
+  // longer than that, and once the window closed there was no second chance for the rest of the
+  // session even though currentLatLng eventually DID resolve (the address banner elsewhere on
+  // this screen, fed by the exact same location watcher, kept updating fine the whole time --
+  // this camera-recenter effect was the only thing that had stopped listening). No time bound at
+  // all now: keeps following the driver's own live position for as long as the map is idle (no
+  // route active) and they haven't manually touched it -- the instant `userMovedMapRef` above
+  // flips true, this stops for good, same "manual gesture wins" guarantee as before, just no
+  // longer racing a clock against real-world GPS variance to earn that guarantee.
   const userMovedMapRef = useRef(false);
   useEffect(() => {
-    if (!mapReady) return;
-    if (mapReadyAtRef.current === null) mapReadyAtRef.current = Date.now();
-  }, [mapReady]);
-  useEffect(() => {
     if (!currentLatLng || route || !mapReady || userMovedMapRef.current) return;
-    if (mapReadyAtRef.current === null || Date.now() - mapReadyAtRef.current > RECENTER_WINDOW_MS) return;
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, mapReady]);
 

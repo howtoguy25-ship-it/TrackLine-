@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking, Keyboard } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -264,7 +264,19 @@ export function RevCheckScreen() {
   }, []);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      // Real, confirmed gap: this screen had no keyboard-avoidance at all -- opening the
+      // keyboard for the plate/VIN fields could cover the state picker and the Run REV Check
+      // button below with no automatic scroll to bring them back into view, only a manual drag
+      // (easy to miss entirely while focused on typing a plate). automaticallyAdjustKeyboardInsets
+      // is RN's own real keyboard-aware inset + auto-scroll-to-focused-input behavior (iOS).
+      // keyboardShouldPersistTaps lets tapping a state chip or the close button register in one
+      // tap while the keyboard's still up, instead of the first tap only dismissing it.
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.headerRow}>
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>Vehicle REV Check</Text>
@@ -314,6 +326,8 @@ export function RevCheckScreen() {
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={10}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
           style={styles.plateInput}
         />
 
@@ -352,6 +366,8 @@ export function RevCheckScreen() {
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={17}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
           style={styles.plateInput}
         />
         <Text style={styles.helperText}>

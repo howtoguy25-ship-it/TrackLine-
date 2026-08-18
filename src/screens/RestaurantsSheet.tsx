@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useMemo, useState } from "react";
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,6 +6,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
+
+const SEARCH_FOCUS_KEY = "restaurants";
 
 interface Props {
   location: LatLng | null;
@@ -42,8 +45,20 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   // since nothing else ever tells it to come back down. Re-snapping to the compact default the
   // moment the keyboard hides fixes the "stuck covering the whole screen" complaint without
   // losing the keyboard-avoidance itself.
+  //
+  // Real, confirmed SECOND bug this guards against now (video evidence: a scroll that was
+  // progressing normally suddenly reset to the top with no matching gesture): `keyboardDidHide`
+  // is a GLOBAL event, not scoped to this sheet's own input -- Restaurants/Hotels/Petrol are all
+  // mounted at once (see MapScreen.tsx), so any keyboard closing for ANY reason (another sheet's
+  // search box losing focus, a stray OS predictive-text blink) used to resnap ALL THREE sheets
+  // back to 50%, even ones with no keyboard of their own open at all -- including one being
+  // actively scrolled through at 88% at that exact moment. Gated on isActiveSearchFocus so only
+  // the one sheet whose own search input most recently gained focus ever reacts -- see
+  // activeSearchFocus.ts's own comment for the full mechanism.
   useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (!isActiveSearchFocus(SEARCH_FOCUS_KEY)) return;
+      clearActiveSearchFocusIfOwner(SEARCH_FOCUS_KEY);
       if (ref && typeof ref !== "function") ref.current?.snapToIndex(0);
     });
     return () => sub.remove();
@@ -56,9 +71,26 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
   // Fetched once per real location fix, not per keystroke -- the search bar below filters this
   // real result set live, letter by letter, entirely client-side (see filteredPlaces).
   const [fetchedFor, setFetchedFor] = useState<string | null>(null);
+  // Real, confirmed THIRD independent cause of the same "scroll recoils back to the top" bug:
+  // this sheet stays mounted continuously (see MapScreen.tsx's place-sheets block) with GPS
+  // updating live the whole time, so the effect below used to keep watching `location` even
+  // while the sheet was open and being actively scrolled -- once the driver (or the phone's own
+  // GPS jitter) crossed the 3-decimal-degree rounding boundary mid-browse, it refetched and
+  // replaced `places` with a brand-new array out from under an in-progress scroll, which reads
+  // exactly like a recoil even with nothing wrong in the sheet's own gesture handling at all.
+  // `sheetIndex` (fed by onChange below) and `justOpened` gate a real refetch to only the moment
+  // the sheet is FRESH (first ever mount) or newly reopened after being closed -- never while
+  // it's already open, so a location drift mid-scroll no longer touches `places` until the next
+  // deliberate open.
+  const [sheetIndex, setSheetIndex] = useState(-1);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (!location) return;
+    const isOpen = sheetIndex >= 0;
+    const justOpened = isOpen && !wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+    if (fetchedFor !== null && !justOpened) return;
     const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}`;
     if (key === fetchedFor) return;
     setLoading(true);
@@ -76,7 +108,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
         );
       })
       .finally(() => setLoading(false));
-  }, [location, fetchedFor]);
+  }, [location, fetchedFor, sheetIndex]);
 
   // Live, letter-by-letter filter against the already-fetched real result set -- every
   // keystroke narrows the same list instantly, no debounce/network round-trip needed since
@@ -102,22 +134,26 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
       // of the list's native scroll (only two fingers actually scrolled it). Leaves only the
       // drag handle draggable for resize/dismiss.
       enableContentPanningGesture={false}
-      // Real, confirmed root cause of "scroll works fine for a few seconds then snaps back to
-      // the very top" (video evidence: list scrolled correctly through ~10 rows over several
-      // seconds, then reset instantly to row 1, same order, no user input driving it): v5 of
-      // this library defaults enableDynamicSizing to true, which keeps re-measuring the sheet's
-      // own content height off the mounted layout and re-syncing its internal scrollable offset
-      // against that measurement -- fighting a nested BottomSheetFlatList whose own content
-      // height changes constantly as rows mount/unmount via windowing while scrolling. Explicit
-      // snapPoints below already define this sheet's real sizing; disabling dynamic sizing stops
-      // it from fighting the list for control of the scroll offset.
+      // Real, confirmed contributor to "scroll works fine for a few seconds then snaps back to
+      // the very top": v5 of this library defaults enableDynamicSizing to true, which keeps
+      // re-measuring the sheet's own content height off the mounted layout and re-syncing its
+      // internal scrollable offset against that measurement -- fighting a nested
+      // BottomSheetFlatList whose own content height changes constantly as rows mount/unmount
+      // via windowing while scrolling. Explicit snapPoints below already define this sheet's
+      // real sizing; disabling dynamic sizing stops it from fighting the list for control of the
+      // scroll offset. Confirmed NOT sufficient on its own -- see the keyboardDidHide fix above
+      // and the sheet-open-gated fetch below for the two other real, independent causes of the
+      // exact same symptom found after this alone didn't resolve it.
       enableDynamicSizing={false}
       // Real, confirmed complaint: at the taller 88% snap point the header ("Restaurants
       // nearby") could render up under the status bar/notch with no margin. topInset keeps the
       // sheet's own maximum extent below the real safe-area top on every device instead of a
       // guessed fixed pixel value.
       topInset={insets.top}
-      onChange={onSheetChange}
+      onChange={(index) => {
+        setSheetIndex(index);
+        onSheetChange?.(index);
+      }}
     >
       <BottomSheetView style={styles.content}>
         {/* Real, confirmed complaint: tapping blank space in the header (the title, the notice
@@ -160,6 +196,7 @@ export const RestaurantsSheet = forwardRef<BottomSheet, Props>(function Restaura
             autoCorrect={false}
             returnKeyType="search"
             onSubmitEditing={() => Keyboard.dismiss()}
+            onFocus={() => setActiveSearchFocus(SEARCH_FOCUS_KEY)}
           />
           {query.length > 0 && (
             <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">

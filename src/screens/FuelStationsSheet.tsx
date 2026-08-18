@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useMemo, useState } from "react";
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,6 +14,9 @@ import { getFuelPrices, subscribeFuelCheckProviderStatus, type FuelStation } fro
 import { classifyAuRegion } from "@/utils/auStates";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
+
+const SEARCH_FOCUS_KEY = "fuel";
 
 interface Props {
   location: LatLng | null;
@@ -41,9 +44,13 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
   const snapPoints = useMemo(() => ["50%", "88%"], []);
 
   // Same real bug fix as RestaurantsSheet/HotelsSheet -- the keyboard-avoidance snap to the
-  // taller point otherwise sticks around after the keyboard closes.
+  // taller point otherwise sticks around after the keyboard closes. Gated on isActiveSearchFocus
+  // -- see RestaurantsSheet's own comment for the scroll-reset bug this prevents (ANY of the
+  // three place sheets' keyboards hiding used to resnap ALL of them, not just its own).
   useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (!isActiveSearchFocus(SEARCH_FOCUS_KEY)) return;
+      clearActiveSearchFocusIfOwner(SEARCH_FOCUS_KEY);
       if (ref && typeof ref !== "function") ref.current?.snapToIndex(0);
     });
     return () => sub.remove();
@@ -77,9 +84,19 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
       }),
     []
   );
+  // Same real third fix as RestaurantsSheet/HotelsSheet -- see RestaurantsSheet's own comment:
+  // refetching on every live GPS update while this sheet is already open replaces the station
+  // list mid-scroll, which reads exactly like a recoil. Gated to only ever refetch on first
+  // mount or a fresh reopen.
+  const [sheetIndex, setSheetIndex] = useState(-1);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (!location || !fuelCheckStatusReady) return;
+    const isOpen = sheetIndex >= 0;
+    const justOpened = isOpen && !wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+    if (fetchedFor !== null && !justOpened) return;
     const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}`;
     if (key === fetchedFor) return;
     const region = classifyAuRegion(location.latitude, location.longitude);
@@ -141,7 +158,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
     } else {
       fetchFallbackStations();
     }
-  }, [location, fetchedFor, fuelCheckConfigured, fuelCheckStatusReady]);
+  }, [location, fetchedFor, fuelCheckConfigured, fuelCheckStatusReady, sheetIndex]);
 
   const filteredFuelStations = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -181,7 +198,10 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
       // Same real fix as RestaurantsSheet/HotelsSheet -- keeps the header below the real
       // safe-area top at the taller 88% snap point instead of sliding in under the status bar.
       topInset={insets.top}
-      onChange={onSheetChange}
+      onChange={(index) => {
+        setSheetIndex(index);
+        onSheetChange?.(index);
+      }}
     >
       <BottomSheetView style={styles.content}>
         {/* Same real fix as HotelsSheet/RestaurantsSheet -- this Pressable (tap blank header
@@ -214,6 +234,7 @@ export const FuelStationsSheet = forwardRef<BottomSheet, Props>(function FuelSta
               autoCorrect={false}
               returnKeyType="search"
               onSubmitEditing={() => Keyboard.dismiss()}
+              onFocus={() => setActiveSearchFocus(SEARCH_FOCUS_KEY)}
             />
             {query.length > 0 && (
               <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
