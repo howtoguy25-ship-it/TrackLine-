@@ -21,16 +21,16 @@
         <span>TrackLine</span>
       </div>
       <h1>Privacy Policy</h1>
-      <div class="updated">Effective July 12, 2026</div>
+      <div class="updated">Effective August 18, 2026</div>
 
       <p>
-        TrackLine is a live navigation and community hazard/emergency-vehicle alert app. This page
-        describes, plainly and accurately, what data the app actually collects, what it's used for,
-        and who else sees it. It's written to match what's actually in the app's code, not generic
-        boilerplate.
+        TrackLine is a live navigation, driving-safety, and community hazard/emergency-vehicle
+        alert app. This page describes, plainly and accurately, what data the app actually
+        collects, how it's used, who else sees it, and the choices you have — written to match
+        what's actually in the app's code, not generic boilerplate.
       </p>
 
-      <h2>Information we collect</h2>
+      <h2>Information We Collect</h2>
 
       <h3>Location</h3>
       <p>
@@ -40,112 +40,234 @@
       </p>
       <ul>
         <li>
-          <strong>Google Maps</strong> — to draw the map, calculate routes/directions, and search for
-          places (this is required for the app's core map functionality; it's Google's map, so your
-          location goes to Google the same way it would in Google Maps itself).
+          <strong>Google Maps</strong> — to draw the map, calculate routes/directions, and search
+          for places (this is required for the app's core map functionality; it's Google's map,
+          so your location goes to Google the same way it would in Google Maps itself).
         </li>
         <li>
           <strong>Our Firebase database</strong> — only when you choose to report an alert (the
-          alert's coordinates), or as part of a nearby-alert lookup. We don't log a continuous history
-          of everywhere you drive. If you're signed in with a real account (not a guest), we also
-          keep a single "last-known location" value, periodically overwritten as you move — not a
-          trail or history of past locations — visible only to the app's administrator (see "Who can
-          see your data" below).
+          alert's coordinates), or as part of a nearby-alert lookup. We don't log a continuous
+          history of everywhere you drive. If you're signed in with a real account (not a guest),
+          we also keep a single "last-known location" value, periodically overwritten as you move
+          — not a trail or history of past locations — visible only to the app's administrator
+          (see "Who Can See Your Data" below).
         </li>
       </ul>
       <p>
-        The traffic-light/speed-camera map layer queries OpenStreetMap's public Overpass service —
-        only the visible map area (a bounding box), never your personal coordinates, is sent to it.
+        The traffic-light/speed-camera map layer queries OpenStreetMap's public Overpass service
+        — only the visible map area (a bounding box), never your personal coordinates, is sent to
+        it. If you use the NSW FuelCheck fuel-price feature, your approximate location is sent to
+        the NSW Government's own FuelCheck service to find nearby stations and prices.
       </p>
 
       <h3>Camera — AI Vehicle Detection</h3>
       <p>
         If you turn on AI Vehicle Detection, the app uses your camera to detect and track nearby
-        vehicles and flag any with active strobing emergency-style lighting. It does not attempt to
-        identify a vehicle's type (e.g. police/ambulance/fire truck) — only whether it's a car or a
-        heavy vehicle (truck/bus), and whether it currently has emergency-style lights actively on.
-        This runs entirely on your own device (in your browser or the app itself) — video frames are
-        analyzed in memory and are never recorded, stored, or uploaded anywhere.
+        vehicles, estimate their speed and distance, and flag any with active strobing
+        emergency-style lighting. It does not attempt to identify a vehicle's type (e.g.
+        police/ambulance/fire truck) — only whether it's a car or a heavy vehicle (truck/bus), and
+        whether it currently has emergency-style lights actively on. This runs entirely on your
+        own device — video frames are analyzed in memory and are never recorded, stored, or
+        uploaded anywhere.
       </p>
       <p>
-        As part of this, the app also estimates the location of a detected vehicle's number plate and
-        attempts to read it using on-device text recognition (OCR) — for real-time detection display
-        only, so you can see it on screen while it's in frame. This is not a plate-recognition system
-        built for identification or record-keeping: no plate image, location, or recognized text is
-        ever stored, logged, associated with your account, or sent to us or anyone else. The reading
-        exists only in your device's memory for as long as that vehicle is in frame, and disappears
-        the moment it leaves — the same as the rest of AI Vehicle Detection.
+        As part of this, the app also estimates the location of a detected vehicle's number plate
+        and attempts to read it — for real-time display only, so you can see it on screen while
+        the vehicle is in frame. By default this reading happens entirely on-device (on-device
+        text recognition), and no plate image, location, or recognized text is ever stored,
+        logged, associated with your account, or sent to us or anyone else. If a cloud OCR
+        provider (Plate Recognizer, platerecognizer.com) is connected on our end as a fallback,
+        the small cropped plate-region image may instead be sent to that provider's own servers
+        to be read — this is a server-side setting we control, not a per-user toggle, and the
+        image is used only to return the plate text, not retained by us. Either way, a plate
+        reading exists only in your device's memory for as long as that vehicle is in frame, and
+        disappears the moment it leaves.
       </p>
 
       <h3>Microphone — EV Radar (mobile app)</h3>
       <p>
         On the mobile app, EV Radar listens for emergency-vehicle sirens using your microphone.
         Audio is analyzed on-device in short windows and then discarded immediately — it is never
-        recorded, saved, or sent anywhere. A detected siren only posts your location as a community
-        alert if you've explicitly turned on "auto-share" in Settings (off by default).
+        recorded, saved, or sent anywhere. A detected siren only posts your location as a
+        community alert if you've explicitly turned on "auto-share" in Settings (off by default).
       </p>
 
       <h3>Account &amp; sign-in information</h3>
-      <p>Every session starts anonymously — you can use the map, navigation, and alerts without ever creating an account. If you choose to sign in, we store only:</p>
+      <p>
+        Every session starts anonymously — you can use the map, navigation, and alerts without
+        ever creating an account. If you choose to sign in, we store only:
+      </p>
       <table>
         <tr><th>Sign-in method</th><th>What's stored</th></tr>
         <tr><td>Google / Apple</td><td>Your display name and email address, as provided by Google/Apple.</td></tr>
         <tr><td>Phone number</td><td>Your phone number and a password you set. The password itself is never stored by us or visible to us — it's handled entirely by our authentication provider (Firebase Authentication), the same way any password login works. We can't see or recover it, only reset it via a fresh SMS code.</td></tr>
       </table>
       <p>
-        We also record when an account first signed in and when it last signed in, and which method
-        was used. That's it — no other profile data is collected.
+        We also record when an account first signed in and when it last signed in, and which
+        method was used. That's it — no other profile data is collected.
       </p>
 
       <h3>Alerts you report</h3>
       <p>
-        When you report a hazard, police, emergency vehicle, crash, speed camera, or traffic light,
-        we store its type, location, and the time it was reported, linked to your account ID (not
-        your name) so you can delete your own reports. Alerts expire and are automatically deleted
-        on a schedule — 45 minutes to 24 hours depending on type — they are not kept indefinitely.
+        When you report a hazard, police, emergency vehicle, crash, speed camera, or traffic
+        light, we store its type, location, and the time it was reported, linked to your account
+        ID (not your name) so you can delete your own reports. Alerts expire and are automatically
+        deleted on a schedule — 45 minutes to 24 hours depending on type — they are not kept
+        indefinitely.
       </p>
 
-      <h2>Who can see your data</h2>
+      <h3>Vehicle history checks (REV Check)</h3>
       <p>
-        Community alerts (type, location, expiry) are visible to other signed-in users of the app —
-        that's the point of a shared alert map. Your account's sign-in history (name, email or phone,
-        method, first/last sign-in time) and last-known location are visible only to the app's
-        administrator — never your password, and never to other regular users. Last-known location
-        is only recorded for accounts signed in with a real identity (Google, Apple, or phone) —
-        never for anonymous/guest sessions — and is refreshed periodically while you use the app,
-        not continuously tracked in the background.
+        If you run a REV Check, the number plate, state, and optional VIN you enter are sent to
+        our vehicle-data provider (BusinessAPI.com.au's PPSR Searches API) to return real
+        make/model/spec data and, if a VIN is provided, stolen/written-off/money-owing status.
+        This lookup is performed server-side using our own provider account — we don't store the
+        plate/VIN beyond what's needed to show you the result and, if you choose, save it to your
+        own vehicle history log in your account.
       </p>
 
-      <h2>Data stored only on your device</h2>
+      <h3>Purchases &amp; subscriptions</h3>
       <p>
-        Your app preferences — alert radius, region-wide toggle, fixed-zone toggle, light/dark theme,
-        and similar settings — are stored locally in your browser/device storage and are never sent
-        to any server.
+        Some features (like REV Check) are paid, one-time or subscription purchases made through
+        Apple's App Store or Google Play. We never see or store your payment card details — Apple
+        and Google handle billing directly and only tell us that a purchase succeeded, for which
+        product, so we can unlock the feature on your account.
       </p>
 
-      <h2>Third-party services we use</h2>
+      <h3>Advertising</h3>
+      <p>
+        TrackLine shows ads through Google AdMob to support the free tier of the app. AdMob may
+        collect and use device/advertising identifiers and general usage data to serve and measure
+        ads, per Google's own advertising and privacy policies. You can reset or limit your
+        device's ad identifier, or opt out of personalized advertising, in your device's own
+        privacy settings.
+      </p>
+
+      <h3>Diagnostics &amp; crash reporting</h3>
+      <p>
+        We use Sentry to automatically collect crash reports and performance data (e.g. how long
+        a screen took to load, or an error's stack trace) so we can find and fix real bugs. This
+        data is technical, not tied to your name, and is used only to keep the app reliable.
+      </p>
+
+      <h2>How We Use Your Information</h2>
+      <p>We use the collected information to:</p>
       <ul>
-        <li><strong>Firebase (Google)</strong> — authentication and the alerts database.</li>
+        <li>Provide navigation services</li>
+        <li>Deliver speed camera and road alerts</li>
+        <li>Display maps and routing information</li>
+        <li>Run AI vehicle detection and emergency-lighting/siren alerts</li>
+        <li>Provide vehicle history (REV Check) results</li>
+        <li>Improve application performance and reliability</li>
+        <li>Detect and resolve technical issues</li>
+        <li>Analyze usage trends</li>
+        <li>Prevent fraud and abuse</li>
+        <li>Manage purchases and subscriptions</li>
+        <li>Comply with legal obligations</li>
+      </ul>
+
+      <h2>Who Can See Your Data</h2>
+      <p>
+        Community alerts (type, location, expiry) are visible to other signed-in users of the app
+        — that's the point of a shared alert map. Your account's sign-in history (name, email or
+        phone, method, first/last sign-in time) and last-known location are visible only to the
+        app's administrator — never your password, and never to other regular users. Last-known
+        location is only recorded for accounts signed in with a real identity (Google, Apple, or
+        phone) — never for anonymous/guest sessions — and is refreshed periodically while you use
+        the app, not continuously tracked in the background.
+      </p>
+
+      <h2>Data Sharing</h2>
+      <p>We do not sell, rent, or trade your personal information.</p>
+      <p>
+        We may share limited information only with trusted service providers that help us operate
+        the application (see "Third-Party Services We Use" below), when required by law, to
+        protect our legal rights, or as part of a business transfer such as a merger or
+        acquisition.
+      </p>
+
+      <h2>Data Stored Only On Your Device</h2>
+      <p>
+        Your app preferences — alert radius, region-wide toggle, fixed-zone toggle, map theme,
+        road thickness, and similar settings — are stored locally on your device and are never
+        sent to any server.
+      </p>
+
+      <h2>Third-Party Services We Use</h2>
+      <ul>
+        <li><strong>Firebase (Google)</strong> — authentication, the alerts database, and REV Check/fuel-price server functions.</li>
         <li><strong>Google Maps, Places, and Directions</strong> — the map, search, and routing.</li>
         <li><strong>OpenStreetMap (Overpass API)</strong> — community-mapped traffic-light and speed-camera locations.</li>
+        <li><strong>NSW Government FuelCheck</strong> — live fuel prices, when you use that feature.</li>
+        <li><strong>BusinessAPI.com.au (PPSR Searches API)</strong> — vehicle history/spec data for REV Check.</li>
+        <li><strong>Plate Recognizer</strong> — optional cloud fallback for plate OCR, only when connected on our end (see "Camera — AI Vehicle Detection" above).</li>
+        <li><strong>Google AdMob</strong> — advertising.</li>
+        <li><strong>Apple App Store / Google Play</strong> — purchases and subscriptions.</li>
+        <li><strong>Sentry</strong> — crash reporting and performance diagnostics.</li>
       </ul>
-      <p>We don't use any advertising, analytics, or tracking SDKs — there are none built into the app.</p>
 
-      <h2>Your choices</h2>
+      <h2>Data Retention</h2>
       <p>
-        You can use TrackLine without ever signing in. If you've signed in and want your account or
-        alert data deleted, contact us below and we'll action it directly — there's no self-service
-        delete button in the app yet.
+        We retain information only for as long as necessary to provide our services, comply with
+        legal obligations, resolve disputes, enforce our agreements, and improve our application.
+      </p>
+      <p>
+        Community alerts are automatically deleted 45 minutes to 24 hours after being reported,
+        depending on type. Saved REV Check/vehicle history entries and account sign-in info are
+        kept for as long as your account exists, or until you ask us to delete them. Anonymous
+        analytics and crash-diagnostic data may be retained for statistical purposes.
       </p>
 
-      <h2>Children</h2>
-      <p>TrackLine isn't directed at children and doesn't knowingly collect data from children.</p>
+      <h2>Your Rights</h2>
+      <p>Depending on your country or region, you may have the right to:</p>
+      <ul>
+        <li>Access your personal information</li>
+        <li>Request correction of inaccurate information</li>
+        <li>Request deletion of your personal information</li>
+        <li>Restrict or object to certain processing activities</li>
+        <li>Withdraw permissions, including location, camera, or microphone access, through your device settings</li>
+      </ul>
+      <p>
+        You can use TrackLine without ever signing in. To exercise any of these rights, or to have
+        your account or alert data deleted, contact us below and we'll action it directly — there
+        isn't a self-service delete button in the app yet.
+      </p>
 
-      <h2>Changes to this policy</h2>
-      <p>If what the app collects changes, this page will be updated to match, with the effective date above kept current.</p>
+      <h2>Children's Privacy</h2>
+      <p>
+        TrackLine is not intended for children under the age of 13. We do not knowingly collect
+        personal information from children. If we become aware that information from a child has
+        been collected, we will delete it as soon as reasonably possible.
+      </p>
 
-      <h2>Contact</h2>
-      <p>Questions about this policy or a request about your data: <a href="mailto:support@tracklinemaps.com">support@tracklinemaps.com</a></p>
+      <h2>Data Security</h2>
+      <p>
+        We implement reasonable administrative, technical, and organizational measures to protect
+        your information from unauthorized access, alteration, disclosure, or destruction.
+        However, no electronic transmission or storage system can be guaranteed to be completely
+        secure.
+      </p>
+
+      <h2>International Data Transfers</h2>
+      <p>
+        Some of our third-party service providers (listed above) may process information outside
+        your country of residence. Where required, appropriate safeguards are implemented to
+        comply with applicable data protection laws.
+      </p>
+
+      <h2>Changes to This Privacy Policy</h2>
+      <p>
+        We may update this Privacy Policy from time to time. Any changes will become effective
+        when the updated version is published within the application or made available through
+        the App Store. We encourage you to review this Privacy Policy periodically — the effective
+        date above is always kept current.
+      </p>
+
+      <h2>Contact Us</h2>
+      <p>
+        If you have any questions regarding this Privacy Policy or our privacy practices, please
+        contact us at: <a href="mailto:support@tracklinemaps.com">support@tracklinemaps.com</a>
+      </p>
 
       <div class="nav-links">
         <a href="/help.html">Help</a>
