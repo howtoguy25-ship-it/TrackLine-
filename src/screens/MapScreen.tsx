@@ -1364,18 +1364,29 @@ export function MapScreen() {
     [placingAlert, anySheetOpen]
   );
 
+  // Real, confirmed bug this fixes: picking a destination (typing one in, or "find nearest
+  // station") never closed the Restaurants/Hotels/Fuel sheets -- if any of those had been
+  // opened via MapTopPillRow earlier in the same session, they stayed open and visible
+  // underneath the new "Choose a route" flow (confirmed via real screenshot evidence: Hotels
+  // AND Petrol stations both still rendered, stacked, behind the route-options card). Shared
+  // here so every real "a destination/route flow is starting now" entry point closes all three
+  // the same way onViewVenueDetails below already did for its own, narrower case.
+  const closeAllPlaceSheets = useCallback(() => {
+    restaurantsSheetRef.current?.close();
+    hotelsSheetRef.current?.close();
+    fuelStationsSheetRef.current?.close();
+  }, []);
+
   // Shared by RestaurantsSheet/HotelsSheet's own row taps -- opens the exact same real detail
   // sheet a map POI tap does (photos/rating/hours/phone/website/reviews, see PlaceInfoSheet),
   // straight off the placeId those lists already have (no distance-sanity-check needed here
   // the way onMapPress's own nearest-place guess needs one -- this placeId came directly from a
   // real Nearby Search result, not an inferred "closest thing to this coordinate").
   const onViewVenueDetails = useCallback((placeId: string) => {
-    restaurantsSheetRef.current?.close();
-    hotelsSheetRef.current?.close();
     // Real, confirmed bug: fuel stations opened via FuelStationsSheet's own fallback rows landed
     // here too (same handler), but this never closed that sheet -- PlaceInfoSheet opened on top
     // of it still visible underneath, requiring a drag down to see the newly opened detail.
-    fuelStationsSheetRef.current?.close();
+    closeAllPlaceSheets();
     setPlaceInfoLoading(true);
     getPlaceInfo(placeId)
       .then((info) => {
@@ -1387,11 +1398,12 @@ export function MapScreen() {
         Sentry.logger.error("map: venue detail lookup failed", { error: String(err) });
       })
       .finally(() => setPlaceInfoLoading(false));
-  }, []);
+  }, [closeAllPlaceSheets]);
 
   const onDestinationSelected = useCallback(
     (place: PlaceDetails) => {
       if (!routeOriginLatLng) return;
+      closeAllPlaceSheets();
       setPendingDestination(place);
       setStopLocation(null);
       // A fresh destination pick always starts from Drive -- predictable default, matches how
@@ -1399,7 +1411,7 @@ export function MapScreen() {
       setTravelMode("driving");
       fetchRouteOptions(routeOriginLatLng, place.location, undefined, "driving");
     },
-    [routeOriginLatLng, fetchRouteOptions]
+    [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]
   );
 
   // "Find nearest station" quick action -- skips typing a destination entirely and routes
@@ -1418,6 +1430,7 @@ export function MapScreen() {
         setRouteOptionsError("No nearby train or bus station found.");
         return;
       }
+      closeAllPlaceSheets();
       setPendingDestination(station);
       setStopLocation(null);
       setTravelMode("walking");
@@ -1428,7 +1441,7 @@ export function MapScreen() {
     } finally {
       setFindingNearestStation(false);
     }
-  }, [routeOriginLatLng, fetchRouteOptions]);
+  }, [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]);
 
   const onStopSelected = useCallback(
     (place: PlaceDetails) => {
