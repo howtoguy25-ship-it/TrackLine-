@@ -3328,32 +3328,46 @@ export function MapScreen() {
         onClose={() => liveCameraSheetRef.current?.close()}
         onSheetChange={(index) => setLiveCameraSheetOpen(index >= 0)}
       />
-      <RestaurantsSheet
-        ref={restaurantsSheetRef}
-        location={currentLatLng}
-        onViewDetails={onViewVenueDetails}
-        onSheetChange={(index) => setRestaurantsSheetOpen(index >= 0)}
-      />
-      <HotelsSheet
-        ref={hotelsSheetRef}
-        location={currentLatLng}
-        onSelect={(place) => {
-          hotelsSheetRef.current?.close();
-          onDestinationSelected(place);
-        }}
-        onViewDetails={onViewVenueDetails}
-        onSheetChange={(index) => setHotelsSheetOpen(index >= 0)}
-      />
-      <FuelStationsSheet
-        ref={fuelStationsSheetRef}
-        location={currentLatLng}
-        onSelect={(place) => {
-          fuelStationsSheetRef.current?.close();
-          onDestinationSelected(place);
-        }}
-        onViewDetails={onViewVenueDetails}
-        onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
-      />
+      {/* Real, confirmed root cause (not just a "call .close() sooner" issue): RouteOptionsCard
+          ("Choose a route") is a plain conditional view, not a bottom sheet, and these three are
+          plain `BottomSheet` (not `BottomSheetModal`) -- they stay mounted in the tree and stack
+          by render order, not by index/open-closed state, regardless of whether .close() was
+          called or whether its animation has actually finished. Unmounting them outright
+          whenever a route flow is active (picking a destination or already navigating) is a
+          strictly stronger guarantee than the ref-based .close() calls elsewhere in this file
+          (still kept, since a route can also start mid-way through one of these being open) --
+          if the component isn't mounted at all, it categorically cannot render on top of
+          anything else, no ref/animation-timing race possible. */}
+      {!pendingDestination && !route && (
+        <>
+          <RestaurantsSheet
+            ref={restaurantsSheetRef}
+            location={currentLatLng}
+            onViewDetails={onViewVenueDetails}
+            onSheetChange={(index) => setRestaurantsSheetOpen(index >= 0)}
+          />
+          <HotelsSheet
+            ref={hotelsSheetRef}
+            location={currentLatLng}
+            onSelect={(place) => {
+              hotelsSheetRef.current?.close();
+              onDestinationSelected(place);
+            }}
+            onViewDetails={onViewVenueDetails}
+            onSheetChange={(index) => setHotelsSheetOpen(index >= 0)}
+          />
+          <FuelStationsSheet
+            ref={fuelStationsSheetRef}
+            location={currentLatLng}
+            onSelect={(place) => {
+              fuelStationsSheetRef.current?.close();
+              onDestinationSelected(place);
+            }}
+            onViewDetails={onViewVenueDetails}
+            onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
+          />
+        </>
+      )}
       <RouteDirectionsSheet
         ref={directionsSheetRef}
         route={route}
