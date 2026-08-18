@@ -55,24 +55,33 @@ const MIN_DETECTION_SCORE = 0.3;
 // enough to track" from "good enough to actually draw" fixes the visible symptom without undoing
 // that earlier fix: a track can exist and keep its speed estimate warm below this bar, it just
 // doesn't render a box the user has to look at until the read is solid enough to trust the shape.
-const MIN_RENDER_SCORE = 0.45;
+// Raised again (0.45 -> 0.55) -- real, confirmed evidence (screenshots dated 8/17, after the
+// 0.45 fix was already live) showed this bar still let visibly loose/misfit boxes ("Vehicle 33%",
+// "Heavy Vehicle 69%") through onto the screen. A track can still exist and keep its speed
+// estimate warm well below this (MIN_DETECTION_SCORE), it just has to be more confident before
+// its box is something the user has to look at.
+const MIN_RENDER_SCORE = 0.55;
 // Real, confirmed complaint: a low-confidence detection box spanning almost the entire frame
 // (a misclassified shadow/road surface/dashboard reflection, not an actual close-up vehicle)
 // rendered as a giant box "covering the whole screen" instead of locking to the real car body.
 // A genuinely huge box IS possible at very close range (a phone mounted right next to traffic, or
 // a near-collision) -- so this doesn't reject big boxes outright, it just requires a much higher
 // score to accept one that large, same principle as MIN_DETECTION_SCORE but scaled to how much
-// of the frame the box claims to cover. Tightened again after new screenshot evidence of a
-// "Heavy Vehicle 69%" box sprawled across two parked cars, a shed, and open sky -- a real
-// detection existed under there somewhere, but the box regression itself wasn't trustworthy at
-// that size/score combination, so both the size trigger and the score bar it has to clear went up.
-const OVERSIZED_BOX_FRAME_FRACTION = 0.6;
-const MIN_SCORE_FOR_OVERSIZED_BOX = 0.8;
+// of the frame the box claims to cover. Tightened AGAIN (0.6/0.8 -> 0.5/0.88) after the previous
+// tightening still let a "Heavy Vehicle 69%" box sprawled across two parked cars, a shed, and
+// open sky through -- 69% cleared the old 0.8 bar's near-miss zone often enough in practice, and
+// the old 0.6 frame-fraction trigger only caught boxes covering more than 60% of the frame, not
+// the merely-loose-but-still-clearly-wrong medium-large boxes also being reported. Both the size
+// trigger and the score bar it has to clear went up again; a real close-range vehicle still gets
+// through since it'll score much higher than 88% once actually filling that much of the frame.
+const OVERSIZED_BOX_FRAME_FRACTION = 0.5;
+const MIN_SCORE_FOR_OVERSIZED_BOX = 0.88;
 // Belt-and-suspenders on top of the score gate above -- caps how much of the screen the drawn
 // box is ever allowed to visually cover, applied at render time (see its call site). Catches the
 // same "box covering the whole screen" complaint even for a detection that did clear the score
-// gate above, without needing to guess the exact right score cutoff.
-const MAX_BOX_RENDER_FRACTION = 0.82;
+// gate above, without needing to guess the exact right score cutoff. Lowered alongside the gate
+// above (0.82 -> 0.7) for the same reason.
+const MAX_BOX_RENDER_FRACTION = 0.7;
 // This model's own fixed TFLite_Detection_PostProcess output size (see
 // assets/models/tflite_ssd_mobilenet_v1) -- it never returns more than this many candidate
 // detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE.
