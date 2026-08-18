@@ -1590,27 +1590,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 4,
   },
+  // Real, confirmed request -- no background/border, smaller and tighter than the earlier
+  // white-tag version. A text shadow (not a solid background) is what keeps this legible
+  // against whatever's actually behind it in the live camera feed -- sky, road, a light wall --
+  // without the bulky boxed-label look.
   vehicleTag: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 2,
-    borderColor: "#000000",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    ...shadow.low,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   vehicleTagText: {
-    color: "#000000",
-    fontSize: 15,
+    color: "#FFFFFF",
+    fontSize: 12,
     fontWeight: "800",
+    textShadowColor: "rgba(0, 0, 0, 0.9)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   // Emergency stays a real, distinct visual (not cosmetic -- a genuine confirmed lightbar
-  // signature, see lightbarDetector.ts) even against the otherwise-neutral black/white tag.
-  vehicleTagEmergency: {
-    borderColor: "#DC2626",
-    backgroundColor: "#DC2626",
-  },
+  // signature, see lightbarDetector.ts) even without a solid background to color.
+  vehicleTagEmergency: {},
   vehicleTagTextEmergency: {
-    color: "#FFFFFF",
+    color: "#FF5C5C",
   },
   // Bottom-right corner, just outside the box's own bottom edge -- plain text, no background/
   // icon, matching an exact reference design (small grey "N KMH" under the vehicle).
