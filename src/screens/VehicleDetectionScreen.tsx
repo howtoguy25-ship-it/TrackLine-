@@ -55,12 +55,13 @@ const MIN_DETECTION_SCORE = 0.3;
 // enough to track" from "good enough to actually draw" fixes the visible symptom without undoing
 // that earlier fix: a track can exist and keep its speed estimate warm below this bar, it just
 // doesn't render a box the user has to look at until the read is solid enough to trust the shape.
-// Raised again (0.45 -> 0.55) -- real, confirmed evidence (screenshots dated 8/17, after the
-// 0.45 fix was already live) showed this bar still let visibly loose/misfit boxes ("Vehicle 33%",
-// "Heavy Vehicle 69%") through onto the screen. A track can still exist and keep its speed
-// estimate warm well below this (MIN_DETECTION_SCORE), it just has to be more confident before
-// its box is something the user has to look at.
-const MIN_RENDER_SCORE = 0.55;
+// Raised 0.45 -> 0.55 after real evidence of loose/misfit boxes getting through at 0.45, then
+// brought back down to 0.45 per explicit request after 0.55 was confirmed to be filtering out
+// genuine background/distant vehicles too aggressively -- a real, acknowledged trade: some
+// borderline boxes may come back too, in exchange for detecting more real vehicles further away.
+// A track can still exist and keep its speed estimate warm well below this (MIN_DETECTION_SCORE),
+// it just has to clear this bar before its box is something the user has to look at.
+const MIN_RENDER_SCORE = 0.45;
 // Real, confirmed complaint: a low-confidence detection box spanning almost the entire frame
 // (a misclassified shadow/road surface/dashboard reflection, not an actual close-up vehicle)
 // rendered as a giant box "covering the whole screen" instead of locking to the real car body.

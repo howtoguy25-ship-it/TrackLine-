@@ -228,7 +228,12 @@ function clampShrink(
 // into estimateDistanceM/speed, which read the raw detection's own width directly, so this can't
 // corrupt the physics-based speed estimate the way inflating the tracked box's width naively
 // would if distance were derived from it after the fact.
-const MIN_BOX_ASPECT_RATIO = 1.15;
+// Raised (1.15 -> 1.4) -- real, confirmed evidence (screenshot of a boat-on-trailer misclassified
+// as "Heavy Vehicle") showed 1.15 clearing the floor but still reading as a tall, narrow box, not
+// a real vehicle's actual proportions -- 1.15 is barely wider than square, not enough margin for
+// a typical vehicle's real width:height ratio from behind/front (closer to 1.4-1.8:1 for most
+// cars/SUVs at typical dashcam distance).
+const MIN_BOX_ASPECT_RATIO = 1.4;
 
 function enforceMinAspectRatio(bbox: [number, number, number, number]): [number, number, number, number] {
   const [x, y, w, h] = bbox;
