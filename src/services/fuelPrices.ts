@@ -2,6 +2,14 @@ import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
 import { httpsCallable } from "@firebase/functions";
 import { db, functions } from "@/services/firebase";
 import type { LatLng } from "@/utils/polyline";
+import { withTimeout } from "@/utils/withTimeout";
+
+// Real, confirmed bug fix -- see withTimeout.ts's own comment. getFuelPrices' own server side
+// already does two sequential real network calls of its own (an OAuth exchange, then the real
+// FuelCheck prices request) before this client-side callable even resolves, so this needs more
+// headroom than a single plain fetch -- long enough to let that legitimately complete, short
+// enough that a genuinely hung request still turns into a clear, retryable error.
+const FUEL_PRICES_TIMEOUT_MS = 18000;
 
 // Real, live fuel prices via the NSW Government's own FuelCheck API -- see getFuelPrices in
 // firebase/functions/index.js for the real endpoint/auth this calls. NSW-only today (no
@@ -41,11 +49,15 @@ const getFuelPricesCallable = httpsCallable<{ latitude: number; longitude: numbe
 
 export async function getFuelPrices(location: LatLng, radiusKm = 5): Promise<FuelPriceResult> {
   try {
-    const res = await getFuelPricesCallable({
-      latitude: location.latitude,
-      longitude: location.longitude,
-      radiusKm,
-    });
+    const res = await withTimeout(
+      getFuelPricesCallable({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        radiusKm,
+      }),
+      FUEL_PRICES_TIMEOUT_MS,
+      "getFuelPrices"
+    );
     return res.data;
   } catch (err) {
     return {

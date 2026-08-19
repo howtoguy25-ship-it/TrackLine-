@@ -896,6 +896,17 @@ export function MapScreen() {
       if (!followTilt) toggleFollowTilt();
       return;
     }
+    // Real, confirmed bug (screenshot evidence: a real, correct GPS fix confirmed via the live
+    // address banner, camera still stuck wherever it last was): userMovedMapRef -- set the
+    // instant the driver ever manually pans the map, so the live-recenter effect above stops
+    // fighting that gesture -- was never reset anywhere, including here. That meant a single
+    // pan (even a brief, accidental one) permanently disabled auto-follow for the rest of the
+    // session; this "locate me" button only ever did a one-time camera snap back to the current
+    // position, not a real resume of live tracking, so the very next GPS update after pressing
+    // it left the camera sitting still again instead of continuing to follow. Resetting it here
+    // is the real fix -- matches Apple/Google Maps' own "recenter" button convention, where
+    // tapping it always resumes live tracking, not just a single jump.
+    userMovedMapRef.current = false;
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, followTilt, toggleFollowTilt]);
 

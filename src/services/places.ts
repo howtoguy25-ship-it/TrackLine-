@@ -1,6 +1,12 @@
 import { env } from "@/config/env";
 import type { LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
+import { withTimeout } from "@/utils/withTimeout";
+
+// Real, confirmed bug fix -- see withTimeout.ts's own comment. 12s is generous enough for a
+// real, slow-but-working connection to still complete normally, short enough that a genuinely
+// hung request turns into a clear, retryable error well before it reads as the app being frozen.
+const NEARBY_SEARCH_TIMEOUT_MS = 12000;
 
 export interface PlacePrediction {
   placeId: string;
@@ -317,7 +323,11 @@ async function fetchAllNearbyPages(baseParams: URLSearchParams, errorContext: st
       params.set("pagetoken", pageToken);
       await new Promise((resolve) => setTimeout(resolve, NEXT_PAGE_TOKEN_DELAY_MS));
     }
-    const res = await fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`);
+    const res = await withTimeout(
+      fetch(`https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`),
+      NEARBY_SEARCH_TIMEOUT_MS,
+      `${errorContext} (page ${page})`
+    );
     const json = await res.json();
 
     if (json.status === "ZERO_RESULTS") break;
