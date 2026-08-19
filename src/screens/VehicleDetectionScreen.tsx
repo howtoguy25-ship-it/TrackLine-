@@ -178,7 +178,13 @@ function boxIoU(a: [number, number, number, number], b: [number, number, number,
 // unreadable). This is a second, cross-class NMS pass over the already-remapped Vehicle/Heavy
 // Vehicle list: greedy, highest score first, discarding any lower-score box that overlaps an
 // already-kept one past IOU_SUPPRESS_THRESHOLD, regardless of which raw class either came from.
-const IOU_SUPPRESS_THRESHOLD = 0.35;
+// Lowered from 0.35 -- real, confirmed evidence (screenshot: two overlapping green boxes/labels
+// both drawn on the one real parked car, visible through a window) that 0.35 still wasn't
+// aggressive enough to catch every real duplicate pair -- a genuine ~35%+ box overlap between
+// two DIFFERENT-class detections (e.g. car vs. truck) of the one vehicle is already a strong
+// enough signal on its own that they're the same real object, without needing them to overlap
+// nearly as much as two same-class NMS candidates normally would.
+const IOU_SUPPRESS_THRESHOLD = 0.25;
 
 function suppressOverlappingDetections(detections: RawDetection[]): RawDetection[] {
   const sorted = [...detections].sort((a, b) => b.score - a.score);
@@ -1749,7 +1755,9 @@ const styles = StyleSheet.create({
   speedTextBottomRight: {
     position: "absolute",
     right: 0,
-    color: "#6B7280",
+    // Real, explicit request -- was a plain neutral grey, changed to a real, visible blue for
+    // the live km/h readout specifically.
+    color: "#3B82F6",
     fontSize: 13,
     fontWeight: "800",
   },

@@ -260,6 +260,24 @@ export function MapScreen() {
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
   const [pendingDestination, setPendingDestination] = useState<PlaceDetails | null>(null);
+  // Real, confirmed request -- show a driver what the live traffic layer's own colors actually
+  // mean, but only briefly and only the moment it actually turns on (route picking/following
+  // starts), not a permanent fixture competing with the map for attention.
+  const showsTrafficLayer = !!pendingDestination || !!route;
+  const [trafficLegendVisible, setTrafficLegendVisible] = useState(false);
+  const wasShowingTrafficRef = useRef(false);
+  useEffect(() => {
+    if (showsTrafficLayer && !wasShowingTrafficRef.current) {
+      setTrafficLegendVisible(true);
+      const timer = setTimeout(() => setTrafficLegendVisible(false), 5000);
+      wasShowingTrafficRef.current = true;
+      return () => clearTimeout(timer);
+    }
+    if (!showsTrafficLayer) {
+      wasShowingTrafficRef.current = false;
+      setTrafficLegendVisible(false);
+    }
+  }, [showsTrafficLayer]);
   const [stopLocation, setStopLocation] = useState<LatLng | null>(null);
   const [pickingStop, setPickingStop] = useState(false);
   // Real custom "From" -- Google/Apple-Maps-style, lets a route be planned between any two real
@@ -2322,7 +2340,7 @@ export function MapScreen() {
         // Maps' own apps show), not a fabricated overlay. Only on while a route/route-choice is
         // actually relevant (picking or following a route) rather than always-on, which would
         // clutter idle map browsing with congestion data nobody's using yet.
-        showsTraffic={!!pendingDestination || !!route}
+        showsTraffic={showsTrafficLayer}
         style={StyleSheet.absoluteFill}
         // Always false -- the native blue dot is fully replaced by custom markers below (the
         // car puck while navigating, the person marker otherwise), not just swapped in during
@@ -2718,6 +2736,24 @@ export function MapScreen() {
             </Marker>
           ))}
       </MapView>
+      )}
+
+      {/* Real, confirmed request -- explains what the live traffic layer's own yellow/red
+          actually mean, right when it turns on (see showsTrafficLayer/trafficLegendVisible
+          above), auto-dismissing on its own after a few seconds rather than sitting there
+          permanently. pointerEvents="none" -- purely informational, never blocks a tap on the
+          map/search bar underneath. */}
+      {trafficLegendVisible && (
+        <View pointerEvents="none" style={[styles.trafficLegend, { top: insets.top + spacing.md }]}>
+          <View style={styles.trafficLegendRow}>
+            <View style={[styles.trafficLegendDot, { backgroundColor: "#EAB308" }]} />
+            <Text style={styles.trafficLegendText}>Some traffic</Text>
+          </View>
+          <View style={styles.trafficLegendRow}>
+            <View style={[styles.trafficLegendDot, { backgroundColor: "#EF4444" }]} />
+            <Text style={styles.trafficLegendText}>Heavy traffic</Text>
+          </View>
+        </View>
       )}
 
       {/* Fixed center-of-screen pin for manual alert placement -- see the comment on
@@ -3512,6 +3548,32 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceMuted },
   mapArea: { flex: 1 },
   mapPlaceholder: { backgroundColor: colors.surfaceMuted },
+  trafficLegend: {
+    position: "absolute",
+    alignSelf: "center",
+    backgroundColor: "rgba(17, 24, 39, 0.85)",
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: "row",
+    gap: spacing.md,
+    ...shadow.medium,
+  },
+  trafficLegendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  trafficLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  trafficLegendText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   destinationPinWrap: {
     alignItems: "center",
     justifyContent: "center",
