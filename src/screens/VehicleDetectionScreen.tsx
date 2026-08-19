@@ -1191,7 +1191,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       {maxZoomFactor > minZoomFactor && (
         <View
           pointerEvents="box-none"
-          style={[styles.zoomSliderWrap, { top: insets.top + spacing.xl * 3, bottom: insets.bottom + spacing.xl * 3 }]}
+          style={[
+            styles.zoomSliderWrap,
+            {
+              top: insets.top + spacing.xl * 3,
+              bottom: insets.bottom + spacing.xl * 3,
+              // insets.right is always 0 in portrait (a no-op there) -- turning the phone to
+              // landscape can put a notch/Dynamic Island's safe area on this same right edge, so
+              // this keeps the slider clear of it instead of rendering partly underneath.
+              right: insets.right + spacing.sm,
+            },
+          ]}
         >
           <Text style={styles.zoomSliderLabel}>{(maxZoomFactor / minZoomFactor).toFixed(0)}x</Text>
           {/* @react-native-community/slider is horizontal-only -- rotated -90deg to read as a
@@ -1278,7 +1288,14 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const rawTopPx = y * scale + offsetY;
           const rawRightPx = rawLeftPx + w * scale;
           const rawBottomPx = rawTopPx + h * scale;
-          const edgeClampedLeftPx = Math.max(0, Math.min(rawLeftPx, containerSize.width));
+          // Floored/ceilinged at insets.left/insets.right (not 0/containerSize.width) for the same
+          // reason as the insets.top floor below -- in portrait these are always 0 (see the
+          // explainer-banner comment elsewhere in this file), so this is a no-op there, but turning
+          // the phone to landscape moves the notch/Dynamic Island and home-indicator safe areas to
+          // the screen's LEFT or RIGHT edge instead, and without this a box near either landscape
+          // side edge (and its type/speed tag, anchored to it) could render partly underneath one --
+          // real, direct fix for "ensure the box fits the screen" when rotated.
+          const edgeClampedLeftPx = Math.max(insets.left, Math.min(rawLeftPx, containerSize.width - insets.right));
           // Floored at insets.top (not 0) -- a near-full-frame box's top edge otherwise clamped
           // straight to the physical top of the full-bleed camera preview, which put the
           // type/confidence label (rendered 6px inside the box's own top edge, see labelAboveBox
@@ -1286,7 +1303,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // real cause of the label text reading as jumbled into "TestFlight" in testing
           // screenshots.
           const edgeClampedTopPx = Math.max(insets.top, Math.min(rawTopPx, containerSize.height));
-          const edgeClampedWidthPx = Math.max(0, Math.min(rawRightPx, containerSize.width) - edgeClampedLeftPx);
+          const edgeClampedWidthPx = Math.max(
+            0,
+            Math.min(rawRightPx, containerSize.width - insets.right) - edgeClampedLeftPx
+          );
           const edgeClampedHeightPx = Math.max(0, Math.min(rawBottomPx, containerSize.height) - edgeClampedTopPx);
           // Second, purely visual safety net on top of the frame-processor's own oversized-box
           // score gate (see OVERSIZED_BOX_FRAME_FRACTION above) -- caps how much of the screen
@@ -1349,10 +1369,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const sliderBottomPx = containerSize.height - (insets.bottom + spacing.xl * 3);
           const boxOverlapsSliderZone =
             edgeClampedTopPx < sliderBottomPx + 40 && edgeClampedTopPx + edgeClampedHeightPx > sliderTopPx - 40;
-          const rightReservePx = boxOverlapsSliderZone ? ZOOM_SLIDER_RESERVED_WIDTH_PX : 0;
+          // + insets.right -- the slider itself shifts left by insets.right in landscape (see its
+          // own JSX below), so the reserved zone has to shift with it or a box could still land
+          // directly under a landscape notch/Dynamic Island sitting to the right of the slider.
+          const rightReservePx = boxOverlapsSliderZone ? ZOOM_SLIDER_RESERVED_WIDTH_PX + insets.right : 0;
           const boxLeftPx = Math.max(
-            0,
-            Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - rightReservePx - boxWidthPx)
+            insets.left,
+            Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - insets.right - rightReservePx - boxWidthPx)
           );
           const boxTopPx = Math.max(
             insets.top,
