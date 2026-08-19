@@ -191,13 +191,34 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     return fallbackStations.filter((s) => s.name.toLowerCase().includes(q) || s.vicinity.toLowerCase().includes(q));
   }, [fallbackStations, query]);
 
+  // Real, confirmed bug this "latest ref" pattern fixes: this effect used to list onSelect/
+  // onViewDetails/onStationsChange directly as dependencies -- fine as long as every caller
+  // happens to pass stable references, but MapScreen.tsx's own onSelect was (until just now) a
+  // fresh inline arrow function on every render, which re-ran this effect every render too,
+  // which called onStationsChange -> a MapScreen state update -> another MapScreen render ->
+  // another brand-new onSelect -> the effect firing again, forever. A genuine infinite render
+  // loop, not a metaphor -- confirmed from screenshot evidence (general "bugginess", search
+  // predictions never appearing, every "Finding X nearby" spinner across all three place sheets
+  // stuck indefinitely even with real network timeouts in place, since a JS thread pinned in a
+  // continuous render loop can starve async callbacks from ever getting a turn to run at all).
+  // MapScreen.tsx's own onSelect is now itself a stable useCallback (the real, direct fix), but
+  // this effect no longer trusts ANY caller to keep its callback props stable -- refs updated on
+  // every render (cheap, no effect re-run) hold the latest versions, and the effect itself only
+  // re-runs when the real station DATA changes, never when a caller's callback identity does.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const onViewDetailsRef = useRef(onViewDetails);
+  onViewDetailsRef.current = onViewDetails;
+  const onStationsChangeRef = useRef(onStationsChange);
+  onStationsChangeRef.current = onStationsChange;
+
   // Reports the FULL (un-filtered) result set, not filteredFuelStations/filteredFallbackStations
   // -- map pins showing every real station found stays independent of this sheet's own text
   // search, the same way typing a filter here was never meant to also hide pins on the map.
   useEffect(() => {
-    if (!onStationsChange) return;
+    if (!onStationsChangeRef.current) return;
     if (mode === "live") {
-      onStationsChange(
+      onStationsChangeRef.current(
         fuelStations
           .filter((s): s is FuelStation & { location: { latitude: number; longitude: number } } =>
             s.location.latitude != null && s.location.longitude != null
@@ -209,7 +230,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
             name: s.name ?? "Petrol station",
             priceCents: s.priceCents,
             onPress: () =>
-              onSelect({
+              onSelectRef.current({
                 placeId: `fuel:${s.stationId}`,
                 name: s.name ?? "Petrol station",
                 address: s.address ?? "",
@@ -218,27 +239,27 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
           }))
       );
     } else if (mode === "fallback") {
-      onStationsChange(
+      onStationsChangeRef.current(
         fallbackStations.map((s) => ({
           id: s.placeId,
           lat: s.location.latitude,
           lng: s.location.longitude,
           name: s.name,
           priceCents: null,
-          onPress: () => onViewDetails(s.placeId),
+          onPress: () => onViewDetailsRef.current(s.placeId),
         }))
       );
     } else {
-      onStationsChange([]);
+      onStationsChangeRef.current([]);
     }
-  }, [mode, fuelStations, fallbackStations, onStationsChange, onSelect, onViewDetails]);
+  }, [mode, fuelStations, fallbackStations]);
 
   // Clears any reported pins the instant this sheet unmounts (a route starting -- see
   // MapScreen.tsx's place-sheets block) so a stale set of petrol pins never lingers on the map
-  // once the sheet that produced them is gone.
+  // once the sheet that produced them is gone. Reads the ref (always current), not a value
+  // closed over at mount time.
   useEffect(() => {
-    return () => onStationsChange?.([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => onStationsChangeRef.current?.([]);
   }, []);
 
   return (

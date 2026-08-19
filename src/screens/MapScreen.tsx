@@ -1468,6 +1468,25 @@ export function MapScreen() {
     [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]
   );
 
+  // Real, confirmed bug this fixes: FuelStationsSheet's own onSelect prop below used to be a
+  // fresh inline arrow function created on every single MapScreen render -- and FuelStationsSheet
+  // watches onSelect as a real dependency of its own map-pins-reporting effect (see its own
+  // FuelStationPin comment), so a new onSelect reference re-ran that effect, which called
+  // onStationsChange -> setFuelStationPins here -> a MapScreen re-render -> a BRAND NEW onSelect
+  // closure -> the effect firing again, forever. A genuine infinite render loop, not a metaphor:
+  // confirmed from screenshot evidence matching its exact signature (general "bugginess", search
+  // predictions never appearing, every "Finding X nearby" spinner stuck indefinitely even with
+  // last round's real network timeouts in place, since a JS thread pinned in a continuous render
+  // loop can starve async callbacks from ever getting a turn to actually run, not just slow
+  // network). A stable useCallback reference here breaks the loop at its source.
+  const onFuelStationSelect = useCallback(
+    (place: PlaceDetails) => {
+      fuelStationsSheetRef.current?.close();
+      onDestinationSelected(place);
+    },
+    [onDestinationSelected]
+  );
+
   // "Find nearest station" quick action -- skips typing a destination entirely and routes
   // straight to whatever real bus/train stop Google's Places data says is genuinely closest to
   // the current route origin (a custom "From" if one's picked, otherwise live GPS -- see
@@ -3447,10 +3466,7 @@ export function MapScreen() {
           <FuelStationsSheet
             ref={fuelStationsSheetRef}
             location={currentLatLng}
-            onSelect={(place) => {
-              fuelStationsSheetRef.current?.close();
-              onDestinationSelected(place);
-            }}
+            onSelect={onFuelStationSelect}
             onViewDetails={onViewVenueDetails}
             onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
             onStationsChange={setFuelStationPins}
