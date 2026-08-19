@@ -45,7 +45,7 @@ import { OsmMarkerSheet, type OsmMarkerKind } from "@/screens/OsmMarkerSheet";
 import { LiveCameraSheet } from "@/screens/LiveCameraSheet";
 import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
-import { FuelStationsSheet } from "@/screens/FuelStationsSheet";
+import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
 import type { SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 import {
@@ -325,6 +325,12 @@ export function MapScreen() {
   const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
+  // Real, explicit request -- petrol stations visible ON THE MAP, not just in FuelStationsSheet's
+  // own list. Reported up by that sheet (see its own FuelStationPin comment) as ready-to-render
+  // pins, own onPress included -- MapScreen just renders whatever it's given (see the Marker
+  // loop near the traffic-light/speed-camera markers below), no live/fallback-mode awareness
+  // needed here at all.
+  const [fuelStationPins, setFuelStationPins] = useState<FuelStationPin[]>([]);
   const anySheetOpen =
     reportSheetOpen ||
     detailSheetOpen ||
@@ -2631,6 +2637,39 @@ export function MapScreen() {
               </Marker>
             )
           )}
+        {/* Real, explicit request -- petrol stations visible on the map itself, not just in
+            FuelStationsSheet's own list. Only shown while that sheet is actually open (matches
+            every other on-demand marker layer on this screen -- alerts/traffic-lights/speed-
+            cameras are all settings-gated the same way) so idle map browsing doesn't get
+            cluttered with pins nobody asked to see yet; fuelStationPins itself is cleared the
+            moment FuelStationsSheet unmounts (a route starting), so this can't show stale data
+            either. Price shown only when a real one exists (live NSW FuelCheck data) -- the
+            Google-Places fallback pins (no price data) show just the pump icon, same "never show
+            something fabricated" principle FuelStationsSheet's own list already follows. */}
+        {fuelStationsSheetOpen &&
+          fuelStationPins.map((pin) => (
+            <Marker
+              key={`fuel-${pin.id}`}
+              coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+              onPress={(e) => {
+                e.stopPropagation();
+                pin.onPress();
+              }}
+            >
+              <View style={styles.fuelPinWrap}>
+                {pin.priceCents != null && (
+                  <View style={styles.fuelPinPriceChip}>
+                    <Text style={styles.fuelPinPriceText}>${(pin.priceCents / 100).toFixed(2)}</Text>
+                  </View>
+                )}
+                <View style={styles.fuelPinBadge}>
+                  <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
+                </View>
+              </View>
+            </Marker>
+          ))}
         {settings.showLiveCameras &&
           liveCameras.map((camera) => (
             <Marker
@@ -3403,6 +3442,7 @@ export function MapScreen() {
             }}
             onViewDetails={onViewVenueDetails}
             onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
+            onStationsChange={setFuelStationPins}
           />
         </>
       )}
@@ -3612,6 +3652,31 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
+  },
+  fuelPinWrap: {
+    alignItems: "center",
+  },
+  fuelPinBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#16A34A",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fuelPinPriceChip: {
+    backgroundColor: "#16A34A",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 2,
+  },
+  fuelPinPriceText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
   },
   // Deliberately a different color from both OSM markers above (blue, not purple/teal) -- this
   // is a real live NSW government camera feed, an entirely separate dataset from the mapped

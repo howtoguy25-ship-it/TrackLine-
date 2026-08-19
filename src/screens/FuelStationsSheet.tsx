@@ -18,11 +18,27 @@ import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwne
 
 const SEARCH_FOCUS_KEY = "fuel";
 
+// Real, explicit request -- "add in where I can see [petrol stations] on map," distinct from
+// this sheet's own list. Reported up to MapScreen (via onStationsChange below) as ready-to-
+// render pin descriptors, own onPress included, so MapScreen never needs to know whether a given
+// station came from live FuelCheck data or the Google Places fallback -- it just renders
+// whatever pins it's given and lets each one's own onPress do the right thing (the exact same
+// onSelect/onViewDetails action its matching list row already uses).
+export interface FuelStationPin {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  priceCents: number | null;
+  onPress: () => void;
+}
+
 interface Props {
   location: LatLng | null;
   onSelect: (place: PlaceDetails) => void;
   onViewDetails: (placeId: string) => void;
   onSheetChange?: (index: number) => void;
+  onStationsChange?: (pins: FuelStationPin[]) => void;
 }
 
 function formatDistance(meters: number): string {
@@ -35,7 +51,7 @@ function formatDistance(meters: number): string {
 const LIVE_PRICE_REGION = "NSW";
 
 export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(function FuelStationsSheet(
-  { location, onSelect, onViewDetails, onSheetChange },
+  { location, onSelect, onViewDetails, onSheetChange, onStationsChange },
   ref
 ) {
   const insets = useSafeAreaInsets();
@@ -174,6 +190,56 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     if (!q) return fallbackStations;
     return fallbackStations.filter((s) => s.name.toLowerCase().includes(q) || s.vicinity.toLowerCase().includes(q));
   }, [fallbackStations, query]);
+
+  // Reports the FULL (un-filtered) result set, not filteredFuelStations/filteredFallbackStations
+  // -- map pins showing every real station found stays independent of this sheet's own text
+  // search, the same way typing a filter here was never meant to also hide pins on the map.
+  useEffect(() => {
+    if (!onStationsChange) return;
+    if (mode === "live") {
+      onStationsChange(
+        fuelStations
+          .filter((s): s is FuelStation & { location: { latitude: number; longitude: number } } =>
+            s.location.latitude != null && s.location.longitude != null
+          )
+          .map((s) => ({
+            id: s.stationId,
+            lat: s.location.latitude,
+            lng: s.location.longitude,
+            name: s.name ?? "Petrol station",
+            priceCents: s.priceCents,
+            onPress: () =>
+              onSelect({
+                placeId: `fuel:${s.stationId}`,
+                name: s.name ?? "Petrol station",
+                address: s.address ?? "",
+                location: { latitude: s.location.latitude as number, longitude: s.location.longitude as number },
+              }),
+          }))
+      );
+    } else if (mode === "fallback") {
+      onStationsChange(
+        fallbackStations.map((s) => ({
+          id: s.placeId,
+          lat: s.location.latitude,
+          lng: s.location.longitude,
+          name: s.name,
+          priceCents: null,
+          onPress: () => onViewDetails(s.placeId),
+        }))
+      );
+    } else {
+      onStationsChange([]);
+    }
+  }, [mode, fuelStations, fallbackStations, onStationsChange, onSelect, onViewDetails]);
+
+  // Clears any reported pins the instant this sheet unmounts (a route starting -- see
+  // MapScreen.tsx's place-sheets block) so a stale set of petrol pins never lingers on the map
+  // once the sheet that produced them is gone.
+  useEffect(() => {
+    return () => onStationsChange?.([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <SimpleBottomSheet
