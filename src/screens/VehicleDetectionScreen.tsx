@@ -93,6 +93,20 @@ const MAX_BOX_RENDER_FRACTION = 0.7;
 // (the box render below) for why the same floor needs re-applying a second time here, display-
 // side, on top of the one speedTracker.ts already applies to box.bbox itself.
 const MIN_DISPLAY_ASPECT_RATIO = 1.4;
+// "Make the boxes a bit bigger" -- real, explicit request (screenshot evidence: small, hard-to-
+// read boxes on genuinely close vehicles). Floors the on-screen box size only when the box has
+// SOME real on-screen area -- see hasOnScreenArea at the render call site -- so a box clipped
+// entirely off-screen never gets inflated into a fake box hovering at the edge.
+const MIN_BOX_RENDER_PX = 92;
+// Zoom slider (zoomSliderWrap below) occupies a real, fixed strip along the right edge of the
+// screen. Box positioning previously had zero awareness of it, so a vehicle detected near the
+// right side of frame drew its lock box, type/speed tag, and plate readout directly underneath
+// the slider control -- real, confirmed via 3 screenshots with the "Vehic-le" tag wrapping
+// mid-word and "0 KMH" printed over the slider track/thumb. Covers the slider's own footprint
+// (44) + its right margin (spacing.sm) + buffer room for the small type/speed text pills
+// anchored to a box's own top-left/bottom-right corners, which aren't independently width-
+// clamped to the box itself.
+const ZOOM_SLIDER_RESERVED_WIDTH_PX = 44 + spacing.sm + 70;
 // This model's own fixed TFLite_Detection_PostProcess output size (see
 // assets/models/tflite_ssd_mobilenet_v2) -- it never returns more than this many candidate
 // detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE. Left
@@ -1288,6 +1302,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const boxCenterYPx = edgeClampedTopPx + edgeClampedHeightPx / 2;
           const clampedWidthPx = Math.min(edgeClampedWidthPx, maxBoxWidthPx);
           const clampedHeightPx = Math.min(edgeClampedHeightPx, maxBoxHeightPx);
+          // A box clipped entirely off-screen (fully past an edge) must stay at its true, zero
+          // clamped size -- only a box with SOME genuine on-screen area gets the MIN_BOX_RENDER_PX
+          // floor below, otherwise a detection nobody can actually see would render as a fake box
+          // hovering at the container's edge.
+          const hasOnScreenArea = edgeClampedWidthPx > 0 && edgeClampedHeightPx > 0;
           // Final display-only safety net, same MIN_BOX_ASPECT_RATIO floor and shrink-height
           // (never widen) approach as enforceMinAspectRatio in speedTracker.ts -- see that
           // function's own comment for why shrinking height, not widening width, is the right
@@ -1309,12 +1328,32 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // final on-screen shape no matter which upstream step actually introduced the
           // distortion -- this doesn't need to know why, only that a real vehicle's box should
           // never render taller than it is wide by this much.
-          const boxWidthPx = clampedWidthPx;
-          const boxHeightPx =
-            clampedHeightPx > 0 && boxWidthPx / clampedHeightPx < MIN_DISPLAY_ASPECT_RATIO
-              ? boxWidthPx / MIN_DISPLAY_ASPECT_RATIO
-              : clampedHeightPx;
-          const boxLeftPx = Math.max(0, Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - boxWidthPx));
+          const boxWidthPx = hasOnScreenArea ? Math.max(clampedWidthPx, MIN_BOX_RENDER_PX) : clampedWidthPx;
+          const boxHeightPx = hasOnScreenArea
+            ? Math.max(
+                MIN_BOX_RENDER_PX / MIN_DISPLAY_ASPECT_RATIO,
+                clampedHeightPx <= 0 || boxWidthPx / clampedHeightPx < MIN_DISPLAY_ASPECT_RATIO
+                  ? boxWidthPx / MIN_DISPLAY_ASPECT_RATIO
+                  : clampedHeightPx
+              )
+            : clampedHeightPx;
+          // Reserves the zoom slider's own screen strip (see ZOOM_SLIDER_RESERVED_WIDTH_PX above)
+          // so the box -- and everything anchored to it (type/speed tag, plate readout) -- never
+          // renders underneath it. Only reserved when the box's own vertical range actually
+          // overlaps the slider's (insets.top/insets.bottom + spacing.xl * 3, matching the
+          // slider's own JSX positioning below) -- a box near the very top or bottom of frame has
+          // no real collision to avoid. The +/-40 buffer accounts for the type tag (rendered above
+          // or inside the box's own top edge) and the speed text (rendered just below the box's
+          // bottom edge) extending past the box's raw top/bottom.
+          const sliderTopPx = insets.top + spacing.xl * 3;
+          const sliderBottomPx = containerSize.height - (insets.bottom + spacing.xl * 3);
+          const boxOverlapsSliderZone =
+            edgeClampedTopPx < sliderBottomPx + 40 && edgeClampedTopPx + edgeClampedHeightPx > sliderTopPx - 40;
+          const rightReservePx = boxOverlapsSliderZone ? ZOOM_SLIDER_RESERVED_WIDTH_PX : 0;
+          const boxLeftPx = Math.max(
+            0,
+            Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - rightReservePx - boxWidthPx)
+          );
           const boxTopPx = Math.max(
             insets.top,
             Math.min(boxCenterYPx - boxHeightPx / 2, containerSize.height - boxHeightPx)
