@@ -34,12 +34,36 @@ let boxedModelPromise: Promise<BoxedHybridObject<TensorflowModel>> | null = null
 // react-native-worklets-core's own Runtime, which (per NitroModules' own documentation) doesn't
 // yet support copying HybridObjects via its newer JSI NativeState APIs without this explicit
 // box()/.unbox() step.
+// Real, explicit request for faster/stronger detection ("connects quicker"). 'core-ml' routes
+// this model's actual conv backbone (the vast majority of its real compute) to the iPhone's own
+// GPU/Neural Engine via Apple's Core ML delegate -- TFLite_Detection_PostProcess itself is a
+// custom op Core ML's delegate can't compile, but TFLite's own delegate mechanism partitions the
+// graph automatically: whatever IS Core ML-compatible (the backbone) still runs accelerated, and
+// only that small custom postprocess node falls back to CPU -- this is the standard, well-
+// documented way this exact model family gets accelerated on iOS, not a guess specific to this
+// app. A faster per-frame forward pass means the Frame Processor's own throttle (see
+// FRAME_PROCESSOR_THROTTLE_MS in VehicleDetectionScreen.tsx) is less often the bottleneck,
+// translating directly into a tighter, less laggy lock onto a moving vehicle. Falls back to the
+// previously-shipped plain CPU delegate ([]) if Core ML delegate creation itself fails for any
+// reason (e.g. an iOS/device combination that can't compile it at all) -- explicit, in-process
+// fallback here rather than leaning on VehicleDetectionScreen's own load-retry loop, since that
+// loop would otherwise just keep retrying the same failing delegate forever instead of ever
+// reaching a working configuration.
 export function loadBoxedTFLiteModel(): Promise<BoxedHybridObject<TensorflowModel>> {
   if (!boxedModelPromise) {
     const tStart = Date.now();
-    boxedModelPromise = loadTensorflowModel(MODEL_ASSET, [])
+    boxedModelPromise = loadTensorflowModel(MODEL_ASSET, ["core-ml"])
+      .catch((err) => {
+        Sentry.logger.warn("tfliteVehicleModel: core-ml delegate failed, falling back to CPU", {
+          error: String(err),
+        });
+        return loadTensorflowModel(MODEL_ASSET, []);
+      })
       .then((model) => {
-        Sentry.logger.info("perf: tfliteVehicleModel.load", { ms: Date.now() - tStart });
+        Sentry.logger.info("perf: tfliteVehicleModel.load", {
+          ms: Date.now() - tStart,
+          delegates: model.delegates,
+        });
         return NitroModules.box(model);
       })
       .catch((err) => {

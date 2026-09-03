@@ -120,8 +120,13 @@ const ZOOM_SLIDER_RESERVED_WIDTH_PX = 44 + spacing.sm + 70;
 const MAX_MODEL_DETECTIONS = 20;
 // Frame Processor throttle -- unlike the old JS-thread cadence, this no longer has to leave
 // headroom for touch handling (it's not competing with the JS thread at all), so it can run
-// much more often; capped mainly for battery/thermal, not responsiveness.
-const FRAME_PROCESSOR_THROTTLE_MS = 300;
+// much more often; capped mainly for battery/thermal, not responsiveness. Lowered 300 -> 200
+// (~3.3 -> 5 real inference passes/sec) per explicit "connects quicker" request -- headroom for
+// this exists specifically because tfliteVehicleModel.ts now requests the Core ML delegate,
+// moving the actual forward pass off plain CPU, so a tighter throttle doesn't mean stacking up
+// more CPU-thread work than before it. Still a real, honest battery/thermal trade -- watch for
+// that if this ever needs tuning back up.
+const FRAME_PROCESSOR_THROTTLE_MS = 200;
 
 // Attempts (each tied to one side-capture pass) before giving up on a persistently unreadable
 // plate for a given track -- caps total OCR work per vehicle instead of retrying forever on one
