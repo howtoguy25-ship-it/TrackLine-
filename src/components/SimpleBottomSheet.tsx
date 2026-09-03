@@ -39,6 +39,9 @@ interface Props {
   children: React.ReactNode;
 }
 
+// Matches styles.handleWrap's own fixed height exactly -- see contentAnimatedStyle's own
+// comment for why content's real visible height needs to subtract this.
+const HANDLE_HEIGHT = 22;
 const SPRING_CONFIG = { damping: 32, stiffness: 300, mass: 0.9 };
 // A fast enough flick in either direction wins over raw position -- matches the "flick to
 // dismiss/expand" feel every real bottom sheet has, not just a plain nearest-snap-point rule.
@@ -151,6 +154,25 @@ export const SimpleBottomSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     transform: [{ translateY: translateY.value }],
   }));
 
+  // Real, confirmed bug fix ("scroll jammed, can't reach the bottom of the list" -- RestaurantsSheet/
+  // HotelsSheet/FuelStationsSheet all share this component). The sheet's own outer box is always
+  // sized to tallHeight (the tallest snap point) so it never needs remeasuring as translateY
+  // moves it -- but `content` used to be a plain `flex:1` View, which ALSO always laid out at the
+  // full tallHeight internally, regardless of which snap point was actually visible on screen. At
+  // the SHORT snap point, only shortHeight of that box is ever actually on-screen; the rest sits
+  // below the visible screen edge. A FlatList/ScrollView placed in that always-tallHeight box
+  // measures its OWN viewport as tallHeight too -- so real list content that's taller than
+  // shortHeight but still fits within tallHeight was laid out (and considered "already fully
+  // visible, nothing to scroll") entirely inside the FlatList's own internal viewport, even
+  // though a real chunk of it was actually hidden below the visible screen edge with no way to
+  // scroll to it. content's height now tracks the sheet's REAL current visible height (recomputed
+  // every frame from translateY, so it's correct mid-drag too, not just at the two discrete snap
+  // points) -- so the FlatList's own viewport always matches what's actually on screen, and it
+  // correctly recognizes real overflow and lets the driver scroll all the way to it.
+  const contentAnimatedStyle = useAnimatedStyle(() => ({
+    height: Math.max(0, tallHeight - translateY.value - HANDLE_HEIGHT),
+  }));
+
   return (
     <Animated.View pointerEvents="box-none" style={[styles.sheet, { height: tallHeight }, animatedStyle]}>
       <GestureDetector gesture={panGesture}>
@@ -158,7 +180,7 @@ export const SimpleBottomSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
           <View style={styles.handle} />
         </View>
       </GestureDetector>
-      <View style={styles.content}>{children}</View>
+      <Animated.View style={[styles.content, contentAnimatedStyle]}>{children}</Animated.View>
     </Animated.View>
   );
 });
@@ -175,7 +197,7 @@ const styles = StyleSheet.create({
     ...shadow.high,
   },
   handleWrap: {
-    height: 22,
+    height: HANDLE_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -186,6 +208,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   content: {
-    flex: 1,
+    overflow: "hidden",
   },
 });

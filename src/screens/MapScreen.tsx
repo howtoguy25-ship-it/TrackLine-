@@ -1,5 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal, Share, ActivityIndicator, TextInput, Keyboard } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Modal,
+  Share,
+  ActivityIndicator,
+  TextInput,
+  Keyboard,
+  AppState,
+  useWindowDimensions,
+} from "react-native";
 import MapView, {
   PROVIDER_GOOGLE,
   Polyline,
@@ -207,6 +219,7 @@ export function MapScreen() {
   );
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
   const mapRef = useRef<MapView>(null);
   // True once the native MapView has actually attached its ref (react-native-maps' own
@@ -245,8 +258,23 @@ export function MapScreen() {
   // Same pattern as instructionCardHeight above, for RouteOptionsCard (see its onHeightChange)
   // -- the route-preview polyline's fitToCoordinates bottom padding uses this real number
   // instead of a fixed guess, so the previewed route never ends up partly hidden behind the
-  // card. 320 is a reasonable fallback for the one frame before the first real measurement.
-  const [routeCardHeight, setRouteCardHeight] = useState(320);
+  // card.
+  //
+  // Real, confirmed bug (screenshot evidence: route/destination sitting behind the card on the
+  // very first "Choose a route" of a session): a flat 320px default was a genuine underestimate,
+  // not just "close enough for one frame" -- RouteOptionsCard's own ScrollView is explicitly
+  // allowed to grow up to windowHeight*0.5 (see its own maxHeight style) PLUS its header/origin
+  // row/padding/safe-area-bottom chrome on top of that, routinely landing well over 500px on a
+  // typical phone -- and the very first fitToCoordinates call for a session's first route search
+  // fires in the SAME tick the card first mounts, before its own onLayout has had a chance to
+  // measure and report back via onHeightChange (a real native layout pass, never synchronous
+  // with the state update that renders the card at all). So the stale 320 default was actually
+  // being read on every session's very first route search, not just accidentally on some rare
+  // fast path -- leaving real bottom padding roughly 200px short of the card's true height, and
+  // the destination/route pin sitting behind it. Seeded here from the card's own real layout
+  // formula instead of a guessed constant, so even that first-ever call already assumes
+  // something close to the card's true footprint.
+  const [routeCardHeight, setRouteCardHeight] = useState(windowHeight * 0.5 + 140);
   // Same measured-height pattern again, for the new bottom trip bar (NavBottomBar) -- the FAB
   // column's bottom offset (see its render call site) adds this so the two never overlap. 76
   // is a reasonable fallback for the one frame before the first real measurement lands.
@@ -630,6 +658,32 @@ export function MapScreen() {
     if (!currentLatLng || route || !mapReady || userMovedMapRef.current) return;
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, mapReady]);
+
+  // Real, confirmed FIFTH cause of "opens showing San Francisco" (see the four causes already
+  // fixed above): this screen doesn't unmount on a normal backgrounding/foregrounding cycle
+  // (only a genuine force-quit resets userMovedMapRef back to its fresh false default via a real
+  // remount) -- so a manual pan from EARLIER in the same install, at any point, permanently
+  // suppressed the recenter effect above for the rest of the app's install, including "opening
+  // the app" in the everyday sense most drivers mean (bringing it back from the multitasking
+  // switcher, not force-quitting it first). liveAddress/currentLatLng kept resolving correctly
+  // the whole time (a separate, unrelated watcher) -- only the camera-follow lock was stuck,
+  // exactly matching "the address is right but the map shows San Francisco." Real driving nav
+  // apps (Apple/Google Maps) don't stay frozen at a stale pan position across app switches
+  // either -- this restores that same "coming back to the app resumes live tracking" behavior,
+  // skipped while a route is actively running so it can't yank the camera away from an in-
+  // progress turn-by-turn trip's own chase-cam.
+  const routeActiveRef = useRef(false);
+  useEffect(() => {
+    routeActiveRef.current = !!route;
+  }, [route]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && !routeActiveRef.current) {
+        userMovedMapRef.current = false;
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Real, confirmed request -- the idle (not-navigating) map used to open flat, top-down
   // (pitch 0) until the driver manually two-finger-tilted it or started a route (the chase-cam
