@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, FlatList, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, FlatList, Alert, Image } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -239,6 +239,19 @@ export function VehicleHistoryScreen() {
                     color={isChecked ? colors.accent : colors.textFaint}
                   />
                 )}
+                {/* Real, explicit request: a saved thumbnail per row, cropped on-device from the
+                    same photo the live plate OCR already captured (see
+                    services/vehicleThumbnail.ts) -- null whenever no thumbnail was available to
+                    save (a manual entry with no camera capture behind it, or a crop that failed),
+                    in which case the row just falls back to the plate badge alone, same as
+                    before this existed. */}
+                {item.thumbnailUri ? (
+                  <Image source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
+                ) : (
+                  <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+                    <MaterialCommunityIcons name="car" size={22} color={colors.textFaint} />
+                  </View>
+                )}
                 <View style={styles.plateBadge}>
                   <Text style={styles.plateBadgeText}>
                     {isSyntheticVinKey ? item.vin ?? item.plate : item.plate}
@@ -351,6 +364,16 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   swipeDeleteText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12 },
+  thumbnail: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  thumbnailPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   plateBadge: {
     backgroundColor: colors.dark,
     borderRadius: radius.sm,

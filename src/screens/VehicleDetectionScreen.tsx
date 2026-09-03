@@ -37,6 +37,7 @@ import { locatePlateRegion, type PlateRegion } from "@/utils/plateLocator";
 import { readPlateTextSmart, subscribePlateRecognizerProviderStatus } from "@/services/plateRecognizer";
 import { useLocation } from "@/context/LocationContext";
 import { upsertDetectedVehicle } from "@/services/vehicleHistory";
+import { saveVehicleThumbnail } from "@/services/vehicleThumbnail";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
@@ -1003,7 +1004,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         const trackId = box.id;
         plateReadPromises.push(
           readPlateTextSmart(photo.uri, rawRegion, plateRecognizerConfiguredRef.current)
-            .then((text) => {
+            .then(async (text) => {
               if (!text || unmountedRef.current) return;
               // Confirm before ever showing anything -- see PLATE_CANDIDATE_WINDOW's own
               // comment. A single successful read (even one that matched the plate-shaped
@@ -1035,11 +1036,23 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               // vehicle's own speed last updated still saves the freshest number available.
               const trackedBox = boxesRef.current.find((b) => b.id === trackId);
               if (trackedBox) {
-                upsertDetectedVehicle(confirmedText, {
-                  label: trackedBox.label as "Vehicle" | "Heavy Vehicle",
-                  speedKmh: trackedBox.state === "parked" ? 0 : trackedBox.speedKmh,
-                  speedKind: trackedBox.state === "parked" ? "absolute" : trackedBox.speedKind,
-                }).catch((err) => {
+                // Real, explicit request: a saved thumbnail per history entry. Cropped from THIS
+                // tick's already-captured photo (rawBbox, computed above in this same loop
+                // iteration) -- awaited here, before this .then() resolves, since photo.uri gets
+                // deleted the instant every plateReadPromises entry for this tick settles (see
+                // the cleanup right after this loop). Best-effort: saveVehicleThumbnail never
+                // throws, so a crop failure here can't take the real plate-confirm/history-save
+                // below down with it.
+                const thumbnailUri = await saveVehicleThumbnail(photo.uri, rawBbox, `${confirmedText}`);
+                upsertDetectedVehicle(
+                  confirmedText,
+                  {
+                    label: trackedBox.label as "Vehicle" | "Heavy Vehicle",
+                    speedKmh: trackedBox.state === "parked" ? 0 : trackedBox.speedKmh,
+                    speedKind: trackedBox.state === "parked" ? "absolute" : trackedBox.speedKind,
+                  },
+                  thumbnailUri
+                ).catch((err) => {
                   Sentry.logger.error("vehicle-detection: history save failed", { error: String(err) });
                 });
                 setSavedTrackIds((prev) => (prev.has(trackId) ? prev : new Set(prev).add(trackId)));

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { RevCheckVehicle } from "@/services/revCheck";
 import type { PlateLookupVehicle } from "@/services/plateLookup";
+import { deleteVehicleThumbnail } from "@/services/vehicleThumbnail";
 
 // Persistent log of vehicles this device has actually seen -- either fully identified by the
 // live AI detector (a confirmed, on-device plate read, same confirm logic
@@ -40,6 +41,11 @@ export interface VehicleHistoryEntry {
     vehicle?: PlateLookupVehicle;
     checkedAt: number;
   } | null;
+  // A real, persistent local JPEG (see services/vehicleThumbnail.ts) cropped from the same
+  // photo the on-device plate OCR already captured -- null whenever no thumbnail was available
+  // to save (e.g. a manual entry with no live camera capture behind it at all) or the crop
+  // itself failed; never a placeholder image.
+  thumbnailUri: string | null;
 }
 
 const STORAGE_KEY = "@trackline/vehicleHistory";
@@ -66,9 +72,13 @@ export async function getVehicleHistory(): Promise<VehicleHistoryEntry[]> {
 }
 
 async function writeHistory(entries: VehicleHistoryEntry[]): Promise<VehicleHistoryEntry[]> {
-  const sorted = entries.sort((a, b) => b.lastSeenAt - a.lastSeenAt).slice(0, MAX_HISTORY_ENTRIES);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
-  return sorted;
+  const sorted = entries.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  const kept = sorted.slice(0, MAX_HISTORY_ENTRIES);
+  // Entries trimmed off the cap are gone from the stored list for good -- their thumbnail
+  // files (if any) would otherwise leak on disk forever with nothing left referencing them.
+  for (const dropped of sorted.slice(MAX_HISTORY_ENTRIES)) deleteVehicleThumbnail(dropped.thumbnailUri);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(kept));
+  return kept;
 }
 
 /** Called the instant a live detection's plate read is actually confirmed (see
@@ -78,7 +88,12 @@ async function writeHistory(entries: VehicleHistoryEntry[]): Promise<VehicleHist
  *  this session or a past one) rather than creating a duplicate row. */
 export async function upsertDetectedVehicle(
   rawPlate: string,
-  info: { label: "Vehicle" | "Heavy Vehicle"; speedKmh: number | null; speedKind: "absolute" | "closing" | null }
+  info: { label: "Vehicle" | "Heavy Vehicle"; speedKmh: number | null; speedKind: "absolute" | "closing" | null },
+  // Optional -- a real, persistent JPEG already saved by services/vehicleThumbnail.ts before
+  // this is called. Only replaces an existing entry's thumbnail when a NEW one is actually
+  // provided (a re-sighting that, for whatever reason, didn't produce a fresh thumbnail keeps
+  // whatever real image it already had rather than getting wiped back to nothing).
+  thumbnailUri: string | null = null
 ): Promise<VehicleHistoryEntry[]> {
   const plate = normalizePlate(rawPlate);
   if (!plate) return getVehicleHistory();
@@ -87,6 +102,12 @@ export async function upsertDetectedVehicle(
   const existingIndex = current.findIndex((e) => e.plate === plate);
   if (existingIndex >= 0) {
     const existing = current[existingIndex];
+    // A repeat sighting that DID produce a fresh thumbnail replaces the old one -- the old file
+    // is now orphaned (nothing else references it), so it's deleted here rather than silently
+    // leaked on disk forever.
+    if (thumbnailUri && existing.thumbnailUri && thumbnailUri !== existing.thumbnailUri) {
+      deleteVehicleThumbnail(existing.thumbnailUri);
+    }
     current[existingIndex] = {
       ...existing,
       label: info.label,
@@ -94,6 +115,7 @@ export async function upsertDetectedVehicle(
       lastSpeedKind: info.speedKind,
       lastSeenAt: now,
       timesSeen: existing.timesSeen + 1,
+      thumbnailUri: thumbnailUri ?? existing.thumbnailUri,
     };
   } else {
     current.push({
@@ -109,6 +131,7 @@ export async function upsertDetectedVehicle(
       source: "detected",
       lastResult: null,
       lastPlateLookup: null,
+      thumbnailUri,
     });
   }
   return writeHistory(current);
@@ -155,6 +178,8 @@ export async function recordManualCheck(
       source: "manual",
       lastResult: null,
       lastPlateLookup: null,
+      // A manual check has no live camera capture behind it to crop a thumbnail from.
+      thumbnailUri: null,
     });
   }
   return writeHistory(current);
@@ -207,9 +232,13 @@ export async function recordPlateLookupResult(
 export async function removeVehicleHistoryEntry(rawPlate: string): Promise<VehicleHistoryEntry[]> {
   const plate = normalizePlate(rawPlate);
   const current = await getVehicleHistory();
+  const removed = current.find((e) => e.plate === plate);
+  if (removed) deleteVehicleThumbnail(removed.thumbnailUri);
   return writeHistory(current.filter((e) => e.plate !== plate));
 }
 
 export async function clearVehicleHistory(): Promise<void> {
+  const current = await getVehicleHistory();
+  for (const entry of current) deleteVehicleThumbnail(entry.thumbnailUri);
   await AsyncStorage.removeItem(STORAGE_KEY);
 }
