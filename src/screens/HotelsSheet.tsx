@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { searchNearbyHotels, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
+import { searchNearbyHotels, searchPlacesByText, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
@@ -98,9 +98,40 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
       .finally(() => setLoading(false));
   }, [location, fetchedFor, sheetIndex]);
 
+  // Real, explicit request: "everything they can think of they can search" -- same broadening as
+  // RestaurantsSheet (see its own comment for the full reasoning) so a specific hotel chain
+  // outside the up-to-60 nearest results already fetched is still reachable by name.
+  const TEXT_SEARCH_DEBOUNCE_MS = 450;
+  const [textSearchResults, setTextSearchResults] = useState<NearbyPlace[]>([]);
+  const [textSearching, setTextSearching] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2 || !location) {
+      setTextSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setTextSearching(true);
+      searchPlacesByText(q, location, "lodging")
+        .then(setTextSearchResults)
+        .catch(() => {})
+        .finally(() => setTextSearching(false));
+    }, TEXT_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, location]);
+
   const visibleHotels = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = hotels.filter(
+    const source =
+      q && textSearchResults.length > 0
+        ? (() => {
+            const merged = new Map<string, NearbyPlace>();
+            for (const h of hotels) merged.set(h.placeId, h);
+            for (const h of textSearchResults) merged.set(h.placeId, h);
+            return Array.from(merged.values());
+          })()
+        : hotels;
+    let list = source.filter(
       (h) => (!q || h.name.toLowerCase().includes(q) || h.vicinity.toLowerCase().includes(q)) && (h.rating ?? 0) >= minStars
     );
     if (priceSort !== "none") {
@@ -117,7 +148,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
       list = [...list].sort((a, b) => a.distanceMeters - b.distanceMeters);
     }
     return list;
-  }, [hotels, query, priceSort, minStars]);
+  }, [hotels, query, priceSort, minStars, textSearchResults]);
 
   return (
     <SimpleBottomSheet
@@ -224,6 +255,12 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
           <View style={styles.centerRow}>
             <ActivityIndicator color={colors.accent} />
             <Text style={styles.centerText}>Finding hotels nearby…</Text>
+          </View>
+        )}
+        {textSearching && !loading && (
+          <View style={styles.centerRow}>
+            <ActivityIndicator color={colors.accent} size="small" />
+            <Text style={styles.centerText}>Searching further afield…</Text>
           </View>
         )}
         {errorText && !loading && (

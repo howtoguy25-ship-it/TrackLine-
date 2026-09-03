@@ -5,6 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import {
   searchNearbyPetrolStations,
+  searchPlacesByText,
   PlacesApiError,
   haversineMeters,
   type NearbyPlace,
@@ -185,11 +186,44 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     );
   }, [fuelStations, query]);
 
+  // Real, explicit request: "everything they can think of they can search" -- same broadening
+  // as RestaurantsSheet/HotelsSheet (see RestaurantsSheet's own comment), only for fallback-mode
+  // (real Google Places station locations) -- live mode is NSW FuelCheck's own real price feed,
+  // a genuinely different data source with no text-search equivalent, so broadening it would
+  // mean mixing in stations with no real price data into a list whose whole point is showing
+  // live prices. A driver searching by name in live mode still gets a real, honest result: the
+  // client-side filter below against the real fetched price list, same as before this existed.
+  const TEXT_SEARCH_DEBOUNCE_MS = 450;
+  const [textSearchResults, setTextSearchResults] = useState<NearbyPlace[]>([]);
+  const [textSearching, setTextSearching] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2 || !location || mode !== "fallback") {
+      setTextSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setTextSearching(true);
+      searchPlacesByText(q, location, "gas_station")
+        .then(setTextSearchResults)
+        .catch(() => {})
+        .finally(() => setTextSearching(false));
+    }, TEXT_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, location, mode]);
+
   const filteredFallbackStations = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return fallbackStations;
-    return fallbackStations.filter((s) => s.name.toLowerCase().includes(q) || s.vicinity.toLowerCase().includes(q));
-  }, [fallbackStations, query]);
+    const localMatches = fallbackStations.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.vicinity.toLowerCase().includes(q)
+    );
+    if (textSearchResults.length === 0) return localMatches;
+    const merged = new Map<string, NearbyPlace>();
+    for (const s of localMatches) merged.set(s.placeId, s);
+    for (const s of textSearchResults) merged.set(s.placeId, s);
+    return Array.from(merged.values()).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  }, [fallbackStations, query, textSearchResults]);
 
   // Real, confirmed bug this "latest ref" pattern fixes: this effect used to list onSelect/
   // onViewDetails/onStationsChange directly as dependencies -- fine as long as every caller
@@ -336,6 +370,12 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
             <View style={styles.centerRow}>
               <ActivityIndicator color={colors.accent} />
               <Text style={styles.centerText}>Finding petrol stations nearby…</Text>
+            </View>
+          )}
+          {textSearching && !loading && (
+            <View style={styles.centerRow}>
+              <ActivityIndicator color={colors.accent} size="small" />
+              <Text style={styles.centerText}>Searching further afield…</Text>
             </View>
           )}
           {errorText && !loading && (

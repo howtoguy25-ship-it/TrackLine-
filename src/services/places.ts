@@ -466,6 +466,70 @@ export async function searchNearbyPetrolStations(location: LatLng): Promise<Near
   });
 }
 
+// Real, explicit request: "everything they can think of they can search" -- the search box in
+// RestaurantsSheet/HotelsSheet/FuelStationsSheet previously only ever filtered client-side
+// against the up-to-60 nearest results already fetched (a deliberate cost/latency tradeoff, see
+// searchNearbyRestaurants' own comment) -- fine for browsing, but a genuinely different business
+// across town (a specific hotel chain, a particular restaurant name) that never made it into
+// those nearest 60 was simply unreachable no matter what was typed. Google's real Text Search
+// API (distinct from Nearby Search -- this is the same endpoint family Google Maps' own search
+// bar uses) searches by NAME/keyword, not just proximity, so a real business anywhere Google
+// knows about it can be found -- `location`+`radius` bias results toward the driver's own area
+// without hard-restricting to it, and `type` keeps results to the right category (a text search
+// for "Hilton" with type=lodging won't surface an unrelated "Hilton Street" address). No country
+// restriction of any kind -- Google Places itself is global, so this already works for a driver
+// in any country, not just Australia (the only Australia-specific real feature in this app is
+// NSW FuelCheck's LIVE PRICE data -- see fuelPrices.ts's own header -- petrol station LOCATIONS
+// via this function/Nearby Search were never Australia-limited either).
+export async function searchPlacesByText(
+  query: string,
+  location: LatLng,
+  type: "restaurant" | "lodging" | "gas_station"
+): Promise<NearbyPlace[]> {
+  const params = new URLSearchParams({
+    query,
+    location: `${location.latitude},${location.longitude}`,
+    radius: "50000",
+    type,
+    key: env.googlePlacesApiKey,
+  });
+
+  const res = await withTimeout(
+    fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?${params.toString()}`),
+    NEARBY_SEARCH_TIMEOUT_MS,
+    "places text search request"
+  );
+  const json = await res.json();
+
+  if (json.status === "ZERO_RESULTS") return [];
+  if (json.status !== "OK") {
+    Sentry.logger.error("places: text search request failed", {
+      status: json.status,
+      errorMessage: json.error_message,
+      type,
+    });
+    throw new PlacesApiError(json.status, json.error_message);
+  }
+
+  return (json.results ?? [])
+    .map((r: any) => {
+      const placeLocation: LatLng = { latitude: r.geometry.location.lat, longitude: r.geometry.location.lng };
+      return {
+        placeId: r.place_id,
+        name: r.name,
+        vicinity: r.formatted_address ?? "",
+        location: placeLocation,
+        rating: r.rating,
+        userRatingsTotal: r.user_ratings_total,
+        priceLevel: r.price_level,
+        openNow: r.opening_hours?.open_now,
+        photoUrl: nearbyPlacePhotoUrl(r.photos?.[0]?.photo_reference),
+        distanceMeters: haversineMeters(location, placeLocation),
+      };
+    })
+    .sort((a: NearbyPlace, b: NearbyPlace) => a.distanceMeters - b.distanceMeters);
+}
+
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
   const params = new URLSearchParams({
     place_id: placeId,

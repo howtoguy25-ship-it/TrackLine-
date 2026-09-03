@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { searchNearbyRestaurants, PlacesApiError, type NearbyPlace } from "@/services/places";
+import { searchNearbyRestaurants, searchPlacesByText, PlacesApiError, type NearbyPlace } from "@/services/places";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
@@ -103,14 +103,46 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
       .finally(() => setLoading(false));
   }, [location, fetchedFor, sheetIndex]);
 
-  // Live, letter-by-letter filter against the already-fetched real result set -- every
-  // keystroke narrows the same list instantly, no debounce/network round-trip needed since
-  // there's nothing left to fetch.
+  // Real, explicit request: "everything they can think of they can search" -- the plain
+  // client-side filter below only ever covers the up-to-60 nearest results already fetched, so a
+  // real restaurant across town (a specific chain, a name that isn't in that nearest batch) was
+  // unreachable no matter what was typed. This debounced effect broadens a real search (2+
+  // characters, so it never fires on the very first keystroke) out to Google's actual Text
+  // Search API -- see places.ts's searchPlacesByText for why that's a genuinely different,
+  // broader search than Nearby Search. Best-effort: a failure here still leaves the local filter
+  // below working, just narrower (nearby-only) than it would otherwise be.
+  const TEXT_SEARCH_DEBOUNCE_MS = 450;
+  const [textSearchResults, setTextSearchResults] = useState<NearbyPlace[]>([]);
+  const [textSearching, setTextSearching] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2 || !location) {
+      setTextSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setTextSearching(true);
+      searchPlacesByText(q, location, "restaurant")
+        .then(setTextSearchResults)
+        .catch(() => {})
+        .finally(() => setTextSearching(false));
+    }, TEXT_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, location]);
+
+  // Live, letter-by-letter filter against the already-fetched real result set, merged with
+  // whatever the broader text search above has found so far -- deduped by placeId (a place
+  // could genuinely show up in both) and re-sorted by real distance.
   const filteredPlaces = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return places;
-    return places.filter((p) => p.name.toLowerCase().includes(q) || p.vicinity.toLowerCase().includes(q));
-  }, [places, query]);
+    const localMatches = places.filter((p) => p.name.toLowerCase().includes(q) || p.vicinity.toLowerCase().includes(q));
+    if (textSearchResults.length === 0) return localMatches;
+    const merged = new Map<string, NearbyPlace>();
+    for (const p of localMatches) merged.set(p.placeId, p);
+    for (const p of textSearchResults) merged.set(p.placeId, p);
+    return Array.from(merged.values()).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  }, [places, query, textSearchResults]);
 
   return (
     <SimpleBottomSheet
@@ -179,6 +211,15 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
           <View style={styles.centerRow}>
             <ActivityIndicator color={colors.accent} />
             <Text style={styles.centerText}>Finding what's nearby…</Text>
+          </View>
+        )}
+        {/* Non-blocking -- filteredPlaces above already shows whatever local matches exist while
+            this runs, so a driver isn't staring at a blank list while the broader search
+            finishes. */}
+        {textSearching && !loading && (
+          <View style={styles.centerRow}>
+            <ActivityIndicator color={colors.accent} size="small" />
+            <Text style={styles.centerText}>Searching further afield…</Text>
           </View>
         )}
         {errorText && !loading && (
