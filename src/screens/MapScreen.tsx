@@ -222,6 +222,10 @@ export function MapScreen() {
   const { height: windowHeight } = useWindowDimensions();
 
   const mapRef = useRef<MapView>(null);
+  // The map's own real, currently-rendered center -- ground truth from onRegionChangeComplete's
+  // own `region` (gesture or programmatic alike), not inferred from JS state. See the "SIXTH
+  // cause" drift safety-net effect (near userMovedMapRef) for why this matters.
+  const lastRegionCenterRef = useRef<LatLng | null>(null);
   // True once the native MapView has actually attached its ref (react-native-maps' own
   // onMapReady) -- see the SF-placeholder correction effect below for why this matters: without
   // it, that effect could fire (and permanently mark itself done via recenteredOnFixRef) before
@@ -684,6 +688,34 @@ export function MapScreen() {
     });
     return () => subscription.remove();
   }, []);
+
+  // Real, confirmed SIXTH cause, still reported after all five fixes above -- a genuine ground-
+  // truth safety net rather than another guess at the exact trigger. Every previous fix (this
+  // one included) has been reactive: it corrects the camera in response to some specific JS-side
+  // EVENT (a fresh GPS fix, mapReady flipping, an AppState transition) -- which means it can only
+  // ever be as reliable as every one of those events firing exactly when expected, on every real
+  // device, every time. This instead directly compares what the map is ACTUALLY, natively
+  // showing right now (lastRegionCenterRef, updated from onRegionChangeComplete's own real
+  // `region` on every single change, gesture or programmatic -- the one source of truth this
+  // screen has for the map's true current center) against the driver's real live GPS position,
+  // and self-corrects the moment those two disagree by an amount no legitimate manual "let me
+  // look at something nearby" pan would ever produce -- regardless of WHICH of the five earlier
+  // causes (or a sixth one nobody's hit yet) is why they drifted apart. A driving-alerts app's
+  // camera showing a real city 100+km from the driver's own live position is never a deliberate
+  // choice worth preserving the same way a genuine nearby pan is -- so this overrides
+  // userMovedMapRef rather than being gated by it, same as the "manual gesture wins" rule being
+  // deliberately overridden already is for the AppState-foreground case right above.
+  const SANITY_RECENTER_DISTANCE_KM = 100;
+  useEffect(() => {
+    if (!currentLatLng || route) return;
+    const lastCenter = lastRegionCenterRef.current;
+    if (!lastCenter) return;
+    const driftKm = distanceKm(currentLatLng.latitude, currentLatLng.longitude, lastCenter.latitude, lastCenter.longitude);
+    if (driftKm < SANITY_RECENTER_DISTANCE_KM) return;
+    userMovedMapRef.current = false;
+    lastRegionCenterRef.current = currentLatLng;
+    mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
+  }, [currentLatLng, route]);
 
   // Real, confirmed request -- the idle (not-navigating) map used to open flat, top-down
   // (pitch 0) until the driver manually two-finger-tilted it or started a route (the chase-cam
@@ -1442,6 +1474,7 @@ export function MapScreen() {
 
   const onRegionChangeComplete = useCallback(
     (region: Region, details?: { isGesture?: boolean }) => {
+      lastRegionCenterRef.current = { latitude: region.latitude, longitude: region.longitude };
       // onPanDrag (see onMapPanDrag above) only fires for an actual translating drag -- a pure
       // two-finger twist-to-rotate or two-finger tilt, held in place with no panning, never
       // triggers it, so followTilt stayed true and the next GPS tick's chase-cam update
