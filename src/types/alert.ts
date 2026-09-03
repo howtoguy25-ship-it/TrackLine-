@@ -15,6 +15,10 @@ export interface AlertDoc {
   createdAt: number; // ms epoch
   expiresAt: number; // ms epoch
   confirmCount: number;
+  // "Not here" vote count -- mirrors confirmCount exactly (see services/alerts.ts's denyAlert),
+  // for the automatic proximity "Still here? / Not here" prompt (MapScreen's AlertStillHereCard).
+  // Purely a counter, same as confirmCount -- nothing currently reads it to auto-expire an alert.
+  denyCount: number;
   // Map of uid -> the ms timestamp they hid this alert -- self-only (never affects any other
   // user's own view) and time-boxed, per explicit request: services/alerts.ts's
   // isHiddenForUser treats an entry older than its own HIDE_DURATION_MS (1 hour) as expired, so

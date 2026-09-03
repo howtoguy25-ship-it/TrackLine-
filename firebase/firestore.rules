@@ -25,6 +25,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.confirmCount == 0
+        && request.resource.data.denyCount == 0
         && request.resource.data.hiddenBy == {}
         && request.resource.data.type in ['police', 'emergency_vehicle', 'hazard', 'camera', 'crash', 'traffic_light']
         && request.resource.data.expiresAt is timestamp
@@ -38,33 +39,42 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.createdBy);
 
       // Anyone signed in can update — but only to set their OWN key in hiddenBy (a real,
-      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly) or bump confirmCount by exactly
-      // 1; every other field, including anyone else's hiddenBy entry, must stay untouched. This
-      // is what keeps "Hide" a per-user, non-destructive, self-only action -- "other users who
-      // hide them can only be hidden for themselves."
+      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly), or bump confirmCount or
+      // denyCount by exactly 1 (the automatic proximity "Still here? / Not here" prompt -- see
+      // MapScreen's AlertStillHereCard); every other field, including anyone else's hiddenBy
+      // entry, must stay untouched. This is what keeps "Hide" a per-user, non-destructive,
+      // self-only action -- "other users who hide them can only be hidden for themselves."
       allow update: if isSignedIn()
-        && onlyHideOrConfirmChanged()
-        && (hiddenByAddsSelfOnly() || confirmCountIncrementedByOne());
+        && onlyHideOrVoteChanged()
+        && (hiddenByAddsSelfOnly() || confirmCountIncrementedByOne() || denyCountIncrementedByOne());
     }
 
-    function onlyHideOrConfirmChanged() {
+    function onlyHideOrVoteChanged() {
       // affectedKeys() already only contains keys whose value actually changed, so
-      // restricting it to these two fields guarantees every other field is untouched.
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenBy', 'confirmCount']);
+      // restricting it to these three fields guarantees every other field is untouched.
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenBy', 'confirmCount', 'denyCount']);
     }
 
     // hiddenBy is a map of uid -> the ms timestamp they hid it (see types/alert.ts) -- this only
     // ever allows a write that changes THE CALLER'S OWN key within that map (setting or
-    // refreshing their own hide), never anyone else's, and never touches confirmCount in the
-    // same write.
+    // refreshing their own hide), never anyone else's, and never touches confirmCount/denyCount
+    // in the same write.
     function hiddenByAddsSelfOnly() {
       return request.resource.data.hiddenBy.diff(resource.data.hiddenBy).affectedKeys().hasOnly([request.auth.uid])
         && request.resource.data.hiddenBy[request.auth.uid] is number
-        && request.resource.data.confirmCount == resource.data.confirmCount;
+        && request.resource.data.confirmCount == resource.data.confirmCount
+        && request.resource.data.denyCount == resource.data.denyCount;
     }
 
     function confirmCountIncrementedByOne() {
       return request.resource.data.confirmCount == resource.data.confirmCount + 1
+        && request.resource.data.denyCount == resource.data.denyCount
+        && request.resource.data.hiddenBy == resource.data.hiddenBy;
+    }
+
+    function denyCountIncrementedByOne() {
+      return request.resource.data.denyCount == resource.data.denyCount + 1
+        && request.resource.data.confirmCount == resource.data.confirmCount
         && request.resource.data.hiddenBy == resource.data.hiddenBy;
     }
 

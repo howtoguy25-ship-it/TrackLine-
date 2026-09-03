@@ -54,6 +54,7 @@ function toAlertDoc(id: string, data: any): AlertDoc {
       data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : (data.createdAt ?? Date.now()),
     expiresAt: data.expiresAt instanceof Timestamp ? data.expiresAt.toMillis() : data.expiresAt,
     confirmCount: data.confirmCount ?? 0,
+    denyCount: data.denyCount ?? 0,
     // Pre-migration docs could still have the old plain-array shape for a short window (short-
     // lived alerts, 45min-24h TTL, all pruned by the scheduled cleanup function well within a
     // day) -- treated as "nobody's hidden it yet" rather than crashing on the shape mismatch.
@@ -97,6 +98,7 @@ export async function reportAlert(
     createdAt: serverTimestamp(),
     expiresAt: Timestamp.fromMillis(now + ttlMs),
     confirmCount: 0,
+    denyCount: 0,
     hiddenBy: {},
     ...(safeComment ? { comment: safeComment } : {}),
   });
@@ -170,5 +172,13 @@ export async function hideAlertForUser(alertId: string, uid: string): Promise<vo
 export async function confirmAlert(alertId: string): Promise<void> {
   await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
     confirmCount: increment(1),
+  });
+}
+
+// "Not here" vote -- the other half of the automatic proximity "Still here? / Not here" prompt
+// (see MapScreen's AlertStillHereCard). Mirrors confirmAlert exactly, just the other counter.
+export async function denyAlert(alertId: string): Promise<void> {
+  await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
+    denyCount: increment(1),
   });
 }

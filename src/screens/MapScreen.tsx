@@ -35,6 +35,8 @@ import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import { RouteOptionsCard } from "@/components/RouteOptionsCard";
 import { AlertMarker } from "@/components/AlertMarker";
+import { AlertStillHereCard } from "@/components/AlertStillHereCard";
+import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
 import { AlertBanner } from "@/components/AlertBanner";
 import { BannerAdBar } from "@/components/BannerAdBar";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
@@ -83,6 +85,7 @@ import {
   deleteAlert,
   hideAlertForUser,
   confirmAlert,
+  denyAlert,
 } from "@/services/alerts";
 import { classifyAuRegion } from "@/utils/auStates";
 import { sirenDetection } from "@/services/sirenDetection";
@@ -134,6 +137,20 @@ const TRAFFIC_SUGGESTION_DISPLAY_MS = 10_000;
 // hide a real jam right ahead behind an otherwise-clear rest of the trip, or flag one that's
 // nowhere near the driver yet).
 const NEAR_TERM_TRAFFIC_CHECK_METERS = 1000;
+
+// Automatic proximity "Still here? / Not here" prompt (AlertStillHereCard) -- real, explicit
+// request. An alert only becomes eligible once it's aged 1-3 hours (per explicit request --
+// freshly-placed alerts don't need re-confirming yet), the driver is within 300m of it, and
+// actually heading TOWARD it, not past/away from it. See the eligibility effect near
+// visibleAlerts for how these get applied.
+const STILL_HERE_MIN_AGE_MS = 60 * 60 * 1000;
+const STILL_HERE_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+const STILL_HERE_RADIUS_METERS = 300;
+// heading is only a trustworthy "which way is the driver facing" signal while actually moving
+// (see the heading fallback's own comment above) -- a stationary car facing some arbitrary
+// direction shouldn't get asked about an alert it isn't really approaching.
+const STILL_HERE_MIN_SPEED_KMH = 5;
+const STILL_HERE_HEADING_TOLERANCE_DEG = 70;
 
 // Driving's 3-way route picker order -- same order/keys RouteOptionsCard.tsx's own local
 // PROFILE_ORDER uses for its list rows, kept here too (not shared/exported) since this is the
@@ -308,6 +325,14 @@ export function MapScreen() {
 
   const [nearbyAlerts, setNearbyAlerts] = useState<AlertDoc[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<AlertDoc | null>(null);
+  // Automatic proximity "Still here? / Not here" prompt (AlertStillHereCard) -- real, explicit
+  // request, distinct from the manual "Still here" button already in AlertDetailSheet (only
+  // shown when a driver taps a marker themselves). See the eligibility effect below (near
+  // visibleAlerts) for exactly when this gets set. promptedAlertIdsRef is this-session-only (not
+  // persisted) -- once a driver has been asked about a given alert, it's never asked again this
+  // session even if they linger in its 300m radius, but a fresh app open can ask again.
+  const [stillHerePrompt, setStillHerePrompt] = useState<AlertDoc | null>(null);
+  const promptedAlertIdsRef = useRef<Set<string>>(new Set());
 
   // Static OSM traffic-light/speed-camera layer -- fetched per visible map region (debounced
   // on region-change-complete, gated behind a min-zoom so a zoomed-out view doesn't fire an
@@ -848,9 +873,21 @@ export function MapScreen() {
   // duration that could cut off early or run on after the exit is already done.
   const EXIT_MANEUVERS = new Set(["ramp-left", "ramp-right", "fork-left", "fork-right"]);
   const EXIT_ZOOM_TRIGGER_METERS = 400;
+  // Flatter, much more overhead pitch than the default 60/68 chase pose -- real, explicit
+  // request for a genuine "top view" of the interchange (so the fork/ramp split itself is
+  // readable, the way a junction diagram reads) instead of the normal tilted driver's-eye chase
+  // angle. Not fully 0 (a true bird's-eye straight-down view loses any sense of the road ahead)
+  // -- "just enough" to read as overhead while still orienting the driver forward. Zoom pushed
+  // in slightly further too (19.5 -> 19.8) since the point is to focus tight on the split, not
+  // the wider surrounding area.
+  const EXIT_ZOOM_PITCH = 22;
+  const EXIT_ZOOM_ZOOM = 19.8;
   const exitZoomActiveRef = useRef(false);
+  const [exitZoomActive, setExitZoomActive] = useState(false);
+  const [exitZoomDistanceMeters, setExitZoomDistanceMeters] = useState(0);
   useEffect(() => {
     exitZoomActiveRef.current = false;
+    setExitZoomActive(false);
   }, [route, followTilt]);
   useEffect(() => {
     if (!route || !followTilt || detectionOpen || placingAlert || !currentLatLng) return;
@@ -868,7 +905,12 @@ export function MapScreen() {
         ) * 1000;
       if (distanceToRampMeters <= EXIT_ZOOM_TRIGGER_METERS) {
         exitZoomActiveRef.current = true;
-        mapRef.current?.animateCamera({ center: currentLatLng, heading, pitch: 68, zoom: 19.5 }, { duration: 600 });
+        setExitZoomActive(true);
+        setExitZoomDistanceMeters(distanceToRampMeters);
+        mapRef.current?.animateCamera(
+          { center: currentLatLng, heading, pitch: EXIT_ZOOM_PITCH, zoom: EXIT_ZOOM_ZOOM },
+          { duration: 600 }
+        );
       }
       return;
     }
@@ -876,8 +918,14 @@ export function MapScreen() {
     if (!isExitStep && exitZoomActiveRef.current) {
       // Real exit maneuver just passed (activeStepIndex advanced past it) -- back to whichever
       // normal chase-cam pose was active before the exit-zoom override, same pitch/zoom values
-      // the default chase-cam effect above uses for each mode.
+      // the default chase-cam effect above uses for each mode. This is the "tracks the user as
+      // turning, then automatically zooms out" half of the request: the per-tick effect above
+      // keeps re-centering/re-heading the camera every GPS tick throughout the whole exit-zoom
+      // window (it never stops just because pitch/zoom got overridden here), so the camera is
+      // already following the driver through the actual turn -- this only needs to hand pitch/
+      // zoom back to normal once activeStepIndex confirms the turn is done.
       exitZoomActiveRef.current = false;
+      setExitZoomActive(false);
       mapRef.current?.animateCamera(
         overviewMode
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
@@ -886,6 +934,28 @@ export function MapScreen() {
       );
     }
   }, [route, followTilt, activeStepIndex, detectionOpen, currentLatLng, heading, overviewMode, placingAlert]);
+
+  // Keeps ExitLaneGuidance's own distance countdown live on every GPS tick while the exit-zoom
+  // window is active -- deliberately separate from the camera-pose effect above (which only
+  // fires once per exit, not every tick) so updating the displayed distance never re-triggers
+  // an animateCamera call.
+  useEffect(() => {
+    if (!exitZoomActive || !route || !currentLatLng) return;
+    const step = route.steps[activeStepIndex];
+    if (!step) return;
+    setExitZoomDistanceMeters(
+      distanceKm(currentLatLng.latitude, currentLatLng.longitude, step.endLocation.latitude, step.endLocation.longitude) *
+        1000
+    );
+  }, [exitZoomActive, route, activeStepIndex, currentLatLng]);
+
+  // Real signal, not a guess -- see ExitLaneGuidance's own comment on why this only ever claims
+  // a side (left/right), not a specific lane count/number.
+  const exitZoomDirection: "left" | "right" | null = !exitZoomActive
+    ? null
+    : (route?.steps[activeStepIndex]?.maneuver ?? "").includes("left")
+      ? "left"
+      : "right";
 
   const toggleFollowTilt = useCallback(() => {
     setFollowTilt((was) => {
@@ -1028,6 +1098,40 @@ export function MapScreen() {
     () => nearbyAlerts.filter((alert) => settings.visibleAlertTypes.includes(alert.type)),
     [nearbyAlerts, settings.visibleAlertTypes]
   );
+
+  // Automatic proximity "Still here? / Not here" prompt -- picks at most one eligible alert per
+  // tick (skips entirely while a prompt is already showing, so it never queues a second one
+  // behind the driver's back) and never re-asks about the same alert twice this session (see
+  // promptedAlertIdsRef's own comment). heading/currentSpeedKmh are the same live values the
+  // rest of this screen's own nav logic already reads, not a separate GPS source.
+  useEffect(() => {
+    if (stillHerePrompt || !currentLatLng) return;
+    if (currentSpeedKmh === null || currentSpeedKmh < STILL_HERE_MIN_SPEED_KMH) return;
+
+    const now = Date.now();
+    const eligible = visibleAlerts.find((alert) => {
+      if (promptedAlertIdsRef.current.has(alert.id)) return false;
+      const ageMs = now - alert.createdAt;
+      if (ageMs < STILL_HERE_MIN_AGE_MS || ageMs > STILL_HERE_MAX_AGE_MS) return false;
+      const distanceMeters =
+        distanceKm(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng) * 1000;
+      if (distanceMeters > STILL_HERE_RADIUS_METERS) return false;
+      const bearingToAlert = bearingDegrees(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng);
+      // Wrapped to the shortest signed angle between the two bearings (-180..180) so e.g. 350°
+      // vs 10° reads as a 20° difference, not 340°.
+      const headingDiff = Math.abs(((bearingToAlert - heading + 540) % 360) - 180);
+      return headingDiff <= STILL_HERE_HEADING_TOLERANCE_DEG;
+    });
+
+    if (eligible) setStillHerePrompt(eligible);
+  }, [visibleAlerts, currentLatLng, heading, currentSpeedKmh, stillHerePrompt]);
+
+  const onStillHereRespond = useCallback((alert: AlertDoc, isStillHere: boolean) => {
+    promptedAlertIdsRef.current.add(alert.id);
+    setStillHerePrompt(null);
+    if (isStillHere) confirmAlert(alert.id);
+    else denyAlert(alert.id);
+  }, []);
 
   // Turn-by-turn voice guidance (Phase 2): advance the active step as GPS crosses trigger radius.
   useEffect(() => {
@@ -2906,6 +3010,22 @@ export function MapScreen() {
         />
       )}
 
+      {/* Real, explicit request: a dedicated exit-lane guidance bar, shown only during the
+          exit-zoom camera window above (see exitZoomActive) -- deliberately separate from the
+          always-on NavigationInstructionCard at the top so this reads as a distinct, urgent,
+          this-moment-only signal instead of a restyled version of the normal turn card. Same
+          MapView/mapRef regardless of mapType ("standard" vs "hybrid" satellite -- see the
+          MapView's own mapType prop), so this and the exit-zoom camera pose both already apply
+          identically in satellite navigation, not just the standard map. */}
+      {route && exitZoomActive && exitZoomDirection && !addingStopDuringNav && !stopPreviewRoute && (
+        <ExitLaneGuidance
+          direction={exitZoomDirection}
+          distanceMeters={exitZoomDistanceMeters}
+          instruction={activeStep?.instruction ?? ""}
+          bottom={insets.bottom + bottomBarHeight + spacing.sm}
+        />
+      )}
+
       {/* Real mid-trip add-a-stop search -- overlays the turn card at the same top position
           (same as the pre-Start search bar) but deliberately does NOT touch `route`, so the
           route line, puck, and live GPS tracking underneath keep running the whole time this is
@@ -3540,6 +3660,18 @@ export function MapScreen() {
         message={bannerMessage}
         onDismiss={() => setBannerVisible(false)}
       />
+
+      {/* Rendered last of all -- an actionable prompt the driver is being actively asked to
+          answer, so it needs to sit on top of everything else, same reasoning as AlertBanner
+          above it. */}
+      {stillHerePrompt && (
+        <AlertStillHereCard
+          key={stillHerePrompt.id}
+          alert={stillHerePrompt}
+          onStillHere={() => onStillHereRespond(stillHerePrompt, true)}
+          onNotHere={() => onStillHereRespond(stillHerePrompt, false)}
+        />
+      )}
     </View>
   );
 }
