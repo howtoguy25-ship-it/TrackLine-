@@ -108,6 +108,17 @@ const MIN_DISPLAY_ASPECT_RATIO = 1.4;
 // SOME real on-screen area -- see hasOnScreenArea at the render call site -- so a box clipped
 // entirely off-screen never gets inflated into a fake box hovering at the edge.
 const MIN_BOX_RENDER_PX = 92;
+// Real, confirmed bug (screenshot/video evidence): a vehicle mostly outside the frame -- only a
+// sliver of it actually crossing into view -- was still getting the MIN_BOX_RENDER_PX floor
+// above applied to that sliver, inflating a barely-visible edge clip into a full-looking box
+// with a full type/speed tag floating at the very edge of the screen, disconnected from
+// anything a driver could actually see -- exactly the "pops up on random sides" complaint. This
+// is the gate that gets checked BEFORE that floor: below this fraction of the box's own true,
+// unclamped area actually on-screen, the box isn't rendered at all rather than being inflated
+// into something that reads as a real, complete detection. Tracking itself is unaffected (this
+// is a render-only skip, same as MIN_RENDER_SCORE) -- the vehicle keeps its speed estimate warm
+// and will render normally the moment enough of it is actually in frame.
+const MIN_ON_SCREEN_AREA_FRACTION = 0.3;
 // Zoom slider (zoomSliderWrap below) occupies a real, fixed strip along the right edge of the
 // screen. Box positioning previously had zero awareness of it, so a vehicle detected near the
 // right side of frame drew its lock box, type/speed tag, and plate readout directly underneath
@@ -1406,6 +1417,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // floor below, otherwise a detection nobody can actually see would render as a fake box
           // hovering at the container's edge.
           const hasOnScreenArea = edgeClampedWidthPx > 0 && edgeClampedHeightPx > 0;
+          // See MIN_ON_SCREEN_AREA_FRACTION's own comment -- compares the real on-screen area
+          // against the box's own TRUE, unclamped area (w*scale by h*scale, before any edge
+          // clamping), so this is a genuine "how much of the real vehicle is actually visible"
+          // ratio, not something that can be gamed by a box that's already been clamped down.
+          const trueAreaPx = Math.max(1, w * scale) * Math.max(1, h * scale);
+          const onScreenAreaFraction = hasOnScreenArea ? (edgeClampedWidthPx * edgeClampedHeightPx) / trueAreaPx : 0;
+          if (onScreenAreaFraction < MIN_ON_SCREEN_AREA_FRACTION) return null;
           // Final display-only safety net, same MIN_BOX_ASPECT_RATIO floor and shrink-height
           // (never widen) approach as enforceMinAspectRatio in speedTracker.ts -- see that
           // function's own comment for why shrinking height, not widening width, is the right

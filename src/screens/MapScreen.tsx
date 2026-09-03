@@ -157,22 +157,23 @@ const STILL_HERE_HEADING_TOLERANCE_DEG = 70;
 // only other place that needs it and duplicating one small array beats a wider shared-module
 // refactor for it.
 const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
-// Real, confirmed request -- each route profile gets its own fixed color (fastest green,
-// recommended/normal yellow, safest purple) instead of a shared red-when-selected/grey-
-// otherwise scheme, applied consistently to that route's own line AND its ETA pill -- never
-// reused for anything else, so a color always means the same profile everywhere on this screen.
+// Real, explicit request: one consistent orange for every route profile (replacing the earlier
+// per-profile yellow/green/purple scheme) -- selected vs. not is carried entirely by opacity/
+// weight now (see the picker's own render below), not by which hue a route happens to be.
+const ROUTE_ORANGE = "#F97316";
 const ROUTE_PROFILE_COLORS: Record<RouteProfileKey, string> = {
-  normal: "#EAB308",
-  fastest: "#22C55E",
-  safest: "#8B5CF6",
+  normal: ROUTE_ORANGE,
+  fastest: ROUTE_ORANGE,
+  safest: ROUTE_ORANGE,
 };
-// Translucent version of each profile color above, for the two NOT-currently-selected routes'
+// Translucent version of the same orange above, for the two NOT-currently-selected routes'
 // "ghost preview" lines/pills -- per explicit request (Apple Maps-style: every alternative stays
-// visible and colored, just visually secondary to whichever one is actually selected).
+// visible, just visually secondary to whichever one is actually selected).
+const ROUTE_ORANGE_GHOST = "rgba(249, 115, 22, 0.55)";
 const ROUTE_PROFILE_COLORS_GHOST: Record<RouteProfileKey, string> = {
-  normal: "rgba(234, 179, 8, 0.55)",
-  fastest: "rgba(34, 197, 94, 0.55)",
-  safest: "rgba(139, 92, 246, 0.55)",
+  normal: ROUTE_ORANGE_GHOST,
+  fastest: ROUTE_ORANGE_GHOST,
+  safest: ROUTE_ORANGE_GHOST,
 };
 // Where along each route's own polyline its floating ETA pill lands -- staggered per profile
 // (not all at the literal midpoint) so three pills sitting on largely overlapping road sections
@@ -2588,18 +2589,25 @@ export function MapScreen() {
                     (thin, translucent, no casing) while the highlighted one reads as the same
                     bold, polished band the app now uses everywhere else a route is drawn. */}
                 {isSelected && (
-                  <Polyline coordinates={routeOptions[key].polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
+                  <Polyline coordinates={routeOptions[key].polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={2} />
                 )}
                 {/* Real, confirmed request -- solid line, not dashed (read as "train tracks"
                     on the map). A real, attractive color band is enough to mark the selected
-                    route without a dash pattern breaking it up. */}
+                    route without a dash pattern breaking it up. zIndex strictly above BOTH the
+                    unselected ghosts (1) and the selected route's own white casing (2) -- real,
+                    confirmed cause of the "3 routes crumbled together" complaint: when two or
+                    three profiles resolve to nearly the same physical road (a short trip with
+                    little real choice of path), their polylines sit almost exactly on top of
+                    each other, and same-or-lower zIndex on the ghosts meant one could render
+                    OVER the selected route's own casing, muddying its clean highlighted look
+                    instead of it always reading clearly on top. */}
                 <Polyline
                   coordinates={routeOptions[key].polyline}
                   strokeWidth={isSelected ? 8 : 5}
                   strokeColor={isSelected ? ROUTE_PROFILE_COLORS[key] : ROUTE_PROFILE_COLORS_GHOST[key]}
                   tappable
                   onPress={() => setSelectedProfile(key)}
-                  zIndex={isSelected ? 2 : 1}
+                  zIndex={isSelected ? 3 : 1}
                 />
               </React.Fragment>
             );
