@@ -107,14 +107,17 @@ const MIN_BOX_RENDER_PX = 92;
 // anchored to a box's own top-left/bottom-right corners, which aren't independently width-
 // clamped to the box itself.
 const ZOOM_SLIDER_RESERVED_WIDTH_PX = 44 + spacing.sm + 70;
-// This model's own fixed TFLite_Detection_PostProcess output size (see
-// assets/models/tflite_ssd_mobilenet_v2) -- it never returns more than this many candidate
-// detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE. Left
-// unchanged across the v1->v2 model swap -- purely a self-imposed cap on how many of the
-// model's own candidates this app ever processes per frame, not something that needs to match
-// whatever max the model itself was actually converted with; capping lower than the model's own
-// real limit is always safe, just a ceiling on this app's own per-frame work.
-const MAX_MODEL_DETECTIONS = 10;
+// This model's own real TFLite_Detection_PostProcess output size -- confirmed directly this
+// session by loading assets/models/tflite_ssd_mobilenet_v2/model.tflite's actual FlatBuffer and
+// reading its output tensor shapes (ai-edge-litert's own get_output_details()): all four outputs
+// are sized for 20 detections ([1,20,4] boxes, [1,20] classes, [1,20] scores), not 10. This
+// constant was left at 10 across the v1->v2 model swap under the wrong assumption that it merely
+// needed to be "at or below" the model's real cap -- real, confirmed bug (screenshot evidence: a
+// busy multi-lane scene with well over 10 real vehicles in frame, several with no box at all)
+// showed that capping below the model's own true output size silently throws away genuine
+// candidate detections the model already computed, before MIN_DETECTION_SCORE or the vehicle-
+// class filter even get a chance to look at them. Matches the model's real limit exactly now.
+const MAX_MODEL_DETECTIONS = 20;
 // Frame Processor throttle -- unlike the old JS-thread cadence, this no longer has to leave
 // headroom for touch handling (it's not competing with the JS thread at all), so it can run
 // much more often; capped mainly for battery/thermal, not responsiveness.
