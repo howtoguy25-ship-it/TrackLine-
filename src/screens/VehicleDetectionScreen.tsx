@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, LayoutChangeEvent, useWindowDimensions } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  LayoutChangeEvent,
+  useWindowDimensions,
+  ActionSheetIOS,
+} from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import {
   Camera,
@@ -492,6 +501,55 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // gets set. Pruned alongside plateTexts/plateTextsRef in onDetections below.
   const [savedTrackIds, setSavedTrackIds] = useState<Set<number>>(new Set());
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  // Shared by both the detail panel's own "Save" button and the plate action sheet below --
+  // same real write (vehicleHistory.ts's upsertDetectedVehicle) either path takes, so this is
+  // the one place that logic lives instead of being duplicated twice.
+  const savePlateToHistory = useCallback((trackId: number, label: string, plateText: string, box: TrackedBox) => {
+    upsertDetectedVehicle(plateText, {
+      label: label as "Vehicle" | "Heavy Vehicle",
+      speedKmh: box.state === "parked" ? 0 : box.speedKmh,
+      speedKind: box.state === "parked" ? "absolute" : box.speedKind,
+    }).catch((err) => {
+      Sentry.logger.error("vehicle-detection: manual save failed", { error: String(err) });
+    });
+    setSavedTrackIds((prev) => (prev.has(trackId) ? prev : new Set(prev).add(trackId)));
+  }, []);
+
+  // Real, explicit request: tapping a confirmed plate opens a native action sheet instead of
+  // jumping straight to REV Check. "PPSR Search", "VIN Search", and "REV Check" are deliberately
+  // ONE option here, not three -- in this app they're the exact same real backend flow
+  // (RevCheckScreen's runRevCheck, a real PPSR/NEVDIS search keyed on VIN -- see revCheck.ts's
+  // own header), just entered from different starting fields. Presenting them as three separate
+  // buttons that all do the identical thing would be misleading UI, not three real integrations.
+  // "Save to History" stays a real, distinct, idempotent action even though a confirmed plate is
+  // already auto-saved the instant it's read (see captureForPlateAndLightbar) -- tapping it here
+  // is a deliberate, visible confirmation of that save, same write savePlateToHistory above does
+  // for the detail panel's own button.
+  const onPlateAction = useCallback(
+    (box: TrackedBox, plateText: string) => {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: plateText,
+          options: ["Run REV Check", "Save to History", "Cancel"],
+          cancelButtonIndex: 2,
+        },
+        (index) => {
+          if (index === 0) {
+            navigation.navigate("RevCheck", {
+              plate: plateText,
+              vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
+              speedKmh: box.state === "parked" ? 0 : box.speedKmh,
+              speedKind: box.state === "parked" ? "absolute" : box.speedKind,
+            });
+          } else if (index === 1) {
+            savePlateToHistory(box.id, box.label, plateText, box);
+          }
+        }
+      );
+    },
+    [navigation, savePlateToHistory]
+  );
 
   const cameraRef = useRef<Camera>(null);
   const sideIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1481,19 +1539,12 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                         style={[styles.plateActionsWrap, { left: labelLeftPx, top: (labelAboveBox ? -30 : 6) + 32 }]}
                       >
                         <Pressable
-                          onPress={() =>
-                            navigation.navigate("RevCheck", {
-                              plate: plateInfo.text,
-                              vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
-                              speedKmh: box.state === "parked" ? 0 : box.speedKmh,
-                              speedKind: box.state === "parked" ? "absolute" : box.speedKind,
-                            })
-                          }
+                          onPress={() => onPlateAction(box, plateInfo.text)}
                           hitSlop={8}
                           style={({ pressed }) => [styles.plateRevCheckPill, pressed && { opacity: pressedOpacity }]}
                         >
-                          <Ionicons name="search" size={10} color="#FFFFFF" />
-                          <Text style={styles.plateRevCheckPillText}>Rev Check</Text>
+                          <Ionicons name="ellipsis-horizontal" size={10} color="#FFFFFF" />
+                          <Text style={styles.plateRevCheckPillText}>Actions</Text>
                         </Pressable>
                         {isSaved && (
                           <View style={styles.savedBadgeInner} pointerEvents="none">
@@ -1646,14 +1697,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           <Pressable
             onPress={() => {
               if (!selectedPlate || selectedTrackId === null) return;
-              upsertDetectedVehicle(selectedPlate.text, {
-                label: selectedBox.label as "Vehicle" | "Heavy Vehicle",
-                speedKmh: selectedBox.state === "parked" ? 0 : selectedBox.speedKmh,
-                speedKind: selectedBox.state === "parked" ? "absolute" : selectedBox.speedKind,
-              }).catch((err) => {
-                Sentry.logger.error("vehicle-detection: manual save failed", { error: String(err) });
-              });
-              setSavedTrackIds((prev) => (prev.has(selectedTrackId) ? prev : new Set(prev).add(selectedTrackId)));
+              savePlateToHistory(selectedTrackId, selectedBox.label, selectedPlate.text, selectedBox);
             }}
             disabled={!selectedPlate}
             style={({ pressed }) => [
