@@ -207,6 +207,30 @@ function pointAtPolylineFraction(polyline: LatLng[], fraction: number): LatLng |
   return polyline[idx];
 }
 
+// Real, confirmed bug (screenshot evidence: two "1 min" ETA pills sitting right on top of each
+// other): the fraction-based spread above genuinely does separate pills along a route's own
+// path in real terms, but for a short trip (this app's own new pin-drop "choose starting point"/
+// "choose destination" picker makes trips this short newly common, e.g. two nearby pins) two or
+// three route profiles can resolve to the literal SAME road with the same real distance apart --
+// meters of real separation that a map zoomed out to fit the whole short route renders as only a
+// handful of screen pixels, well inside the pill's own width. Rather than fragile screen-space
+// math, this checks real geometric similarity directly: if a route's start/quarter/mid/three-
+// quarter/end points are all within GEOMETRY_MATCH_TOLERANCE_KM of another already-pilled
+// route's corresponding points, it's genuinely the same road -- a second pill for it would add
+// no real information (its own line is already covered by the zIndex-highlighted route's casing
+// too, see the "3 routes crumbled" fix above), so it's skipped rather than forced to overlap.
+const GEOMETRY_MATCH_TOLERANCE_KM = 0.03;
+const GEOMETRY_MATCH_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
+function routesAreNearlyIdentical(a: LatLng[], b: LatLng[]): boolean {
+  if (a.length === 0 || b.length === 0) return false;
+  return GEOMETRY_MATCH_FRACTIONS.every((f) => {
+    const pa = pointAtPolylineFraction(a, f);
+    const pb = pointAtPolylineFraction(b, f);
+    if (!pa || !pb) return false;
+    return distanceKm(pa.latitude, pa.longitude, pb.latitude, pb.longitude) < GEOMETRY_MATCH_TOLERANCE_KM;
+  });
+}
+
 export function MapScreen() {
   const { location } = useLocation();
   const { user } = useAuth();
@@ -2885,7 +2909,14 @@ export function MapScreen() {
                     (thin, translucent, no casing) while the highlighted one reads as the same
                     bold, polished band the app now uses everywhere else a route is drawn. */}
                 {isSelected && (
-                  <Polyline coordinates={routeOptions[key].polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={2} />
+                  <Polyline
+                    coordinates={routeOptions[key].polyline}
+                    strokeWidth={12}
+                    strokeColor="#FFFFFF"
+                    zIndex={2}
+                    lineCap="round"
+                    lineJoin="round"
+                  />
                 )}
                 {/* Real, confirmed request -- solid line, not dashed (read as "train tracks"
                     on the map). A real, attractive color band is enough to mark the selected
@@ -2904,6 +2935,8 @@ export function MapScreen() {
                   tappable
                   onPress={() => setSelectedProfile(key)}
                   zIndex={isSelected ? 3 : 1}
+                  lineCap="round"
+                  lineJoin="round"
                 />
               </React.Fragment>
             );
@@ -2913,14 +2946,30 @@ export function MapScreen() {
             polyline (not all at the literal midpoint) so three pills sitting on largely
             overlapping road sections don't all land in exactly the same spot. Never a static
             label -- etaInTrafficText/etaText are the same real, live Google Directions figures
-            RouteOptionsCard's own rows already show. */}
+            RouteOptionsCard's own rows already show.
+
+            Processes the SELECTED profile first (always gets its own pill) then the rest in
+            display order, skipping any route whose real geometry is nearly identical to one
+            already given a pill (see routesAreNearlyIdentical -- the fraction-based spread above
+            only separates pills when the routes actually diverge; when they're genuinely the
+            same road, staggering along it doesn't create any real separation). */}
         {routeOptions &&
-          ROUTE_PROFILE_ORDER.map((key, i) => {
-            const r = routeOptions[key];
-            const labelPoint = pointAtPolylineFraction(r.polyline, ROUTE_ETA_PILL_FRACTIONS[i]);
-            if (!labelPoint) return null;
-            const isSelected = key === selectedProfile;
-            return (
+          (() => {
+            const orderedKeys = [
+              selectedProfile,
+              ...ROUTE_PROFILE_ORDER.filter((k) => k !== selectedProfile),
+            ];
+            const pilledPolylines: LatLng[][] = [];
+            return orderedKeys.map((key) => {
+              const i = ROUTE_PROFILE_ORDER.indexOf(key);
+              const r = routeOptions[key];
+              const isDuplicateGeometry = pilledPolylines.some((p) => routesAreNearlyIdentical(p, r.polyline));
+              if (isDuplicateGeometry) return null;
+              pilledPolylines.push(r.polyline);
+              const labelPoint = pointAtPolylineFraction(r.polyline, ROUTE_ETA_PILL_FRACTIONS[i]);
+              if (!labelPoint) return null;
+              const isSelected = key === selectedProfile;
+              return (
               <Marker
                 key={`${key}-eta`}
                 coordinate={labelPoint}
@@ -2947,8 +2996,9 @@ export function MapScreen() {
                   </Text>
                 </View>
               </Marker>
-            );
-          })}
+              );
+            });
+          })()}
         {/* Same preview treatment for walking/bicycling/transit -- these modes only ever have
             one `modeRoute` (see RouteOptionsCard) instead of the 3-way `routeOptions` picker
             above, but that meant this preview line's condition never matched for them at all,
@@ -2956,11 +3006,25 @@ export function MapScreen() {
             actually pressed. */}
         {modeRoute && !routeOptions && (
           <>
-            <Polyline coordinates={modeRoute.polyline} strokeWidth={12} strokeColor="#FFFFFF" zIndex={1} />
+            <Polyline
+              coordinates={modeRoute.polyline}
+              strokeWidth={12}
+              strokeColor="#FFFFFF"
+              zIndex={1}
+              lineCap="round"
+              lineJoin="round"
+            />
             {/* Solid, not dashed (see the 3-way driving preview's own comment above for why) --
                 blue to match the app's own accent color instead of red, which this screen
                 otherwise reserves for the emergency/lightbar-confirmed AI detection state. */}
-            <Polyline coordinates={modeRoute.polyline} strokeWidth={8} strokeColor="#1D4ED8" zIndex={2} />
+            <Polyline
+              coordinates={modeRoute.polyline}
+              strokeWidth={8}
+              strokeColor="#1D4ED8"
+              zIndex={2}
+              lineCap="round"
+              lineJoin="round"
+            />
           </>
         )}
         {/* Highlighted arrival spot -- the exact picked destination (not wherever the
