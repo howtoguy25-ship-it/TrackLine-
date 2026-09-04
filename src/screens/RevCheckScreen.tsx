@@ -48,6 +48,20 @@ export function RevCheckScreen() {
   const [plate, setPlate] = useState(params?.plate ?? "");
   const [vin, setVin] = useState(params?.vin ?? "");
   const [state, setState] = useState(params?.state ?? DEFAULT_AU_STATE);
+
+  // Real, explicit request: camera capture for plate/VIN (see DocumentScanScreen) navigates
+  // back to this exact screen instance with a fresh plate/vin/state in route.params -- unlike
+  // the useState initializers right above (mount-only), these keep the visible fields in sync
+  // on every later return trip from a scan too, not just the very first time this screen opens.
+  useEffect(() => {
+    if (params?.plate !== undefined) setPlate(params.plate);
+  }, [params?.plate]);
+  useEffect(() => {
+    if (params?.vin !== undefined) setVin(params.vin);
+  }, [params?.vin]);
+  useEffect(() => {
+    if (params?.state !== undefined) setState(params.state);
+  }, [params?.state]);
   const [checking, setChecking] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [result, setResult] = useState<RevCheckResult | null>(null);
@@ -317,7 +331,17 @@ export function RevCheckScreen() {
       )}
 
       <View style={styles.formCard}>
-        <Text style={styles.fieldLabel}>NUMBER PLATE (required)</Text>
+        <View style={styles.fieldLabelRow}>
+          <Text style={styles.fieldLabel}>NUMBER PLATE (required)</Text>
+          <Pressable
+            onPress={() => navigation.navigate("DocumentScan", { mode: "plate" })}
+            style={({ pressed }) => [styles.scanButton, pressed && { opacity: pressedOpacity }]}
+            accessibilityLabel="Scan plate with camera"
+          >
+            <Ionicons name="camera-outline" size={14} color={colors.accent} />
+            <Text style={styles.scanButtonText}>Scan plate</Text>
+          </Pressable>
+        </View>
         <TextInput
           value={plate}
           onChangeText={(t) => setPlate(t.toUpperCase())}
@@ -357,7 +381,17 @@ export function RevCheckScreen() {
           Real make/model/year/body/engine data comes back from just the plate + state above.
         </Text>
 
-        <Text style={styles.fieldLabel}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
+        <View style={styles.fieldLabelRow}>
+          <Text style={styles.fieldLabel}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
+          <Pressable
+            onPress={() => navigation.navigate("DocumentScan", { mode: "vin" })}
+            style={({ pressed }) => [styles.scanButton, pressed && { opacity: pressedOpacity }]}
+            accessibilityLabel="Scan VIN with camera"
+          >
+            <Ionicons name="camera-outline" size={14} color={colors.accent} />
+            <Text style={styles.scanButtonText}>Scan VIN</Text>
+          </Pressable>
+        </View>
         <TextInput
           value={vin}
           onChangeText={(t) => setVin(t.toUpperCase())}
@@ -664,6 +698,22 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: spacing.sm,
   },
+  fieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  scanButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  scanButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   plateInput: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,

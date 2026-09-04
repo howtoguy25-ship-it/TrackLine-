@@ -6,6 +6,7 @@ import { SettingsScreen } from "@/screens/SettingsScreen";
 import { SignInScreen } from "@/screens/SignInScreen";
 import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
+import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { navigationIntegration } from "@/services/sentry";
 
 export type RevCheckParams = {
@@ -30,6 +31,9 @@ export type RootStackParamList = {
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
+  // Real camera capture for a VIN or a plate/registration -- see DocumentScanScreen's own
+  // header comment for why one screen serves both as two distinct, purpose-built experiences.
+  DocumentScan: { mode: "vin" | "plate" };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -64,6 +68,7 @@ export function RootNavigator() {
           component={RevCheckScreen}
           options={{ headerShown: true, title: "REV Check" }}
         />
+        <Stack.Screen name="DocumentScan" component={DocumentScanScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
