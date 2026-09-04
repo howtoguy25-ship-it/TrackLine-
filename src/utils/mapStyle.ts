@@ -208,22 +208,33 @@ const BLUE_COLORS: ThemeColors = {
 // is dark-background-plus-bright-accent). White/light-grey land, pale blue water, a strong
 // dark-blue highway accent so the road hierarchy still reads clearly against a light
 // background instead of just inverting colors and losing contrast.
+//
+// Real, confirmed follow-up complaint: roadLocal/roadArterial were only a couple of shades off
+// the background itself (#e2e6ec/#c7cfdb against #f5f7fa) -- on an actual phone screen in
+// daylight that's nowhere near enough contrast to tell "this is a street" from "this is just
+// background", exactly the opposite of what a driving app's own map needs to be legible at a
+// glance. Both darkened to a real, clearly-visible slate-blue now, arterial noticeably darker
+// than local so the road hierarchy itself is readable too, not just "roads exist". highway now
+// matches this app's own current accent blue (#1D4ED8, see theme/tokens.ts) instead of a
+// slightly different blue, for one consistent brand color between the map and the rest of the
+// UI. Labels darkened to match (they were legible before, just not as sharp as they could be
+// against the also-darkened road colors around them).
 const LIGHT_COLORS: ThemeColors = {
-  background: "#f5f7fa",
+  background: "#eef1f6",
   labelStroke: "#ffffff",
-  labelFill: "#3a4451",
-  localityLabel: "#1f2933",
-  poiLabel: "#6b7684",
-  parkGeometry: "#d9ecd9",
-  parkLabel: "#4a7a4a",
-  roadLocal: "#e2e6ec",
+  labelFill: "#334155",
+  localityLabel: "#0f172a",
+  poiLabel: "#64748b",
+  parkGeometry: "#cfe8cf",
+  parkLabel: "#3f6b3f",
+  roadLocal: "#a7b2c4",
   roadStroke: "#ffffff",
-  roadLabel: "#4a5568",
-  roadArterial: "#c7cfdb",
-  highway: "#2563eb",
+  roadLabel: "#334155",
+  roadArterial: "#7c8bab",
+  highway: "#1d4ed8",
   highwayLabel: "#ffffff",
-  water: "#c9ddf5",
-  waterLabel: "#3b6ea8",
+  water: "#bcd4f0",
+  waterLabel: "#2f5a8f",
 };
 
 export function getMapStyle(themeKey: MapThemeKey, thicknessKey: RoadThicknessKey) {

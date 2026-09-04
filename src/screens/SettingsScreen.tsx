@@ -93,7 +93,7 @@ const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
   blueGrey: ["#232a35", "#5b9bf0"],
   greenYellow: ["#0f2417", "#facc15"],
   blue: ["#0b1a33", "#3b9bff"],
-  light: ["#f5f7fa", "#2563eb"],
+  light: ["#eef1f6", "#1d4ed8"],
 };
 const ROAD_THICKNESS_ORDER: RoadThicknessKey[] = ["thin", "normal", "bold", "extraBold"];
 // Real relative proportions, not arbitrary -- scaled off the same ROAD_THICKNESS_MULTIPLIERS
