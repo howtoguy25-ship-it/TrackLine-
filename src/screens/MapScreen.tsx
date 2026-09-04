@@ -10,6 +10,7 @@ import {
   TextInput,
   Keyboard,
   AppState,
+  ActionSheetIOS,
   useWindowDimensions,
 } from "react-native";
 import MapView, {
@@ -2243,6 +2244,57 @@ export function MapScreen() {
     [onDestinationSelected]
   );
 
+  // Real, explicit request: a way to change the just-set starting point from the destination
+  // step itself, not just before it was set -- backs out of picking a destination and reopens
+  // the origin picker seeded at the point that was actually just confirmed (openOriginPicker
+  // always seeds from the current originOverride), so the driver lands exactly back where they
+  // were, not a blank picker.
+  const onChangeStartingPointFromDestinationStep = useCallback(() => {
+    setPickingDestinationPoint(false);
+    setDestinationPinLatLng(null);
+    setDestinationPinAddress(null);
+    openOriginPicker();
+  }, [openOriginPicker]);
+
+  // "Exit" from the origin pin's own tap menu (see onOriginMarkerPress below) -- clears the
+  // custom start point entirely and reverts to live GPS, same as picking "My Location" in the
+  // search flow. Re-fetches an already-showing route preview against the reverted origin so the
+  // shown ETA/distance never goes stale.
+  const clearOriginOverride = useCallback(() => {
+    setOriginOverride(null);
+    if (pendingDestination && currentLatLng) {
+      fetchRouteOptions(currentLatLng, pendingDestination.location, stopLocation ?? undefined, travelMode);
+    }
+  }, [pendingDestination, currentLatLng, stopLocation, travelMode, fetchRouteOptions]);
+
+  // Real, explicit request: the confirmed starting-point pin now stays visible on the map (see
+  // its own Marker below) specifically so it's there to tap -- a real options menu instead of a
+  // decorative pin that does nothing. "Continue to choose destination" only offered when there
+  // genuinely isn't one chosen yet (mid-route-planning it wouldn't make sense -- Cancel/Start on
+  // the route card itself is that flow's own real "continue").
+  const onOriginMarkerPress = useCallback(() => {
+    const canContinueToDestination = !pendingDestination && !pickingDestinationPoint;
+    const options = ["Change pin", ...(canContinueToDestination ? ["Continue to choose destination"] : []), "Exit", "Cancel"];
+    const cancelButtonIndex = options.length - 1;
+    const destructiveButtonIndex = options.length - 2;
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options, cancelButtonIndex, destructiveButtonIndex, title: originOverride?.name ?? "Starting point" },
+      (index) => {
+        if (options[index] === "Change pin") {
+          openOriginPicker();
+        } else if (options[index] === "Continue to choose destination") {
+          const seed = originOverride?.location ?? currentLatLng ?? null;
+          setDestinationPinLatLng(seed);
+          setDestinationPinAddress(null);
+          setDestinationPickerView("pin");
+          setPickingDestinationPoint(true);
+        } else if (options[index] === "Exit") {
+          clearOriginOverride();
+        }
+      }
+    );
+  }, [pendingDestination, pickingDestinationPoint, originOverride, currentLatLng, openOriginPicker, clearOriginOverride]);
+
   const exitNavigation = useCallback(() => {
     stopSpeaking();
     setRoute(null);
@@ -2933,6 +2985,28 @@ export function MapScreen() {
               </View>
             </Marker>
           </>
+        )}
+        {/* Real, confirmed bug: confirming a custom starting point never actually showed it
+            anywhere on the map afterward -- originOverride only ever drove the route math and a
+            text label, so there was nothing to look at (or tap) once the picker closed. This is
+            that real, persistent, tappable marker (see onOriginMarkerPress -- Change pin/
+            Continue to choose destination/Exit). Blue to match the picker's own pin color.
+            Hidden while pickingOrigin itself is open since the fixed center-pin overlay already
+            represents this exact same point while it's actively being edited. */}
+        {originOverride && !route && !pickingOrigin && (
+          <Marker
+            coordinate={originOverride.location}
+            anchor={{ x: 0.5, y: 1 }}
+            onPress={(e) => {
+              e.stopPropagation();
+              onOriginMarkerPress();
+            }}
+            tracksViewChanges={false}
+          >
+            <View style={styles.originPinWrap}>
+              <Ionicons name="location" size={40} color={colors.accent} />
+            </View>
+          </Marker>
         )}
         {visibleAlerts.map((alert) => (
           <AlertMarker
@@ -3841,7 +3915,20 @@ export function MapScreen() {
           <Text style={styles.placementBarSubtext} numberOfLines={2}>
             {destinationPinAddressLoading ? "Finding address…" : destinationPinAddress ?? "Move the map to place the pin"}
           </Text>
-          <View style={styles.placementBarButtons}>
+          {/* Real, explicit request: a way to revisit the just-set starting point, laid out
+              neatly beside the (X)/Set pair in the same row -- space-between instead of the
+              usual flex-end so this sits on its own at the left while X/Set stay paired on the
+              right, a clear, uncluttered three-action layout instead of stacking a fourth row. */}
+          <View style={[styles.placementBarButtons, styles.placementBarButtonsSpread]}>
+            <Pressable
+              style={({ pressed }) => [styles.changeOriginButton, pressed && { opacity: pressedOpacity }]}
+              onPress={onChangeStartingPointFromDestinationStep}
+              accessibilityLabel="Change starting point"
+            >
+              <Ionicons name="arrow-undo" size={14} color={colors.accent} />
+              <Text style={styles.changeOriginButtonText}>Change starting point</Text>
+            </Pressable>
+            <View style={styles.placementBarButtonsPair}>
             <Pressable
               style={({ pressed }) => [
                 styles.placementButton,
@@ -3867,6 +3954,7 @@ export function MapScreen() {
               <Ionicons name="checkmark" size={20} color="#FFFFFF" />
               <Text style={styles.placementButtonSetText}>Set</Text>
             </Pressable>
+            </View>
           </View>
         </View>
       )}
@@ -4064,6 +4152,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...shadow.medium,
   },
+  originPinWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.medium,
+  },
   // Small, clear pointed pill for each route option's live ETA -- deliberately compact (not a
   // full card) so it reads at a glance without covering meaningful map area, per explicit
   // request. Unselected pills stay light/neutral so the selected one's red is what actually
@@ -4170,6 +4263,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: spacing.sm,
+  },
+  // Overrides placementBarButtons' own flex-end for the destination-pin bar specifically, which
+  // has a third action (Change starting point) that belongs on its own at the left instead of
+  // crowding in next to the icon-only X/Set pair.
+  placementBarButtonsSpread: {
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  placementBarButtonsPair: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  changeOriginButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.sm + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  changeOriginButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.accent,
   },
   placementButton: {
     flexDirection: "row",

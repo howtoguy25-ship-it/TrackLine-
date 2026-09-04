@@ -332,7 +332,7 @@ export function RevCheckScreen() {
 
       <View style={styles.formCard}>
         <View style={styles.fieldLabelRow}>
-          <Text style={styles.fieldLabel}>NUMBER PLATE (required)</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>NUMBER PLATE (required)</Text>
           <Pressable
             onPress={() => navigation.navigate("DocumentScan", { mode: "plate" })}
             style={({ pressed }) => [styles.scanButton, pressed && { opacity: pressedOpacity }]}
@@ -382,7 +382,7 @@ export function RevCheckScreen() {
         </Text>
 
         <View style={styles.fieldLabelRow}>
-          <Text style={styles.fieldLabel}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
           <Pressable
             onPress={() => navigation.navigate("DocumentScan", { mode: "vin" })}
             style={({ pressed }) => [styles.scanButton, pressed && { opacity: pressedOpacity }]}
@@ -704,6 +704,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
   },
+  // Real, confirmed bug (screenshot evidence: "Scan VIN" pushed almost entirely off the right
+  // edge of the screen): a Text with no flex/shrink of its own defaults to laying out at its
+  // full, unbroken single-line width in a row -- for a label this long ("VIN (OPTIONAL --
+  // UNLOCKS STOLEN/WRITTEN-OFF/FINANCE)"), that width alone already exceeds the card, leaving
+  // nothing for the button beside it and shoving it straight off-screen instead of the label
+  // actually wrapping. flex+shrink lets the label claim only the space actually left after the
+  // button, wrapping to 2 lines exactly like it already visually appeared to (the label WAS
+  // wrapping -- the button just wasn't getting any room to live inside the card at all).
+  fieldLabelWrap: {
+    flex: 1,
+    flexShrink: 1,
+  },
   scanButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -712,6 +724,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceMuted,
+    flexShrink: 0,
   },
   scanButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   plateInput: {
