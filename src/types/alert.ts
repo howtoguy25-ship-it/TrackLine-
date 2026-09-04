@@ -76,7 +76,7 @@ export const ALERT_ICONS: Record<AlertType, string> = {
 };
 
 export const ALERT_COLORS: Record<AlertType, string> = {
-  police: "#2563EB",
+  police: "#1D4ED8",
   emergency_vehicle: "#DC2626",
   hazard: "#F59E0B",
   camera: "#7C3AED",

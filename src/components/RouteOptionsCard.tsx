@@ -547,12 +547,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 13,
   },
+  // Real, deliberate use of the new accentGlow shadow (theme/tokens.ts) -- this is the single
+  // most central action on the whole map screen (committing to a route), so it's one of the few
+  // places this app's own new signature "soft blue glow" treatment is worth using rather than a
+  // flat shadow, per explicit request for a bold, unique upgrade.
   startButton: {
     marginTop: spacing.xs,
     backgroundColor: colors.accent,
     borderRadius: radius.md,
     paddingVertical: spacing.lg - 2,
     alignItems: "center",
+    ...shadow.accentGlow,
   },
   startButtonText: {
     color: "#FFFFFF",

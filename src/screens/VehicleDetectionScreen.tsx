@@ -1818,7 +1818,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   permissionButton: {
-    backgroundColor: "#2563EB",
+    backgroundColor: "#1D4ED8",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 24,
@@ -1918,7 +1918,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#2563EB",
+    backgroundColor: "#1D4ED8",
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,

@@ -42,7 +42,7 @@ export interface MapMarkerIconSpec {
 
 // "default" intentionally omitted -- CarNavArrow keeps its own original SVG path for that one.
 export const MAP_MARKER_STYLE_ICONS: Record<Exclude<MapMarkerStyleKey, "default">, MapMarkerIconSpec> = {
-  car: { name: "car", color: "#2563EB" },
+  car: { name: "car", color: "#1D4ED8" },
   taxi: { name: "taxi", color: "#F59E0B" },
   policeCar: { name: "car-emergency", color: "#1D4ED8" },
   ambulance: { name: "ambulance", color: "#DC2626" },

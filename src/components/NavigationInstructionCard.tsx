@@ -189,7 +189,7 @@ export function NavigationInstructionCard({
           hitSlop={12}
           style={({ pressed }) => [
             styles.toggleButton,
-            { backgroundColor: transparent ? "#2563EB" : theme.toggleBg },
+            { backgroundColor: transparent ? "#1D4ED8" : theme.toggleBg },
             pressed && { opacity: pressedOpacity },
           ]}
           accessibilityLabel={transparent ? "Switch card to solid background" : "Switch card to transparent background"}

@@ -28,10 +28,10 @@ const COLLAPSED_HISTORY_COUNT = 3;
 function predictionIconFor(types: string[] | undefined): { name: keyof typeof Ionicons.glyphMap; bg: string } {
   const t = new Set(types ?? []);
   if (t.has("train_station") || t.has("transit_station") || t.has("subway_station") || t.has("light_rail_station")) {
-    return { name: "train", bg: "#2563EB" };
+    return { name: "train", bg: "#1D4ED8" };
   }
-  if (t.has("bus_station")) return { name: "bus", bg: "#2563EB" };
-  if (t.has("airport")) return { name: "airplane", bg: "#2563EB" };
+  if (t.has("bus_station")) return { name: "bus", bg: "#1D4ED8" };
+  if (t.has("airport")) return { name: "airplane", bg: "#1D4ED8" };
   if (t.has("university") || t.has("school")) return { name: "school", bg: "#92400E" };
   if (t.has("lodging")) return { name: "bed", bg: "#7C3AED" };
   if (t.has("restaurant") || t.has("cafe") || t.has("food")) return { name: "restaurant", bg: "#EA580C" };

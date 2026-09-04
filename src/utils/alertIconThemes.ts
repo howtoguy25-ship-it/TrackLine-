@@ -32,7 +32,7 @@ export interface AlertIconSpec {
 // about the app's existing look changes for a user who never opens this setting.
 export const ALERT_ICON_THEMES: Record<Exclude<AlertIconThemeKey, "default">, Record<AlertType, AlertIconSpec>> = {
   outline: {
-    police: { name: "police-badge-outline", color: "#2563EB" },
+    police: { name: "police-badge-outline", color: "#1D4ED8" },
     emergency_vehicle: { name: "ambulance", color: "#DC2626" },
     hazard: { name: "alert-outline", color: "#F59E0B" },
     camera: { name: "camera-outline", color: "#7C3AED" },

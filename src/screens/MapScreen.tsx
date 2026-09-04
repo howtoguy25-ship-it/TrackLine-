@@ -2566,7 +2566,7 @@ export function MapScreen() {
             <Polyline
               coordinates={remainingPolyline}
               strokeWidth={16}
-              strokeColor="#2563EB"
+              strokeColor="#1D4ED8"
               lineCap="round"
               lineJoin="round"
               tappable
@@ -2732,7 +2732,7 @@ export function MapScreen() {
             {/* Solid, not dashed (see the 3-way driving preview's own comment above for why) --
                 blue to match the app's own accent color instead of red, which this screen
                 otherwise reserves for the emergency/lightbar-confirmed AI detection state. */}
-            <Polyline coordinates={modeRoute.polyline} strokeWidth={8} strokeColor="#2563EB" zIndex={2} />
+            <Polyline coordinates={modeRoute.polyline} strokeWidth={8} strokeColor="#1D4ED8" zIndex={2} />
           </>
         )}
         {/* Highlighted arrival spot -- the exact picked destination (not wherever the

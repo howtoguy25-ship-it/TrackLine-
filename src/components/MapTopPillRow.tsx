@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     ...shadow.medium,
   },
   pillActive: {
-    backgroundColor: "#2563EB",
+    backgroundColor: "#1D4ED8",
   },
   pillText: {
     color: "#FFFFFF",
