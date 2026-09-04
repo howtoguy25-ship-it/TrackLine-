@@ -157,19 +157,6 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Same two-doc split again, for the NSW FuelCheck live fuel-price provider (see
-    // getFuelPrices in firebase/functions/index.js) -- a real, free NSW Government API, but
-    // still a real registered credential (apiKey + apiSecret) the owner has to sign up for and
-    // manage the same way as the two providers above.
-    match /config/fuelCheckProvider {
-      allow read, write: if isAdmin();
-    }
-
-    match /config/fuelCheckStatus {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
     // Same two-doc split again, for the Plate Recognizer cloud OCR provider (see recognizePlate
     // in firebase/functions/index.js) -- a real, paid platerecognizer.com account, used as a
     // cloud alternative to VehicleDetectionScreen's own on-device plate reader when connected.

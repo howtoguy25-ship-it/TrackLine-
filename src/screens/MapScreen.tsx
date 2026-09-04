@@ -1678,25 +1678,6 @@ export function MapScreen() {
     [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]
   );
 
-  // Real, confirmed bug this fixes: FuelStationsSheet's own onSelect prop below used to be a
-  // fresh inline arrow function created on every single MapScreen render -- and FuelStationsSheet
-  // watches onSelect as a real dependency of its own map-pins-reporting effect (see its own
-  // FuelStationPin comment), so a new onSelect reference re-ran that effect, which called
-  // onStationsChange -> setFuelStationPins here -> a MapScreen re-render -> a BRAND NEW onSelect
-  // closure -> the effect firing again, forever. A genuine infinite render loop, not a metaphor:
-  // confirmed from screenshot evidence matching its exact signature (general "bugginess", search
-  // predictions never appearing, every "Finding X nearby" spinner stuck indefinitely even with
-  // last round's real network timeouts in place, since a JS thread pinned in a continuous render
-  // loop can starve async callbacks from ever getting a turn to actually run, not just slow
-  // network). A stable useCallback reference here breaks the loop at its source.
-  const onFuelStationSelect = useCallback(
-    (place: PlaceDetails) => {
-      fuelStationsSheetRef.current?.close();
-      onDestinationSelected(place);
-    },
-    [onDestinationSelected]
-  );
-
   // "Find nearest station" quick action -- skips typing a destination entirely and routes
   // straight to whatever real bus/train stop Google's Places data says is genuinely closest to
   // the current route origin (a custom "From" if one's picked, otherwise live GPS -- see
@@ -2890,9 +2871,7 @@ export function MapScreen() {
             cameras are all settings-gated the same way) so idle map browsing doesn't get
             cluttered with pins nobody asked to see yet; fuelStationPins itself is cleared the
             moment FuelStationsSheet unmounts (a route starting), so this can't show stale data
-            either. Price shown only when a real one exists (live NSW FuelCheck data) -- the
-            Google-Places fallback pins (no price data) show just the pump icon, same "never show
-            something fabricated" principle FuelStationsSheet's own list already follows. */}
+            either. */}
         {fuelStationsSheetOpen &&
           fuelStationPins.map((pin) => (
             <Marker
@@ -2906,11 +2885,6 @@ export function MapScreen() {
               }}
             >
               <View style={styles.fuelPinWrap}>
-                {pin.priceCents != null && (
-                  <View style={styles.fuelPinPriceChip}>
-                    <Text style={styles.fuelPinPriceText}>${(pin.priceCents / 100).toFixed(2)}</Text>
-                  </View>
-                )}
                 <View style={styles.fuelPinBadge}>
                   <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
                 </View>
@@ -3717,7 +3691,6 @@ export function MapScreen() {
           <FuelStationsSheet
             ref={fuelStationsSheetRef}
             location={currentLatLng}
-            onSelect={onFuelStationSelect}
             onViewDetails={onViewVenueDetails}
             onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
             onStationsChange={setFuelStationPins}
@@ -3981,18 +3954,6 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-  },
-  fuelPinPriceChip: {
-    backgroundColor: "#16A34A",
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginBottom: 2,
-  },
-  fuelPinPriceText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "800",
   },
   // Deliberately a different color from both OSM markers above (blue, not purple/teal) -- this
   // is a real live NSW government camera feed, an entirely separate dataset from the mapped

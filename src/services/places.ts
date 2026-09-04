@@ -433,12 +433,12 @@ export async function searchNearbyHotels(location: LatLng): Promise<NearbyPlace[
 }
 
 // Same shape/reasoning as searchNearbyRestaurants/Hotels above, `type=gas_station` instead --
-// real station names/addresses/locations from Google Places. This is the FALLBACK source for a
-// petrol station's real location/name outside NSW, where fuelPrices.ts's own real live-price
-// provider (NSW FuelCheck) has no coverage -- see FuelStationsSheet's own honest handling of
-// that split. Google Places has no live fuel price data at all (not this app's own gap -- Google
-// genuinely doesn't have that data for any station), so priceLevel/rating here mean the same
-// generic Google fields every other NearbyPlace has, not a fuel price.
+// real station names/addresses/locations from Google Places. Google Places has no live fuel
+// price data at all for any station, so priceLevel/rating here mean the same generic Google
+// fields every other NearbyPlace has, not a fuel price -- see FuelStationsSheet, which never
+// shows a price at all now that the NSW FuelCheck live-price integration has been removed
+// (a real, confirmed external outage on NSW's own OAuth token endpoint, and even working it only
+// ever covered one state).
 export async function searchNearbyPetrolStations(location: LatLng): Promise<NearbyPlace[]> {
   const params = new URLSearchParams({
     location: `${location.latitude},${location.longitude}`,
@@ -478,9 +478,7 @@ export async function searchNearbyPetrolStations(location: LatLng): Promise<Near
 // without hard-restricting to it, and `type` keeps results to the right category (a text search
 // for "Hilton" with type=lodging won't surface an unrelated "Hilton Street" address). No country
 // restriction of any kind -- Google Places itself is global, so this already works for a driver
-// in any country, not just Australia (the only Australia-specific real feature in this app is
-// NSW FuelCheck's LIVE PRICE data -- see fuelPrices.ts's own header -- petrol station LOCATIONS
-// via this function/Nearby Search were never Australia-limited either).
+// in any country, not just Australia.
 export async function searchPlacesByText(
   query: string,
   location: LatLng,
