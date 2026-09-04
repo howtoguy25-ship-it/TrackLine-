@@ -15,7 +15,8 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { syncVisibleRegionsToProfile } from "@/services/userProfile";
-import { setVoiceEnabled } from "@/services/voice";
+import { setVoiceEnabled, getAvailableVoices } from "@/services/voice";
+import type * as Speech from "expo-speech";
 import {
   signOutUser,
   deleteAccount,
@@ -126,7 +127,7 @@ const ALERT_ICON_THEME_ORDER: AlertIconThemeKey[] = ["default", "outline", "bold
 const ALERT_ICON_PREVIEW_TYPES: AlertType[] = ["police", "crash", "hazard", "traffic_light"];
 
 export function SettingsScreen() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, updateSettings, voiceIdentifier, setVoiceIdentifier } = useSettings();
   const { user } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   // Every device is signed in anonymously from launch (see firebase.ts's ensureSignedIn) --
@@ -364,6 +365,33 @@ export function SettingsScreen() {
       await setVoiceEnabled(value);
     },
     [updateSettings]
+  );
+
+  // Real, explicit request: "add real voice changes for character for the maps directions" --
+  // getAvailableVoices() (see voice.ts) returns only real voices actually installed on THIS
+  // device, so this list is never the same across every phone and never fabricated. Loaded once
+  // on mount since the OS's installed voice set doesn't change while this screen is open.
+  const [availableVoices, setAvailableVoices] = useState<Speech.Voice[]>([]);
+  const [voicesLoaded, setVoicesLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getAvailableVoices()
+      .then((voices) => {
+        if (!cancelled) setAvailableVoices(voices);
+      })
+      .catch((err) => console.warn("[settings] failed to load available voices", err))
+      .finally(() => {
+        if (!cancelled) setVoicesLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const onVoiceSelect = useCallback(
+    (identifier: string | null) => {
+      setVoiceIdentifier(identifier);
+    },
+    [setVoiceIdentifier]
   );
 
   const onMapThemeSelect = useCallback(
@@ -1240,6 +1268,55 @@ export function SettingsScreen() {
             trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
+
+        <Text style={[styles.rowLabel, { marginTop: spacing.md }]}>Navigation voice</Text>
+        <Text style={styles.helperText}>
+          Real voices actually installed on your own phone -- pick the one you want reading turn-
+          by-turn directions. "Device default" (the original behavior) lets your phone's own
+          system settings decide.
+        </Text>
+        {!voicesLoaded ? (
+          <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
+        ) : (
+          <View style={styles.expiryChipRow}>
+            <Pressable
+              onPress={() => onVoiceSelect(null)}
+              style={({ pressed }) => [
+                styles.expiryChip,
+                voiceIdentifier === null && styles.expiryChipSelected,
+                pressed && { opacity: pressedOpacity },
+              ]}
+            >
+              <Text style={[styles.expiryChipText, voiceIdentifier === null && styles.expiryChipTextSelected]}>
+                Device default
+              </Text>
+            </Pressable>
+            {availableVoices.map((voice) => {
+              const isSelected = voiceIdentifier === voice.identifier;
+              return (
+                <Pressable
+                  key={voice.identifier}
+                  onPress={() => onVoiceSelect(voice.identifier)}
+                  style={({ pressed }) => [
+                    styles.expiryChip,
+                    isSelected && styles.expiryChipSelected,
+                    pressed && { opacity: pressedOpacity },
+                  ]}
+                >
+                  <Text style={[styles.expiryChipText, isSelected && styles.expiryChipTextSelected]}>
+                    {voice.name}
+                    {voice.quality === "Enhanced" ? " ✦" : ""}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {voicesLoaded && availableVoices.length === 0 && (
+          <Text style={styles.helperText}>
+            No extra voices found on this device beyond the system default.
+          </Text>
+        )}
       </Section>
 
       <View style={styles.about}>

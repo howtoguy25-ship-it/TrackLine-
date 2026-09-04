@@ -209,7 +209,7 @@ function pointAtPolylineFraction(polyline: LatLng[], fraction: number): LatLng |
 export function MapScreen() {
   const { location } = useLocation();
   const { user } = useAuth();
-  const { settings, updateSettings, voiceEnabled, voiceVolume } = useSettings();
+  const { settings, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
   // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
   // memoized so a re-render that doesn't touch either doesn't rebuild this array (and every
   // styler object inside it) from scratch on every frame.
@@ -295,6 +295,11 @@ export function MapScreen() {
   // (and re-touch guidance state) just because volume changed.
   const voiceVolumeRef = useRef(voiceVolume);
   voiceVolumeRef.current = voiceVolume;
+  // Same ref pattern as voiceVolumeRef immediately above, for the same reason -- picking a
+  // different navigation voice in Settings must not make the guidance-advancement effect
+  // re-run (and re-touch guidanceRef's shared state) just because this changed.
+  const voiceIdentifierRef = useRef(voiceIdentifier);
+  voiceIdentifierRef.current = voiceIdentifier;
   // True only while a fresh route is actively being fetched after drifting off the current one
   // -- drives the small "Rerouting..." banner below.
   const [rerouting, setRerouting] = useState(false);
@@ -1231,7 +1236,7 @@ export function MapScreen() {
     );
     if (nextIndex !== activeStepIndex) setActiveStepIndex(nextIndex);
     if (stepToSpeak && voiceEnabled) {
-      speak(stepToSpeak.instruction, voiceVolumeRef.current);
+      speak(stepToSpeak.instruction, voiceVolumeRef.current, voiceIdentifierRef.current);
     }
   }, [currentLatLng, route, voiceEnabled, activeStepIndex]);
 

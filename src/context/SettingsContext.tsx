@@ -10,6 +10,8 @@ import {
   setVoiceEnabled as persistVoiceEnabled,
   getVoiceVolume,
   setVoiceVolume as persistVoiceVolume,
+  getVoiceIdentifier,
+  setVoiceIdentifier as persistVoiceIdentifier,
 } from "@/services/voice";
 
 interface SettingsContextValue {
@@ -20,6 +22,8 @@ interface SettingsContextValue {
   toggleVoiceEnabled: () => Promise<void>;
   voiceVolume: number;
   setVoiceVolume: (value: number) => Promise<void>;
+  voiceIdentifier: string | null;
+  setVoiceIdentifier: (identifier: string | null) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue>({
@@ -30,12 +34,15 @@ const SettingsContext = createContext<SettingsContextValue>({
   toggleVoiceEnabled: async () => {},
   voiceVolume: 1,
   setVoiceVolume: async () => {},
+  voiceIdentifier: null,
+  setVoiceIdentifier: async () => {},
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [voiceEnabled, setVoiceEnabledState] = useState(true);
   const [voiceVolume, setVoiceVolumeState] = useState(1);
+  const [voiceIdentifier, setVoiceIdentifierState] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   // DIAGNOSTIC BUILD -- see src/services/firebase.ts's DIAGNOSTIC_DISABLE_ASYNC_STORAGE_PERSISTENCE
@@ -56,6 +63,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setVoiceEnabledState(voice);
       const volume = await getVoiceVolume(1);
       setVoiceVolumeState(volume);
+      const identifier = await getVoiceIdentifier();
+      setVoiceIdentifierState(identifier);
       setLoaded(true);
     })();
   }, []);
@@ -80,6 +89,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     await persistVoiceVolume(value);
   }, []);
 
+  const setVoiceIdentifier = useCallback(async (identifier: string | null) => {
+    setVoiceIdentifierState(identifier);
+    await persistVoiceIdentifier(identifier);
+  }, []);
+
   // Without this, the object literal below was a brand-new reference on every single render of
   // this provider -- meaning every consumer (MapScreen chief among them, a very large component
   // with a native MapView and a lot of child markers/overlays) re-rendered on ANY change here,
@@ -95,8 +109,20 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       toggleVoiceEnabled,
       voiceVolume,
       setVoiceVolume,
+      voiceIdentifier,
+      setVoiceIdentifier,
     }),
-    [settings, loaded, updateSettings, voiceEnabled, toggleVoiceEnabled, voiceVolume, setVoiceVolume]
+    [
+      settings,
+      loaded,
+      updateSettings,
+      voiceEnabled,
+      toggleVoiceEnabled,
+      voiceVolume,
+      setVoiceVolume,
+      voiceIdentifier,
+      setVoiceIdentifier,
+    ]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
