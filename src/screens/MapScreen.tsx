@@ -344,6 +344,24 @@ export function MapScreen() {
   // over into the *next*, unrelated destination search.
   const [originOverride, setOriginOverride] = useState<PlaceDetails | null>(null);
   const [pickingOrigin, setPickingOrigin] = useState(false);
+  // Real, explicit request: "choose starting point" now defaults to a real draggable/zoomable
+  // pin-drop picker (same proven fixed-center-pin + pan-the-map-underneath pattern already used
+  // for manual alert placement below -- see its own comment for why a real draggable Marker is
+  // unreliable on iOS) instead of only ever being a text search box. "search" is the fallback
+  // reached via the pin view's own (X) button, per explicit request.
+  const [originPickerView, setOriginPickerView] = useState<"pin" | "search">("pin");
+  const [originPinLatLng, setOriginPinLatLng] = useState<LatLng | null>(null);
+  const [originPinAddress, setOriginPinAddress] = useState<string | null>(null);
+  const [originPinAddressLoading, setOriginPinAddressLoading] = useState(false);
+  // The auto-advance step after a start point is confirmed with no destination picked yet --
+  // same pin-drop-first/search-fallback pattern as origin above, just for the destination side.
+  // Real, explicit request: setting a start point should move straight on to picking where to,
+  // not leave the driver back at a bare map wondering what to do next.
+  const [pickingDestinationPoint, setPickingDestinationPoint] = useState(false);
+  const [destinationPickerView, setDestinationPickerView] = useState<"pin" | "search">("pin");
+  const [destinationPinLatLng, setDestinationPinLatLng] = useState<LatLng | null>(null);
+  const [destinationPinAddress, setDestinationPinAddress] = useState<string | null>(null);
+  const [destinationPinAddressLoading, setDestinationPinAddressLoading] = useState(false);
   const [routeOptions, setRouteOptions] = useState<Record<RouteProfileKey, Route> | null>(null);
   // Driving gets the 3-way Normal/Fastest/Safest picker above; every other travel mode gets a
   // single real route here instead -- Google has exactly one meaningful route per mode in the
@@ -607,6 +625,55 @@ export function MapScreen() {
       });
   }, [currentLatLng]);
   const routeOriginLabel = originOverride?.name ?? liveAddress ?? "My Location";
+
+  // Live reverse-geocoded address under the fixed center pin while picking a start point by pin
+  // -- debounced so it re-resolves a moment after the map settles from a pan/zoom, not on every
+  // single frame of the gesture (see onRegionChangeComplete, which keeps originPinLatLng itself
+  // live every frame regardless -- only this address lookup is debounced).
+  useEffect(() => {
+    if (!pickingOrigin || originPickerView !== "pin" || !originPinLatLng) return;
+    let cancelled = false;
+    setOriginPinAddressLoading(true);
+    const handle = setTimeout(() => {
+      reverseGeocode(originPinLatLng)
+        .then((address) => {
+          if (!cancelled) setOriginPinAddress(address);
+        })
+        .catch(() => {
+          if (!cancelled) setOriginPinAddress(null);
+        })
+        .finally(() => {
+          if (!cancelled) setOriginPinAddressLoading(false);
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [pickingOrigin, originPickerView, originPinLatLng]);
+
+  // Same pattern as the origin pin address effect above, for the destination pin step.
+  useEffect(() => {
+    if (!pickingDestinationPoint || destinationPickerView !== "pin" || !destinationPinLatLng) return;
+    let cancelled = false;
+    setDestinationPinAddressLoading(true);
+    const handle = setTimeout(() => {
+      reverseGeocode(destinationPinLatLng)
+        .then((address) => {
+          if (!cancelled) setDestinationPinAddress(address);
+        })
+        .catch(() => {
+          if (!cancelled) setDestinationPinAddress(null);
+        })
+        .finally(() => {
+          if (!cancelled) setDestinationPinAddressLoading(false);
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [pickingDestinationPoint, destinationPickerView, destinationPinLatLng]);
 
   // iOS's real 3D-buildings path -- deliberately NOT the custom Map3DView module above (that
   // one wraps Google's still-experimental, pre-GA "Maps 3D SDK for iOS", which has a real,
@@ -1500,6 +1567,16 @@ export function MapScreen() {
         setAlertPlacementLatLng({ latitude: region.latitude, longitude: region.longitude });
       }
 
+      // Same fixed-center-pin pattern as manual alert placement above, for the "choose starting
+      // point" / "choose destination" pin pickers -- the pin view never moves, the map pans
+      // underneath it, and this keeps the picked coordinate in sync every frame.
+      if (pickingOrigin && originPickerView === "pin") {
+        setOriginPinLatLng({ latitude: region.latitude, longitude: region.longitude });
+      }
+      if (pickingDestinationPoint && destinationPickerView === "pin") {
+        setDestinationPinLatLng({ latitude: region.latitude, longitude: region.longitude });
+      }
+
       if (osmDebounceRef.current) clearTimeout(osmDebounceRef.current);
       if (!settings.showTrafficLights && !settings.showSpeedCameras) {
         setOsmData(null);
@@ -1531,7 +1608,17 @@ export function MapScreen() {
           .finally(() => setOsmLoading(false));
       }, 1200);
     },
-    [placingAlert, settings.showTrafficLights, settings.showSpeedCameras, settings.osmLayerRadiusKm, followTilt]
+    [
+      placingAlert,
+      pickingOrigin,
+      originPickerView,
+      pickingDestinationPoint,
+      destinationPickerView,
+      settings.showTrafficLights,
+      settings.showSpeedCameras,
+      settings.osmLayerRadiusKm,
+      followTilt,
+    ]
   );
 
   // Traffic-light nodes cluster into a single badge wherever they're too dense to render as
@@ -2070,6 +2157,90 @@ export function MapScreen() {
       }
     },
     [pendingDestination, stopLocation, travelMode, currentLatLng, fetchRouteOptions]
+  );
+
+  // Real, explicit request: "choose starting point" opens straight into the pin-drop picker
+  // (below), seeded from wherever the current origin already is (a previously custom-picked
+  // point, or live GPS) so the fixed pin starts exactly where the driver would expect their
+  // current starting point to be, not somewhere unrelated. Both real entry points (the idle
+  // panel's own "From" row, and the route-options card's "From" row once a destination is
+  // already picked) now go through this single opener instead of setting pickingOrigin directly.
+  const openOriginPicker = useCallback(() => {
+    const seed = originOverride?.location ?? currentLatLng ?? null;
+    setOriginPinLatLng(seed);
+    setOriginPinAddress(originOverride?.name ?? liveAddress ?? null);
+    setOriginPickerView("pin");
+    setPickingOrigin(true);
+    if (seed) {
+      mapRef.current?.animateToRegion({ ...seed, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+    }
+  }, [originOverride, currentLatLng, liveAddress]);
+
+  // (X) on the pin picker -- per explicit request, exits pin mode in favor of the existing
+  // search-based flow rather than closing the whole "choose starting point" flow outright.
+  const switchOriginToSearch = useCallback(() => {
+    setOriginPickerView("search");
+  }, []);
+
+  // A true, full exit of the "choose starting point" flow -- reached from the search view's own
+  // (X), which fully backs out rather than switching views again.
+  const cancelOriginPicker = useCallback(() => {
+    setPickingOrigin(false);
+    setOriginPinLatLng(null);
+    setOriginPinAddress(null);
+  }, []);
+
+  // "Set" on the pin picker -- commits the pinned point as the real starting point via the exact
+  // same onOriginSelected path the search flow already used (so a route already in progress
+  // re-fetches against it identically), then, per explicit request, automatically moves on to
+  // picking a destination when none is chosen yet instead of just dropping back to a bare map.
+  const confirmOriginPin = useCallback(() => {
+    if (!originPinLatLng) return;
+    const place: PlaceDetails = {
+      placeId: `pin:${originPinLatLng.latitude.toFixed(6)},${originPinLatLng.longitude.toFixed(6)}`,
+      name: originPinAddress ?? "Dropped pin",
+      address: originPinAddress ?? "Dropped pin",
+      location: originPinLatLng,
+    };
+    const hadDestination = !!pendingDestination;
+    onOriginSelected(place);
+    if (!hadDestination) {
+      setDestinationPinLatLng(originPinLatLng);
+      setDestinationPinAddress(null);
+      setDestinationPickerView("pin");
+      setPickingDestinationPoint(true);
+    }
+  }, [originPinLatLng, originPinAddress, pendingDestination, onOriginSelected]);
+
+  // Same three helpers again, for the destination pin step that follows a fresh start-point pick.
+  const switchDestinationToSearch = useCallback(() => {
+    setDestinationPickerView("search");
+  }, []);
+
+  const cancelDestinationPicker = useCallback(() => {
+    setPickingDestinationPoint(false);
+    setDestinationPinLatLng(null);
+    setDestinationPinAddress(null);
+  }, []);
+
+  const confirmDestinationPin = useCallback(() => {
+    if (!destinationPinLatLng) return;
+    const place: PlaceDetails = {
+      placeId: `pin:${destinationPinLatLng.latitude.toFixed(6)},${destinationPinLatLng.longitude.toFixed(6)}`,
+      name: destinationPinAddress ?? "Dropped pin",
+      address: destinationPinAddress ?? "Dropped pin",
+      location: destinationPinLatLng,
+    };
+    setPickingDestinationPoint(false);
+    onDestinationSelected(place);
+  }, [destinationPinLatLng, destinationPinAddress, onDestinationSelected]);
+
+  const onDestinationSearchPicked = useCallback(
+    (place: PlaceDetails) => {
+      setPickingDestinationPoint(false);
+      onDestinationSelected(place);
+    },
+    [onDestinationSelected]
   );
 
   const exitNavigation = useCallback(() => {
@@ -2943,6 +3114,22 @@ export function MapScreen() {
         </View>
       )}
 
+      {/* Same fixed-center-pin pattern, for the "choose starting point" pin-drop picker -- blue
+          to match the app's own accent (a start point, not a hazard report). */}
+      {pickingOrigin && originPickerView === "pin" && (
+        <View style={styles.placementPinOverlay} pointerEvents="none">
+          <Ionicons name="location" size={44} color={colors.accent} />
+        </View>
+      )}
+
+      {/* Green, matching this app's existing "arrival" convention (see destinationLatLng's own
+          halo/pin below) -- the destination step that follows a confirmed start point. */}
+      {pickingDestinationPoint && destinationPickerView === "pin" && (
+        <View style={styles.placementPinOverlay} pointerEvents="none">
+          <Ionicons name="location" size={44} color="#22C55E" />
+        </View>
+      )}
+
       {show3D && isMap3DSupported && currentLatLng && (
         <>
           <Map3DView
@@ -2973,19 +3160,32 @@ export function MapScreen() {
           been (see onOriginSelected re-fetching against pendingDestination when that's the
           case). Gated only on !pendingDestination||pickingOrigin isn't needed since pickingOrigin
           itself is the switch; it just needs to win over whichever of the two other panels would
-          otherwise show for the current pendingDestination state. */}
-      {!route && !placingAlert && pickingOrigin && (
+          otherwise show for the current pendingDestination state. Defaults to the real pin-drop
+          picker (openOriginPicker); the (X) on that view switches to this search fallback, per
+          explicit request. */}
+      {!route && !placingAlert && pickingOrigin && originPickerView === "search" && (
         <DestinationSearchBar
           biasLocation={currentLatLng ?? undefined}
           onDestinationSelected={onOriginSelected}
           placeholder="Choose starting point"
-          onCancel={() => setPickingOrigin(false)}
+          onCancel={cancelOriginPicker}
           showMyLocation
           myLocationAddress={liveAddress ?? undefined}
         />
       )}
 
-      {!route && !pendingDestination && !placingAlert && !pickingOrigin && !anySheetOpen && (
+      {/* Same picker, the destination step that automatically follows once a start point is
+          confirmed with no destination chosen yet (see confirmOriginPin). */}
+      {!route && !placingAlert && pickingDestinationPoint && destinationPickerView === "search" && (
+        <DestinationSearchBar
+          biasLocation={originPinLatLng ?? currentLatLng ?? undefined}
+          onDestinationSelected={onDestinationSearchPicked}
+          placeholder="Choose destination"
+          onCancel={cancelDestinationPicker}
+        />
+      )}
+
+      {!route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && !anySheetOpen && (
         <>
           {/* Moved out of the search bar's own idle dropdown, per explicit request -- a
               persistent row at the very top of the map instead of something only visible once
@@ -3010,7 +3210,7 @@ export function MapScreen() {
             onFindNearestStation={onFindNearestStation}
             findingNearestStation={findingNearestStation}
             originLabel={routeOriginLabel}
-            onPressOrigin={() => setPickingOrigin(true)}
+            onPressOrigin={openOriginPicker}
             // Real total space the pill row above consumes (its own top margin beyond the safe
             // area, plus its height, plus a small gap) minus this bar's own base top margin
             // (spacing.md, see DestinationSearchBar's own `top` calc) -- keeps the two stacked
@@ -3048,7 +3248,7 @@ export function MapScreen() {
           hasStop={!!stopLocation}
           onHeightChange={setRouteCardHeight}
           originLabel={routeOriginLabel}
-          onChangeOrigin={() => setPickingOrigin(true)}
+          onChangeOrigin={openOriginPicker}
         />
       )}
 
@@ -3346,7 +3546,7 @@ export function MapScreen() {
           card or topRightControls too, so smaller (not gone) is enough to give the road back
           without losing the controls entirely. Full size on the plain home map, where nothing
           else competes for that space. */}
-      {!anySheetOpen && !placingAlert && !pendingDestination && (
+      {!anySheetOpen && !placingAlert && !pendingDestination && !pickingOrigin && !pickingDestinationPoint && (
         <>
       {/* Hidden during navigation -- Report now lives in the bottom trip bar's "..." options
           menu (see NavOptionsSheet), so this would just be a second, redundant entry point to
@@ -3586,6 +3786,86 @@ export function MapScreen() {
                   <Text style={styles.placementButtonSetText}>Set</Text>
                 </>
               )}
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Real, explicit request: a real pin-drop picker for "choose starting point" -- drag the
+          map (pinch to zoom, pan to move) to place the fixed center pin, an (X) to fall back to
+          search instead of a pin, and Set to confirm. Same bar layout as manual alert placement
+          above, without its comment field/front-view toggle (neither applies here). */}
+      {pickingOrigin && originPickerView === "pin" && (
+        <View style={[styles.placementBar, { bottom: insets.bottom + spacing.xl }]}>
+          <Text style={styles.placementBarText}>Choose starting point</Text>
+          <Text style={styles.placementBarSubtext} numberOfLines={2}>
+            {originPinAddressLoading ? "Finding address…" : originPinAddress ?? "Move the map to place the pin"}
+          </Text>
+          <View style={styles.placementBarButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.placementButton,
+                styles.placementButtonRemove,
+                pressed && { opacity: pressedOpacity },
+              ]}
+              onPress={switchOriginToSearch}
+              accessibilityLabel="Search for a starting point instead"
+            >
+              <Ionicons name="close" size={20} color={colors.text} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.placementButton,
+                styles.placementButtonSet,
+                !originPinLatLng && styles.placementButtonSetDisabled,
+                pressed && !!originPinLatLng && { opacity: pressedOpacity },
+              ]}
+              onPress={confirmOriginPin}
+              disabled={!originPinLatLng}
+              accessibilityLabel="Set starting point"
+            >
+              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+              <Text style={styles.placementButtonSetText}>Set</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Same picker, for the destination step that automatically follows once a start point is
+          confirmed (see confirmOriginPin) -- also reachable as a standalone way to check a real
+          ETA/distance between any two points without starting navigation, since landing on
+          "Choose a route" (RouteOptionsCard) below shows exactly that without requiring Start. */}
+      {pickingDestinationPoint && destinationPickerView === "pin" && (
+        <View style={[styles.placementBar, { bottom: insets.bottom + spacing.xl }]}>
+          <Text style={styles.placementBarText}>Choose destination</Text>
+          <Text style={styles.placementBarSubtext} numberOfLines={2}>
+            {destinationPinAddressLoading ? "Finding address…" : destinationPinAddress ?? "Move the map to place the pin"}
+          </Text>
+          <View style={styles.placementBarButtons}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.placementButton,
+                styles.placementButtonRemove,
+                pressed && { opacity: pressedOpacity },
+              ]}
+              onPress={switchDestinationToSearch}
+              accessibilityLabel="Search for a destination instead"
+            >
+              <Ionicons name="close" size={20} color={colors.text} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.placementButton,
+                styles.placementButtonSet,
+                !destinationPinLatLng && styles.placementButtonSetDisabled,
+                pressed && !!destinationPinLatLng && { opacity: pressedOpacity },
+              ]}
+              onPress={confirmDestinationPin}
+              disabled={!destinationPinLatLng}
+              accessibilityLabel="Set destination"
+            >
+              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+              <Text style={styles.placementButtonSetText}>Set</Text>
             </Pressable>
           </View>
         </View>
@@ -3849,6 +4129,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+  // Live address readout under the fixed pin for the origin/destination pin pickers -- same
+  // slot placementCommentInput/its footer occupy for the alert-placement bar, just plain text
+  // here since neither picker needs a comment field.
+  placementBarSubtext: {
+    fontSize: 13,
+    color: colors.textMuted,
   },
   placementCommentInput: {
     borderWidth: 1,
