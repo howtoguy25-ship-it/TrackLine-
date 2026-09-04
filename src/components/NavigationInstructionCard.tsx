@@ -173,8 +173,24 @@ export function NavigationInstructionCard({
                 {step.instruction}
               </Text>
               {!collapsed && (
-                <View style={[styles.distanceBadge, { backgroundColor: theme.actionBg }]}>
-                  <Text style={[styles.distanceText, { color: theme.iconColor }, textShadow]}>
+                <View
+                  style={[
+                    styles.distanceBadge,
+                    { backgroundColor: theme.actionBg, borderColor: theme.iconWrapBg },
+                  ]}
+                >
+                  {/* Real, confirmed bug (screenshot evidence: the circled "3.1 km" was
+                      near-illegible against Transparent Dark's own translucent card): this used
+                      theme.iconColor, which every theme actually calibrates for the ICON sitting
+                      on top of iconWrapBg's own colored circle -- not for text sitting on
+                      actionBg, a completely different background these themes already have a
+                      dedicated, correctly-contrasted color for (actionText). Transparent Dark
+                      pairs iconColor #0A0E18 (near-black, correct for its light-blue icon circle)
+                      with actionBg's dark translucent pill -- black-on-dark, exactly the
+                      complaint. Light has the same bug the other way (white iconColor on an
+                      almost-white actionBg). actionText fixes both without changing anything
+                      about the icon itself. */}
+                  <Text style={[styles.distanceText, { color: theme.actionText }, textShadow]}>
                     {formatStepDistance(step.distanceMeters)}
                   </Text>
                 </View>
@@ -315,9 +331,15 @@ const styles = StyleSheet.create({
   distanceBadge: {
     alignSelf: "flex-start",
     marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: radius.pill,
+    // Real, explicit request to upgrade this card's look while already in here fixing its
+    // legibility bug -- a thin border in the theme's own accent color (the same color the turn
+    // icon's circle uses) gives the distance pill a bit more visual polish/definition instead
+    // of a flat, borderless translucent rectangle, and ties it back to the same accent color
+    // used elsewhere on the card.
+    borderWidth: 1,
   },
   distanceText: {
     fontSize: 15,
