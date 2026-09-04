@@ -3033,23 +3033,35 @@ export function MapScreen() {
             block". A soft green halo ring plus a matching green pin on top, both anchored to
             the same coordinate -- green specifically (not the app's usual blue accent) so the
             arrival point reads distinctly as "destination reached here", the same convention
-            the app's own original navigation design used. */}
-        {destinationLatLng && (
-          <>
-            <Circle
-              center={destinationLatLng}
-              radius={40}
-              strokeWidth={2}
-              strokeColor="rgba(34, 197, 94, 0.9)"
-              fillColor="rgba(34, 197, 94, 0.18)"
-            />
-            <Marker coordinate={destinationLatLng} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
-              <View style={styles.destinationPinWrap}>
-                <Ionicons name="location" size={40} color="#22C55E" />
-              </View>
-            </Marker>
-          </>
-        )}
+            the app's own original navigation design used.
+
+            Real, explicit request: the "choose destination point" pin picker's own confirmed
+            point never got this same treatment -- only the committed, actually-navigating
+            destinationLatLng did, so the "Choose a route" preview screen showed a route line
+            with no distinct highlighted marker at all for where it actually ends. Now shows the
+            exact same halo+pin for pendingDestination too, while still only previewing (never
+            once real navigation -- route -- has taken over and destinationLatLng exists instead,
+            avoiding two overlapping halos at the same spot). */}
+        {(() => {
+          const arrivalLatLng = destinationLatLng ?? (pendingDestination && !route ? pendingDestination.location : null);
+          if (!arrivalLatLng) return null;
+          return (
+            <>
+              <Circle
+                center={arrivalLatLng}
+                radius={40}
+                strokeWidth={2}
+                strokeColor="rgba(34, 197, 94, 0.9)"
+                fillColor="rgba(34, 197, 94, 0.18)"
+              />
+              <Marker coordinate={arrivalLatLng} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
+                <View style={styles.destinationPinWrap}>
+                  <Ionicons name="location" size={40} color="#22C55E" />
+                </View>
+              </Marker>
+            </>
+          );
+        })()}
         {/* Real, confirmed bug: confirming a custom starting point never actually showed it
             anywhere on the map afterward -- originOverride only ever drove the route math and a
             text label, so there was nothing to look at (or tap) once the picker closed. This is
