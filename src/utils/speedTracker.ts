@@ -57,6 +57,10 @@ interface InternalTrack {
   // vehicle parked, instead of one still frame (a red light, momentary occlusion) suppressing
   // its speed.
   lowMovementSinceMs: number | null;
+  // Smoothed (MOVEMENT_SMOOTHING), not the raw per-frame centroid displacement -- see that
+  // constant's own comment for the real, confirmed bug this fixes (a genuinely parked vehicle
+  // stuck perpetually reading "0 KMH" instead of ever settling to "PARKED").
+  smoothedMovementRatio: number;
   // Consecutive frames of above-threshold movement seen *while parked* -- requires a few in a
   // row before resuming live speed, so a single noisy frame (camera shake) doesn't flicker a
   // truly parked car back to a fake speed reading.
@@ -81,6 +85,19 @@ interface InternalTrack {
 // each call site below: the threshold widens with zoom so the same real-world tremor doesn't
 // register as more motion just because the frame is more zoomed in.
 const NOISE_THRESHOLD_RATIO = 0.015;
+// Real, confirmed bug (screenshot evidence: a plainly parked car reading a stuck "0 KMH" instead
+// of ever settling to "PARKED"): the moving/parked state machine below used the RAW, single-frame
+// centroid displacement directly against NOISE_THRESHOLD_RATIO -- any one frame's jitter clearing
+// that bar (a raw detector box that isn't perfectly stable frame to frame, especially one loosely
+// bound against an adjacent textured background like foliage) reset lowMovementSinceMs straight
+// back to null, so the sustained PARKED_AFTER_MS streak this needs could never accumulate even
+// though the vehicle was never actually moving -- it just kept re-computing a near-zero "closing
+// rate" out of pure jitter forever, the same way DISTANCE_SMOOTHING already exists to tame
+// equivalent jitter in the distance/speed signal itself. Smoothing the movement ratio the same
+// way (an EMA, not the raw per-frame value) means one noisy frame nudges it up without resetting
+// the whole streak, while genuinely sustained real movement still clearly clears the threshold
+// within a tick or two.
+const MOVEMENT_SMOOTHING = 0.35;
 const PARKED_AFTER_MS = 2500;
 // Lowered from 3 -- per explicit request that a car pulling away from a stop picks its speed
 // back up immediately, not after a noticeably longer pause than PARKED_AFTER_MS took to settle
@@ -343,7 +360,11 @@ export function createSpeedTracker() {
         matchedIds.add(best.id);
 
         const dispRatio = Math.hypot(cx - best.center[0], cy - best.center[1]) / imageWidthPx;
-        const movingNow = dispRatio >= NOISE_THRESHOLD_RATIO * Math.max(zoomFactor, 1);
+        // See MOVEMENT_SMOOTHING's own comment -- an EMA of the per-frame displacement, not the
+        // raw value itself, is what the moving/parked decision below actually reacts to.
+        const smoothedMovementRatio =
+          best.smoothedMovementRatio + (dispRatio - best.smoothedMovementRatio) * MOVEMENT_SMOOTHING;
+        const movingNow = smoothedMovementRatio >= NOISE_THRESHOLD_RATIO * Math.max(zoomFactor, 1);
 
         let state = best.state;
         let lowMovementSinceMs = best.lowMovementSinceMs;
@@ -423,6 +444,7 @@ export function createSpeedTracker() {
           center: [cx, cy],
           state,
           lowMovementSinceMs,
+          smoothedMovementRatio,
           aboveThresholdStreak,
           confirmCount,
         });
@@ -464,6 +486,7 @@ export function createSpeedTracker() {
           center: [cx, cy],
           state: "moving",
           lowMovementSinceMs: null,
+          smoothedMovementRatio: 0,
           aboveThresholdStreak: 0,
           confirmCount: 1,
         });
