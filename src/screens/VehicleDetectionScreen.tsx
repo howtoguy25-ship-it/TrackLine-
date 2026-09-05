@@ -37,6 +37,7 @@ import { readPlateTextSmart, subscribePlateRecognizerProviderStatus } from "@/se
 import { useLocation } from "@/context/LocationContext";
 import { upsertDetectedVehicle } from "@/services/vehicleHistory";
 import { saveVehicleThumbnail } from "@/services/vehicleThumbnail";
+import { refineBoxTrim, type BoxTrim } from "@/utils/boxRefine";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
@@ -605,6 +606,12 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // state itself -- keeps it referentially stable (empty deps), so the capture interval effect
   // below doesn't tear down and rebuild every time a plate read resolves.
   const plateTextsRef = useRef(new Map<number, { text: string; region: PlateRegion }>());
+  // Real, explicit request: how much to trim a track's own rendered box inward on each side (see
+  // boxRefine.ts's own header for the full reasoning) -- refreshed by the side loop below every
+  // ~1s cycle, applied purely at render time (box.render below), never touching box.bbox itself
+  // or anything speed/distance math reads. A track with no entry here yet (or one that's never
+  // found a real color boundary) renders completely untrimmed, same as before this existed.
+  const boxTrimRef = useRef<Map<number, BoxTrim>>(new Map());
   const consecutiveFailuresRef = useRef(0);
 
   const [infoDismissed, setInfoDismissed] = useState(false);
@@ -725,6 +732,9 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       }
       for (const id of plateCandidatesRef.current.keys()) {
         if (!liveIds.has(id)) plateCandidatesRef.current.delete(id);
+      }
+      for (const id of boxTrimRef.current.keys()) {
+        if (!liveIds.has(id)) boxTrimRef.current.delete(id);
       }
       let pruned = false;
       for (const id of plateTextsRef.current.keys()) {
@@ -993,6 +1003,16 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         if (sampleLightbarActivity(lightbarPhoto, box.id, lightbarBbox, nowMs)) {
           nextEmergencyIds.add(box.id);
         }
+
+        // Real, explicit request: tighten this track's rendered box against real decoded pixel
+        // content -- see boxRefine.ts's own header. Reuses the exact same lightbarPhoto/
+        // lightbarBbox already computed above for the lightbar sample, so this adds no extra
+        // capture/decode work on top of what the side loop already does every cycle. Trim
+        // fractions (not absolute pixels) so they apply correctly regardless of which coordinate
+        // space the box is actually rendered in -- see its own call site in the render loop.
+        const trim = refineBoxTrim(lightbarPhoto, lightbarBbox);
+        if (trim) boxTrimRef.current.set(box.id, trim);
+        else boxTrimRef.current.delete(box.id);
 
         if (plateTextsRef.current.has(box.id) || platesReadingRef.current.has(box.id)) continue;
         const attempts = plateAttemptsRef.current.get(box.id) ?? 0;
@@ -1351,7 +1371,19 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                 rawFrameInfo!.orientation
               )
             : box.bbox;
-          const [x, y, w, h] = displayBbox;
+          const [rawX, rawY, rawW, rawH] = displayBbox;
+          // Real, explicit request: tighten the rendered box against real decoded pixel content
+          // (see boxRefine.ts's own header) -- applied here, as fractions of the box's own
+          // width/height, so it's correct in whatever coordinate space displayBbox is actually
+          // in (this remap runs BEFORE any of the edge-clamping/min-size logic below, so that
+          // logic always sees the already-tightened box). Display-only: box.bbox itself (read by
+          // distance/speed math elsewhere) is never touched by this, only this render's own
+          // local x/y/w/h.
+          const trim = boxTrimRef.current.get(box.id);
+          const x = trim ? rawX + rawW * trim.left : rawX;
+          const y = trim ? rawY + rawH * trim.top : rawY;
+          const w = trim ? rawW * (1 - trim.left - trim.right) : rawW;
+          const h = trim ? rawH * (1 - trim.top - trim.bottom) : rawH;
           const isEmergency = emergencyTrackIds.has(box.id);
           const isSelected = selectedTrackId === box.id;
           const plateInfo = plateTexts.get(box.id);
