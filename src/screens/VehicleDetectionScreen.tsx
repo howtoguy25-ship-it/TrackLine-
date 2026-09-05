@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
   ActionSheetIOS,
 } from "react-native";
-import * as ScreenOrientation from "expo-screen-orientation";
 import {
   Camera,
   useCameraDevice,
@@ -576,17 +575,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       unmountedRef.current = true;
     };
   }, []);
-  // Portrait everywhere else in the app stays locked (see App.tsx's own lockAsync) -- this
-  // screen alone unlocks rotation for as long as it's open, per explicit request to add
-  // landscape as an ADD-ON here without touching how any other screen (or this screen's own
-  // portrait behavior) already works. Re-locks back to portrait on close so the rest of the app
-  // never sees anything but portrait, exactly as before this screen ever existed.
-  useEffect(() => {
-    ScreenOrientation.unlockAsync().catch(() => {});
-    return () => {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    };
-  }, []);
+  // Real, confirmed bug: manually calling expo-screen-orientation's unlockAsync()/lockAsync()
+  // here never actually worked on a real device (confirmed via screen recording) -- this screen
+  // is presented via a real navigator route now (see RootNavigator's own VehicleDetection screen
+  // and its `orientation: "all"` option), which is what actually lets it rotate while every
+  // other screen stays portrait-only; see RootNavigator.tsx's header comment on
+  // VehicleDetectionRoute for the full root-cause explanation (a documented conflict between
+  // expo-screen-orientation and react-native-screens, which native-stack uses under the hood).
   const speedTrackerRef = useRef(createSpeedTracker());
   // Mirrors `boxes` state so the side capture loop (a stable, empty-deps useCallback) can read
   // the latest tracked vehicles without depending on the state itself -- same reasoning as

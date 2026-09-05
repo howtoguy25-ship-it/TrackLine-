@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Modal,
   Share,
   ActivityIndicator,
   TextInput,
@@ -27,7 +26,7 @@ import { usePowerState } from "expo-battery";
 import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import BottomSheet from "@gorhom/bottom-sheet";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useIsFocused } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -107,8 +106,6 @@ import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmTrafficData } from "@
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
 import { setNavigationActive } from "@/services/navState";
 import { startLiveActivity, updateLiveActivity, endLiveActivity, maneuverToSfSymbol } from "live-activity";
-import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
-import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
 import type { AlertDoc, AlertType } from "@/types/alert";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
@@ -517,7 +514,15 @@ export function MapScreen() {
     liveCameraSheetRef.current?.expand();
   }, []);
   const [bannerMessage, setBannerMessage] = useState("");
-  const [detectionOpen, setDetectionOpen] = useState(false);
+  // Real, confirmed bug: AI Vehicle Detection is now a genuine navigator route (see
+  // RootNavigator.tsx's own comment for why -- rotation never actually worked while it was a
+  // plain Modal floating over this screen), so "is detection open" is no longer local state this
+  // screen owns -- it's exactly the same thing as "is Map not currently focused", true the
+  // moment navigation pushes VehicleDetection (or any other screen) on top. detectionOpen keeps
+  // its original name/meaning for every read site below (pausing camera-follow while it's up);
+  // only how it's derived changed.
+  const isFocused = useIsFocused();
+  const detectionOpen = !isFocused;
   // Same live reading/threshold Settings' own battery notice uses (see SettingsScreen.tsx) --
   // shown here as a small crossed-battery badge on the AI Detection entry points themselves
   // (the FAB and the nav options row) so the warning is visible right where a driver decides to
@@ -2397,8 +2402,8 @@ export function MapScreen() {
   const onNavOptionsOpenDetection = useCallback(() => {
     navOptionsSheetRef.current?.close();
     Sentry.logger.info("map: opening vehicle detection screen");
-    setDetectionOpen(true);
-  }, []);
+    navigation.navigate("VehicleDetection", { isNavigating: !!route });
+  }, [navigation, route]);
 
   const onAlertTypeSelected = useCallback(
     (type: AlertType) => {
@@ -3721,7 +3726,7 @@ export function MapScreen() {
         ]}
         onPress={() => {
           Sentry.logger.info("map: opening vehicle detection screen");
-          setDetectionOpen(true);
+          navigation.navigate("VehicleDetection", { isNavigating: !!route });
         }}
         accessibilityLabel={
           detectionBatteryLow
@@ -4034,33 +4039,6 @@ export function MapScreen() {
           </View>
         </View>
       )}
-
-      {/* Modal's own `visible` prop only controls whether the native modal is *presented* --
-          it does NOT unmount its children when set to false. Rendering VehicleDetectionScreen
-          unconditionally here meant tapping Close just hid the modal while the camera session,
-          the capture interval, and every state update it drives kept running invisibly in the
-          background -- which is exactly why Close looked like it "didn't work" and is a strong
-          candidate for the reported crashes (a hidden/backgrounded camera continuing to fire
-          native capture calls, especially colliding with a facing switch). Gating the child on
-          `detectionOpen` too means Close now genuinely unmounts it -- camera session torn down,
-          interval cleared, no work left running once the modal is gone. */}
-      <Modal
-        visible={detectionOpen}
-        animationType="slide"
-        onRequestClose={() => setDetectionOpen(false)}
-        // iOS-only, defaults to just ["portrait"] when omitted -- real, confirmed gotcha: without
-        // this, the Modal itself would refuse to rotate no matter what VehicleDetectionScreen's
-        // own expo-screen-orientation unlock does, since the Modal's own native presentation
-        // controller is what ultimately decides what orientations it'll actually allow while
-        // visible. Landscape add-on only -- every other screen's Modal usage is untouched.
-        supportedOrientations={["portrait", "portrait-upside-down", "landscape-left", "landscape-right"]}
-      >
-        {detectionOpen && (
-          <VehicleDetectionErrorBoundary onClose={() => setDetectionOpen(false)}>
-            <VehicleDetectionScreen onClose={() => setDetectionOpen(false)} isNavigating={!!route} />
-          </VehicleDetectionErrorBoundary>
-        )}
-      </Modal>
 
       <AlertReportSheet
         ref={reportSheetRef}
