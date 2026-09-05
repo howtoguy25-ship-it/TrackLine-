@@ -61,6 +61,13 @@ interface InternalTrack {
   // row before resuming live speed, so a single noisy frame (camera shake) doesn't flicker a
   // truly parked car back to a fake speed reading.
   aboveThresholdStreak: number;
+  // Real, explicit request: a brand-new track must be independently re-detected on
+  // CONFIRM_FRAMES_REQUIRED consecutive frames before it's ever handed to a caller to render --
+  // see that constant's own comment for why this specifically targets one-off spurious
+  // detections (a lucky match on a fence/foliage texture pattern that doesn't repeat) without
+  // meaningfully delaying a real vehicle, which keeps getting re-detected every tick by
+  // definition. Counts real matches only -- never incremented by a grace-period re-emission.
+  confirmCount: number;
 }
 
 // A parked car's box still jitters a pixel or two frame-to-frame from detector noise alone --
@@ -97,6 +104,17 @@ const RESUME_AFTER_FRAMES = 2;
 // This alone doesn't fix that -- see the grace-period loop's own comment for the actual fix --
 // but a slightly longer window gives handheld camera shake more real margin to resolve within.
 const TRACK_GRACE_MS = 900;
+// Real, explicit request (screenshot evidence: boxes locking onto static background -- fences,
+// palm fronds, brick walls -- indefinitely): a brand-new track's very first detection is exactly
+// as likely to be a one-off spurious high-confidence misread on a repeating texture as a real
+// vehicle just entering frame -- there was previously nothing here distinguishing the two before
+// rendering a box the driver has to look at. A real vehicle keeps getting independently
+// re-detected on the very next tick, by definition (it's still there, still driving); a lucky
+// false spike on a fence/foliage pattern usually doesn't repeat identically. Requiring 2
+// consecutive REAL matches (not a grace-period carry-forward -- see confirmCount's own comment)
+// before a track is ever included in `result` below filters out one-off spikes with essentially
+// no added latency for a genuine vehicle (one extra ~200ms Frame Processor tick).
+const CONFIRM_FRAMES_REQUIRED = 2;
 // How far (relative to the larger of the incoming detection's and the candidate track's own
 // box size) a detection's center may drift from a track's last known center and still count as
 // the same vehicle. 1.2x (the previous, detection-size-only value) was tight enough that an
@@ -383,6 +401,10 @@ export function createSpeedTracker() {
         }
 
         const bbox = enforceMinAspectRatio(clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING)));
+        // Capped, not left to grow unbounded -- only ever compared against CONFIRM_FRAMES_REQUIRED,
+        // so there's no reason for this to keep climbing for the lifetime of a long-tracked
+        // vehicle.
+        const confirmCount = Math.min(best.confirmCount + 1, CONFIRM_FRAMES_REQUIRED);
         // `speedKmh` above (fed back into the track for next frame's smoothing) always stays
         // the closing/receding rate -- that's the real underlying signal being smoothed frame
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
@@ -402,18 +424,24 @@ export function createSpeedTracker() {
           state,
           lowMovementSinceMs,
           aboveThresholdStreak,
+          confirmCount,
         });
-        result.push({
-          id: best.id,
-          bbox,
-          score: det.score,
-          label: det.label,
-          confidence: det.confidence,
-          speedKmh: outputSpeedKmh,
-          speedKind,
-          state,
-          coasting: false,
-        });
+        // See CONFIRM_FRAMES_REQUIRED's own comment -- a track that hasn't yet been
+        // independently re-detected enough times isn't handed to the caller to render at all,
+        // even though it's already being matched/tracked internally above.
+        if (confirmCount >= CONFIRM_FRAMES_REQUIRED) {
+          result.push({
+            id: best.id,
+            bbox,
+            score: det.score,
+            label: det.label,
+            confidence: det.confidence,
+            speedKmh: outputSpeedKmh,
+            speedKind,
+            state,
+            coasting: false,
+          });
+        }
       } else {
         const id = nextId++;
         // Same aspect-ratio floor as the matched-track path -- a brand new track's very first
@@ -421,6 +449,9 @@ export function createSpeedTracker() {
         // and starting the track off already corrected means every subsequent smoothBbox() call
         // eases from a realistic shape instead of a narrow one.
         const bbox = enforceMinAspectRatio(det.bbox);
+        // Never pushed to `result` here -- see CONFIRM_FRAMES_REQUIRED's own comment. A brand
+        // new track's very first detection is tracked internally from this tick on (so it CAN be
+        // matched and confirmed next tick) but isn't rendered until it clears that bar.
         nextTracks.push({
           id,
           bbox,
@@ -434,18 +465,10 @@ export function createSpeedTracker() {
           state: "moving",
           lowMovementSinceMs: null,
           aboveThresholdStreak: 0,
+          confirmCount: 1,
         });
-        result.push({
-          id,
-          bbox,
-          score: det.score,
-          label: det.label,
-          confidence: det.confidence,
-          speedKmh: null,
-          speedKind: null,
-          state: "moving",
-          coasting: false,
-        });
+        // Deliberately no result.push here -- see CONFIRM_FRAMES_REQUIRED's own comment. This
+        // track needs at least one more real match before it's ever handed to a caller to render.
       }
     }
 
@@ -466,6 +489,11 @@ export function createSpeedTracker() {
       if (matchedIds.has(t.id)) continue;
       if (nowMs - t.lastSeenMs >= TRACK_GRACE_MS) continue;
       nextTracks.push(t);
+      // Same confirmation gate as the matched-track path above -- a track that was never
+      // confirmed before it started missing detections (its one and only real match could
+      // easily have been the same kind of one-off spurious spike CONFIRM_FRAMES_REQUIRED exists
+      // to filter) shouldn't get a free pass into `result` just by surviving its own grace period.
+      if (t.confirmCount < CONFIRM_FRAMES_REQUIRED) continue;
       const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps);
       result.push({
         id: t.id,

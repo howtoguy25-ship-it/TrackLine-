@@ -92,6 +92,11 @@ const MIN_RENDER_SCORE = 0.45;
 // bar).
 const OVERSIZED_BOX_FRAME_FRACTION = 0.65;
 const MIN_SCORE_FOR_OVERSIZED_BOX = 0.9;
+// See this constant's own call site in the Frame Processor below (the raw-detection aspect-ratio
+// sanity check) for the full reasoning -- a raw detection narrower than this (width:height) is
+// rejected outright unless it clears HIGH_CONFIDENCE_ASPECT_OVERRIDE.
+const MIN_ASPECT_RATIO_FOR_LOW_CONFIDENCE = 0.9;
+const HIGH_CONFIDENCE_ASPECT_OVERRIDE = 0.75;
 // Belt-and-suspenders on top of the score gate above -- caps how much of the screen the drawn
 // box is ever allowed to visually cover, applied at render time (see its call site). Catches the
 // same "box covering the whole screen" complaint even for a detection that did clear the score
@@ -873,6 +878,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         // a low-confidence misdetection sprawled across most of the screen.
         const isOversized = xmax - xmin > OVERSIZED_BOX_FRAME_FRACTION || ymax - ymin > OVERSIZED_BOX_FRAME_FRACTION;
         if (isOversized && score < MIN_SCORE_FOR_OVERSIZED_BOX) continue;
+        // Real, explicit request (screenshot evidence: boxes locking onto static background --
+        // fences, palm fronds, brick walls): an additional sanity check beyond
+        // enforceMinAspectRatio in speedTracker.ts, which only RESHAPES an already-accepted box
+        // after the fact -- it never rejects one outright. A real vehicle viewed from behind/
+        // front/side (the overwhelming common dashcam angle) is never actually taller than it is
+        // wide; a near-square or portrait-shaped raw detection is much more consistent with a
+        // random repeating texture patch (a section of vertical fencing, a clump of foliage) than
+        // any real vehicle silhouette. Rejected outright unless the model's own confidence is
+        // unusually high -- still lets a genuine unusual case (e.g. a real vehicle mostly
+        // occluded down to an odd shape) through, just requires much stronger evidence for it.
+        const aspectRatio = w / h;
+        if (aspectRatio < MIN_ASPECT_RATIO_FOR_LOW_CONFIDENCE && score < HIGH_CONFIDENCE_ASPECT_OVERRIDE) continue;
         detections.push({ label, score, bbox: [xmin * uprightWidth, ymin * uprightHeight, w, h] });
       }
 
@@ -1349,8 +1366,16 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // colored pill) -- real, confirmed request to replace the old icon+pill badge with
           // small plain text in the box's bottom-right corner. Still the exact same live
           // speedKmh/speedKind values the tracker computed, just displayed more plainly.
-          const speedLabel =
-            box.state === "parked"
+          // Real, explicit request: a stale/ghost track (no fresh detection matched it THIS
+          // frame -- box.coasting, re-emitted from speedTracker.ts's own short grace period)
+          // shows no speed at all rather than holding the last real number frozen on screen,
+          // which could otherwise read as a live, currently-true reading for a vehicle that
+          // might already be gone. The box/type tag still holds through the grace period
+          // (deliberately, so a single missed frame doesn't flicker the whole lock off) -- only
+          // the speed text itself is gated on a genuinely current match.
+          const speedLabel = box.coasting
+            ? null
+            : box.state === "parked"
               ? "PARKED"
               : box.speedKmh === null
                 ? null
@@ -1529,12 +1554,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                     </View>
                   )}
                 </View>
-                {/* Bottom-right corner, just outside the box's own bottom edge -- per explicit
-                    request matching an exact reference design: plain small text, no icon, no
-                    colored pill background. Never a guessed number -- this is the exact same
-                    live speedLabel value the tracker just computed for this frame. */}
+                {/* Real, explicit request: immediately adjacent to the box's own right edge,
+                    vertically centered -- not stacked below the type/plate tag row. Plain small
+                    text, no icon, no colored pill background. Never a guessed number -- this is
+                    the exact same live speedLabel value the tracker just computed for this
+                    frame, and null (see speedLabel's own comment) for any track without a
+                    genuinely current match this frame. */}
                 {speedLabel && (
-                  <Text style={[styles.speedTextBottomRight, { top: boxHeightPx + 6 }]} pointerEvents="none">
+                  <Text
+                    style={[styles.speedTextRight, { top: boxHeightPx / 2 - 8 }]}
+                    pointerEvents="none"
+                  >
                     {speedLabel}
                   </Text>
                 )}
@@ -1890,11 +1920,15 @@ const styles = StyleSheet.create({
   vehicleTagTextEmergency: {
     color: "#FF5C5C",
   },
-  // Bottom-right corner, just outside the box's own bottom edge -- plain text, no background/
-  // icon, matching an exact reference design (small grey "N KMH" under the vehicle).
-  speedTextBottomRight: {
+  // Real, explicit request: renders immediately adjacent to the box's own RIGHT edge, not
+  // stacked below the type/plate tag row -- left: "100%" (rather than right: 0, which anchors
+  // INSIDE the box's own right edge) plus a small marginLeft puts this just outside it. Vertical
+  // centering is done at the call site (an inline `top` override, since it depends on this box's
+  // own real height).
+  speedTextRight: {
     position: "absolute",
-    right: 0,
+    left: "100%",
+    marginLeft: spacing.xs + 2,
     // Real, explicit request -- was a plain neutral grey, changed to a real, visible blue for
     // the live km/h readout specifically.
     color: "#3B82F6",
