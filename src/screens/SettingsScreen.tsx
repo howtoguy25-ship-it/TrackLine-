@@ -993,6 +993,44 @@ export function SettingsScreen() {
           </Text>
           <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
+
+        {/* Real, explicit request: night processing (a brightened frame fed to the model, plus
+            lowered detection thresholds -- see VehicleDetectionScreen.tsx) that switches itself
+            on/off by a real computed sunset/sunrise at wherever the driver actually is (see
+            utils/sunTimes.ts), not a fixed clock time. Auto is the default; On/Off are an
+            explicit manual override for a driver who wants it regardless of the real sun. */}
+        <Text style={[styles.rowLabel, { marginTop: spacing.md }]}>Night mode</Text>
+        <Text style={styles.helperText}>
+          Brightens the camera feed and loosens detection thresholds for real low-light
+          conditions. "Auto" turns on 10 minutes after sunset and off at sunrise, calculated for
+          your own real current location -- never a fixed clock time.
+        </Text>
+        <View style={styles.expiryChipRow}>
+          {(
+            [
+              { value: "auto", label: "Auto" },
+              { value: "on", label: "Always on" },
+              { value: "off", label: "Always off" },
+            ] as const
+          ).map((option) => {
+            const isSelected = settings.nightModePreference === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => updateSettings({ nightModePreference: option.value })}
+                style={({ pressed }) => [
+                  styles.expiryChip,
+                  isSelected && styles.expiryChipSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+              >
+                <Text style={[styles.expiryChipText, isSelected && styles.expiryChipTextSelected]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </Section>
 
       <Section title="Vehicle REV Checks">

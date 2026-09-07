@@ -35,6 +35,8 @@ import { createSpeedTracker, type TrackedBox } from "@/utils/speedTracker";
 import { locatePlateRegion, type PlateRegion } from "@/utils/plateLocator";
 import { readPlateTextSmart, subscribePlateRecognizerProviderStatus } from "@/services/plateRecognizer";
 import { useLocation } from "@/context/LocationContext";
+import { useSettings } from "@/context/SettingsContext";
+import { isNightTime } from "@/utils/sunTimes";
 import { upsertDetectedVehicle } from "@/services/vehicleHistory";
 import { saveVehicleThumbnail } from "@/services/vehicleThumbnail";
 import { refineBoxTrim, type BoxTrim } from "@/utils/boxRefine";
@@ -58,6 +60,12 @@ import { Sentry } from "@/services/sentry";
 // never cleared the bar to start being tracked at all). Same real trade as before: a few more
 // false positives for meaningfully fewer real, partially-visible vehicles going undetected.
 const MIN_DETECTION_SCORE = 0.3;
+// See this constant's own call site (the Frame Processor's brightness boost / detection-score
+// loosening) for the full reasoning -- both apply only while night mode is active, either
+// switched on automatically by the real sunset/sunrise calculation or a manual Settings
+// override.
+const NIGHT_BRIGHTNESS_GAIN = 1.6;
+const NIGHT_DETECTION_SCORE_REDUCTION = 0.08;
 // Real, confirmed complaint (new screenshot evidence): boxes barely clearing MIN_DETECTION_SCORE
 // (a "Vehicle 30%" that's mostly roof/sky, a "Vehicle 33%" that's mostly trees) were being drawn
 // on screen looking like a broken/misfit box, even though tracking them internally at that low a
@@ -451,6 +459,40 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const { location } = useLocation();
   const egoSpeedRef = useRef<number | null>(null);
   egoSpeedRef.current = location?.coords.speed ?? null;
+  // Real, explicit request: a night-processing mode (brightened frame fed to the model, plus
+  // lowered detection thresholds -- see the Frame Processor and render filter below) that
+  // switches itself on/off using a real computed sunset/sunrise at the driver's own current
+  // location (utils/sunTimes.ts) when set to "auto" in Settings, or a manual on/off override.
+  // Recomputed on every real location update (already flowing in regardless, from the same GPS
+  // watcher egoSpeedRef reads above) plus a periodic timer as a safety net for a long session
+  // that happens to sit still enough not to get many location updates right around sunset/
+  // sunrise itself.
+  const { settings } = useSettings();
+  const [isNightActive, setIsNightActive] = useState(false);
+  useEffect(() => {
+    function recompute() {
+      if (settings.nightModePreference === "on") {
+        setIsNightActive(true);
+        return;
+      }
+      if (settings.nightModePreference === "off") {
+        setIsNightActive(false);
+        return;
+      }
+      if (location) {
+        setIsNightActive(isNightTime(new Date(), location.coords.latitude, location.coords.longitude));
+      }
+    }
+    recompute();
+    const interval = setInterval(recompute, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [settings.nightModePreference, location]);
+  // Bridges the JS-side isNightActive boolean above into the Frame Processor's own worklet
+  // Runtime -- a plain ref (like zoomFactorRef above) isn't visible from inside "worklet" code,
+  // only a real SharedValue is (same reason lastFrameProcessedMs/stableFrameOrientation below
+  // are SharedValues too, not plain refs).
+  const isNightActiveShared = useSharedValue(false);
+  isNightActiveShared.value = isNightActive;
   // Real cloud OCR alternative (Plate Recognizer, platerecognizer.com) to this screen's own
   // on-device plate reader, per explicit request -- see readPlateTextSmart's own comment for why
   // this stays a graceful fallback rather than a hard requirement. Same ref pattern as
@@ -838,6 +880,22 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         rotation,
       });
 
+      // Real, explicit request: night mode brightens the frame the model actually sees, before
+      // inference ever runs -- the bundled model was trained overwhelmingly on well-lit daytime
+      // images, so a genuinely dark frame hands it far less real signal to work with than the
+      // same scene would in daylight. A plain per-byte gain (multiply + clamp) on the already-
+      // resized RGB buffer is cheap enough to run on every tick even at this throttle -- 270,000
+      // bytes (300x300x3) of simple arithmetic, not a real cost next to the model's own forward
+      // pass. isNightActiveShared is set from the real sunset/sunrise calculation (or a manual
+      // Settings override) -- see its own declaration above.
+      if (isNightActiveShared.value) {
+        const pixels = new Uint8Array(resized.buffer as ArrayBuffer);
+        for (let i = 0; i < pixels.length; i++) {
+          const boosted = pixels[i] * NIGHT_BRIGHTNESS_GAIN;
+          pixels[i] = boosted > 255 ? 255 : boosted;
+        }
+      }
+
       // unbox() re-materializes the real TfliteModel HybridObject inside this worklet's own
       // Runtime -- see tfliteVehicleModel.ts's own comment on why box()/unbox() is needed here
       // at all. runSync() is the actual native forward pass, blocking this worklet (never the
@@ -864,10 +922,19 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       const countArr = new Float32Array(outputs[3]);
       const count = Math.min(Math.round(countArr[0] ?? 0), MAX_MODEL_DETECTIONS);
 
+      // Real night-mode threshold relief: a genuinely dark scene still gives the model less
+      // confident signal than daylight even after the brightness boost above, so a real vehicle
+      // that would clear 0.3 in daylight can legitimately land a bit under it at night. Only
+      // loosened while isNightActiveShared is actually true -- daytime detection is completely
+      // unaffected.
+      const minDetectionScore = isNightActiveShared.value
+        ? MIN_DETECTION_SCORE - NIGHT_DETECTION_SCORE_REDUCTION
+        : MIN_DETECTION_SCORE;
+
       const detections: RawDetection[] = [];
       for (let i = 0; i < count; i++) {
         const score = scoresArr[i];
-        if (score < MIN_DETECTION_SCORE) continue;
+        if (score < minDetectionScore) continue;
         const classId = Math.round(classesArr[i]);
         // car=2, motorcycle=3, bus=5, truck=7 -- see labelmap.txt (raw ids, no offset -- see
         // this block's own comment above for why that differs from the old v1 model).
@@ -1304,6 +1371,22 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         }
       />
 
+      {/* Real, live indicator -- tied directly to the same isNightActive state that actually
+          drives the frame processor's brightness boost and loosened thresholds above, never a
+          static/decorative element. Only rendered while genuinely active (real sunset+10min
+          calculation, or an explicit manual "Always on" override in Settings -- see
+          sunTimes.ts/SettingsScreen.tsx), so its presence on screen is itself proof the real
+          night-processing path is running, not just configured. */}
+      {isNightActive && (
+        <View
+          pointerEvents="none"
+          style={[styles.nightModeBadge, { top: insets.top + spacing.sm }]}
+        >
+          <Ionicons name="moon" size={14} color="#0B1220" />
+          <Text style={styles.nightModeBadgeText}>Night mode</Text>
+        </View>
+      )}
+
       {/* Real, explicit request: a real, user-draggable 1x-3x zoom slider (see zoomFactor's own
           comment above for why a fixed bump wasn't enough) -- vertical, right-edge-anchored so
           it sits naturally under the driver's thumb without covering the live vehicle boxes in
@@ -1356,7 +1439,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // bar -- only what actually gets DRAWN is held to the higher MIN_RENDER_SCORE, so a
           // weak read never disappears from tracking, it just doesn't put a shaky box on screen
           // until it's a read worth trusting.
-          .filter((box) => box.score >= MIN_RENDER_SCORE)
+          // Same real night relief as MIN_DETECTION_SCORE above, applied to the render bar too --
+          // otherwise a track that legitimately survives night's loosened detection floor would
+          // still get silently hidden on screen by the higher render floor.
+          .filter((box) => box.score >= (isNightActive ? MIN_RENDER_SCORE - NIGHT_DETECTION_SCORE_REDUCTION : MIN_RENDER_SCORE))
           .map((box) => {
           // See the scale/offsetX/offsetY comment above -- only remapped into raw-sensor space
           // when the preview is confirmed likely un-rotated (sensor landscape, interface never
@@ -2182,6 +2268,23 @@ const styles = StyleSheet.create({
   },
   zoomReadoutText: {
     color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  nightModeBadge: {
+    position: "absolute",
+    left: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FBBF24",
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    ...shadow.low,
+  },
+  nightModeBadgeText: {
+    color: "#0B1220",
     fontSize: 12,
     fontWeight: "800",
   },

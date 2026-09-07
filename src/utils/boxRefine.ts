@@ -59,6 +59,16 @@ const SUSTAINED_RUN = 2;
 // real pixel detail across SAMPLE_COUNT strips to trust any of this -- skipped entirely rather
 // than scanning noise.
 const MIN_CROP_PX = 24;
+// Real, confirmed regression (night screenshot evidence: a box trimmed down to only the front
+// half of a visible car, in a scene the driver could barely see anything in at all) -- in
+// near-total darkness the crop's own "vehicle" reference region is itself just noisy near-black
+// pixel values, so a strip that's genuinely still part of the same unlit car body can easily drift
+// past COLOR_DIFF_THRESHOLD from it by pure sensor noise alone, with no real color-content
+// boundary behind it. Below this average perceptual luminance (0-255 scale, standard Rec. 601
+// luma weights) there's no reliable color signal left for this heuristic to trust, so it skips
+// trimming entirely and leaves the raw detection box exactly as the model produced it -- an
+// untouched box is a far safer failure mode at night than one confidently cut into the vehicle.
+const MIN_REFERENCE_LUMINANCE = 40;
 
 function sampleAverageColor(
   photo: DecodedPhotoLike,
@@ -94,6 +104,10 @@ function sampleAverageColor(
 
 function colorDistance(a: [number, number, number], b: [number, number, number]): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+function luminance(c: [number, number, number]): number {
+  return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
 }
 
 // Walks samples[0..reference index) inward (or the mirrored outward walk for the trailing edge)
@@ -168,6 +182,12 @@ export function refineBoxTrim(
 
     const colReference = centerReference(colStrips);
     const rowReference = centerReference(rowStrips);
+
+    // Real night-mode safety gate -- see MIN_REFERENCE_LUMINANCE's own comment. Averaging both
+    // reference reads (they sample the same real center region from two different strip layouts)
+    // gives one steadier brightness estimate than trusting either alone.
+    const referenceLuminance = (luminance(colReference) + luminance(rowReference)) / 2;
+    if (referenceLuminance < MIN_REFERENCE_LUMINANCE) return null;
 
     const left = findTrimFraction(colStrips, colReference);
     const right = findTrimFraction([...colStrips].reverse(), colReference);

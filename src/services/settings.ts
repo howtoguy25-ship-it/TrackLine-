@@ -51,6 +51,13 @@ export interface AppSettings {
   // Real, confirmed request -- a separate road-thickness/design preset, independent of the
   // color theme above (see utils/mapStyle.ts's own getMapStyle/ROAD_THICKNESS_MULTIPLIERS).
   roadThickness: RoadThicknessKey;
+  // AI Vehicle Detection's own night-processing mode (brightened frame + lowered detection
+  // thresholds, see VehicleDetectionScreen.tsx) -- "auto" switches it on/off by itself using a
+  // real astronomical sunset/sunrise calculation at the driver's own current location (see
+  // utils/sunTimes.ts), never a fixed clock time. "on"/"off" are a manual, explicit override for
+  // a driver who wants it always (a permanently dim garage) or never (bright street lighting
+  // makes it unnecessary) regardless of the real sun.
+  nightModePreference: "auto" | "on" | "off";
   // Which color theme the navigation instruction card renders -- see utils/navCardTheme.ts.
   navCardTheme: NavCardThemeKey;
   // Real override for how long an alert THIS device reports stays live before it auto-expires
@@ -81,6 +88,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   osmLayerRadiusKm: 5,
   mapTheme: "normal",
   roadThickness: "normal",
+  nightModePreference: "auto",
   navCardTheme: "dark",
   alertExpiryMs: null,
   alertIconTheme: "default",
