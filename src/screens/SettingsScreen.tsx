@@ -1055,7 +1055,20 @@ export function SettingsScreen() {
             instead of a per-device local setting -- see revCheckAdmin.ts's own header. */}
         {isOwner && (
           <>
-            <Text style={styles.rowLabel}>Provider keys (owner only)</Text>
+            {/* Real, live usage stats (installs/active-now/logged-in accounts) plus the real
+                "send a push notification to every device" button -- see OwnerDashboardScreen.tsx.
+                Its own underlying Firestore reads/writes are owner-gated independently
+                (firestore.rules' isAdmin()), this is just the entry point. */}
+            <Pressable
+              onPress={() => navigation.navigate("OwnerDashboard")}
+              style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
+            >
+              <MaterialCommunityIcons name="view-dashboard" size={20} color={colors.accent} />
+              <Text style={styles.revCheckLinkText}>Owner dashboard — users & notifications</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+            </Pressable>
+
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>Provider keys (owner only)</Text>
             <Text style={styles.helperText}>
               Real vehicle history isn't free -- PPSR (stolen/written-off/money-owing) and NEVDIS
               (registration + odometer history) both require your own signed-up broker account.

@@ -206,6 +206,18 @@ module.exports = {
           authToken: process.env.SENTRY_AUTH_TOKEN,
         },
       ],
+      // Real push notifications backing the Owner Dashboard's broadcast feature (see
+      // src/services/pushNotifications.ts/deviceSession.ts) -- a genuine native module (device
+      // push tokens, OS permission prompt, APNs/FCM delivery via Expo's push service), not
+      // something OTA JS alone can add; a build that doesn't include this plugin has no way to
+      // register for or receive a real push at all.
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/icon.png",
+          color: "#1D4ED8",
+        },
+      ],
       [
         "react-native-google-mobile-ads",
         {

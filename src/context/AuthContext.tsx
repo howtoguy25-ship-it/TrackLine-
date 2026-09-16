@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { AppState } from "react-native";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { auth, ensureSignedIn } from "@/services/firebase";
 import { upsertSignedInProfile } from "@/services/userProfile";
+import { ensureDeviceSession, touchDeviceSessionActivity } from "@/services/deviceSession";
+import { registerForPushNotifications } from "@/services/pushNotifications";
 
 interface AuthContextValue {
   user: User | null;
@@ -47,6 +50,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user && !user.isAnonymous) {
       upsertSignedInProfile(user).catch((err) => console.warn("[auth] profile sync failed", err));
     }
+  }, [user]);
+
+  // Real, owner-dashboard-backing install/activity tracking -- fires for EVERY session,
+  // anonymous included (unlike the sign-in-only profile sync above), since an anonymous driver
+  // who never signs in is still a real install and a real active user (see deviceSession.ts's
+  // own header for why that distinction matters). Also registers this device for real push
+  // notifications once signed in -- see pushNotifications.ts; a driver who declines the
+  // permission prompt just never gets a token saved, no different from before this existed.
+  useEffect(() => {
+    if (!user) return;
+    ensureDeviceSession(user.uid, user.isAnonymous).catch((err) =>
+      console.warn("[auth] device session sync failed", err)
+    );
+    registerForPushNotifications(user.uid).catch((err) =>
+      console.warn("[auth] push registration failed", err)
+    );
+
+    // Real heartbeat while the app is actually in use -- deviceSession.ts's own throttle keeps
+    // this cheap even though AppState can fire "active" repeatedly (e.g. returning from a
+    // system permission sheet), and the immediate call above already covers the moment this
+    // session starts, so this listener only needs to cover the driver coming BACK to the app
+    // later in the same session.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        touchDeviceSessionActivity(user.uid).catch(() => {});
+      }
+    });
+    return () => subscription.remove();
   }, [user]);
 
   // Same reasoning as SettingsContext's own fix -- a fresh object literal every render meant

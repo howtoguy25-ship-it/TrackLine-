@@ -2,10 +2,20 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore, Timestamp } = require("firebase-admin/firestore");
+const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestore");
 const Stripe = require("stripe");
 
 initializeApp();
+
+// Keep in sync with isAdmin() in firestore.rules and src/config/admin.ts /
+// web/src/config/admin.ts -- Cloud Functions can't read firestore.rules directly, so this is
+// the real, separate enforcement point for the owner-only calls below (broadcastNotification).
+// request.auth.token.email is Firebase Auth's own verified ID token claim, not client-supplied
+// data, so this can't be spoofed by a non-owner account.
+const ADMIN_EMAILS = ["howtoguy25@gmail.com", "support@tracklinemaps.com"];
+function isAdminRequest(request) {
+  return !!request.auth && ADMIN_EMAILS.includes((request.auth.token.email || "").toLowerCase());
+}
 
 // Real card payment for web REV checks -- mobile gates the same check behind a $14.99 Apple/
 // Google IAP purchase (see RevCheckScreen.tsx); the website has no App Store/Play Store to lean
@@ -460,4 +470,99 @@ exports.recognizePlate = onCall(async (request) => {
       message: `Couldn't reach the plate recognition provider: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
+});
+
+// Real push-notification broadcast for the mobile Owner Dashboard's "Send to all users" button.
+// Reads every real device's Expo push token from deviceSessions (see src/services/
+// deviceSession.ts -- written by every install, anonymous sessions included, not just real
+// sign-ins) and sends through Expo's own push service, which then relays to APNs/FCM as
+// appropriate for each device -- no separate Apple/Google server credentials needed here.
+// Owner-only: an actual send to every installed device is real, user-facing, and irreversible
+// once sent, so this checks isAdminRequest before doing anything, same trust boundary as the
+// provider-key config docs above.
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+// Expo's own documented cap per request -- https://docs.expo.dev/push-notifications/sending-
+// notifications/#request-limits. Chunking client-side (well, server-side here) is required
+// past this, not an arbitrary choice.
+const EXPO_PUSH_CHUNK_SIZE = 100;
+
+function chunk(array, size) {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += size) chunks.push(array.slice(i, i + size));
+  return chunks;
+}
+
+exports.broadcastNotification = onCall(async (request) => {
+  if (!isAdminRequest(request)) {
+    throw new HttpsError("permission-denied", "Only the app owner can send a broadcast notification.");
+  }
+
+  const title = typeof request.data?.title === "string" ? request.data.title.trim() : "";
+  const body = typeof request.data?.body === "string" ? request.data.body.trim() : "";
+  if (!title || !body) {
+    return { outcome: "error", message: "Enter both a title and a message before sending." };
+  }
+
+  const db = getFirestore();
+  const tokensSnap = await db.collection("deviceSessions").where("expoPushToken", "!=", null).get();
+
+  // A device that has never granted notification permission (or hasn't opened the app since
+  // this feature shipped) simply has no token yet -- excluded here rather than sent a
+  // guaranteed-to-fail push, same "only ever act on real, present data" principle as every
+  // other provider integration in this file.
+  const tokens = tokensSnap.docs
+    .map((d) => d.data().expoPushToken)
+    .filter((t) => typeof t === "string" && t.startsWith("ExponentPushToken"));
+
+  if (tokens.length === 0) {
+    return { outcome: "error", message: "No devices have a registered push token yet." };
+  }
+
+  const messages = tokens.map((to) => ({ to, title, body, sound: "default" }));
+  const batches = chunk(messages, EXPO_PUSH_CHUNK_SIZE);
+
+  let sent = 0;
+  let failed = 0;
+  for (const batch of batches) {
+    try {
+      const res = await fetch(EXPO_PUSH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(batch),
+      });
+      const json = await res.json().catch(() => null);
+      const tickets = Array.isArray(json?.data) ? json.data : [];
+      for (const ticket of tickets) {
+        if (ticket?.status === "ok") sent++;
+        else failed++;
+      }
+      // A malformed/empty response from Expo for this whole batch (rather than a per-message
+      // ticket) -- count every message in it as failed rather than silently dropping it from
+      // the total.
+      if (tickets.length !== batch.length) failed += batch.length - tickets.length;
+    } catch (err) {
+      console.error("broadcastNotification: Expo push request failed", err);
+      failed += batch.length;
+    }
+  }
+
+  await db.collection("broadcasts").add({
+    title,
+    body,
+    sentBy: request.auth.token.email || request.auth.uid,
+    sentAt: FieldValue.serverTimestamp(),
+    recipientCount: tokens.length,
+    sentCount: sent,
+    failedCount: failed,
+  });
+
+  return {
+    outcome: sent > 0 ? "success" : "error",
+    message:
+      sent > 0
+        ? `Sent to ${sent} device${sent === 1 ? "" : "s"}${failed > 0 ? ` (${failed} failed)` : ""}.`
+        : "The push service rejected every device -- try again shortly.",
+    sentCount: sent,
+    failedCount: failed,
+  };
 });

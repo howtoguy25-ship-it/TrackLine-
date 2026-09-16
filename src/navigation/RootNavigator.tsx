@@ -6,6 +6,7 @@ import { SettingsScreen } from "@/screens/SettingsScreen";
 import { SignInScreen } from "@/screens/SignInScreen";
 import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
+import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
@@ -39,6 +40,7 @@ export type RootStackParamList = {
   // True while a route is active in the background -- see VehicleDetectionScreen's own Props
   // for why this affects its side-capture interval timing.
   VehicleDetection: { isNavigating?: boolean } | undefined;
+  OwnerDashboard: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -103,6 +105,11 @@ export function RootNavigator() {
           name="RevCheck"
           component={RevCheckScreen}
           options={{ headerShown: true, title: "REV Check" }}
+        />
+        <Stack.Screen
+          name="OwnerDashboard"
+          component={OwnerDashboardScreen}
+          options={{ headerShown: true, title: "Owner Dashboard" }}
         />
         <Stack.Screen name="DocumentScan" component={DocumentScanScreen} />
         <Stack.Screen

@@ -120,6 +120,30 @@ service cloud.firestore {
       allow write: if isSignedIn() && request.auth.uid == uid;
     }
 
+    // Real, owner-only install/activity tracking for the mobile Owner Dashboard -- one doc per
+    // device, written by EVERY session (including the app's default anonymous one, unlike
+    // users/{uid} above which only ever gets a doc for a real sign-in). This is what makes
+    // "total installs" and "active right now" real numbers instead of only covering accounts
+    // that actually signed in. A device's own uid can only ever write its OWN doc (own install
+    // record, own heartbeat, own push token); only the admin can list the whole collection to
+    // compute real counts.
+    match /deviceSessions/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Real send-history log for the owner's broadcast-notification button (see
+    // broadcastNotification in firebase/functions/index.js, which is the only thing that ever
+    // writes here -- via the Admin SDK, bypassing these rules -- after a real send actually
+    // completes). Owner-only read so the dashboard can show real past sends, not a fabricated
+    // list; no client write at all, including the owner's own device, since a fake row here
+    // would misrepresent a broadcast that never actually went out.
+    match /broadcasts/{broadcastId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Real vehicle REV check (PPSR) provider credentials -- split into two docs so the raw
     // secret key and its own "is a real provider actually connected" status can have
     // genuinely different read rules (Firestore rules are per-document, not per-field).
