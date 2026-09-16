@@ -20,8 +20,14 @@ module.exports = {
     // internal build number, which EAS auto-increments remotely on every submit
     // (eas.json's appVersionSource: "remote" + production.autoIncrement) and never lives here.
     // Bumped from 1.0.0 now that REV checks + real IAP monetization landed -- a genuine feature
-    // milestone, not just an internal TestFlight build tick.
-    version: "1.1.0",
+    // milestone, not just an internal TestFlight build tick. Bumped again to 1.2.0 for the new
+    // expo-notifications native module (Owner Dashboard broadcast push) -- a real NEW native
+    // build is required for this (see that plugin's own comment below), and runtimeVersion's
+    // "appVersion" policy uses this field to keep OTA updates scoped to the native binary that
+    // actually has the matching native code, so this bump is what stops this update from ever
+    // being offered to an existing 1.1.0 install that has no expo-notifications module compiled
+    // in at all -- that would be a guaranteed crash on load, not a real fix.
+    version: "1.2.0",
     // "default" (was "portrait") -- a portrait-only native Info.plist blocks ANY runtime
     // rotation regardless of JS calls, no matter what expo-screen-orientation does. The app
     // itself still only ever JS-locks to portrait everywhere except the AI Detection screen
