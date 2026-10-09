@@ -25,6 +25,12 @@ export interface TrackedBox {
   // "closest vehicle" indicator) don't need to re-derive it from bbox width themselves.
   distanceM: number;
   state: "moving" | "parked";
+  // Real, explicit request for an occupant count per vehicle -- see OCCUPANT_CONFIRM_FRAMES'
+  // own comment for exactly what this is (a spatial correlation against this same model's
+  // "person" COCO class, confirm-frame-smoothed) and its real accuracy caveat. null until a
+  // vehicle has been tracked long enough to produce a first confirmed read. Never use this for
+  // any enforcement/compliance decision without real-world validation first.
+  occupantCount: number | null;
 }
 
 interface InternalTrack {
@@ -46,6 +52,11 @@ interface InternalTrack {
   // row before resuming live speed, so one noisy frame doesn't flicker a truly parked car
   // back to a fake speed reading.
   aboveThresholdStreak: number;
+  // The most recent raw (unconfirmed) occupant-count read for this track -- -1 is a real
+  // sentinel ("no raw read yet"), never a legitimate count. See updateOccupantEstimate.
+  occupantCandidate: number;
+  occupantCandidateStreak: number;
+  occupantCount: number | null;
 }
 
 // A parked car's box still jitters a pixel or two frame-to-frame from detector noise alone --
@@ -108,6 +119,61 @@ function estimateDistanceM(boxWidthPx: number, imageWidthPx: number): number {
   return (ASSUMED_VEHICLE_WIDTH_M * focalLengthPx) / Math.max(boxWidthPx, 1);
 }
 
+// Real, explicit request: an occupant count per tracked vehicle. This correlates COCO-SSD's own
+// "person" class detections (already loaded by this same model -- LiveVehicleDetection.tsx just
+// discarded them before now) against each vehicle's own box, spatially -- no separate model, no
+// extra inference cost. Stated plainly because accuracy claims here carry real weight: this
+// model was trained and validated on ordinary COCO pedestrian photos, never on "a person visible
+// through a windshield/side window from an external moving camera," which is a materially harder
+// case (glass tint/glare/reflection, partial occlusion, small apparent size at normal driving
+// distance). Treat every number this produces as a best-effort ESTIMATE, not a verified count --
+// never a basis for any enforcement or compliance decision without real-world validation first.
+//
+// A person-box only counts toward a vehicle if its center falls inside this fraction of the
+// vehicle box's own height, measured down from the top -- approximating "the cabin/glass area"
+// rather than the bonnet/bumper/wheels, so a pedestrian merely standing or walking near a
+// vehicle's lower half at ground level doesn't get counted as an occupant.
+const OCCUPANT_CABIN_HEIGHT_FRACTION = 0.85;
+// Same "sustained, not a single reading" principle as RESUME_AFTER_FRAMES above -- a person
+// detection flickering in/out for one frame shouldn't flip the displayed count; only a run of
+// identical raw reads this long does.
+const OCCUPANT_CONFIRM_FRAMES = 3;
+// A real sanity ceiling, not a tuned accuracy bound -- guards against a pathological frame
+// producing an obviously-not-real count instead of something at least physically plausible for
+// a normal passenger vehicle.
+const OCCUPANT_COUNT_MAX = 8;
+
+function countOccupantCandidates(
+  vehicleBbox: [number, number, number, number],
+  personBoxes: [number, number, number, number][]
+): number {
+  const [vx, vy, vw, vh] = vehicleBbox;
+  const cabinBottom = vy + vh * OCCUPANT_CABIN_HEIGHT_FRACTION;
+  let count = 0;
+  for (const p of personBoxes) {
+    const px = p[0] + p[2] / 2;
+    const py = p[1] + p[3] / 2;
+    if (px >= vx && px <= vx + vw && py >= vy && py <= cabinBottom) count++;
+  }
+  return Math.min(count, OCCUPANT_COUNT_MAX);
+}
+
+/** Shared confirm-frame smoothing for the occupant count, reused identically across the
+ *  matched/new-track branches below. prevCandidate: -1 (the real "no prior raw read" sentinel)
+ *  for a brand-new track. */
+function updateOccupantEstimate(
+  vehicleBbox: [number, number, number, number],
+  personBoxes: [number, number, number, number][],
+  prevCandidate: number,
+  prevStreak: number,
+  prevConfirmed: number | null
+): { candidate: number; streak: number; confirmed: number | null } {
+  const raw = countOccupantCandidates(vehicleBbox, personBoxes);
+  const streak = raw === prevCandidate ? prevStreak + 1 : 1;
+  const confirmed = streak >= OCCUPANT_CONFIRM_FRAMES ? raw : prevConfirmed;
+  return { candidate: raw, streak, confirmed };
+}
+
 export function createSpeedTracker() {
   let tracks: InternalTrack[] = [];
   let nextId = 1;
@@ -115,7 +181,11 @@ export function createSpeedTracker() {
   function update(
     detections: { bbox: [number, number, number, number]; score: number; vehicleClass: string }[],
     imageWidthPx: number,
-    nowMs: number
+    nowMs: number,
+    // This tick's raw "person" class detections, in the same coordinate space as `detections`
+    // above. Optional/defaults to empty so existing callers that don't pass it keep their
+    // previous behavior exactly -- occupantCount just stays null for everyone.
+    personBoxes: [number, number, number, number][] = []
   ): TrackedBox[] {
     const unmatched = new Set(tracks.map((t) => t.id));
     const result: TrackedBox[] = [];
@@ -206,6 +276,17 @@ export function createSpeedTracker() {
           speedKmh = null;
         }
 
+        const {
+          candidate: occupantCandidate,
+          streak: occupantCandidateStreak,
+          confirmed: occupantCount,
+        } = updateOccupantEstimate(
+          bbox,
+          personBoxes,
+          best.occupantCandidate,
+          best.occupantCandidateStreak,
+          best.occupantCount
+        );
         nextTracks.push({
           id: best.id,
           bbox,
@@ -216,11 +297,34 @@ export function createSpeedTracker() {
           state,
           lowMovementSinceMs,
           aboveThresholdStreak,
+          occupantCandidate,
+          occupantCandidateStreak,
+          occupantCount,
         });
-        result.push({ id: best.id, bbox, score: det.score, vehicleClass: det.vehicleClass, speedKmh, distanceM, state });
+        result.push({
+          id: best.id,
+          bbox,
+          score: det.score,
+          vehicleClass: det.vehicleClass,
+          speedKmh,
+          distanceM,
+          state,
+          occupantCount,
+        });
       } else {
         const distanceM = estimateDistanceM(det.bbox[2], imageWidthPx);
         const id = nextId++;
+        // First-ever raw read for this track -- no prior candidate/streak to compare against,
+        // so this always starts its own fresh streak (see updateOccupantEstimate's -1
+        // sentinel). Not confirmed yet either way, same "never fabricate on a brand-new track"
+        // principle as speedKmh starting at null just below.
+        const { candidate: occupantCandidate, streak: occupantCandidateStreak } = updateOccupantEstimate(
+          det.bbox,
+          personBoxes,
+          -1,
+          0,
+          null
+        );
         nextTracks.push({
           id,
           bbox: det.bbox,
@@ -231,6 +335,9 @@ export function createSpeedTracker() {
           state: "moving",
           lowMovementSinceMs: null,
           aboveThresholdStreak: 0,
+          occupantCandidate,
+          occupantCandidateStreak,
+          occupantCount: null,
         });
         result.push({
           id,
@@ -240,6 +347,7 @@ export function createSpeedTracker() {
           speedKmh: null,
           distanceM,
           state: "moving",
+          occupantCount: null,
         });
       }
     }

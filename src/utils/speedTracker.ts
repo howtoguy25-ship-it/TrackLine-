@@ -34,6 +34,16 @@ export interface TrackedBox {
   // informational for callers that want it; the box itself renders identically either way, per
   // explicit request that this read as one continuous, strong lock, not a flicker.
   coasting: boolean;
+  // Real, explicit request for an occupant count per vehicle -- see OCCUPANT_CONFIRM_FRAMES'
+  // own comment for what this actually is: a spatial correlation between this model's own
+  // "person" class detections and each vehicle's cabin region, confirmed-frame-smoothed the
+  // same way confirmCount gates a brand-new vehicle track. null until a vehicle has been
+  // tracked long enough to produce a first confirmed read. This is a coarse, best-effort
+  // ESTIMATE, not a certified count -- a person detector was never trained or validated against
+  // "someone visible through a windshield/side window from an external moving camera," and
+  // tint/glare/occlusion/angle all genuinely degrade it. Never use this for any enforcement or
+  // compliance decision without real-world validation first.
+  occupantCount: number | null;
 }
 
 interface InternalTrack {
@@ -72,6 +82,16 @@ interface InternalTrack {
   // meaningfully delaying a real vehicle, which keeps getting re-detected every tick by
   // definition. Counts real matches only -- never incremented by a grace-period re-emission.
   confirmCount: number;
+  // The most recent raw (unconfirmed) occupant-count read for this track -- compared against
+  // each new tick's raw read so a SUSTAINED run of the same number (not one single read) is
+  // what actually moves occupantCount. -1 is a real sentinel ("no raw read yet"), never a
+  // legitimate count, so a brand-new track's first-ever read always starts its own fresh streak
+  // rather than accidentally matching this placeholder.
+  occupantCandidate: number;
+  occupantCandidateStreak: number;
+  // The actual CONFIRMED, displayed count -- see TrackedBox.occupantCount's own comment. null
+  // until occupantCandidateStreak first clears OCCUPANT_CONFIRM_FRAMES.
+  occupantCount: number | null;
 }
 
 // A parked car's box still jitters a pixel or two frame-to-frame from detector noise alone --
@@ -132,6 +152,65 @@ const TRACK_GRACE_MS = 900;
 // before a track is ever included in `result` below filters out one-off spikes with essentially
 // no added latency for a genuine vehicle (one extra ~200ms Frame Processor tick).
 const CONFIRM_FRAMES_REQUIRED = 2;
+
+// Real, explicit request: an occupant count per tracked vehicle. This correlates the SAME
+// already-bundled model's own "person" class detections (see VehicleDetectionScreen.tsx's
+// frame processor -- classId 0 in the v2 labelmap) against each vehicle's own box, spatially --
+// no separate model, no extra inference cost. Stated plainly because accuracy claims here carry
+// real weight: this model was trained and validated on ordinary COCO pedestrian photos, never
+// on "a person visible through a windshield/side window from an external moving camera," which
+// is a materially harder case (glass tint/glare/reflection, partial occlusion by pillars/
+// headrests, small apparent size at normal driving distance). Treat every number this produces
+// as a best-effort ESTIMATE, not a verified count -- never a basis for any enforcement or
+// compliance decision without real-world validation against ground truth first.
+//
+// A person-box only counts toward a vehicle if its center falls inside this fraction of the
+// vehicle box's own height, measured down from the top -- approximating "the cabin/glass area"
+// rather than the bonnet/bumper/wheels, so a pedestrian merely standing or walking near a
+// vehicle's lower half at ground level doesn't get counted as an occupant.
+const OCCUPANT_CABIN_HEIGHT_FRACTION = 0.85;
+// Same "sustained, not a single reading" principle as CONFIRM_FRAMES_REQUIRED/RESUME_AFTER_
+// FRAMES elsewhere in this file -- a person detection flickering in/out for one frame (glare,
+// motion blur, a head momentarily behind a pillar) shouldn't flip the displayed count; only a
+// run of identical raw reads this long does.
+const OCCUPANT_CONFIRM_FRAMES = 3;
+// A real sanity ceiling, not a tuned accuracy bound -- guards against a pathological frame (a
+// crowd of pedestrians genuinely standing right behind/beside a parked vehicle, all spatially
+// within its cabin band) producing an obviously-not-real "12 occupants" instead of something at
+// least physically plausible for a normal passenger vehicle.
+const OCCUPANT_COUNT_MAX = 8;
+
+function countOccupantCandidates(
+  vehicleBbox: [number, number, number, number],
+  personBoxes: [number, number, number, number][]
+): number {
+  const [vx, vy, vw, vh] = vehicleBbox;
+  const cabinBottom = vy + vh * OCCUPANT_CABIN_HEIGHT_FRACTION;
+  let count = 0;
+  for (const p of personBoxes) {
+    const px = p[0] + p[2] / 2;
+    const py = p[1] + p[3] / 2;
+    if (px >= vx && px <= vx + vw && py >= vy && py <= cabinBottom) count++;
+  }
+  return Math.min(count, OCCUPANT_COUNT_MAX);
+}
+
+/** Shared confirm-frame smoothing for the occupant count, reused identically across the
+ *  matched/new-track/grace-period branches below -- see OCCUPANT_CONFIRM_FRAMES' own comment.
+ *  prevCandidate: -1 (the real "no prior raw read" sentinel) for a brand-new track. */
+function updateOccupantEstimate(
+  vehicleBbox: [number, number, number, number],
+  personBoxes: [number, number, number, number][],
+  prevCandidate: number,
+  prevStreak: number,
+  prevConfirmed: number | null
+): { candidate: number; streak: number; confirmed: number | null } {
+  const raw = countOccupantCandidates(vehicleBbox, personBoxes);
+  const streak = raw === prevCandidate ? prevStreak + 1 : 1;
+  const confirmed = streak >= OCCUPANT_CONFIRM_FRAMES ? raw : prevConfirmed;
+  return { candidate: raw, streak, confirmed };
+}
+
 // How far (relative to the larger of the incoming detection's and the candidate track's own
 // box size) a detection's center may drift from a track's last known center and still count as
 // the same vehicle. 1.2x (the previous, detection-size-only value) was tight enough that an
@@ -325,7 +404,13 @@ export function createSpeedTracker() {
     // comments for why the distance estimate, the parked-vehicle noise floor, AND the closing-
     // rate noise floor all need to know this. Defaults to 1 (normal zoom) so existing callers
     // that don't pass it keep their previous behavior exactly.
-    zoomFactor = 1
+    zoomFactor = 1,
+    // This tick's raw "person" class detections (classId 0 in the v2 labelmap -- see
+    // VehicleDetectionScreen.tsx's frame processor), in the SAME coordinate space as
+    // `detections` above. Optional/defaults to empty so existing callers that don't pass it
+    // keep their previous behavior exactly -- occupantCount just stays null for everyone. See
+    // OCCUPANT_CABIN_HEIGHT_FRACTION's own comment for how these get correlated to a vehicle.
+    personBoxes: [number, number, number, number][] = []
   ): TrackedBox[] {
     const unmatched = new Set(tracks.map((t) => t.id));
     const result: TrackedBox[] = [];
@@ -426,6 +511,17 @@ export function createSpeedTracker() {
         // so there's no reason for this to keep climbing for the lifetime of a long-tracked
         // vehicle.
         const confirmCount = Math.min(best.confirmCount + 1, CONFIRM_FRAMES_REQUIRED);
+        const {
+          candidate: occupantCandidate,
+          streak: occupantCandidateStreak,
+          confirmed: occupantCount,
+        } = updateOccupantEstimate(
+          bbox,
+          personBoxes,
+          best.occupantCandidate,
+          best.occupantCandidateStreak,
+          best.occupantCount
+        );
         // `speedKmh` above (fed back into the track for next frame's smoothing) always stays
         // the closing/receding rate -- that's the real underlying signal being smoothed frame
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
@@ -447,6 +543,9 @@ export function createSpeedTracker() {
           smoothedMovementRatio,
           aboveThresholdStreak,
           confirmCount,
+          occupantCandidate,
+          occupantCandidateStreak,
+          occupantCount,
         });
         // See CONFIRM_FRAMES_REQUIRED's own comment -- a track that hasn't yet been
         // independently re-detected enough times isn't handed to the caller to render at all,
@@ -462,6 +561,7 @@ export function createSpeedTracker() {
             speedKind,
             state,
             coasting: false,
+            occupantCount,
           });
         }
       } else {
@@ -471,6 +571,18 @@ export function createSpeedTracker() {
         // and starting the track off already corrected means every subsequent smoothBbox() call
         // eases from a realistic shape instead of a narrow one.
         const bbox = enforceMinAspectRatio(det.bbox);
+        // First-ever raw read for this track -- no prior candidate/streak to compare against,
+        // so this always starts its own fresh streak (see updateOccupantEstimate's own -1
+        // sentinel comment). Not confirmed yet either way (confirmed stays null), same
+        // "unconfirmed on a brand-new track" principle as confirmCount's own 1-but-not-rendered
+        // state just below.
+        const { candidate: occupantCandidate, streak: occupantCandidateStreak } = updateOccupantEstimate(
+          bbox,
+          personBoxes,
+          -1,
+          0,
+          null
+        );
         // Never pushed to `result` here -- see CONFIRM_FRAMES_REQUIRED's own comment. A brand
         // new track's very first detection is tracked internally from this tick on (so it CAN be
         // matched and confirmed next tick) but isn't rendered until it clears that bar.
@@ -489,6 +601,9 @@ export function createSpeedTracker() {
           smoothedMovementRatio: 0,
           aboveThresholdStreak: 0,
           confirmCount: 1,
+          occupantCandidate,
+          occupantCandidateStreak,
+          occupantCount: null,
         });
         // Deliberately no result.push here -- see CONFIRM_FRAMES_REQUIRED's own comment. This
         // track needs at least one more real match before it's ever handed to a caller to render.
@@ -511,7 +626,16 @@ export function createSpeedTracker() {
     for (const t of tracks) {
       if (matchedIds.has(t.id)) continue;
       if (nowMs - t.lastSeenMs >= TRACK_GRACE_MS) continue;
-      nextTracks.push(t);
+      // The vehicle box itself didn't get a fresh detection this tick, but a person near it
+      // genuinely can appear/disappear between ticks independent of that -- still re-correlate
+      // against this tick's personBoxes (against the track's own last known, unchanged bbox)
+      // rather than freezing the occupant read for the whole grace period.
+      const {
+        candidate: occupantCandidate,
+        streak: occupantCandidateStreak,
+        confirmed: occupantCount,
+      } = updateOccupantEstimate(t.bbox, personBoxes, t.occupantCandidate, t.occupantCandidateStreak, t.occupantCount);
+      nextTracks.push({ ...t, occupantCandidate, occupantCandidateStreak, occupantCount });
       // Same confirmation gate as the matched-track path above -- a track that was never
       // confirmed before it started missing detections (its one and only real match could
       // easily have been the same kind of one-off spurious spike CONFIRM_FRAMES_REQUIRED exists
@@ -528,6 +652,7 @@ export function createSpeedTracker() {
         speedKind,
         state: t.state,
         coasting: true,
+        occupantCount,
       });
     }
 

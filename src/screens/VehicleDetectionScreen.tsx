@@ -66,6 +66,13 @@ const MIN_DETECTION_SCORE = 0.3;
 // override.
 const NIGHT_BRIGHTNESS_GAIN = 1.6;
 const NIGHT_DETECTION_SCORE_REDUCTION = 0.08;
+// Real, explicit request for an occupant-count estimate per vehicle -- see speedTracker.ts's
+// own OCCUPANT_CABIN_HEIGHT_FRACTION comment for the full accuracy caveat (this is a best-effort
+// estimate, never a certified count). classId 0 is "person" in the v2 labelmap this model
+// already ships with -- no separate model or extra inference cost. Held to a higher bar than
+// MIN_DETECTION_SCORE: a wrong "person" read directly inflates an occupant count someone might
+// actually rely on, which is a costlier mistake than a slightly-late vehicle box.
+const MIN_PERSON_DETECTION_SCORE = 0.5;
 // Real, confirmed complaint (new screenshot evidence): boxes barely clearing MIN_DETECTION_SCORE
 // (a "Vehicle 30%" that's mostly roof/sky, a "Vehicle 33%" that's mostly trees) were being drawn
 // on screen looking like a broken/misfit box, even though tracking them internally at that low a
@@ -741,6 +748,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const onDetections = useRunOnJS(
     (
       detections: RawDetection[],
+      personBoxes: [number, number, number, number][],
       frameWidth: number,
       frameHeight: number,
       rawWidth: number,
@@ -757,7 +765,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         frameWidth,
         Date.now(),
         egoSpeedRef.current,
-        zoomFactorRef.current
+        zoomFactorRef.current,
+        personBoxes
       );
       boxesRef.current = tracked;
       setBoxes(tracked);
@@ -932,10 +941,29 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         : MIN_DETECTION_SCORE;
 
       const detections: RawDetection[] = [];
+      // Real occupant-count input -- see MIN_PERSON_DETECTION_SCORE's own comment and
+      // speedTracker.ts's OCCUPANT_CABIN_HEIGHT_FRACTION for how these get correlated to a
+      // vehicle box. Collected in this same pass since it's the same model output, at zero
+      // extra inference cost -- just a separate classId branch below.
+      const personBoxes: [number, number, number, number][] = [];
       for (let i = 0; i < count; i++) {
         const score = scoresArr[i];
-        if (score < minDetectionScore) continue;
         const classId = Math.round(classesArr[i]);
+
+        if (classId === 0) {
+          if (score < MIN_PERSON_DETECTION_SCORE) continue;
+          const ymin = boxesArr[i * 4 + 0];
+          const xmin = boxesArr[i * 4 + 1];
+          const ymax = boxesArr[i * 4 + 2];
+          const xmax = boxesArr[i * 4 + 3];
+          const w = (xmax - xmin) * uprightWidth;
+          const h = (ymax - ymin) * uprightHeight;
+          if (w <= 0 || h <= 0) continue;
+          personBoxes.push([xmin * uprightWidth, ymin * uprightHeight, w, h]);
+          continue;
+        }
+
+        if (score < minDetectionScore) continue;
         // car=2, motorcycle=3, bus=5, truck=7 -- see labelmap.txt (raw ids, no offset -- see
         // this block's own comment above for why that differs from the old v1 model).
         let label: "Vehicle" | "Heavy Vehicle" | null = null;
@@ -979,7 +1007,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // directly, so the render-side remap decision always matches whatever orientation the
       // model itself actually rotated against this tick -- reporting the raw, possibly-noisier
       // reading here would let the two sides disagree about which one is "true" for this frame.
-      onDetections(detections, uprightWidth, uprightHeight, frame.width, frame.height, stableOrientation);
+      onDetections(detections, personBoxes, uprightWidth, uprightHeight, frame.width, frame.height, stableOrientation);
     },
     [resize, onDetections]
   );
@@ -1502,6 +1530,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                   : Math.abs(box.speedKmh) < 3
                     ? "STEADY"
                     : `${box.speedKmh > 0 ? "▲" : "▼"} ${Math.round(Math.abs(box.speedKmh))} KMH`;
+          // Real, explicit request for an occupant-count estimate per vehicle. "(est.)" is
+          // never dropped from this label -- see speedTracker.ts's OCCUPANT_CABIN_HEIGHT_
+          // FRACTION comment for exactly why this is a best-effort spatial correlation, not a
+          // certified count, and must never be presented as one. null (box.occupantCount, from
+          // the tracker) shows nothing at all, same "never fabricate a number" rule as speedLabel.
+          const occupantLabel =
+            box.occupantCount === null
+              ? null
+              : `${box.occupantCount} occupant${box.occupantCount === 1 ? "" : "s"} (est.)`;
           // Clamped to the visible container -- a close vehicle at 5x zoom (or just one that
           // fills most of the frame at 1x) very plausibly has a real box bigger than the screen
           // itself, with its edges landing well off-screen in every direction. Previously the
@@ -1684,6 +1721,21 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                     pointerEvents="none"
                   >
                     {speedLabel}
+                  </Text>
+                )}
+                {/* Stacked directly under the speed text, same right-edge anchor -- see
+                    occupantLabel's own comment above for why "(est.)" always stays in the
+                    text itself, not just a tooltip/footnote a driver could miss. */}
+                {occupantLabel && (
+                  <Text
+                    style={[
+                      styles.speedTextRight,
+                      styles.occupantTextRight,
+                      { top: boxHeightPx / 2 - 8 + (speedLabel ? 18 : 0) },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    {occupantLabel}
                   </Text>
                 )}
                 {/* Tap a box to lock visual focus on it when several vehicles are in frame --
@@ -2052,6 +2104,14 @@ const styles = StyleSheet.create({
     color: "#3B82F6",
     fontSize: 13,
     fontWeight: "800",
+  },
+  // Deliberately a plain, less urgent grey/smaller size than speedTextRight -- this is a
+  // best-effort estimate (see occupantLabel's own comment), not a live safety-relevant reading
+  // like speed, and shouldn't visually compete with it for a driver's glance.
+  occupantTextRight: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    fontWeight: "700",
   },
   plateActionsWrap: {
     position: "absolute",

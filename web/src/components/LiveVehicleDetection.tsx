@@ -465,12 +465,23 @@ export function LiveVehicleDetection({ onClose, navContext }: Props) {
         const rawVehicleDetections = predictions
           .filter((p) => VEHICLE_CLASSES.has(p.class))
           .map((p) => ({ bbox: p.bbox as [number, number, number, number], score: p.score, vehicleClass: p.class }));
+        // Real, explicit request for an occupant-count estimate per vehicle -- see
+        // speedTracker.ts's OCCUPANT_CABIN_HEIGHT_FRACTION for the full accuracy caveat (a
+        // best-effort estimate, never a certified count). COCO-SSD already detects "person" as
+        // one of its 80 standard classes; this model call already ran it, so keeping these
+        // costs nothing extra -- they were simply discarded before now. Held to a higher score
+        // bar than vehicles: a wrong "person" read directly inflates a count someone might
+        // actually rely on, a costlier mistake than a slightly-late vehicle box.
+        const PERSON_MIN_SCORE = 0.5;
+        const personBoxes = predictions
+          .filter((p) => p.class === "person" && p.score >= PERSON_MIN_SCORE)
+          .map((p) => p.bbox as [number, number, number, number]);
         // Collapses a spurious oversized duplicate box down to just the tight, correct one for
         // the same vehicle BEFORE tracking ever sees it -- de-duping after the fact would mean
         // the phantom box had already spun up its own track id, its own lock-on progress, and
         // its own (likely-doomed, since its crop is wrong) plate attempts.
         const vehicleDetections = dedupeOversizedDuplicates(rawVehicleDetections);
-        const tracked = speedTrackerRef.current.update(vehicleDetections, canvas.width, performance.now());
+        const tracked = speedTrackerRef.current.update(vehicleDetections, canvas.width, performance.now(), personBoxes);
         // Includes ids still alive in a grace period even if they produced no box this frame
         // -- see liveTrackIds() in speedTracker.ts for why pruning off `tracked` itself would
         // wipe per-vehicle cached state (plate reads, lock-on progress) on a single missed frame.
@@ -574,6 +585,23 @@ export function LiveVehicleDetection({ onClose, navContext }: Props) {
             ctx.fillRect(x + w - speedWidth - 10, Math.max(0, y - 22), speedWidth + 10, 22);
             ctx.fillStyle = "#ffffff";
             ctx.fillText(speedLabel, x + w - speedWidth - 5, Math.max(16, y - 6));
+          }
+
+          // Real, explicit request for an occupant-count estimate per vehicle. "(est.)" stays
+          // in the text itself, always -- see speedTracker.ts's OCCUPANT_CABIN_HEIGHT_FRACTION
+          // comment for exactly why this is a best-effort spatial correlation, never a
+          // certified count, and must never be presented as one. null (box.occupantCount, from
+          // the tracker) draws nothing at all, same "never fabricate a number" rule as
+          // speedLabel above. Anchored bottom-right of the box, a plain muted grey/small size
+          // so it doesn't visually compete with the real safety-relevant speed readout.
+          if (box.occupantCount !== null) {
+            const occupantLabel = `${box.occupantCount} occupant${box.occupantCount === 1 ? "" : "s"} (est.)`;
+            ctx.font = "11px system-ui, sans-serif";
+            const occupantWidth = ctx.measureText(occupantLabel).width;
+            ctx.fillStyle = "rgba(17, 24, 39, 0.75)";
+            ctx.fillRect(x + w - occupantWidth - 10, y + h + 2, occupantWidth + 10, 18);
+            ctx.fillStyle = "#D1D5DB";
+            ctx.fillText(occupantLabel, x + w - occupantWidth - 5, y + h + 15);
           }
 
           // Real, live-computed plate-region estimate (see plateLocator.ts) -- NOT plate
