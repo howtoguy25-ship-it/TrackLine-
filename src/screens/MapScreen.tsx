@@ -90,7 +90,7 @@ import {
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance } from "@/services/navigationGuidance";
 import { speak, stopSpeaking } from "@/services/voice";
-import { formatArrivalClock } from "@/utils/navFormat";
+import { formatArrivalClock, formatDurationText } from "@/utils/navFormat";
 import {
   subscribeVisibleAlerts,
   reportAlert,
@@ -267,6 +267,13 @@ export function MapScreen() {
 
   const [route, setRoute] = useState<Route | null>(null);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  // Real, explicit request: the headline ETA/arrival-time must keep syncing with LIVE traffic
+  // for as long as a trip is active, not just reflect whatever Google returned once at route
+  // selection -- see the live-ETA refresh effect below for what actually keeps this current.
+  // null until the first live read lands for the CURRENT route; the duration this holds is
+  // always a genuine Google Directions traffic-aware figure for the driver's real current
+  // position, never estimated/interpolated locally.
+  const [liveEtaSeconds, setLiveEtaSeconds] = useState<number | null>(null);
 
   // Keeps the module-level navState flag (read by AppOpenAdManager, mounted outside this
   // screen entirely) in sync with whether turn-by-turn is actually active -- the app-open ad
@@ -1998,6 +2005,53 @@ export function MapScreen() {
     setTrafficSuggestionSavedSeconds(0);
   }, [route]);
 
+  // Real, explicit request: the headline ETA/arrival-time keeps re-syncing with live traffic
+  // for the WHOLE trip, not just the figure Google returned once at route selection -- if
+  // congestion ahead clears up, this is what makes the displayed minutes actually drop on its
+  // own, instead of just counting down the original plan's per-step durations (which only ever
+  // reflects progress through steps already passed, never a change in conditions on the road
+  // still ahead). Separate from the traffic-reroute-suggestion effect above: that one asks "is
+  // there a genuinely faster DIFFERENT path," this one only ever refreshes the live duration
+  // for the SAME route the driver is already on. Reuses the same TRAFFIC_CHECK_INTERVAL_MS
+  // cadence -- real traffic conditions don't meaningfully shift faster than that, and it's
+  // already the proven cost/freshness tradeoff this screen uses for the sibling feature above.
+  // Only meaningful for live-traffic-aware driving directions -- transit runs on its own
+  // published schedule, and walking/biking have no real "traffic" signal to re-sync with.
+  useEffect(() => {
+    setLiveEtaSeconds(null);
+    if (!route || !destinationLatLng || travelMode !== "driving") return;
+
+    // Best-effort match to the ACTUAL path being driven, not a guess -- "safest" has one real,
+    // fixed flag (avoidTolls, see SAFEST_OPTIONS in directions.ts) that's cheap to mirror here.
+    // "fastest" has no single fixed flag (getRouteOptions picks it dynamically from several
+    // candidates each trip), so re-running that full multi-candidate search every refresh isn't
+    // worth 4x the API cost just for a duration number -- a plain traffic-aware A->B request
+    // (same as "normal") is a reasonable proxy for regional conditions along a similar path.
+    const profileOptions = selectedProfile === "safest" ? { avoidTolls: true } : {};
+
+    let cancelled = false;
+    const refresh = async () => {
+      const latLng = currentLatLngRef.current;
+      if (!latLng) return;
+      try {
+        const fresh = await getDirections(latLng, destinationLatLng, { ...profileOptions, useTraffic: true });
+        if (!cancelled) setLiveEtaSeconds(fresh.durationInTrafficSeconds ?? fresh.durationSeconds);
+      } catch (err) {
+        // Best-effort -- a failed refresh just leaves the previous live reading (or the
+        // original route's own static figure, if no live read has landed yet) on screen
+        // rather than ever showing a broken/blank ETA.
+        Sentry.logger.error("map: live ETA refresh failed", { error: String(err) });
+      }
+    };
+
+    refresh();
+    const interval = setInterval(refresh, TRAFFIC_CHECK_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [route, destinationLatLng, travelMode, selectedProfile]);
+
   // "Displays for 10 seconds" per explicit request -- an unattended banner auto-dismisses
   // itself (same cooldown as a manual No/X) instead of sitting over the map indefinitely.
   // Cleared/restarted whenever a new suggestion appears; a real Yes/No/X tap in the meantime
@@ -2624,9 +2678,15 @@ export function MapScreen() {
     () => (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.distanceMeters, 0) : 0),
     [route, activeStepIndex]
   );
+  // Real, live-traffic-synced figure whenever one's landed for this route (see the live-ETA
+  // refresh effect above) -- the step-sum fallback only ever reflects the ORIGINAL plan's
+  // per-step durations, so without this override, the headline ETA would just count down a
+  // stale estimate for the whole trip instead of actually responding to current conditions.
   const remainingDurationSeconds = useMemo(
-    () => (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.durationSeconds, 0) : 0),
-    [route, activeStepIndex]
+    () =>
+      liveEtaSeconds ??
+      (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.durationSeconds, 0) : 0),
+    [route, activeStepIndex, liveEtaSeconds]
   );
   const arrivalClockText = useMemo(
     () => (route ? formatArrivalClock(Date.now() + remainingDurationSeconds * 1000) : ""),
@@ -2646,12 +2706,20 @@ export function MapScreen() {
       instruction: step?.instruction ?? "Continue on route",
       maneuverSymbol: maneuverToSfSymbol(step?.maneuver),
       distanceText: `${(remainingDistanceMeters / 1000).toFixed(1)} km`,
-      etaText: route.etaInTrafficText ?? route.etaText,
+      etaText: formatDurationText(remainingDurationSeconds),
       roadName: currentRoadName ?? "",
       currentSpeedKmh: currentSpeedKmh !== null ? Math.round(currentSpeedKmh) : null,
       speedLimitKmh,
     });
-  }, [route, activeStepIndex, remainingDistanceMeters, currentRoadName, currentSpeedKmh, speedLimitKmh]);
+  }, [
+    route,
+    activeStepIndex,
+    remainingDistanceMeters,
+    remainingDurationSeconds,
+    currentRoadName,
+    currentSpeedKmh,
+    speedLimitKmh,
+  ]);
 
   useEffect(() => {
     if (!route) return;
@@ -2677,7 +2745,7 @@ export function MapScreen() {
           lat: currentLatLng.latitude,
           lng: currentLatLng.longitude,
           heading,
-          etaText: route.etaText,
+          etaText: formatDurationText(remainingDurationSeconds),
           arrivalClockText,
         });
         liveShareIdRef.current = shareId;
@@ -2690,7 +2758,7 @@ export function MapScreen() {
       ? `https://tracklinemaps.com/live/${shareId}`
       : `https://www.google.com/maps?q=${currentLatLng.latitude},${currentLatLng.longitude}`;
     const message =
-      `I'm on my way -- ETA ${route.etaText}, arriving around ${arrivalClockText}. ` +
+      `I'm on my way -- ETA ${formatDurationText(remainingDurationSeconds)}, arriving around ${arrivalClockText}. ` +
       `Follow my live location: ${liveLink}`;
     try {
       await Share.share({ message });
@@ -2698,7 +2766,7 @@ export function MapScreen() {
       Sentry.logger.error("map: share ETA failed", { error: String(err) });
       console.warn("[map] share ETA failed", err);
     }
-  }, [route, currentLatLng, arrivalClockText, heading, user]);
+  }, [route, currentLatLng, arrivalClockText, remainingDurationSeconds, heading, user]);
 
   const onNavOptionsShareEta = useCallback(() => {
     navOptionsSheetRef.current?.close();
@@ -2724,14 +2792,14 @@ export function MapScreen() {
         lat: latLng.latitude,
         lng: latLng.longitude,
         heading,
-        etaText: route.etaText,
+        etaText: formatDurationText(remainingDurationSeconds),
         arrivalClockText,
       }).catch((err) => {
         Sentry.logger.error("map: update live share failed", { error: String(err) });
       });
     }, 12000);
     return () => clearInterval(interval);
-  }, [route, heading, arrivalClockText]);
+  }, [route, heading, arrivalClockText, remainingDurationSeconds]);
 
   return (
     <View style={styles.container}>
@@ -3426,7 +3494,7 @@ export function MapScreen() {
           bottom bar/confirm bar in this same screen region) to avoid stacking two bars. */}
       {route && !addingStopDuringNav && !stopPreviewRoute && (
         <NavBottomBar
-          etaText={route.etaText}
+          etaText={formatDurationText(remainingDurationSeconds)}
           arrivalClockText={arrivalClockText}
           distanceRemainingText={`${(remainingDistanceMeters / 1000).toFixed(1)} km`}
           roadName={currentRoadName}
