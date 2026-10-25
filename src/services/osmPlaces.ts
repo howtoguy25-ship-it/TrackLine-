@@ -216,6 +216,72 @@ export function searchOsmPlacesByText(query: string, location: LatLng, category:
   );
 }
 
+export interface OsmPlaceBounds {
+  sw: LatLng;
+  ne: LatLng;
+}
+
+// Real-cost caps for the viewport ("zoom out and see everything available") layer -- a fully
+// zoomed-out view over a dense city could otherwise return thousands of nodes and stall the
+// map's marker layer or overload the free, shared Overpass instance. Callers (MapScreen.tsx) are
+// expected to also gate the viewport SIZE this is called with -- see its own max-delta check --
+// so this cap is a last-resort backstop, not the primary control.
+const BBOX_MAX_RESULTS = 200;
+
+function buildBboxQuery(category: OsmPoiCategory, bounds: OsmPlaceBounds): string {
+  const bbox = `${bounds.sw.latitude},${bounds.sw.longitude},${bounds.ne.latitude},${bounds.ne.longitude}`;
+  const clauses = CATEGORY_TAGS[category]
+    .map(([key, value]) => {
+      const tag = `["${key}"="${value}"]`;
+      return `node${tag}(${bbox});way${tag}(${bbox});relation${tag}(${bbox});`;
+    })
+    .join("");
+  return `[out:json][timeout:25];(${clauses});out center ${BBOX_MAX_RESULTS * 2};`;
+}
+
+// Same in-memory-only cache pattern as osmTrafficData.ts -- panning back and forth over the same
+// area shouldn't re-hit the network every time. Keyed by category + rounded bbox.
+const bboxCache = new Map<string, NearbyPlace[]>();
+
+function bboxCacheKey(category: OsmPoiCategory, bounds: OsmPlaceBounds): string {
+  const round = (n: number) => n.toFixed(3);
+  return `${category}|${round(bounds.sw.latitude)},${round(bounds.sw.longitude)},${round(bounds.ne.latitude)},${round(bounds.ne.longitude)}`;
+}
+
+/** Real "everything available in view" lookup -- unlike searchNearbyOsmPlaces/
+ *  searchOsmPlacesByText above (anchored to one center point, nearest-N only, capped small for
+ *  a bottom-sheet list), this returns every real tagged place inside the map's current viewport
+ *  bounds, for the "zoom out and see all of them" pin layer. Distance is still computed (from
+ *  the viewport's own center) so results can be shown nearest-first, but nothing here is
+ *  filtered down to only the closest few the way the sheet list is. */
+export async function fetchOsmPlacesInBounds(bounds: OsmPlaceBounds, category: OsmPoiCategory): Promise<NearbyPlace[]> {
+  const key = bboxCacheKey(category, bounds);
+  const cached = bboxCache.get(key);
+  if (cached) return cached;
+
+  const center: LatLng = {
+    latitude: (bounds.sw.latitude + bounds.ne.latitude) / 2,
+    longitude: (bounds.sw.longitude + bounds.ne.longitude) / 2,
+  };
+  const data = await withTimeout(
+    runOverpassQuery(buildBboxQuery(category, bounds)),
+    FETCH_TIMEOUT_MS,
+    `${category} viewport request`
+  );
+  const seen = new Set<string>();
+  const results: NearbyPlace[] = [];
+  for (const el of data.elements) {
+    const place = elementToNearbyPlace(el, center, category);
+    if (!place || seen.has(place.placeId)) continue;
+    seen.add(place.placeId);
+    results.push(place);
+  }
+  results.sort((a, b) => a.distanceMeters - b.distanceMeters);
+  const capped = results.slice(0, BBOX_MAX_RESULTS);
+  bboxCache.set(key, capped);
+  return capped;
+}
+
 /** True for any placeId this service produced (searchNearbyOsmPlaces/searchOsmPlacesByText) --
  *  callers that handle both Google- and OSM-sourced places (MapScreen's venue-detail lookup) use
  *  this to route to getOsmPlaceInfo below instead of Google's getPlaceInfo, which has no idea

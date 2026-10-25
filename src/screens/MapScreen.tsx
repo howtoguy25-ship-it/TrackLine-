@@ -79,8 +79,9 @@ import {
   reverseGeocode,
   type PlaceDetails,
   type PlaceInfo,
+  type NearbyPlace,
 } from "@/services/places";
-import { isOsmPlaceId, getOsmPlaceInfo } from "@/services/osmPlaces";
+import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds, type OsmPoiCategory } from "@/services/osmPlaces";
 import {
   distanceKm,
   bearingDegrees,
@@ -444,6 +445,10 @@ export function MapScreen() {
   // real-world cluster of signals stays a handful of markers until you actually zoom in on it.
   const [osmZoomDelta, setOsmZoomDelta] = useState(0.05);
   const osmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Same debounce pattern as osmDebounceRef, for the fuel/restaurant/hotel viewport pin layer
+  // below -- kept separate so panning while only one kind of layer is on doesn't cancel/reset
+  // the other's in-flight timer.
+  const placesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [bannerVisible, setBannerVisible] = useState(false);
   const [placingAlert, setPlacingAlert] = useState(false);
@@ -474,6 +479,19 @@ export function MapScreen() {
   // loop near the traffic-light/speed-camera markers below), no live/fallback-mode awareness
   // needed here at all.
   const [fuelStationPins, setFuelStationPins] = useState<FuelStationPin[]>([]);
+  // Real, explicit request -- "zoom out...display all that's available" for petrol stations,
+  // restaurants (incl. fast-food chains like KFC/McDonald's -- a real OSM amenity=fast_food tag,
+  // see osmPlaces.ts's own CATEGORY_TAGS comment), and hotels, not just the fixed GPS-anchored
+  // nearest-N set each sheet already reports above. Fetched directly from the map's own current
+  // viewport bounds (see fetchViewportPlaces/onRegionChangeComplete below) whenever the matching
+  // sheet is open, refetching as the driver pans/zooms the same way the traffic-light/speed-
+  // camera layer already does. fuelStationPins above stays as-is (it's also used to open the
+  // right detail sheet on tap and seeds the pins before the first viewport fetch resolves);
+  // these are the additional places that fetch turns up once the driver zooms out past the GPS-
+  // anchored set's own radius.
+  const [fuelViewportPlaces, setFuelViewportPlaces] = useState<NearbyPlace[]>([]);
+  const [restaurantViewportPlaces, setRestaurantViewportPlaces] = useState<NearbyPlace[]>([]);
+  const [hotelViewportPlaces, setHotelViewportPlaces] = useState<NearbyPlace[]>([]);
   const anySheetOpen =
     reportSheetOpen ||
     detailSheetOpen ||
@@ -1596,6 +1614,73 @@ export function MapScreen() {
       .finally(() => setOsmLoading(false));
   }, [currentLatLng, settings.showTrafficLights, settings.showSpeedCameras, settings.osmLayerRadiusKm]);
 
+  // Min zoom before the fuel/restaurant/hotel viewport pin layer fetches at all -- same real
+  // reasoning as OSM_LAYER_MAX_DELTA above (a zoomed-out view spans too wide an area for a
+  // reasonable Overpass request), but a fixed value since there's no matching radius setting for
+  // places the way there is for traffic lights/speed cameras. ~0.8 degrees of latitude is roughly
+  // an entire metro region (~90km) -- wide enough to genuinely "zoom out and see everything
+  // available" across a whole city, without the request ballooning to state/country scale.
+  const PLACES_LAYER_MAX_DELTA = 0.8;
+
+  type PlacesSetter = (places: NearbyPlace[]) => void;
+  const placesCategorySetters = useMemo<Record<OsmPoiCategory, PlacesSetter>>(
+    () => ({
+      fuel: setFuelViewportPlaces,
+      restaurant: setRestaurantViewportPlaces,
+      hotel: setHotelViewportPlaces,
+    }),
+    []
+  );
+  const openPlaceCategories = useMemo<OsmPoiCategory[]>(() => {
+    const cats: OsmPoiCategory[] = [];
+    if (fuelStationsSheetOpen) cats.push("fuel");
+    if (restaurantsSheetOpen) cats.push("restaurant");
+    if (hotelsSheetOpen) cats.push("hotel");
+    return cats;
+  }, [fuelStationsSheetOpen, restaurantsSheetOpen, hotelsSheetOpen]);
+
+  const fetchViewportPlaces = useCallback(
+    (bounds: { sw: LatLng; ne: LatLng }, categories: OsmPoiCategory[]) => {
+      for (const category of categories) {
+        fetchOsmPlacesInBounds(bounds, category)
+          .then(placesCategorySetters[category])
+          .catch((err) => console.warn(`[map] ${category} viewport fetch failed`, err));
+      }
+    },
+    [placesCategorySetters]
+  );
+
+  // Same real "initial load, independent of ever panning" fix as osmInitialLoadRef above --
+  // without this, opening a places sheet for the first time (which starts at whatever delta the
+  // map's initialRegion/last camera position happens to already be at) shows nothing on the map
+  // until the driver manually pans or zooms even a pixel, since onRegionChangeComplete below only
+  // fires on an actual region-change event. Tracked per category so opening, say, just the fuel
+  // sheet doesn't also mark restaurant/hotel as "already loaded" the moment either of those
+  // sheets is opened later.
+  const placesInitialLoadRef = useRef<Record<OsmPoiCategory, boolean>>({
+    fuel: false,
+    restaurant: false,
+    hotel: false,
+  });
+  useEffect(() => {
+    if (!currentLatLng) return;
+    const toFetch = openPlaceCategories.filter((category) => {
+      if (placesInitialLoadRef.current[category]) return false;
+      placesInitialLoadRef.current[category] = true;
+      return true;
+    });
+    for (const category of (["fuel", "restaurant", "hotel"] as OsmPoiCategory[])) {
+      if (!openPlaceCategories.includes(category)) placesInitialLoadRef.current[category] = false;
+    }
+    if (toFetch.length === 0) return;
+    const delta = PLACES_LAYER_MAX_DELTA / 2;
+    const bounds = {
+      sw: { latitude: currentLatLng.latitude - delta / 2, longitude: currentLatLng.longitude - delta / 2 },
+      ne: { latitude: currentLatLng.latitude + delta / 2, longitude: currentLatLng.longitude + delta / 2 },
+    };
+    fetchViewportPlaces(bounds, toFetch);
+  }, [currentLatLng, openPlaceCategories]);
+
   const onRegionChangeComplete = useCallback(
     (region: Region, details?: { isGesture?: boolean }) => {
       lastRegionCenterRef.current = { latitude: region.latitude, longitude: region.longitude };
@@ -1627,6 +1712,27 @@ export function MapScreen() {
       }
       if (pickingDestinationPoint && destinationPickerView === "pin") {
         setDestinationPinLatLng({ latitude: region.latitude, longitude: region.longitude });
+      }
+
+      // Real, explicit request -- "zoom out...display all that's available" for whichever of
+      // fuel/restaurant/hotel sheets are currently open. Kept as its own independent block (not
+      // nested under the traffic-light/speed-camera early-returns right below) so this still
+      // runs regardless of whether that unrelated layer is toggled on.
+      if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
+      if (openPlaceCategories.length > 0 && region.latitudeDelta <= PLACES_LAYER_MAX_DELTA) {
+        placesDebounceRef.current = setTimeout(() => {
+          const bounds = {
+            sw: {
+              latitude: region.latitude - region.latitudeDelta / 2,
+              longitude: region.longitude - region.longitudeDelta / 2,
+            },
+            ne: {
+              latitude: region.latitude + region.latitudeDelta / 2,
+              longitude: region.longitude + region.longitudeDelta / 2,
+            },
+          };
+          fetchViewportPlaces(bounds, openPlaceCategories);
+        }, 600);
       }
 
       if (osmDebounceRef.current) clearTimeout(osmDebounceRef.current);
@@ -1670,8 +1776,19 @@ export function MapScreen() {
       settings.showSpeedCameras,
       settings.osmLayerRadiusKm,
       followTilt,
+      openPlaceCategories,
+      fetchViewportPlaces,
     ]
   );
+
+  // De-duped against fuelStationPins (the sheet's own GPS-anchored nearest-N list, already
+  // rendered below) by placeId -- the viewport fetch above covers the exact same real area plus
+  // whatever's further out, so without this every station inside the GPS-anchored radius would
+  // render twice (once from each source).
+  const fuelViewportOnlyPins = useMemo(() => {
+    const seen = new Set(fuelStationPins.map((p) => p.id));
+    return fuelViewportPlaces.filter((p) => !seen.has(p.placeId));
+  }, [fuelViewportPlaces, fuelStationPins]);
 
   // Traffic-light nodes cluster into a single badge wherever they're too dense to render as
   // individual pins without lagging the map -- a real intersection cluster (several nodes,
@@ -3308,6 +3425,74 @@ export function MapScreen() {
               </View>
             </Marker>
           ))}
+        {/* Real, explicit request -- "zoom out...display all that's available" for petrol
+            stations beyond the sheet's own fixed-radius nearest-N list above (fuelViewportOnlyPins
+            is already de-duped against it, see its own comment). Same open-sheet gating, same
+            tap-through to the detail sheet. */}
+        {fuelStationsSheetOpen &&
+          fuelViewportOnlyPins.map((place) => (
+            <Marker
+              key={`fuel-vp-${place.placeId}`}
+              coordinate={place.location}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+              onPress={(e) => {
+                e.stopPropagation();
+                onViewVenueDetails(place.placeId);
+              }}
+            >
+              <View style={styles.fuelPinWrap}>
+                <View style={styles.fuelPinBadge}>
+                  <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
+                </View>
+              </View>
+            </Marker>
+          ))}
+        {/* Real, explicit request -- same "zoom out and see everything available" treatment for
+            restaurants, including real fast-food chains (KFC, McDonald's, etc -- OSM's own
+            amenity=fast_food tag, already included in osmPlaces.ts's CATEGORY_TAGS.restaurant).
+            RestaurantsSheet has no GPS-anchored pin-reporting of its own the way FuelStationsSheet
+            does, so this viewport layer is the only source of restaurant pins on the map -- no
+            dedup needed against anything else. */}
+        {restaurantsSheetOpen &&
+          restaurantViewportPlaces.map((place) => (
+            <Marker
+              key={`rest-vp-${place.placeId}`}
+              coordinate={place.location}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+              onPress={(e) => {
+                e.stopPropagation();
+                onViewVenueDetails(place.placeId);
+              }}
+            >
+              <View style={styles.fuelPinWrap}>
+                <View style={styles.restaurantPinBadge}>
+                  <Ionicons name="restaurant" size={15} color="#FFFFFF" />
+                </View>
+              </View>
+            </Marker>
+          ))}
+        {/* Same real treatment for hotels -- see restaurant block's own comment above. */}
+        {hotelsSheetOpen &&
+          hotelViewportPlaces.map((place) => (
+            <Marker
+              key={`hotel-vp-${place.placeId}`}
+              coordinate={place.location}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+              onPress={(e) => {
+                e.stopPropagation();
+                onViewVenueDetails(place.placeId);
+              }}
+            >
+              <View style={styles.fuelPinWrap}>
+                <View style={styles.hotelPinBadge}>
+                  <Ionicons name="bed" size={15} color="#FFFFFF" />
+                </View>
+              </View>
+            </Marker>
+          ))}
         {settings.showLiveCameras &&
           liveCameras.map((camera) => (
             <Marker
@@ -4500,6 +4685,28 @@ const styles = StyleSheet.create({
     height: 30,
     borderRadius: 15,
     backgroundColor: "#16A34A",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Same shape as fuelPinBadge, distinct colors so all three viewport layers stay visually
+  // distinguishable from each other and from the green fuel pin at a glance.
+  restaurantPinBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#F97316",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  hotelPinBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#6366F1",
     borderWidth: 2,
     borderColor: "#FFFFFF",
     alignItems: "center",

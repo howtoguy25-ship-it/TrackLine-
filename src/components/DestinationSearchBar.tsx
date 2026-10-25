@@ -152,7 +152,18 @@ export function DestinationSearchBar({
         setErrorText(null);
         try {
           const results = await searchPlaces(text, biasLocation);
-          setPredictions(results);
+          // Real, explicit request -- "loads the nearest for them to the furthest". Google's
+          // Autocomplete only ranks by its own relevance score, not distance, even though it
+          // already returns a real distanceMeters per prediction once biasLocation is set (see
+          // places.ts's own PlacePrediction comment). Sort is stable (Array.prototype.sort has
+          // been spec-guaranteed stable since ES2019), so predictions Google never attached a
+          // distance to (no biasLocation yet, e.g. before a GPS fix) keep their original
+          // relevance order among themselves, pushed after every distance-known result rather
+          // than scattered through them.
+          const sorted = [...results].sort(
+            (a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity)
+          );
+          setPredictions(sorted);
         } catch (err) {
           setPredictions([]);
           // Confirmed via direct testing that this app's Google API key returns the exact same
