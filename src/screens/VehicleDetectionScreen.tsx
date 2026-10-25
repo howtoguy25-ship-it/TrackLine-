@@ -40,6 +40,7 @@ import { isNightTime } from "@/utils/sunTimes";
 import { upsertDetectedVehicle } from "@/services/vehicleHistory";
 import { saveVehicleThumbnail } from "@/services/vehicleThumbnail";
 import { refineBoxTrim, type BoxTrim } from "@/utils/boxRefine";
+import { formatDistance } from "@/utils/navFormat";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
@@ -1539,6 +1540,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
             box.occupantCount === null
               ? null
               : `${box.occupantCount} occupant${box.occupantCount === 1 ? "" : "s"} (est.)`;
+          // Real, explicit request for a live distance readout per vehicle, "radar style" --
+          // the same smoothed pinhole-model estimate already computed for the speed math (see
+          // speedTracker.ts's own DISTANCE_SMOOTHING/distanceM comments for the accuracy
+          // caveat), just surfaced on screen now. Shown for every locked box regardless of
+          // moving/parked state -- unlike speed, "how far away is it" stays a meaningful, live
+          // number even for a parked vehicle.
+          const distanceLabel = formatDistance(box.distanceM);
           // Clamped to the visible container -- a close vehicle at 5x zoom (or just one that
           // fills most of the frame at 1x) very plausibly has a real box bigger than the screen
           // itself, with its edges landing well off-screen in every direction. Previously the
@@ -1708,6 +1716,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                       <Text style={styles.vehicleTagText}>- {plateInfo.text} -</Text>
                     </View>
                   )}
+                  {/* Real, explicit request: a live distance readout alongside type/plate --
+                      see distanceLabel's own comment above for the real estimate this reflects. */}
+                  <View style={styles.vehicleTag}>
+                    <Text style={styles.vehicleTagText}>{distanceLabel}</Text>
+                  </View>
                 </View>
                 {/* Real, explicit request: immediately adjacent to the box's own right edge,
                     vertically centered -- not stacked below the type/plate tag row. Plain small

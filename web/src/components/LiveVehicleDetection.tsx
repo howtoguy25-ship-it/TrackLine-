@@ -553,9 +553,14 @@ export function LiveVehicleDetection({ onClose, navContext }: Props) {
 
           const vehicleTypeLabel = HEAVY_VEHICLE_CLASSES.has(box.vehicleClass) ? "Heavy Vehicle" : "Vehicle";
           const prefix = (isClosest ? "🎯 Closest · " : "") + (isLocked ? "🔒 " : "");
+          // Real, explicit request for a live distance readout per vehicle, "radar style" --
+          // the same smoothed pinhole-model estimate speedTracker.ts already computes for the
+          // speed math (see its own DISTANCE_SMOOTHING/distanceM comments for the accuracy
+          // caveat), just surfaced on screen now instead of only being used internally to find
+          // the closest vehicle.
           const label = lightsActive
             ? `${prefix}Unmarked police? (lights active)`
-            : `${prefix}${vehicleTypeLabel} ${Math.round(box.score * 100)}%`;
+            : `${prefix}${vehicleTypeLabel} ${Math.round(box.score * 100)}% · ${formatDistance(box.distanceM)}`;
           ctx.font = "16px system-ui, sans-serif";
           const textWidth = ctx.measureText(label).width;
           ctx.fillStyle = boxColor;

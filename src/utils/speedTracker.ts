@@ -44,6 +44,13 @@ export interface TrackedBox {
   // tint/glare/occlusion/angle all genuinely degrade it. Never use this for any enforcement or
   // compliance decision without real-world validation first.
   occupantCount: number | null;
+  // Real, explicit request for a live distance readout per vehicle, same "radar style" idea as
+  // the speed/plate labels -- this is the exact same smoothed pinhole-model estimate
+  // (DISTANCE_SMOOTHING) already computed internally for the speed math above, just surfaced to
+  // callers now instead of staying internal-only. Same accuracy caveat as speed itself (see this
+  // file's own header): a real but rough estimate from assumed vehicle width + FOV, not a
+  // radar/lidar-grade reading.
+  distanceM: number;
 }
 
 interface InternalTrack {
@@ -562,6 +569,7 @@ export function createSpeedTracker() {
             state,
             coasting: false,
             occupantCount,
+            distanceM,
           });
         }
       } else {
@@ -653,6 +661,7 @@ export function createSpeedTracker() {
         state: t.state,
         coasting: true,
         occupantCount,
+        distanceM: t.distanceM,
       });
     }
 
