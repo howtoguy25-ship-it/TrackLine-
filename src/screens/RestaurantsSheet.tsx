@@ -3,7 +3,8 @@ import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { searchNearbyRestaurants, searchPlacesByText, PlacesApiError, type NearbyPlace } from "@/services/places";
+import { PlacesApiError, type NearbyPlace } from "@/services/places";
+import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
@@ -88,7 +89,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
-    searchNearbyRestaurants(location)
+    searchNearbyOsmPlaces(location, "restaurant")
       .then((results) => {
         setPlaces(results.sort((a, b) => a.distanceMeters - b.distanceMeters));
         setFetchedFor(key);
@@ -107,10 +108,10 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
   // client-side filter below only ever covers the up-to-60 nearest results already fetched, so a
   // real restaurant across town (a specific chain, a name that isn't in that nearest batch) was
   // unreachable no matter what was typed. This debounced effect broadens a real search (2+
-  // characters, so it never fires on the very first keystroke) out to Google's actual Text
-  // Search API -- see places.ts's searchPlacesByText for why that's a genuinely different,
-  // broader search than Nearby Search. Best-effort: a failure here still leaves the local filter
-  // below working, just narrower (nearby-only) than it would otherwise be.
+  // characters, so it never fires on the very first keystroke) out to a real OSM name-match
+  // query -- see osmPlaces.ts's searchOsmPlacesByText for why that's a genuinely different,
+  // broader search than the plain nearest-first list above. Best-effort: a failure here still
+  // leaves the local filter below working, just narrower (nearby-only) than it would otherwise be.
   const TEXT_SEARCH_DEBOUNCE_MS = 450;
   const [textSearchResults, setTextSearchResults] = useState<NearbyPlace[]>([]);
   const [textSearching, setTextSearching] = useState(false);
@@ -122,7 +123,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
     }
     const timer = setTimeout(() => {
       setTextSearching(true);
-      searchPlacesByText(q, location, "restaurant")
+      searchOsmPlacesByText(q, location, "restaurant")
         .then(setTextSearchResults)
         .catch(() => {})
         .finally(() => setTextSearching(false));

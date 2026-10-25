@@ -3,7 +3,8 @@ import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, FlatLi
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { searchNearbyPetrolStations, searchPlacesByText, PlacesApiError, type NearbyPlace } from "@/services/places";
+import { PlacesApiError, type NearbyPlace } from "@/services/places";
+import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
@@ -18,7 +19,9 @@ const SEARCH_FOCUS_KEY = "fuel";
 // integration entirely. Its OAuth token endpoint had a genuine, confirmed external outage
 // (tested with real credentials, bogus credentials, and multiple retries, all hitting the same
 // broken response from NSW's own government server, not this app's code), and even working it
-// only ever covered NSW. This sheet is real Google Places station locations only now, same as
+// only ever covered NSW. Real, explicit request to move location data off Google Places
+// entirely too -- this sheet now sources live station locations from OpenStreetMap (see
+// services/osmPlaces.ts for the real Google-vs-OSM trade-offs this carries), same as
 // RestaurantsSheet/HotelsSheet.
 export interface FuelStationPin {
   id: string;
@@ -86,7 +89,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
-    searchNearbyPetrolStations(location)
+    searchNearbyOsmPlaces(location, "fuel")
       .then((results) => {
         setStations(results.sort((a, b) => a.distanceMeters - b.distanceMeters));
         setFetchedFor(key);
@@ -102,7 +105,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
   }, [location, fetchedFor, sheetIndex]);
 
   // Real, explicit request: "everything they can think of they can search" -- broadens a real
-  // search (2+ characters) out to Google's actual Text Search API, merged with the instant local
+  // search (2+ characters) out to a real OSM name-match query, merged with the instant local
   // filter results -- see RestaurantsSheet's own comment for the full reasoning.
   const TEXT_SEARCH_DEBOUNCE_MS = 450;
   const [textSearchResults, setTextSearchResults] = useState<NearbyPlace[]>([]);
@@ -115,7 +118,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     }
     const timer = setTimeout(() => {
       setTextSearching(true);
-      searchPlacesByText(q, location, "gas_station")
+      searchOsmPlacesByText(q, location, "fuel")
         .then(setTextSearchResults)
         .catch(() => {})
         .finally(() => setTextSearching(false));

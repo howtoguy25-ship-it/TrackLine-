@@ -106,7 +106,15 @@ export async function fetchOsmTrafficData(
     const response = await fetch(endpoint, {
       method: "POST",
       body,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      // Real, confirmed fix: verified directly against overpass-api.de that a request with no
+      // real User-Agent is rejected outright (HTTP 406), not served degraded -- a likely real
+      // contributor to "traffic lights only load sometimes" beyond just mirror load/timeouts.
+      // A descriptive, contactable UA is standard practice for this free, shared,
+      // unauthenticated public service.
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "TrackLineApp/1.0 (contact: support@tracklinemaps.com)",
+      },
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -261,7 +269,11 @@ export async function fetchSpeedLimitNear(
     const response = await fetch(endpoint, {
       method: "POST",
       body,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      // See fetchOsmTrafficData's own comment above -- same real, confirmed requirement.
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "TrackLineApp/1.0 (contact: support@tracklinemaps.com)",
+      },
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`${endpoint} returned ${response.status}`);

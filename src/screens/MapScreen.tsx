@@ -80,6 +80,7 @@ import {
   type PlaceDetails,
   type PlaceInfo,
 } from "@/services/places";
+import { isOsmPlaceId, getOsmPlaceInfo } from "@/services/osmPlaces";
 import {
   distanceKm,
   bearingDegrees,
@@ -1781,7 +1782,10 @@ export function MapScreen() {
     // of it still visible underneath, requiring a drag down to see the newly opened detail.
     closeAllPlaceSheets();
     setPlaceInfoLoading(true);
-    getPlaceInfo(placeId)
+    // FuelStationsSheet/RestaurantsSheet/HotelsSheet now source from OpenStreetMap (see
+    // osmPlaces.ts) -- an "osm:type:id" placeId isn't a real Google place_id, so Google's own
+    // getPlaceInfo would just fail on it. Routed to the real OSM-backed equivalent instead.
+    (isOsmPlaceId(placeId) ? getOsmPlaceInfo(placeId) : getPlaceInfo(placeId))
       .then((info) => {
         setPlaceInfo(info);
         placeInfoSheetRef.current?.expand();

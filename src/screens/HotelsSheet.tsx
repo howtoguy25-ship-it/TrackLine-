@@ -3,7 +3,8 @@ import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { searchNearbyHotels, searchPlacesByText, PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
+import { PlacesApiError, type NearbyPlace, type PlaceDetails } from "@/services/places";
+import { searchNearbyOsmPlaces, searchOsmPlacesByText, isOsmPlaceId } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
@@ -83,7 +84,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
-    searchNearbyHotels(location)
+    searchNearbyOsmPlaces(location, "hotel")
       .then((results) => {
         setHotels(results);
         setFetchedFor(key);
@@ -112,7 +113,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
     }
     const timer = setTimeout(() => {
       setTextSearching(true);
-      searchPlacesByText(q, location, "lodging")
+      searchOsmPlacesByText(q, location, "hotel")
         .then(setTextSearchResults)
         .catch(() => {})
         .finally(() => setTextSearching(false));
@@ -349,9 +350,17 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [styles.actionButton, pressed && { opacity: pressedOpacity }]}
-                    onPress={() =>
-                      Linking.openURL(`https://www.google.com/maps/place/?q=place_id:${item.placeId}`).catch(() => {})
-                    }
+                    onPress={() => {
+                      // Real, confirmed fix: a Google `place_id:` deep link only ever works for
+                      // a real Google place_id -- OSM-sourced hotels (see osmPlaces.ts) carry an
+                      // "osm:type:id" id instead, which that link format can't resolve at all.
+                      // Opens OpenStreetMap's own real page for it instead, consistent with
+                      // where this data actually came from.
+                      const url = isOsmPlaceId(item.placeId)
+                        ? `https://www.openstreetmap.org/${item.placeId.split(":")[1]}/${item.placeId.split(":")[2]}`
+                        : `https://www.google.com/maps/place/?q=place_id:${item.placeId}`;
+                      Linking.openURL(url).catch(() => {});
+                    }}
                   >
                     <Ionicons name="open-outline" size={13} color={colors.accent} />
                     <Text style={styles.actionButtonText}>Open in Maps</Text>
