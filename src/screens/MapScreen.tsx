@@ -167,7 +167,10 @@ const STILL_HERE_HEADING_TOLERANCE_DEG = 70;
 // PROFILE_ORDER uses for its list rows, kept here too (not shared/exported) since this is the
 // only other place that needs it and duplicating one small array beats a wider shared-module
 // refactor for it.
-const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
+// Real, explicit request for 2 more real, distinct route options (With Tolls/No Tolls) -- see
+// getRouteOptions in directions.ts for the real logic behind them. Appended at the end so the
+// original three keep their existing display order.
+const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest", "tolls", "noTolls"];
 // Real, explicit request: one consistent orange for every route profile (replacing the earlier
 // per-profile yellow/green/purple scheme) -- selected vs. not is carried entirely by opacity/
 // weight now (see the picker's own render below), not by which hue a route happens to be.
@@ -176,15 +179,23 @@ const ROUTE_PROFILE_COLORS: Record<RouteProfileKey, string> = {
   normal: ROUTE_ORANGE,
   fastest: ROUTE_ORANGE,
   safest: ROUTE_ORANGE,
+  tolls: ROUTE_ORANGE,
+  noTolls: ROUTE_ORANGE,
 };
-// Translucent version of the same orange above, for the two NOT-currently-selected routes'
-// "ghost preview" lines/pills -- per explicit request (Apple Maps-style: every alternative stays
-// visible, just visually secondary to whichever one is actually selected).
+// Translucent version of the same orange above, for the NOT-currently-selected routes' "ghost
+// preview" lines/pills -- per explicit request (Apple Maps-style: every alternative stays
+// visible, just visually secondary to whichever one is actually selected). Real, genuinely
+// different routes that happen to coincide with another profile's exact path (common for
+// tolls/noTolls on a trip with no real toll road at all) are deduped before ever reaching the
+// map -- see routesAreNearlyIdentical below -- so adding 2 more profiles here doesn't add visual
+// clutter beyond what's actually a new, distinct line to show.
 const ROUTE_ORANGE_GHOST = "rgba(249, 115, 22, 0.55)";
 const ROUTE_PROFILE_COLORS_GHOST: Record<RouteProfileKey, string> = {
   normal: ROUTE_ORANGE_GHOST,
   fastest: ROUTE_ORANGE_GHOST,
   safest: ROUTE_ORANGE_GHOST,
+  tolls: ROUTE_ORANGE_GHOST,
+  noTolls: ROUTE_ORANGE_GHOST,
 };
 // Where along each route's own polyline its floating ETA pill lands -- staggered per profile
 // (not all at the literal midpoint) so three pills sitting on largely overlapping road sections
@@ -193,8 +204,11 @@ const ROUTE_PROFILE_COLORS_GHOST: Record<RouteProfileKey, string> = {
 // routes commonly share the same initial stretch of road (leaving from the same point), so a
 // narrow spread clustered near the middle still left pills crowded/overlapping right where
 // they diverge; placing them earlier and later along each route's own line gives them a much
-// better real chance of landing somewhere the routes have already visually separated.
-const ROUTE_ETA_PILL_FRACTIONS = [0.2, 0.5, 0.8];
+// better real chance of landing somewhere the routes have already visually separated. Extended
+// to 5 entries (was 3) for the new tolls/noTolls profiles, keeping the same even-spread
+// reasoning -- duplicate-geometry routes (routesAreNearlyIdentical) never reach a second pill
+// regardless, so this only ever matters for genuinely distinct real paths.
+const ROUTE_ETA_PILL_FRACTIONS = [0.15, 0.3, 0.5, 0.7, 0.85];
 
 // Index-based (not distance-based) point along a polyline -- good enough for placing a small
 // floating label roughly along a route's own path without needing real cumulative-distance

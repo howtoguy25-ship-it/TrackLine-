@@ -19,15 +19,22 @@ const PROFILE_ICONS: Record<RouteProfileKey, keyof typeof Ionicons.glyphMap> = {
   normal: "navigate-outline",
   fastest: "flash-outline",
   safest: "shield-checkmark-outline",
+  tolls: "cash-outline",
+  noTolls: "close-circle-outline",
 };
 
+// "tolls" doesn't use this static text -- see its own dynamic subtitle at the render site below
+// (depends on whether this specific trip actually has a real toll on it, see tollEstimate.
+// hasToll), but still needs a real entry here for Record<RouteProfileKey, string> completeness.
 const PROFILE_SUBTITLES: Record<RouteProfileKey, string> = {
   normal: "No rush, Google's own best route",
   fastest: "Quickest right now, live traffic checked",
   safest: "Skips tolls, considers every road",
+  tolls: "Uses toll roads where it's worth it",
+  noTolls: "Avoids every toll road, full stop",
 };
 
-const PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
+const PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest", "tolls", "noTolls"];
 
 const TRAVEL_MODE_ORDER: TravelMode[] = ["driving", "walking", "bicycling", "transit"];
 
@@ -228,6 +235,18 @@ export function RouteOptionsCard({
                 const route = options![key];
                 const isSelected = key === selected;
                 const usingTraffic = route.etaInTrafficText != null;
+                // Real, explicit request: "Tolls" needs a subtitle/price that reflects THIS
+                // trip, not a generic static line -- see tollEstimate's own header in
+                // directions.ts for exactly what each state here really means.
+                const toll = route.tollEstimate;
+                const subtitle =
+                  key === "tolls"
+                    ? toll?.hasToll
+                      ? toll.priceText
+                        ? `Real toll cost: ${toll.priceText}`
+                        : "Uses a toll road -- price unavailable right now"
+                      : "No toll road needed for this trip"
+                    : PROFILE_SUBTITLES[key];
                 return (
                   <Pressable
                     key={key}
@@ -254,7 +273,7 @@ export function RouteOptionsCard({
                           </View>
                         )}
                       </View>
-                      <Text style={styles.optionSubtitle}>{PROFILE_SUBTITLES[key]}</Text>
+                      <Text style={styles.optionSubtitle}>{subtitle}</Text>
                     </View>
                     <View style={styles.optionStats}>
                       <Text style={styles.optionEta}>

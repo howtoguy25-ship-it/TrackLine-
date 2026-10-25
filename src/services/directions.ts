@@ -57,6 +57,23 @@ export interface Route {
   // straight from Google's own transit_details per step (not guessed/derived), so the picker
   // can show "Bus 418" or "T2 Train" instead of just a generic "Transit" label.
   transitSummary?: TransitSummary;
+  // Only ever set on the "tolls" entry of getRouteOptions' own Record -- see that function's
+  // own comment for the real logic behind it.
+  tollEstimate?: TollEstimate;
+}
+
+export interface TollEstimate {
+  // True only when this route's own real path has been directly confirmed to differ from the
+  // no-tolls route for the same trip -- i.e. it genuinely crosses a toll road right now, not
+  // assumed from the road type alone (a "toll road" with the toll suspended/removed, or simply
+  // not needed for this particular trip, correctly reads as false).
+  hasToll: boolean;
+  // A real, live dollar figure from Google's own Routes API toll-pricing feature (AU_LINKT
+  // pass) -- e.g. "$4.65". null while hasToll is true but no real price could be obtained
+  // (the lookup failed, or Google itself has no price on file for this specific toll, which it
+  // documents as a real possibility -- it still reports a toll exists with an unknown fee
+  // rather than guessing). Never a fabricated number -- see getTollPrice's own header.
+  priceText: string | null;
 }
 
 export interface TransitLeg {
@@ -236,7 +253,7 @@ async function getFastestRouteCandidates(
   return json.routes.map(parseRoute);
 }
 
-export type RouteProfileKey = "normal" | "fastest" | "safest";
+export type RouteProfileKey = "normal" | "fastest" | "safest" | "tolls" | "noTolls";
 
 // "normal" -> "Recommended" per explicit request for a more professional name -- same real
 // route/key underneath (RouteProfileKey stays "normal" everywhere else in the codebase), just a
@@ -245,12 +262,88 @@ export const ROUTE_PROFILE_LABELS: Record<RouteProfileKey, string> = {
   normal: "Recommended",
   fastest: "Fastest",
   safest: "Safest",
+  tolls: "With Tolls",
+  noTolls: "No Tolls",
 };
 
 // "safest" keeps highways available (a toll-free backstreets-only route is often *less* safe
 // -- narrower roads, more intersections) but skips tolls, and considers every road type Google
 // itself is willing to route through.
 const SAFEST_OPTIONS: DirectionsOptions = { avoidTolls: true };
+
+// Real Google Routes API toll pricing -- a genuinely different, newer API from the classic
+// Directions API every other function in this file uses (routes.googleapis.com, not maps.
+// googleapis.com/.../directions). Confirmed, documented real Australian coverage: AU_LINKT is
+// the actual Australia-wide electronic tolling operator (covers NSW/VIC/QLD motorways), the
+// toll pass this uses so a request for an AU trip gets a real priced answer wherever Linkt-
+// tolled roads are involved, not just "a toll exists, price unknown." Requires the "Routes API"
+// (distinct from "Directions API") to be enabled on the same Google Cloud project/key this app
+// already uses for directions -- a real, separate step the project owner has to take in Google
+// Cloud Console, and Google bills toll-computing requests at a higher rate than a plain
+// directions request. Never called speculatively -- see getRouteOptions below, which only ever
+// calls this once it's already confirmed (via a real, separate no-tolls request) that this
+// specific trip actually crosses a toll road at all.
+const ROUTES_API_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+
+interface RoutesApiMoney {
+  currencyCode: string;
+  units?: string;
+  nanos?: number;
+}
+
+function formatTollMoney(money: RoutesApiMoney): string {
+  const amount = Number(money.units ?? "0") + (money.nanos ?? 0) / 1e9;
+  try {
+    return new Intl.NumberFormat("en-AU", { style: "currency", currency: money.currencyCode }).format(amount);
+  } catch {
+    // An unrecognized/unexpected currency code from Google itself -- still a real number, just
+    // without Intl's own symbol formatting rather than silently showing nothing.
+    return `${amount.toFixed(2)} ${money.currencyCode}`;
+  }
+}
+
+/** Real toll price for this specific trip from Google's Routes API, or null if the API isn't
+ *  enabled, the request fails, or Google genuinely has no price on file for this toll (it still
+ *  reports the toll exists in that case -- see hasToll in getRouteOptions, which is determined
+ *  separately and doesn't depend on this call succeeding). Never fabricates a number. */
+async function getTollPrice(origin: LatLng, destination: LatLng, waypoint?: LatLng): Promise<string | null> {
+  try {
+    const body = {
+      origin: { location: { latLng: { latitude: origin.latitude, longitude: origin.longitude } } },
+      destination: { location: { latLng: { latitude: destination.latitude, longitude: destination.longitude } } },
+      ...(waypoint
+        ? {
+            intermediates: [{ location: { latLng: { latitude: waypoint.latitude, longitude: waypoint.longitude } } }],
+          }
+        : {}),
+      travelMode: "DRIVE",
+      extraComputations: ["TOLLS"],
+      routeModifiers: { tollPasses: ["AU_LINKT"] },
+    };
+    const res = await fetch(ROUTES_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": env.googleDirectionsApiKey,
+        "X-Goog-FieldMask": "routes.travelAdvisory.tollInfo",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      Sentry.logger.warn("directions: Routes API toll lookup failed", { status: res.status, body: errText.slice(0, 300) });
+      return null;
+    }
+    const json = await res.json();
+    const estimatedPrice = json?.routes?.[0]?.travelAdvisory?.tollInfo?.estimatedPrice?.[0];
+    return estimatedPrice ? formatTollMoney(estimatedPrice) : null;
+  } catch (err) {
+    Sentry.logger.warn("directions: Routes API toll lookup errored", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
 
 // Same physical road path, not just similar -- two genuinely different real routes between the
 // same two points essentially never coincidentally match both distance and duration this
@@ -291,10 +384,16 @@ export async function getRouteOptions(
   destination: LatLng,
   waypoint?: LatLng
 ): Promise<Record<RouteProfileKey, Route>> {
-  const [normal, safestRaw, fastestCandidates, backStreetsRoute] = await Promise.all([
+  const [normal, safestRaw, fastestCandidates, noTolls, backStreetsRoute] = await Promise.all([
     getDirections(origin, destination, { waypoint, useTraffic: true }),
     getDirections(origin, destination, { ...SAFEST_OPTIONS, waypoint, useTraffic: true }),
     getFastestRouteCandidates(origin, destination, waypoint),
+    // Real, separate no-tolls request (distinct from safestRaw above, which shares the exact
+    // same avoidTolls:true params by coincidence of what "safest" happens to mean today --
+    // fetched independently here so the "No Tolls" option never silently breaks if safest's own
+    // definition ever changes to mean something else). Also the real, direct basis for whether
+    // "Tolls" is a genuinely distinct option at all -- see hasToll below.
+    getDirections(origin, destination, { avoidTolls: true, waypoint, useTraffic: true }),
     // Real, confirmed request -- a dedicated `avoid=highways` request (a genuine, documented
     // Google Directions parameter, not a guess) explicitly forces Google to compute a real
     // surface-streets/back-roads/lanes path instead of hoping the plain `alternatives=true`
@@ -317,7 +416,21 @@ export async function getRouteOptions(
   const safest = isSameRoute(safestRaw, normal)
     ? (allFastestCandidates.find((c) => !isSameRoute(c, normal)) ?? safestRaw)
     : safestRaw;
-  return { normal, fastest, safest };
+
+  // Real, explicit request for a genuine "With Tolls" option distinct from the other three --
+  // only meaningful when normal's own real path actually differs from the no-tolls path, i.e.
+  // this trip genuinely crosses a toll road Google itself would otherwise route around. Reuses
+  // normal's own already-fetched route/time rather than a fourth plain-directions request --
+  // there's no "prefer tolls" parameter to ask Google for a different path with, and normal's
+  // path already IS "the real route that doesn't avoid tolls." When there's no real toll
+  // involved at all, this stays honestly marked hasToll: false rather than inventing a
+  // meaningfully-different "Tolls" option where none exists.
+  const normalUsesToll = !isSameRoute(normal, noTolls);
+  const tolls: Route = normalUsesToll
+    ? { ...normal, tollEstimate: { hasToll: true, priceText: await getTollPrice(origin, destination, waypoint) } }
+    : { ...normal, tollEstimate: { hasToll: false, priceText: null } };
+
+  return { normal, fastest, safest, tolls, noTolls };
 }
 
 export type TravelMode = "driving" | "walking" | "bicycling" | "transit";
