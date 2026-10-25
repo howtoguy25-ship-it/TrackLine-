@@ -24,10 +24,6 @@ interface Props {
   onSheetChange?: (index: number) => void;
 }
 
-type PriceSort = "none" | "low-high" | "high-low";
-
-const STAR_FILTERS = [0, 1, 2, 3, 4, 5];
-
 function formatDistance(meters: number): string {
   return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
 }
@@ -65,8 +61,6 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [fetchedFor, setFetchedFor] = useState<string | null>(null);
-  const [priceSort, setPriceSort] = useState<PriceSort>("none");
-  const [minStars, setMinStars] = useState(0);
   // Same real third fix as RestaurantsSheet -- see that file's own comment: refetching on every
   // live GPS update (even a small drift crossing the 3-decimal rounding boundary) while this
   // sheet is already open replaces `hotels` with a brand-new array mid-scroll, which reads
@@ -132,24 +126,22 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
             return Array.from(merged.values());
           })()
         : hotels;
-    let list = source.filter(
-      (h) => (!q || h.name.toLowerCase().includes(q) || h.vicinity.toLowerCase().includes(q)) && (h.rating ?? 0) >= minStars
-    );
-    if (priceSort !== "none") {
-      // Hotels with no real price-level data (Google itself doesn't have it for every listing)
-      // always sort to the end regardless of direction -- "unknown" is never displayed as
-      // cheaper or pricier than a real, known level.
-      list = [...list].sort((a, b) => {
-        if (a.priceLevel === undefined && b.priceLevel === undefined) return 0;
-        if (a.priceLevel === undefined) return 1;
-        if (b.priceLevel === undefined) return -1;
-        return priceSort === "low-high" ? a.priceLevel - b.priceLevel : b.priceLevel - a.priceLevel;
-      });
-    } else {
-      list = [...list].sort((a, b) => a.distanceMeters - b.distanceMeters);
-    }
+    // Real, confirmed fix: the price-sort (Cheapest/Priciest) and minimum-star-rating filter
+    // controls that used to live here both silently broke the moment this sheet moved off
+    // Google Places onto OpenStreetMap (see osmPlaces.ts) -- OSM has no price-level or star-
+    // rating data for any hotel at all, so every item's priceLevel/rating is always undefined
+    // now. The old star filter didn't just do nothing in that state, it actively hid every real
+    // result the instant a driver tapped anything above "Any" (every hotel's rating ?? 0 reads
+    // as 0, failing any real minStars check); the price sort degraded to a silent no-op. Both
+    // removed rather than left as controls that look real but can never work with this data
+    // source -- a genuinely different data source needed real, paid price/rating data (a hotel-
+    // booking API relationship) to bring either back honestly, not something this swap alone
+    // can provide.
+    const list = source
+      .filter((h) => !q || h.name.toLowerCase().includes(q) || h.vicinity.toLowerCase().includes(q))
+      .sort((a, b) => a.distanceMeters - b.distanceMeters);
     return list;
-  }, [hotels, query, priceSort, minStars, textSearchResults]);
+  }, [hotels, query, textSearchResults]);
 
   return (
     <SimpleBottomSheet
@@ -216,40 +208,6 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
               <Ionicons name="close-circle" size={18} color={colors.textFaint} />
             </Pressable>
           )}
-        </View>
-
-        <View style={styles.filterRow}>
-          <Pressable
-            style={[styles.filterChip, priceSort === "low-high" && styles.filterChipActive]}
-            onPress={() => setPriceSort((v) => (v === "low-high" ? "none" : "low-high"))}
-          >
-            <Ionicons name="arrow-up" size={12} color={priceSort === "low-high" ? "#FFFFFF" : colors.textMuted} />
-            <Text style={[styles.filterChipText, priceSort === "low-high" && styles.filterChipTextActive]}>
-              Cheapest
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.filterChip, priceSort === "high-low" && styles.filterChipActive]}
-            onPress={() => setPriceSort((v) => (v === "high-low" ? "none" : "high-low"))}
-          >
-            <Ionicons name="arrow-down" size={12} color={priceSort === "high-low" ? "#FFFFFF" : colors.textMuted} />
-            <Text style={[styles.filterChipText, priceSort === "high-low" && styles.filterChipTextActive]}>
-              Priciest
-            </Text>
-          </Pressable>
-        </View>
-        <View style={styles.filterRow}>
-          {STAR_FILTERS.map((stars) => (
-            <Pressable
-              key={stars}
-              style={[styles.filterChip, minStars === stars && styles.filterChipActive]}
-              onPress={() => setMinStars(stars)}
-            >
-              <Text style={[styles.filterChipText, minStars === stars && styles.filterChipTextActive]}>
-                {stars === 0 ? "Any" : `${stars}★+`}
-              </Text>
-            </Pressable>
-          ))}
         </View>
 
         {loading && (
