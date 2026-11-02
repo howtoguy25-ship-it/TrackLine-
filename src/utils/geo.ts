@@ -131,6 +131,68 @@ export function distanceToPolylineMeters(
   return minDist;
 }
 
+/** Smallest angle (0-180) between two compass bearings, independent of rotation direction -- the
+ *  real "how far off is the driver's heading from the route's" signal, since a 170° difference
+ *  and a -170° (190°) difference mean the same thing (almost exactly backwards). */
+export function headingDiffDeg(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+/** Same nearest-segment search as distanceToPolylineMeters, but also returns that segment's own
+ *  compass bearing -- the real "which way the route is actually headed right here" signal used
+ *  to detect a driver heading the wrong way / about to miss a turn (comparing it against the
+ *  driver's own live GPS heading), not just "how far from the line." One combined pass instead
+ *  of calling distanceToPolylineMeters separately, since both need the exact same nearest-
+ *  segment search. */
+export function routeDeviationInfo(
+  lat: number,
+  lon: number,
+  polyline: { latitude: number; longitude: number }[]
+): { distanceMeters: number; routeBearingDeg: number | null } {
+  if (polyline.length === 0) return { distanceMeters: Infinity, routeBearingDeg: null };
+  if (polyline.length === 1) {
+    return {
+      distanceMeters: distanceKm(lat, lon, polyline[0].latitude, polyline[0].longitude) * 1000,
+      routeBearingDeg: null,
+    };
+  }
+
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
+  const px = lon * metersPerDegLon;
+  const py = lat * metersPerDegLat;
+
+  let minDist = Infinity;
+  let bestA = polyline[0];
+  let bestB = polyline[1];
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    const ax = a.longitude * metersPerDegLon;
+    const ay = a.latitude * metersPerDegLat;
+    const bx = b.longitude * metersPerDegLon;
+    const by = b.latitude * metersPerDegLat;
+
+    const abx = bx - ax;
+    const aby = by - ay;
+    const lengthSq = abx * abx + aby * aby;
+    const t = lengthSq > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSq)) : 0;
+    const cx = ax + t * abx;
+    const cy = ay + t * aby;
+    const dist = Math.hypot(px - cx, py - cy);
+    if (dist < minDist) {
+      minDist = dist;
+      bestA = a;
+      bestB = b;
+    }
+  }
+  return {
+    distanceMeters: minDist,
+    routeBearingDeg: bearingDegrees(bestA.latitude, bestA.longitude, bestB.latitude, bestB.longitude),
+  };
+}
+
 /** Walks forward along a polyline starting from the point on it nearest (lat, lon), returning
  *  the lat/lon reached after `meters` of travel along the line -- "the point 1km ahead on the
  *  route from here," not just some fixed vertex. Used to scope the traffic-jam check to a

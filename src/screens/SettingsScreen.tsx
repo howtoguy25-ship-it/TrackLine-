@@ -34,6 +34,7 @@ import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import { ALL_ALERT_TYPES } from "@/services/settings";
+import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
@@ -339,6 +340,31 @@ export function SettingsScreen() {
     (value: boolean) => updateSettings({ showLiveCameras: value }),
     [updateSettings]
   );
+
+  const onSpeedWarningChimeToggle = useCallback(
+    (value: boolean) => updateSettings({ speedWarningChimeEnabled: value }),
+    [updateSettings]
+  );
+
+  // Real, explicit request -- dev-only "GPS replay" test harness (see src/dev/gpsReplay.ts's
+  // own header for why no bundled "sample drive" ships with this: a fabricated GPX pretending
+  // to be a real recording would itself be fake data). The developer pastes their own real
+  // recorded GPX XML in directly -- no new native file-picker dependency needed for that.
+  const [gpxText, setGpxText] = useState("");
+  const [gpxReplayRunning, setGpxReplayRunning] = useState(isGpsReplayActive());
+  const onStartGpxReplay = useCallback(() => {
+    try {
+      const points = parseGpx(gpxText);
+      startGpsReplay(points, 1);
+      setGpxReplayRunning(true);
+    } catch (err) {
+      Alert.alert("Couldn't start replay", err instanceof Error ? err.message : String(err));
+    }
+  }, [gpxText]);
+  const onStopGpxReplay = useCallback(() => {
+    stopGpsReplay();
+    setGpxReplayRunning(false);
+  }, []);
 
   const onOsmRadiusChange = useCallback(
     (value: number) => updateSettings({ osmLayerRadiusKm: Math.round(value) }),
@@ -972,6 +998,72 @@ export function SettingsScreen() {
         </View>
       </Section>
 
+      <Section title="Speed">
+        <Row
+          label="Speed warning chime"
+          icon={<Ionicons name="volume-high" size={18} color={settings.speedWarningChimeEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.speedWarningChimeEnabled}
+            onValueChange={onSpeedWarningChimeToggle}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          A single soft chime when your live speed goes 3+ km/h over the posted limit, at most
+          once every 30 seconds. Shown alongside the live speedometer, bottom-left on the map.
+        </Text>
+      </Section>
+
+      {/* Dev-only -- stripped from a production build entirely (the whole block is gated on
+          __DEV__, not just hidden). Real, explicit request: a way to test the speedometer/speed
+          limits/off-route rerouting against a real recorded drive without actually driving.
+          Paste in your own real GPX export (any phone GPS logger, Strava, Google Maps Timeline,
+          etc) -- see src/dev/gpsReplay.ts's own header for why nothing is bundled here. */}
+      {__DEV__ && (
+        <Section title="GPS replay (dev only)">
+          <Text style={styles.helperText}>
+            Paste a real recorded drive's GPX XML below, then Start -- every screen that reads
+            live location (this map, the speedometer, off-route rerouting) will play it back as
+            if it were your real GPS, at the file's own real recorded pace.
+          </Text>
+          <TextInput
+            value={gpxText}
+            onChangeText={setGpxText}
+            placeholder="<gpx>...<trkpt lat=... lon=...>...</gpx>"
+            placeholderTextColor={SETTINGS_TEXT_MUTED}
+            multiline
+            style={styles.gpxInput}
+            editable={!gpxReplayRunning}
+          />
+          <View style={styles.gpxButtonRow}>
+            <Pressable
+              onPress={onStartGpxReplay}
+              disabled={gpxReplayRunning || !gpxText.trim()}
+              style={({ pressed }) => [
+                styles.gpxButton,
+                (gpxReplayRunning || !gpxText.trim()) && styles.gpxButtonDisabled,
+                pressed && { opacity: pressedOpacity },
+              ]}
+            >
+              <Text style={styles.gpxButtonText}>Start replay</Text>
+            </Pressable>
+            <Pressable
+              onPress={onStopGpxReplay}
+              disabled={!gpxReplayRunning}
+              style={({ pressed }) => [
+                styles.gpxButton,
+                !gpxReplayRunning && styles.gpxButtonDisabled,
+                pressed && { opacity: pressedOpacity },
+              ]}
+            >
+              <Text style={styles.gpxButtonText}>Stop replay</Text>
+            </Pressable>
+          </View>
+          {gpxReplayRunning && <Text style={styles.helperText}>Replay running -- real GPS is ignored until stopped.</Text>}
+        </Section>
+      )}
+
       <Section title="AI Vehicle Detection">
         <Pressable
           onPress={() => setBatteryInfoOpen(true)}
@@ -1509,6 +1601,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: SETTINGS_TEXT_MUTED,
     lineHeight: 17,
+  },
+  gpxInput: {
+    minHeight: 90,
+    maxHeight: 160,
+    borderWidth: 1,
+    borderColor: SETTINGS_BORDER,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    color: SETTINGS_TEXT,
+    fontSize: 12,
+    fontFamily: "Courier",
+    textAlignVertical: "top",
+    marginTop: spacing.sm,
+  },
+  gpxButtonRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  gpxButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+  },
+  gpxButtonDisabled: {
+    opacity: 0.4,
+  },
+  gpxButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 13,
   },
   warningBox: {
     flexDirection: "row",

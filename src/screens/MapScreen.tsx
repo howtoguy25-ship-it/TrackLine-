@@ -60,6 +60,8 @@ import { LiveCameraSheet } from "@/screens/LiveCameraSheet";
 import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
+import { useLiveSpeed } from "@/hooks/useLiveSpeed";
+import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import type { SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 import {
@@ -67,6 +69,7 @@ import {
   getRouteOptions,
   getDirectionsForMode,
   getModeRouteOptions,
+  getHeadingAwareReroute,
   DirectionsApiError,
   type Route,
   type RouteProfileKey,
@@ -85,7 +88,8 @@ import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds, type OsmPoiCateg
 import {
   distanceKm,
   bearingDegrees,
-  distanceToPolylineMeters,
+  routeDeviationInfo,
+  headingDiffDeg,
   pointAheadOnPolylineMeters,
   offsetLatLngByHeading,
 } from "@/utils/geo";
@@ -348,6 +352,16 @@ export function MapScreen() {
   // True only while a fresh route is actively being fetched after drifting off the current one
   // -- drives the small "Rerouting..." banner below.
   const [rerouting, setRerouting] = useState(false);
+  // Real, explicit request -- "Show 'Faster route found — saves X min'" when a reroute's own
+  // alternates search turns up a genuinely quicker real option (see the off-route effect below).
+  // Null means no banner; cleared the moment a new reroute starts so a stale message from a
+  // previous reroute never lingers through the next one.
+  const [fasterRouteBanner, setFasterRouteBanner] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fasterRouteBanner) return;
+    const timer = setTimeout(() => setFasterRouteBanner(null), 6000);
+    return () => clearTimeout(timer);
+  }, [fasterRouteBanner]);
   // Exact arrival coordinate for the highlighted destination marker below -- kept separate
   // from route.polyline's last point so it's the real picked place, not whatever pixel the
   // polyline decoder happened to end on.
@@ -919,6 +933,40 @@ export function MapScreen() {
   const currentSpeedKmh =
     location?.coords.speed != null && location.coords.speed >= 0 ? location.coords.speed * 3.6 : null;
 
+  // Real, explicit request -- live speed + speed limit on the Home map view, not just during
+  // navigation. Dedicated 1Hz GPS watch, EMA-smoothed, with a real haversine fallback and a
+  // "stays at 0 once genuinely stationary for 3s" rule -- see useLiveSpeed.ts's own header for
+  // why this is a second, purpose-built watch rather than reusing currentSpeedKmh above (that
+  // one is the older, unsmoothed value other existing features already depend on; left alone to
+  // avoid changing their behavior).
+  const liveSpeed = useLiveSpeed(true);
+  // Real, explicit spec -- "Only show the speedometer while moving above 3 km/h or during
+  // navigation; fade it out after 10s stationary." Always visible during active navigation
+  // regardless of speed (a stopped-at-lights moment shouldn't hide it); otherwise visible
+  // continuously while moving and for 10 real seconds after the last moment it was, so a brief
+  // stop at an intersection doesn't flicker it away and immediately back.
+  const lastMovingAtRef = useRef(Date.now());
+  const [speedometerVisible, setSpeedometerVisible] = useState(false);
+  useEffect(() => {
+    if (route) {
+      lastMovingAtRef.current = Date.now();
+      setSpeedometerVisible(true);
+      return;
+    }
+    if (liveSpeed.speedKmh > 3) {
+      lastMovingAtRef.current = Date.now();
+      setSpeedometerVisible(true);
+      return;
+    }
+    const elapsedMs = Date.now() - lastMovingAtRef.current;
+    if (elapsedMs >= 10000) {
+      setSpeedometerVisible(false);
+      return;
+    }
+    const timer = setTimeout(() => setSpeedometerVisible(false), 10000 - elapsedMs);
+    return () => clearTimeout(timer);
+  }, [liveSpeed.speedKmh, route]);
+
   // Real posted speed limit for the road the driver is currently on, from OpenStreetMap's
   // maxspeed tags (see osmTrafficData.ts's fetchSpeedLimitNear) -- mirrors the web app's own
   // implementation (web/src/App.tsx). Refetched after moving ~50m (a live GPS track shouldn't
@@ -929,7 +977,10 @@ export function MapScreen() {
   // after a turn. fetchSpeedLimitNear also gets the driver's live heading now, so it can prefer
   // the road that's actually being driven on over a merely-closer crossing street right at an
   // intersection (see its own comment). Skipped entirely while a fetch is already in flight.
+  // No longer gated on `route` existing -- real, explicit request for this to work on the Home
+  // map view too, not just during active navigation.
   const [speedLimitKmh, setSpeedLimitKmh] = useState<number | null>(null);
+  const [speedLimitEstimated, setSpeedLimitEstimated] = useState(false);
   // The road the driver is currently on -- from the exact same lookup as speedLimitKmh (see
   // fetchSpeedLimitNear's own SpeedLimitResult.roadName), just previously discarded. Shown on
   // the nav card as its own "current road" row, distinct from the next-turn instruction text.
@@ -938,8 +989,8 @@ export function MapScreen() {
   const lastSpeedLimitStepIndexRef = useRef<number | null>(null);
   const speedLimitFetchInFlightRef = useRef(false);
   useEffect(() => {
-    if (!route || !currentLatLng) return;
-    const stepChanged = lastSpeedLimitStepIndexRef.current !== activeStepIndex;
+    if (!currentLatLng) return;
+    const stepChanged = !!route && lastSpeedLimitStepIndexRef.current !== activeStepIndex;
     const last = lastSpeedLimitFetchRef.current;
     const movedFar =
       !last || distanceKm(last.latitude, last.longitude, currentLatLng.latitude, currentLatLng.longitude) >= 0.05;
@@ -952,23 +1003,26 @@ export function MapScreen() {
     fetchSpeedLimitNear(currentLatLng.latitude, currentLatLng.longitude, heading)
       .then((result) => {
         setSpeedLimitKmh(result?.kmh ?? null);
+        setSpeedLimitEstimated(result?.estimated ?? false);
         setCurrentRoadName(result?.roadName ?? null);
       })
       .catch(() => {
         setSpeedLimitKmh(null);
+        setSpeedLimitEstimated(false);
         setCurrentRoadName(null);
       })
       .finally(() => {
         speedLimitFetchInFlightRef.current = false;
       });
-  }, [route, currentLatLng, activeStepIndex, heading]);
+  }, [currentLatLng, route, activeStepIndex, heading]);
   useEffect(() => {
-    if (!route) {
+    if (!currentLatLng) {
       setSpeedLimitKmh(null);
+      setSpeedLimitEstimated(false);
       setCurrentRoadName(null);
       lastSpeedLimitFetchRef.current = null;
     }
-  }, [route]);
+  }, [currentLatLng]);
 
   // Live device compass heading -- deliberately separate from `heading` above, which is the
   // direction of TRAVEL (GPS course/derived bearing) and is what the puck arrow + chase-cam
@@ -1385,43 +1439,143 @@ export function MapScreen() {
   // exit/street and it didn't reroute"). This instead measures live distance from the *route
   // line itself* (not just the next step's endpoint), which catches a genuinely wrong-direction
   // miss that forward-only step advancement can never detect.
-  const OFF_ROUTE_METERS = 60;
+  // Tightened from 60 to 35 -- real, explicit spec value.
+  const OFF_ROUTE_METERS = 35;
   // Requires the drift to still be true a couple of GPS ticks later, not just one, before
   // reacting -- a single noisy/bad fix (a tunnel, tall buildings) briefly reading "off route"
   // shouldn't kick off a real reroute on its own.
   const OFF_ROUTE_CONFIRM_TICKS = 2;
+  // Real, explicit spec values -- a sustained heading mismatch (not just distance) is its own
+  // independent off-route signal, catching e.g. driving the wrong way down a road that briefly
+  // runs close/parallel to the correct one, which distance-from-polyline alone wouldn't yet flag.
+  const HEADING_DIVERGE_DEG = 60;
+  const HEADING_DIVERGE_MIN_SPEED_KMH = 10;
+  const HEADING_DIVERGE_HOLD_MS = 4000;
+  // A third, independent signal: the upcoming maneuver point (the CURRENT step's own end
+  // location -- see navigationGuidance.ts's own evaluateGuidance, which advances activeStepIndex
+  // once the driver reaches it) is now behind the driver by more than this, meaning it was
+  // driven straight past without turning.
+  const MISSED_TURN_METERS = 25;
   // Once a reroute fires, this is the minimum gap before another one can -- otherwise a fresh
   // reroute that's *itself* briefly still off the eventual snapped route (GPS drift right after
   // a fetch) could immediately trigger a second one, and so on back-to-back.
   const REROUTE_COOLDOWN_MS = 15000;
+  // Real, explicit spec value -- an alternate only replaces the primary reroute result (and
+  // shows the "Faster route found" banner) if it's genuinely at least this much quicker, not
+  // just noise between two very similar real options.
+  const FASTER_ALTERNATE_THRESHOLD_SECONDS = 30;
   const offRouteStreakRef = useRef(0);
+  const headingDivergeSinceRef = useRef<number | null>(null);
   const lastRerouteAtRef = useRef(0);
+  // Cancels a still-in-flight reroute request the instant a newer one fires -- per explicit
+  // spec, so two off-route triggers close together (e.g. a missed turn immediately followed by
+  // continuing to drift) can never have the OLDER request's response land after and overwrite
+  // the newer, more-correct one.
+  const rerouteAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     if (!route || !currentLatLng || !destinationLatLng) {
       offRouteStreakRef.current = 0;
+      headingDivergeSinceRef.current = null;
       return;
     }
-    const distMeters = distanceToPolylineMeters(currentLatLng.latitude, currentLatLng.longitude, route.polyline);
-    if (distMeters <= OFF_ROUTE_METERS) {
+
+    const { distanceMeters: distMeters, routeBearingDeg } = routeDeviationInfo(
+      currentLatLng.latitude,
+      currentLatLng.longitude,
+      route.polyline
+    );
+
+    let reason: "distance" | "heading" | "missed-turn" | null = null;
+
+    if (distMeters > OFF_ROUTE_METERS) {
+      offRouteStreakRef.current += 1;
+      if (offRouteStreakRef.current >= OFF_ROUTE_CONFIRM_TICKS) reason = "distance";
+    } else {
       offRouteStreakRef.current = 0;
-      return;
     }
-    offRouteStreakRef.current += 1;
-    if (offRouteStreakRef.current < OFF_ROUTE_CONFIRM_TICKS) return;
+
+    if (!reason && routeBearingDeg != null && currentSpeedKmh != null && currentSpeedKmh >= HEADING_DIVERGE_MIN_SPEED_KMH) {
+      if (headingDiffDeg(heading, routeBearingDeg) > HEADING_DIVERGE_DEG) {
+        if (headingDivergeSinceRef.current == null) headingDivergeSinceRef.current = Date.now();
+        if (Date.now() - headingDivergeSinceRef.current >= HEADING_DIVERGE_HOLD_MS) reason = "heading";
+      } else {
+        headingDivergeSinceRef.current = null;
+      }
+    } else if (!reason) {
+      headingDivergeSinceRef.current = null;
+    }
+
+    if (!reason) {
+      const upcoming = route.steps[activeStepIndex]?.endLocation;
+      if (upcoming) {
+        const distToManeuverM = distanceKm(currentLatLng.latitude, currentLatLng.longitude, upcoming.latitude, upcoming.longitude) * 1000;
+        if (distToManeuverM > MISSED_TURN_METERS) {
+          const bearingToManeuver = bearingDegrees(
+            currentLatLng.latitude,
+            currentLatLng.longitude,
+            upcoming.latitude,
+            upcoming.longitude
+          );
+          // The upcoming maneuver point is "behind" the driver (its bearing from here differs
+          // from the driver's own heading by more than a right angle) -- it's been passed, not
+          // just not-yet-reached.
+          if (headingDiffDeg(heading, bearingToManeuver) > 90) reason = "missed-turn";
+        }
+      }
+    }
+
+    if (!reason) return;
     if (Date.now() - lastRerouteAtRef.current < REROUTE_COOLDOWN_MS) return;
 
     offRouteStreakRef.current = 0;
+    headingDivergeSinceRef.current = null;
     lastRerouteAtRef.current = Date.now();
-    setRerouting(true);
-    Sentry.logger.info("map: off-route detected, rerouting", { distMeters: Math.round(distMeters) });
+    rerouteAbortRef.current?.abort();
+    const controller = new AbortController();
+    rerouteAbortRef.current = controller;
 
-    const reroutePromise =
-      travelMode === "driving"
-        ? getRouteOptions(currentLatLng, destinationLatLng).then((options) => options[selectedProfile])
-        : getDirectionsForMode(currentLatLng, destinationLatLng, travelMode);
+    setRerouting(true);
+    setFasterRouteBanner(null);
+    const startedAt = Date.now();
+    const oldEtaSeconds = route.durationInTrafficSeconds ?? route.durationSeconds;
+    Sentry.logger.info("map: off-route detected, rerouting", { distMeters: Math.round(distMeters), reason });
+
+    // Real, explicit request -- pass the driver's live heading to the routing engine so the
+    // fresh route continues forward and loops around instead of an illegal U-turn (see
+    // getHeadingAwareReroute's own header for exactly what Google's heading field does and
+    // doesn't guarantee). Only the driving mode gets this treatment; walking/transit/bicycling
+    // have no U-turn-legality concern worth the Routes API's extra cost, same as before.
+    const avoidTolls = selectedProfile === "noTolls" || selectedProfile === "safest";
+    const reroutePromise: Promise<Route> =
+      travelMode !== "driving"
+        ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode)
+        : getHeadingAwareReroute(currentLatLng, destinationLatLng, heading, {
+            avoidTolls,
+            signal: controller.signal,
+          }).then(({ route: primary, alternates }) => {
+            // Real, explicit request -- pick the genuinely lowest-ETA real alternative Google
+            // offered (a real shortcut it found on its own, e.g. via a connector road), not just
+            // the first result, and only surface the "found a faster route" banner when it's a
+            // meaningfully real improvement (FASTER_ALTERNATE_THRESHOLD_SECONDS), not noise.
+            let chosen = primary;
+            let savedSeconds = 0;
+            for (const alt of alternates) {
+              const altEta = alt.durationInTrafficSeconds ?? alt.durationSeconds;
+              const chosenEta = chosen.durationInTrafficSeconds ?? chosen.durationSeconds;
+              if (altEta < chosenEta) {
+                savedSeconds = chosenEta - altEta;
+                chosen = alt;
+              }
+            }
+            if (savedSeconds >= FASTER_ALTERNATE_THRESHOLD_SECONDS) {
+              setFasterRouteBanner(`Faster route found — saves ${Math.round(savedSeconds / 60)} min`);
+            }
+            return chosen;
+          });
 
     reroutePromise
       .then((fresh) => {
+        if (controller.signal.aborted) return;
         guidanceRef.current = createGuidanceState();
         setActiveStepIndex(0);
         setRoute(fresh);
@@ -1430,13 +1584,31 @@ export function MapScreen() {
           edgePadding: { top: 120, right: 60, bottom: 120, left: 60 },
           animated: true,
         });
+        // Real, explicit request -- logged every reroute (time, position, reason, old vs new
+        // ETA) to the console in dev mode, never in a production build.
+        if (__DEV__) {
+          const elapsedMs = Date.now() - startedAt;
+          console.log("[reroute]", {
+            reason,
+            elapsedMs,
+            position: { latitude: currentLatLng.latitude, longitude: currentLatLng.longitude },
+            oldEtaSeconds,
+            newEtaSeconds: fresh.durationInTrafficSeconds ?? fresh.durationSeconds,
+          });
+          if (elapsedMs > 1500) {
+            console.warn(`[reroute] took ${elapsedMs}ms, over the 1.5s target`);
+          }
+        }
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         console.warn("[map] reroute failed", err);
         Sentry.logger.error("map: reroute failed", { error: String(err) });
       })
-      .finally(() => setRerouting(false));
-  }, [currentLatLng, route, destinationLatLng, travelMode, selectedProfile]);
+      .finally(() => {
+        if (!controller.signal.aborted) setRerouting(false);
+      });
+  }, [currentLatLng, route, destinationLatLng, travelMode, selectedProfile, heading, currentSpeedKmh, activeStepIndex]);
 
   // EV Radar (Phase 6): start/stop siren detection with the map screen lifecycle -- mount-once
   // (deps: []), NOT re-keyed on location. It used to also depend on currentLatLng/user/
@@ -3513,6 +3685,21 @@ export function MapScreen() {
       </MapView>
       )}
 
+      {/* Real, explicit request -- live speed + posted speed limit, bottom-left, on the Home map
+          view as well as during navigation (see useLiveSpeed.ts/LiveSpeedometer.tsx's own
+          headers). Hidden entirely while a bottom sheet/picker covers this corner of the screen
+          anyway, same real "don't render on top of stuff" gating every other on-demand overlay
+          on this screen already follows. */}
+      {!anySheetOpen && !placingAlert && !pendingDestination && !pickingOrigin && !pickingDestinationPoint && (
+        <LiveSpeedometer
+          speedKmh={liveSpeed.speedKmh}
+          speedLimitKmh={speedLimitKmh}
+          estimated={speedLimitEstimated}
+          visible={speedometerVisible}
+          chimeEnabled={settings.speedWarningChimeEnabled}
+        />
+      )}
+
       {/* Real, confirmed request -- explains what the live traffic layer's own yellow/red
           actually mean, right when it turns on (see showsTrafficLayer/trafficLegendVisible
           above), auto-dismissing on its own after a few seconds rather than sitting there
@@ -3682,8 +3869,6 @@ export function MapScreen() {
         <NavigationInstructionCard
           step={activeStep}
           roadName={currentRoadName}
-          speedLimitKmh={speedLimitKmh}
-          currentSpeedKmh={currentSpeedKmh}
           themeKey={settings.navCardTheme}
           onExit={exitNavigation}
           onExpandDirections={() => directionsSheetRef.current?.expand()}
@@ -3860,6 +4045,20 @@ export function MapScreen() {
           <ActivityIndicator size="small" color="#FFFFFF" />
           <Text style={styles.reroutingBadgeText}>Rerouting…</Text>
         </View>
+      )}
+
+      {/* Real, explicit request -- surfaces a genuinely faster real alternative the reroute's
+          own alternates search found (see the off-route effect above). Auto-dismisses itself;
+          never blocks anything underneath. */}
+      {!rerouting && fasterRouteBanner && (
+        <Pressable
+          style={[styles.reroutingBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
+          onPress={() => setFasterRouteBanner(null)}
+          accessibilityLabel={fasterRouteBanner}
+        >
+          <Ionicons name="flash" size={16} color="#FFFFFF" />
+          <Text style={styles.reroutingBadgeText}>{fasterRouteBanner}</Text>
+        </Pressable>
       )}
 
       {/* Real "you've arrived at the stop" state for a transit trip -- see

@@ -71,6 +71,10 @@ export interface AppSettings {
   // Which real vehicle icon the driver's own live-position marker renders as -- see
   // utils/mapMarkerStyles.ts.
   mapMarkerStyle: MapMarkerStyleKey;
+  // Real, explicit request -- a single soft chime when the driver's own live speed goes over
+  // the posted limit by 3+ km/h, at most once every 30s (see LiveSpeedometer.tsx). Default ON,
+  // same as every other audible-alert setting in this app.
+  speedWarningChimeEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -93,6 +97,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertExpiryMs: null,
   alertIconTheme: "default",
   mapMarkerStyle: "default",
+  speedWarningChimeEnabled: true,
 };
 
 const STORAGE_KEY = "@trackline/settings";
