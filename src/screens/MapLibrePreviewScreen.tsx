@@ -1,9 +1,10 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Map, Camera, type CameraRef, UserLocation } from "@maplibre/maplibre-react-native";
 import { useLocation } from "@/context/LocationContext";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { bearingDegrees, distanceKm } from "@/utils/geo";
 
 import trackLineLightStyle from "../../assets/mapStyles/trackline-light.json";
 import trackLineDarkStyle from "../../assets/mapStyles/trackline-dark.json";
@@ -43,17 +44,62 @@ export function MapLibrePreviewScreen() {
     [location]
   );
 
+  const pitchForStyle = (style: ViewStyle) => (style === "flat" ? 0 : 50);
+  const zoomForStyle = (style: ViewStyle) => (style === "flat" ? 17 : 17.5);
+
+  // Same real heading-derivation pattern already proven in the live navigation map
+  // (MapScreen.tsx) -- GPS "course" heading is commonly -1 ("invalid") at low speed or right
+  // after a stop, so this falls back to the bearing between the last two real GPS fixes instead
+  // of snapping to "facing north" and sitting there through a turn.
+  const derivedHeadingRef = useRef(0);
+  const prevLatLngRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  useEffect(() => {
+    if (!location) return;
+    const { latitude, longitude } = location.coords;
+    const prev = prevLatLngRef.current;
+    prevLatLngRef.current = { latitude, longitude };
+    if (!prev) return;
+    const movedMeters = distanceKm(prev.latitude, prev.longitude, latitude, longitude) * 1000;
+    if (movedMeters < 3) return;
+    derivedHeadingRef.current = bearingDegrees(prev.latitude, prev.longitude, latitude, longitude);
+  }, [location]);
+
+  const heading =
+    location?.coords.heading != null && location.coords.heading >= 0
+      ? location.coords.heading
+      : derivedHeadingRef.current;
+
+  // Real "heading to destination" nav-camera behavior -- the camera rotates to face the real
+  // direction of travel (the same convention Waze/Google Maps use) instead of staying locked
+  // north-up, and keeps re-centering on every real GPS fix. Only live while a real heading signal
+  // exists (device moving); stationary, the camera just holds its last position/bearing instead
+  // of spinning on GPS jitter.
+  useEffect(() => {
+    if (!location) return;
+    cameraRef.current?.easeTo({
+      center,
+      bearing: heading,
+      pitch: pitchForStyle(viewStyle),
+      zoom: zoomForStyle(viewStyle),
+      duration: 400,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- viewStyle changes are also handled
+    // (with their own animation) by onViewStyleSelect below; this effect should only re-fire on a
+    // real new position/heading, not re-run and fight that dedicated transition.
+  }, [center, heading]);
+
   const onViewStyleSelect = (next: ViewStyle) => {
     setViewStyle(next);
     cameraRef.current?.easeTo({
       center,
+      bearing: heading,
       // 60deg pitch looked striking in a still screenshot but fell apart on real adjacent
       // buildings of similar height -- their near-edge-on side walls at that steep an angle
       // create a moire/hatching artifact (verified by re-rendering the same real Sydney data at
       // several pitches), reading as flattened/"squashed" instead of solid standing towers. 50deg
       // is still a clear tilted 3D view but keeps buildings reading as real upright volumes.
-      pitch: next === "flat" ? 0 : 50,
-      zoom: next === "flat" ? 17 : 17.5,
+      pitch: pitchForStyle(next),
+      zoom: zoomForStyle(next),
       duration: 500,
     });
   };
