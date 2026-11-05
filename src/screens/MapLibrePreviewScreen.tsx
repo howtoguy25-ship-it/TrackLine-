@@ -47,8 +47,13 @@ export function MapLibrePreviewScreen() {
     setViewStyle(next);
     cameraRef.current?.easeTo({
       center,
-      pitch: next === "flat" ? 0 : 60,
-      zoom: next === "flat" ? 17 : 18,
+      // 60deg pitch looked striking in a still screenshot but fell apart on real adjacent
+      // buildings of similar height -- their near-edge-on side walls at that steep an angle
+      // create a moire/hatching artifact (verified by re-rendering the same real Sydney data at
+      // several pitches), reading as flattened/"squashed" instead of solid standing towers. 50deg
+      // is still a clear tilted 3D view but keeps buildings reading as real upright volumes.
+      pitch: next === "flat" ? 0 : 50,
+      zoom: next === "flat" ? 17 : 17.5,
       duration: 500,
     });
   };
@@ -59,7 +64,7 @@ export function MapLibrePreviewScreen() {
           StyleSpecification object; the imported JSON's loose string types (e.g. a "line" literal
           read back as `string`) don't line up with maplibre-gl-style-spec's exact union types */}
       <Map style={StyleSheet.absoluteFill} mapStyle={mapStyle as any} logo={false} attribution>
-        <Camera ref={cameraRef} initialViewState={{ center, zoom: 18, pitch: 60, bearing: 0 }} />
+        <Camera ref={cameraRef} initialViewState={{ center, zoom: 17.5, pitch: 50, bearing: 0 }} />
         <UserLocation />
       </Map>
 
