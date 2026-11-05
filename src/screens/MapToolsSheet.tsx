@@ -1,30 +1,51 @@
 import React, { forwardRef } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
+import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
-  onOpenDetection: () => void;
-  detectionBatteryLow?: boolean;
+  onRecenter: () => void;
   show3D: boolean;
   onToggle3D: () => void;
   satelliteOn: boolean;
   onToggleSatellite: () => void;
+  onOpenDetection: () => void;
+  detectionBatteryLow?: boolean;
+  alertsEnabled: boolean;
+  onToggleAlerts: () => void;
+  onFindRestaurants: () => void;
+  onFindHotels: () => void;
+  onFindPetrol: () => void;
+  onOpenSettings: () => void;
   onSheetChange?: (index: number) => void;
 }
 
-// Real, explicit request -- declutter the home map screen. AI Vehicle Detection, the 3D
-// buildings toggle, and the satellite/map-type toggle used to be 3 separate always-visible FABs
-// stacked on the same screen edge as Locate and the "+" report button (5 buttons total). Those
-// three are secondary, occasional-use controls (not something tapped every session the way
-// search/report/locate are), so they're condensed into this one small sheet behind a single
-// "More" FAB instead -- same real @gorhom/bottom-sheet pattern NavOptionsSheet.tsx already uses
-// for the equivalent in-navigation "..." menu, reused here for consistency rather than inventing
-// a second pattern.
-export const MapMoreSheet = forwardRef<BottomSheet, Props>(function MapMoreSheet(
-  { onOpenDetection, detectionBatteryLow, show3D, onToggle3D, satelliteOn, onToggleSatellite, onSheetChange },
+// Real, explicit request -- replace the whole column of separate floating circle buttons
+// (recenter, satellite/map style, 3D buildings, dashcam, settings, layers) with ONE map-tools
+// FAB opening this single clean panel instead. Every control that used to be its own always-
+// visible FAB (MapMoreSheet.tsx, this file's predecessor) or a persistent top pill row
+// (MapTopPillRow.tsx, now deleted) lives here as a labelled row instead -- same real
+// @gorhom/bottom-sheet pattern NavOptionsSheet.tsx already uses, just with every map control in
+// one place instead of three separate buttons plus a row of pills.
+export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsSheet(
+  {
+    onRecenter,
+    show3D,
+    onToggle3D,
+    satelliteOn,
+    onToggleSatellite,
+    onOpenDetection,
+    detectionBatteryLow,
+    alertsEnabled,
+    onToggleAlerts,
+    onFindRestaurants,
+    onFindHotels,
+    onFindPetrol,
+    onOpenSettings,
+    onSheetChange,
+  },
   ref
 ) {
   const insets = useSafeAreaInsets();
@@ -39,24 +60,51 @@ export const MapMoreSheet = forwardRef<BottomSheet, Props>(function MapMoreSheet
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
     >
-      <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
-        <Text style={styles.title}>More</Text>
+      <BottomSheetScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title}>Map tools</Text>
+
+        <SectionLabel label="Map" />
+        <OptionRow icon="locate" label="Recenter" onPress={onRecenter} />
+        <ToggleRow icon="business-outline" label="3D buildings" on={show3D} onPress={onToggle3D} />
+        <ToggleRow icon="map-outline" label="Satellite view" on={satelliteOn} onPress={onToggleSatellite} />
+
+        <View style={styles.divider} />
+
+        <SectionLabel label="Nearby" />
+        <ToggleRow icon="radio-outline" label="Alerts" on={alertsEnabled} onPress={onToggleAlerts} />
+        <OptionRow icon="restaurant-outline" label="Restaurants" onPress={onFindRestaurants} />
+        <OptionRow icon="bed-outline" label="Hotels" onPress={onFindHotels} />
+        <OptionRow icon="car-outline" label="Petrol stations" onPress={onFindPetrol} />
+
+        <View style={styles.divider} />
 
         <OptionRow
           icon="videocam-outline"
-          label="AI Vehicle Detection"
+          label="Dashcam"
           subtitle={detectionBatteryLow ? "Battery below 50% -- still works, may run slower" : undefined}
           onPress={onOpenDetection}
           trailing={<Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
         />
-        <ToggleRow icon="business-outline" label="3D buildings" on={show3D} onPress={onToggle3D} />
-        <ToggleRow icon="map-outline" label="Satellite view" on={satelliteOn} onPress={onToggleSatellite} />
-      </BottomSheetView>
+        <OptionRow
+          icon="settings-outline"
+          label="Settings"
+          onPress={onOpenSettings}
+          trailing={<Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
+        />
+      </BottomSheetScrollView>
     </BottomSheet>
   );
 });
 
-const SNAP_POINTS = ["32%"];
+const SNAP_POINTS = ["55%", "85%"];
+
+function SectionLabel({ label }: { label: string }) {
+  return <Text style={styles.sectionLabel}>{label}</Text>;
+}
 
 function OptionRow({
   icon,
@@ -69,7 +117,7 @@ function OptionRow({
   label: string;
   subtitle?: string;
   onPress: () => void;
-  trailing: React.ReactNode;
+  trailing?: React.ReactNode;
 }) {
   return (
     <Pressable
@@ -124,25 +172,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     width: 40,
   },
-  container: {
+  scroll: {
     flex: 1,
+  },
+  container: {
     paddingHorizontal: spacing.lg,
   },
   title: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: "800",
     color: colors.text,
+    marginTop: spacing.xs,
     marginBottom: spacing.sm,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm + 4,
   },
   rowIconWrap: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceMuted,
     alignItems: "center",
@@ -180,5 +240,10 @@ const styles = StyleSheet.create({
   },
   toggleThumbOn: {
     transform: [{ translateX: 18 }],
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.surfaceMuted,
+    marginVertical: spacing.sm,
   },
 });

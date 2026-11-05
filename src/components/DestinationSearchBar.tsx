@@ -89,9 +89,9 @@ interface Props {
   // search bar; the add-a-stop and mid-nav bars have no "from" to show.
   originLabel?: string;
   onPressOrigin?: () => void;
-  // Extra px pushed onto this bar's own top offset -- lets a caller stack something else (e.g.
-  // MapTopPillRow) above it without this component needing to know anything about what that is.
-  // Defaults to 0 -- every existing call site keeps its exact previous position.
+  // Extra px pushed onto this bar's own top offset -- lets a caller stack something else above
+  // it without this component needing to know anything about what that is. Defaults to 0 --
+  // every existing call site keeps its exact previous position.
   topOffset?: number;
 }
 
@@ -286,7 +286,9 @@ export function DestinationSearchBar({
             </>
           )}
           <View style={hasOriginRow ? styles.inputRowFlat : styles.inputRow}>
-            <Ionicons name="search" size={18} color={colors.textMuted} />
+            <View style={styles.searchIconWrap}>
+              <Ionicons name="search" size={18} color={colors.accent} />
+            </View>
             <TextInput
               value={query}
               onChangeText={onChangeText}
@@ -468,15 +470,20 @@ const styles = StyleSheet.create({
     left: spacing.md,
     right: spacing.md,
   },
+  // Real, explicit request -- the collapsed search bar previously read as thin/generic (48px,
+  // tight 14px radius, the lightest shadow tier). Taller, more rounded, a deeper soft shadow, and
+  // a dedicated tinted icon circle (searchIconWrap below) instead of a bare glyph -- the same
+  // "looks hand-designed, not a skinny input box" treatment real map apps give their primary
+  // search entry point.
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.xl,
     paddingHorizontal: spacing.md,
-    height: 48,
-    gap: spacing.sm,
-    ...shadow.low,
+    height: 60,
+    gap: spacing.sm + 2,
+    ...shadow.medium,
   },
   // Same visual card as fieldsCard's outer wrapper provides the bg/radius/shadow for, so this
   // variant (used only when stacked under the origin row) stays flat -- otherwise the input row
@@ -485,12 +492,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.md,
-    height: 48,
-    gap: spacing.sm,
+    height: 60,
+    gap: spacing.sm + 2,
+  },
+  // Soft tinted circle behind the search glyph -- reads as a real, considered icon rather than a
+  // bare outline floating in the input row.
+  searchIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     color: colors.text,
   },
   // Shared card for the stacked From/To directions panel -- one rounded rect containing both
@@ -498,21 +515,14 @@ const styles = StyleSheet.create({
   // Maps "plan a route" panel instead of two separately-shadowed boxes stacked with a gap.
   fieldsCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    ...shadow.low,
+    borderRadius: radius.xl,
+    ...shadow.medium,
   },
   originRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    // Extra right padding (beyond the ordinary paddingHorizontal) reserves real room for
-    // MapScreen's Settings gear button, which floats on top of this bar's own top-right corner
-    // -- a short placeholder/"My Location" label never reached that zone, but a real full
-    // street address (this row's live reverse-geocoded origin label) routinely does, and
-    // without this the text ran directly underneath the gear button instead of truncating
-    // safely clear of it.
-    paddingRight: spacing.md + 44,
     // minHeight (not a fixed height) -- a full street address routinely needs the 2 lines
     // originText now allows (see its own numberOfLines) instead of being clipped to whatever a
     // single 40px row could fit; the row grows to fit the real text instead of hiding it.

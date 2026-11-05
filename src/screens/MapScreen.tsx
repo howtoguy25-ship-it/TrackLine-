@@ -42,11 +42,10 @@ import { useSettings } from "@/context/SettingsContext";
 import { MuteButton } from "@/components/MuteButton";
 import { CarNavArrow, PersonLocationDot } from "@/components/LocationMarkers";
 import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/DestinationSearchBar";
-import { MapTopPillRow, MAP_TOP_PILL_ROW_HEIGHT, MAP_TOP_PILL_ROW_TOP_MARGIN } from "@/components/MapTopPillRow";
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
-import { MapMoreSheet } from "@/screens/MapMoreSheet";
+import { MapToolsSheet } from "@/screens/MapToolsSheet";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import { RouteOptionsCard } from "@/components/RouteOptionsCard";
 import { AlertMarker } from "@/components/AlertMarker";
@@ -284,7 +283,7 @@ export function MapScreen() {
   const fuelStationsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
-  const moreSheetRef = useRef<BottomSheet>(null);
+  const toolsSheetRef = useRef<BottomSheet>(null);
 
   const [route, setRoute] = useState<Route | null>(null);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -497,7 +496,7 @@ export function MapScreen() {
   const [osmMarkerSheetOpen, setOsmMarkerSheetOpen] = useState(false);
   const [liveCameraSheetOpen, setLiveCameraSheetOpen] = useState(false);
   const [navOptionsSheetOpen, setNavOptionsSheetOpen] = useState(false);
-  const [moreSheetOpen, setMoreSheetOpen] = useState(false);
+  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
   const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
@@ -528,7 +527,7 @@ export function MapScreen() {
     liveCameraSheetOpen ||
     directionsSheetOpen ||
     navOptionsSheetOpen ||
-    moreSheetOpen ||
+    toolsSheetOpen ||
     restaurantsSheetOpen ||
     hotelsSheetOpen ||
     fuelStationsSheetOpen;
@@ -2851,8 +2850,8 @@ export function MapScreen() {
     Sentry.logger.info("map: opening vehicle detection screen");
     navigation.navigate("VehicleDetection", { isNavigating: !!route });
   }, [navigation, route]);
-  const onMoreSheetOpenDetection = useCallback(() => {
-    moreSheetRef.current?.close();
+  const onToolsSheetOpenDetection = useCallback(() => {
+    toolsSheetRef.current?.close();
     Sentry.logger.info("map: opening vehicle detection screen");
     navigation.navigate("VehicleDetection", { isNavigating: !!route });
   }, [navigation, route]);
@@ -3004,21 +3003,11 @@ export function MapScreen() {
   // for the new bottom trip bar (NavBottomBar), using its actual measured height instead of a
   // guessed constant (same reasoning as instructionCardHeight/routeCardHeight above).
   const navFabBaseBottom = insets.bottom + 24 + (route ? bottomBarHeight + spacing.sm : 0);
-  // Single source of truth for the right-edge secondary FAB stack's vertical spacing (AI
-  // Detection, 3D, satellite, locate) -- each button's `bottom` used to be its own independently
-  // hand-typed `navFabBaseBottom + <magic number>` literal, which is exactly how the AI
-  // Detection button ended up pinned to the top of the screen earlier this session (one of those
-  // four literals got edited on its own and silently drifted out of sync with the rest). Deriving
-  // every button's position from this one step value instead means they're structurally
-  // guaranteed to stay evenly spaced and never collide, no matter how many more of these buttons
-  // get added or reordered later -- fabSecondaryBottom(0) is the button closest to the bottom
-  // edge (AI Detection), incrementing outward from there. The `route ? 0 : 1` offset preserves
-  // the same slot the Report "+" FAB (which has its own fixed, independent position) occupies
-  // only while not navigating.
-  // Per explicit request: smaller buttons AND a wider relative gap between them, not just a
-  // scaled-down version of the same tight spacing -- 44px/34px buttons (down from 52px/40px)
-  // with a 20px/14px gap between them (up from 18px/14px) so any two adjacent buttons read as
-  // clearly, unmistakably separate even at a glance, not just technically non-overlapping.
+  // Real, explicit request -- the whole former column of separate secondary FABs (AI Detection,
+  // 3D, satellite, locate) collapsed into the single map-tools button (see MapToolsSheet), so
+  // this no longer needs the even-spacing-across-several-buttons machinery that used to live
+  // here -- just one position, one step above the Report "+" FAB's own fixed slot while not
+  // navigating (they'd otherwise sit on top of each other).
   const fabSecondaryStep = route ? 48 : 64;
   const fabSecondaryBottom = (indexFromBottom: number) =>
     navFabBaseBottom + (indexFromBottom + (route ? 0 : 1)) * fabSecondaryStep;
@@ -3950,38 +3939,18 @@ export function MapScreen() {
       )}
 
       {!route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && !anySheetOpen && (
-        <>
-          {/* Moved out of the search bar's own idle dropdown, per explicit request -- a
-              persistent row at the very top of the map instead of something only visible once
-              the search box is tapped first. Real, confirmed bug this !anySheetOpen guard fixes:
-              Restaurants/Hotels (both included in anySheetOpen) only ever snap to 70-75% height,
-              leaving the top of the screen (where this row lives) still visible -- without this
-              guard the row kept floating on top of/overlapping that sheet's own header/notice
-              text instead of getting out of the way while it's open. */}
-          <MapTopPillRow
-            alertsEnabled={settings.alertsEnabled}
-            onToggleAlerts={() => updateSettings({ alertsEnabled: !settings.alertsEnabled })}
-            // snapToIndex(0), not expand() -- these three sheets now have two snap points
-            // (["50%", "88%"]), and expand() jumps straight to the largest one. Opening at
-            // index 0 lands on the shorter default; dragging the handle still reaches 88%.
-            onFindRestaurants={() => restaurantsSheetRef.current?.snapToIndex(0)}
-            onFindHotels={() => hotelsSheetRef.current?.snapToIndex(0)}
-            onFindPetrol={() => fuelStationsSheetRef.current?.snapToIndex(0)}
-          />
-          <DestinationSearchBar
-            biasLocation={routeOriginLatLng ?? undefined}
-            onDestinationSelected={onDestinationSelected}
-            onFindNearestStation={onFindNearestStation}
-            findingNearestStation={findingNearestStation}
-            originLabel={routeOriginLabel}
-            onPressOrigin={openOriginPicker}
-            // Real total space the pill row above consumes (its own top margin beyond the safe
-            // area, plus its height, plus a small gap) minus this bar's own base top margin
-            // (spacing.md, see DestinationSearchBar's own `top` calc) -- keeps the two stacked
-            // with a consistent gap even if the row's own margin/height ever changes.
-            topOffset={MAP_TOP_PILL_ROW_TOP_MARGIN - spacing.md + MAP_TOP_PILL_ROW_HEIGHT + spacing.sm}
-          />
-        </>
+        // Real, explicit request -- declutter the map front to just Search + "+". Alerts/
+        // Restaurants/Hotels/Petrol (formerly a persistent MapTopPillRow above this bar) now
+        // live as rows in MapToolsSheet instead, reached via the single Tools FAB -- see that
+        // component for the real handlers these moved to.
+        <DestinationSearchBar
+          biasLocation={routeOriginLatLng ?? undefined}
+          onDestinationSelected={onDestinationSelected}
+          onFindNearestStation={onFindNearestStation}
+          findingNearestStation={findingNearestStation}
+          originLabel={routeOriginLabel}
+          onPressOrigin={openOriginPicker}
+        />
       )}
 
       {!route && pendingDestination && pickingStop && !pickingOrigin && (
@@ -4302,14 +4271,6 @@ export function MapScreen() {
             <ActivityIndicator size="small" color={colors.textMuted} />
           </View>
         )}
-        <Pressable
-          style={({ pressed }) => [styles.settingsButton, pressed && { opacity: pressedOpacity }]}
-          onPress={() => navigation.navigate("Settings")}
-          hitSlop={8}
-          accessibilityLabel="Settings"
-        >
-          <Ionicons name="settings-outline" size={20} color={colors.text} />
-        </Pressable>
       </View>
 
       {/* Hidden while a bottom sheet is open, an alert is being placed, or the route/stop
@@ -4338,92 +4299,41 @@ export function MapScreen() {
         </Pressable>
       )}
 
-      {/* Real, explicit request -- declutter: AI Vehicle Detection and the 3D buildings toggle
-          used to each be their own always-visible FAB here (5 total stacked on this edge
-          alongside Satellite/Locate/+). Condensed into one "More" FAB opening MapMoreSheet below.
-          Satellite stays its OWN separate button (not folded in here) -- it's deliberately
-          reachable even while placingAlert is true (see that button's own comment, a real,
-          previously-confirmed fix), which this shared wrapper's `!placingAlert` gate would
-          otherwise regress if Satellite moved in here too. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.fabSecondary,
-          route && styles.fabSecondaryCompact,
-          { bottom: fabSecondaryBottom(0), zIndex: 1 },
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={() => moreSheetRef.current?.expand()}
-        accessibilityLabel={
-          detectionBatteryLow ? "More options -- vehicle detection battery below 50%" : "More options"
-        }
-      >
-        <Ionicons name="apps" size={route ? 15 : 20} color="#FFFFFF" />
-        {/* Advisory only -- see detectionBatteryLow's own comment at MapMoreSheet's usage below.
-            Never disables this Pressable, just flags before the driver opens the sheet. */}
-        {detectionBatteryLow && (
-          <View style={styles.fabBatteryBadge} pointerEvents="none">
-            <Ionicons name="battery-dead-outline" size={11} color="#FFFFFF" />
-          </View>
-        )}
-      </Pressable>
-
-      {/* Permanent recenter button -- always in this stack, on top of the satellite and "+"
-          buttons below it, regardless of whether navigation is active. Previously the only
-          recenter control was the nav-only pill up top (only ever rendered once
-          route && !followTilt is true), so there was no way back to your own location at all
-          while just browsing the map before picking a destination. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.fabSecondary,
-          route && styles.fabSecondaryCompact,
-          { bottom: fabSecondaryBottom(2), zIndex: 3 },
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={onLocateButtonPress}
-        accessibilityLabel="Recenter on my location, or switch camera height if already centered."
-      >
-        <Ionicons name="locate" size={route ? 14 : 18} color="#FFFFFF" />
-      </Pressable>
         </>
       )}
 
-      {/* Real satellite selection, available while placing an alert -- previously this button
-          lived inside the FAB cluster above, entirely hidden the moment placingAlert became
-          true (see that cluster's own comment), so there was no way to switch to satellite
-          imagery to place a pin accurately against real ground features (a driveway, a specific
-          building) per explicit request. Pulled out to its own conditional, still rendered here
-          -- BEFORE mapArea's own closing </View> below -- so it stays inside the exact same
-          coordinate frame as the AI Detection/3D/locate cluster above it.
-          REAL, CONFIRMED ROOT CAUSE of this button drifting out of alignment with (and
-          overlapping) the rest of the stack: this block used to sit AFTER mapArea's closing
-          </View> instead of before it -- a sibling of mapArea and BannerAdBar inside the outer
-          screen container, not a child of mapArea like every other FAB here. mapArea and
-          BannerAdBar share one flex column (see BannerAdBar.tsx's own comment), so mapArea's
-          own bottom edge sits ABOVE the ad bar, not at the true screen bottom -- every other FAB
-          in this stack has its `bottom` offset measured from THAT edge. This button, rendered
-          outside mapArea, had its own identical-looking `bottom` offset measured from the outer
-          container's edge instead (BELOW the ad bar), a different, lower reference point --
-          so the same numeric offset placed it a whole ad-bar-height off from where its siblings
-          landed, close enough to the 3D/AI Detection buttons' own step spacing to visibly
-          collide with them. Moving the JSX itself (not just the numbers) is what actually fixes
-          it, since the two blocks were never in the same coordinate space to begin with. Still
-          hidden behind an open bottom sheet or the destination/route pickers, same as before. */}
+      {/* Real, explicit request -- ONE map-tools button replaces the whole former column of
+          separate floating circles (recenter, satellite/map style, 3D buildings, dashcam,
+          settings, layers/alerts/nearby-places) -- every one of those now lives as a labelled
+          row in MapToolsSheet below instead. Rendered here (not inside the `!placingAlert` block
+          above) so it stays reachable even while placing an alert -- a real, previously-fixed
+          need (switching to satellite imagery to place a pin accurately against real ground
+          features) that moving this button inside that stricter block would otherwise regress.
+          Position/coordinate-space notes from the old satellite button this replaces still apply:
+          rendered here, BEFORE mapArea's own closing </View> below, so it shares the same
+          coordinate frame as mapArea (not the outer container BannerAdBar also lives in -- see
+          git history for the real, confirmed alignment bug that distinction fixed). */}
       {!anySheetOpen && !pendingDestination && (
         <Pressable
           style={({ pressed }) => [
             styles.fabSecondary,
             route && styles.fabSecondaryCompact,
-            // zIndex 0 (lowest of the FAB cluster) -- this button is rendered after the More/
-            // locate cluster above, so without an explicit zIndex it would paint over them
-            // during any transient frame where their bottom offsets briefly coincide.
-            { bottom: fabSecondaryBottom(1), zIndex: 0 },
-            mapType === "hybrid" && styles.fabActive,
+            { bottom: fabSecondaryBottom(0), zIndex: 0 },
             pressed && { opacity: pressedOpacity },
           ]}
-          onPress={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
-          accessibilityLabel={mapType === "hybrid" ? "Switch to standard map" : "Switch to satellite map"}
+          onPress={() => toolsSheetRef.current?.expand()}
+          accessibilityLabel={
+            detectionBatteryLow ? "Map tools -- dashcam battery below 50%" : "Map tools"
+          }
         >
-          <Ionicons name="map-outline" size={route ? 14 : 18} color="#FFFFFF" />
+          <Ionicons name="apps" size={route ? 15 : 20} color="#FFFFFF" />
+          {/* Advisory only -- see detectionBatteryLow's own comment at MapToolsSheet's usage
+              below. Never disables this Pressable, just flags before the driver opens the sheet. */}
+          {detectionBatteryLow && (
+            <View style={styles.fabBatteryBadge} pointerEvents="none">
+              <Ionicons name="battery-dead-outline" size={11} color="#FFFFFF" />
+            </View>
+          )}
         </Pressable>
       )}
       </View>
@@ -4741,10 +4651,12 @@ export function MapScreen() {
         detectionBatteryLow={detectionBatteryLow}
       />
 
-      <MapMoreSheet
-        ref={moreSheetRef}
-        onOpenDetection={onMoreSheetOpenDetection}
-        detectionBatteryLow={detectionBatteryLow}
+      <MapToolsSheet
+        ref={toolsSheetRef}
+        onRecenter={() => {
+          toolsSheetRef.current?.close();
+          onLocateButtonPress();
+        }}
         show3D={show3D}
         onToggle3D={() =>
           setShow3D((v) => {
@@ -4754,7 +4666,31 @@ export function MapScreen() {
         }
         satelliteOn={mapType === "hybrid"}
         onToggleSatellite={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
-        onSheetChange={(index) => setMoreSheetOpen(index >= 0)}
+        onOpenDetection={onToolsSheetOpenDetection}
+        detectionBatteryLow={detectionBatteryLow}
+        alertsEnabled={settings.alertsEnabled}
+        onToggleAlerts={() => updateSettings({ alertsEnabled: !settings.alertsEnabled })}
+        // snapToIndex(0), not expand() -- these three sheets have two snap points
+        // (["50%", "88%"]), and expand() jumps straight to the largest one. Opening at index 0
+        // lands on the shorter default; dragging the handle still reaches 88%. Same real
+        // handlers MapTopPillRow (now deleted) used to call directly.
+        onFindRestaurants={() => {
+          toolsSheetRef.current?.close();
+          restaurantsSheetRef.current?.snapToIndex(0);
+        }}
+        onFindHotels={() => {
+          toolsSheetRef.current?.close();
+          hotelsSheetRef.current?.snapToIndex(0);
+        }}
+        onFindPetrol={() => {
+          toolsSheetRef.current?.close();
+          fuelStationsSheetRef.current?.snapToIndex(0);
+        }}
+        onOpenSettings={() => {
+          toolsSheetRef.current?.close();
+          navigation.navigate("Settings");
+        }}
+        onSheetChange={(index) => setToolsSheetOpen(index >= 0)}
       />
 
       {placeInfoLoading && (
@@ -5324,6 +5260,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...shadow.low,
   },
+  // Real, explicit request -- the "+" report button is the one primary action that stays on
+  // the map's front alongside Search, so it gets the app's own signature soft-blue-glow shadow
+  // (the same accentGlow token RouteOptionsCard's Start button uses) instead of a flat shadow,
+  // reading as clearly inviting/primary rather than just another floating circle.
   fab: {
     position: "absolute",
     right: spacing.xl,
@@ -5333,15 +5273,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
-    ...shadow.medium,
-  },
-  // Smaller footprint for the same button while actively navigating -- see the render call
-  // site's own comment for why (every one of these already has a same-purpose control
-  // elsewhere on screen during navigation, so shrinking is enough).
-  fabCompact: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    ...shadow.accentGlow,
   },
   fabSecondary: {
     position: "absolute",
