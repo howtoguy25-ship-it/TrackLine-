@@ -3312,7 +3312,26 @@ export function MapScreen() {
             has actually been found (see the periodic check effect). Route 1 (blue, above) never
             stops being drawn while this is up. */}
         {trafficSuggestionRoute && !stopPreviewRoute && (
-          <Polyline coordinates={detailedRoutePolyline(trafficSuggestionRoute)} strokeWidth={7} strokeColor="#22C55E" />
+          <>
+            <Polyline coordinates={detailedRoutePolyline(trafficSuggestionRoute)} strokeWidth={7} strokeColor="#22C55E" />
+            {/* Real, explicit request -- the alternate's actual ETA shown directly on the map
+                (same floating-pill pattern the route picker uses for its 3 profiles), not just
+                the banner's "save N min" text. Real Apple/Google Maps convention: a faster-route
+                callout always shows its own real arrival time, not only a relative delta. */}
+            {(() => {
+              const labelPoint = pointAtPolylineFraction(trafficSuggestionRoute.polyline, 0.5);
+              if (!labelPoint) return null;
+              return (
+                <Marker coordinate={labelPoint} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={5}>
+                  <View style={[styles.routeEtaPill, { backgroundColor: "#22C55E", borderColor: "#22C55E" }]}>
+                    <Text style={[styles.routeEtaPillText, styles.routeEtaPillTextSelected]}>
+                      {trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText}
+                    </Text>
+                  </View>
+                </Marker>
+              );
+            })()}
+          </>
         )}
         {/* Live device-compass "flashlight" cone -- separate from the route arrow below and
             rotated by deviceHeading (magnetometer), not travel heading, so it visually shows
@@ -4097,8 +4116,12 @@ export function MapScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.trafficSuggestionTitle}>Heavy traffic ahead</Text>
+              {/* Real, explicit request -- the real arrival time alongside the relative saving,
+                  not just "save N min" on its own (same convention as the map's own ETA pill
+                  right above this card). */}
               <Text style={styles.trafficSuggestionBody}>
-                Faster via side streets -- save {Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} min
+                Faster via side streets -- arrive {trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText}
+                {" "}(save {Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} min)
               </Text>
             </View>
             <Pressable
