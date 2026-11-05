@@ -7,6 +7,7 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 
 import trackLineLightStyle from "../../assets/mapStyles/trackline-light.json";
 import trackLineDarkStyle from "../../assets/mapStyles/trackline-dark.json";
+import trackLineSatelliteStyle from "../../assets/mapStyles/trackline-satellite.json";
 
 // Phase 1 prototype only -- a standalone screen proving out a custom MapLibre + OpenStreetMap
 // (OpenFreeMap "liberty" tiles, recolored to TrackLine's brand palette) vector map with real 3D
@@ -18,11 +19,12 @@ import trackLineDarkStyle from "../../assets/mapStyles/trackline-dark.json";
 // Sydney CBD, the same real coordinates this style was verified against during development.
 const FALLBACK_CENTER: [number, number] = [151.2093, -33.8688];
 
-type ViewStyle = "tilted3d" | "flat";
+type ViewStyle = "tilted3d" | "flat" | "satellite3d";
 
 const VIEW_STYLE_OPTIONS: { key: ViewStyle; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
   { key: "tilted3d", label: "3D tilted", icon: "rotate-3d-variant" },
   { key: "flat", label: "Overhead", icon: "square-outline" },
+  { key: "satellite3d", label: "Satellite", icon: "satellite-variant" },
 ];
 
 export function MapLibrePreviewScreen() {
@@ -32,7 +34,10 @@ export function MapLibrePreviewScreen() {
   const [viewStyle, setViewStyle] = useState<ViewStyle>("tilted3d");
   const cameraRef = useRef<CameraRef>(null);
 
-  const mapStyle = isDark ? trackLineDarkStyle : trackLineLightStyle;
+  // Satellite is its own single style (real imagery + road/label overlay) -- the light/dark
+  // vector recolor only applies to the two plain vector modes.
+  const mapStyle =
+    viewStyle === "satellite3d" ? trackLineSatelliteStyle : isDark ? trackLineDarkStyle : trackLineLightStyle;
   const center = useMemo<[number, number]>(
     () => (location ? [location.coords.longitude, location.coords.latitude] : FALLBACK_CENTER),
     [location]
@@ -88,13 +93,15 @@ export function MapLibrePreviewScreen() {
           })}
         </View>
 
-        <Pressable
-          onPress={() => setIsDark((d) => !d)}
-          style={({ pressed }) => [styles.themeToggle, pressed && { opacity: pressedOpacity }]}
-        >
-          <MaterialCommunityIcons name={isDark ? "weather-night" : "weather-sunny"} size={18} color={colors.text} />
-          <Text style={styles.themeToggleText}>{isDark ? "Dark" : "Light"}</Text>
-        </Pressable>
+        {viewStyle !== "satellite3d" && (
+          <Pressable
+            onPress={() => setIsDark((d) => !d)}
+            style={({ pressed }) => [styles.themeToggle, pressed && { opacity: pressedOpacity }]}
+          >
+            <MaterialCommunityIcons name={isDark ? "weather-night" : "weather-sunny"} size={18} color={colors.text} />
+            <Text style={styles.themeToggleText}>{isDark ? "Dark" : "Light"}</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
