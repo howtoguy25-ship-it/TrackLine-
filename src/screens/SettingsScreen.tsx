@@ -1210,6 +1210,19 @@ export function SettingsScreen() {
               <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
             </Pressable>
 
+            {/* Phase 1 standalone prototype of a custom MapLibre + OpenStreetMap map engine --
+                see MapLibrePreviewScreen.tsx's own header. Owner-only entry point so it can be
+                reviewed in a real build without exposing an unfinished map to every user; the
+                live navigation map (above) is untouched either way. */}
+            <Pressable
+              onPress={() => navigation.navigate("MapLibrePreview")}
+              style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
+            >
+              <MaterialCommunityIcons name="map-outline" size={20} color={colors.accent} />
+              <Text style={styles.revCheckLinkText}>Custom map preview (owner only)</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+            </Pressable>
+
             <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>Provider keys (owner only)</Text>
             <Text style={styles.helperText}>
               Real vehicle history isn't free -- PPSR (stolen/written-off/money-owing) and NEVDIS

@@ -10,6 +10,7 @@ import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
+import { MapLibrePreviewScreen } from "@/screens/MapLibrePreviewScreen";
 import { navigationIntegration } from "@/services/sentry";
 
 export type RevCheckParams = {
@@ -41,6 +42,9 @@ export type RootStackParamList = {
   // for why this affects its side-capture interval timing.
   VehicleDetection: { isNavigating?: boolean } | undefined;
   OwnerDashboard: undefined;
+  // Phase 1 standalone prototype for the custom MapLibre + OpenStreetMap map engine -- see
+  // MapLibrePreviewScreen.tsx's own header. Not the live navigation map.
+  MapLibrePreview: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -112,6 +116,11 @@ export function RootNavigator() {
           options={{ headerShown: true, title: "Owner Dashboard" }}
         />
         <Stack.Screen name="DocumentScan" component={DocumentScanScreen} />
+        <Stack.Screen
+          name="MapLibrePreview"
+          component={MapLibrePreviewScreen}
+          options={{ headerShown: true, title: "Custom map preview" }}
+        />
         <Stack.Screen
           name="VehicleDetection"
           component={VehicleDetectionRoute}
