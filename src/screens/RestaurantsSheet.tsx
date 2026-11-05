@@ -94,9 +94,20 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
-    searchNearbyOsmPlaces(location, "restaurant")
+    // Real, confirmed fix for "takes forever to load" -- a sparse/regional area legitimately
+    // widens the search radius a couple of times before finding enough real results, and
+    // previously nothing showed on screen until ALL of that widening finished. This callback
+    // shows each radius's real results (already nearest-first sorted) the moment they land,
+    // clearing the spinner on the very first non-empty (or truly final) one instead of making
+    // the driver wait through every widening round just to see the first, already-real answer.
+    searchNearbyOsmPlaces(location, "restaurant", (partial, isFinal) => {
+      if (partial.length > 0 || isFinal) {
+        setPlaces(partial);
+        setLoading(false);
+      }
+    })
       .then((results) => {
-        setPlaces(results.sort((a, b) => a.distanceMeters - b.distanceMeters));
+        setPlaces(results);
         setFetchedFor(key);
       })
       .catch((err) => {
@@ -128,7 +139,12 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
     }
     const timer = setTimeout(() => {
       setTextSearching(true);
-      searchOsmPlacesByText(q, location, "restaurant")
+      searchOsmPlacesByText(q, location, "restaurant", (partial, isFinal) => {
+        if (partial.length > 0 || isFinal) {
+          setTextSearchResults(partial);
+          setTextSearching(false);
+        }
+      })
         .then(setTextSearchResults)
         .catch(() => {})
         .finally(() => setTextSearching(false));

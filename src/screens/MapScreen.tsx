@@ -82,6 +82,7 @@ import {
 import {
   findNearestTransitStation,
   getPlaceInfo,
+  getStreetViewUrl,
   reverseGeocode,
   type PlaceDetails,
   type PlaceInfo,
@@ -557,6 +558,16 @@ export function MapScreen() {
   // looks up whatever business is closest to that point via Places Nearby Search + Details.
   const [placeInfo, setPlaceInfo] = useState<PlaceInfo | null>(null);
   const [placeInfoLoading, setPlaceInfoLoading] = useState(false);
+  // Real quick drive-time check -- like Apple Maps' own "19 min." pill on a place card, a
+  // lightweight traffic-aware Directions call from the real current trip origin, fired only
+  // once a place card is actually open (not for every map tap/search result) and cleared the
+  // instant the sheet shows a different place so a stale ETA from the last place never lingers
+  // on screen while the new one's own real figure is still loading.
+  const [placeInfoEtaText, setPlaceInfoEtaText] = useState<string | null>(null);
+  // Real Street View Static thumbnail for whatever place PlaceInfoSheet is showing -- see
+  // getStreetViewUrl's own comment for why this can genuinely come back null (no real coverage)
+  // rather than ever showing a fabricated placeholder image.
+  const [placeInfoStreetViewUrl, setPlaceInfoStreetViewUrl] = useState<string | null>(null);
 
   const [osmMarkerKind, setOsmMarkerKind] = useState<OsmMarkerKind | null>(null);
   const [osmMarkerLocation, setOsmMarkerLocation] = useState<LatLng | null>(null);
@@ -2035,6 +2046,56 @@ export function MapScreen() {
     return fuelViewportPlaces.filter((p) => !seen.has(p.placeId));
   }, [fuelViewportPlaces, fuelStationPins]);
 
+  // Same real lag fix as the traffic-light/speed-camera clustering below, applied to the
+  // viewport place layers -- a dense area (a CBD food court block, a hotel strip) can put
+  // 50-100+ pins on screen at once zoomed out, which is exactly the render-count problem
+  // clustering already solves for OSM layers. NearbyPlace has nested location.lat/lng rather
+  // than flat lat/lng, so each layer gets a small adapter into ClusterablePoint shape before
+  // clustering, carrying the original place through so the single-pin render path still has
+  // everything it needs (placeId, icon choice, onPress target).
+  const fuelViewportClusters = useMemo(() => {
+    if (fuelViewportOnlyPins.length === 0) return [];
+    const points = fuelViewportOnlyPins.map((p) => ({
+      id: p.placeId,
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      place: p,
+    }));
+    const cellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
+    return clusterPoints(points, cellSizeDegrees);
+  }, [fuelViewportOnlyPins, osmZoomDelta]);
+
+  const restaurantViewportClusters = useMemo(() => {
+    if (restaurantViewportPlaces.length === 0) return [];
+    const points = restaurantViewportPlaces.map((p) => ({
+      id: p.placeId,
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      place: p,
+    }));
+    const cellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
+    return clusterPoints(points, cellSizeDegrees);
+  }, [restaurantViewportPlaces, osmZoomDelta]);
+
+  const hotelViewportClusters = useMemo(() => {
+    if (hotelViewportPlaces.length === 0) return [];
+    const points = hotelViewportPlaces.map((p) => ({
+      id: p.placeId,
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      place: p,
+    }));
+    const cellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
+    return clusterPoints(points, cellSizeDegrees);
+  }, [hotelViewportPlaces, osmZoomDelta]);
+
+  const onPlaceClusterPress = useCallback((lat: number, lng: number) => {
+    mapRef.current?.animateToRegion(
+      { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 },
+      350
+    );
+  }, [osmZoomDelta]);
+
   // Traffic-light nodes cluster into a single badge wherever they're too dense to render as
   // individual pins without lagging the map -- a real intersection cluster (several nodes,
   // one per approach/crossing) can put 10-20+ within a couple hundred meters, and a whole
@@ -2115,6 +2176,54 @@ export function MapScreen() {
     },
     [route, placingAlert, anySheetOpen]
   );
+
+  // Real drive-time quick-check for whatever place PlaceInfoSheet is currently showing -- see
+  // placeInfoEtaText's own comment. Keyed on the place's real placeId (not the whole object,
+  // which is a fresh reference every fetch) so this doesn't re-fire on an unrelated re-render,
+  // and guarded with a cancelled flag so a slow request for a place the driver already closed
+  // can't overwrite the pill with a stale answer for a place no longer on screen.
+  useEffect(() => {
+    if (!placeInfo || !routeOriginLatLng) {
+      setPlaceInfoEtaText(null);
+      return;
+    }
+    let cancelled = false;
+    setPlaceInfoEtaText(null);
+    getDirections(routeOriginLatLng, placeInfo.location, { useTraffic: true })
+      .then((route) => {
+        if (cancelled) return;
+        setPlaceInfoEtaText(route.etaInTrafficText ?? route.etaText);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[map] place ETA lookup failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [placeInfo?.placeId, routeOriginLatLng]);
+
+  // Real Street View lookup, same cancellation-guarded pattern as the ETA effect above, kept as
+  // its own independent request so a slow/failed Street View lookup never blocks or delays the
+  // ETA pill or the rest of the place card.
+  useEffect(() => {
+    if (!placeInfo) {
+      setPlaceInfoStreetViewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setPlaceInfoStreetViewUrl(null);
+    getStreetViewUrl(placeInfo.location)
+      .then((url) => {
+        if (!cancelled) setPlaceInfoStreetViewUrl(url);
+      })
+      .catch((err) => {
+        if (!cancelled) console.warn("[map] street view lookup failed", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [placeInfo?.placeId]);
 
   // Real, confirmed bug this fixes: picking a destination (typing one in, or "find nearest
   // station") never closed the Restaurants/Hotels/Fuel sheets -- if any of those had been
@@ -2634,6 +2743,29 @@ export function MapScreen() {
     },
     [pendingDestination, stopLocation, travelMode, currentLatLng, fetchRouteOptions]
   );
+
+  // Real, explicit request -- a real swap button (like Apple/Google Maps) that flips the
+  // current origin and destination in place, re-fetching routes for the flipped trip instead of
+  // requiring the driver to re-search either end by hand. The old destination becomes the real
+  // new origin override directly (it's already a full PlaceDetails). The old origin has no
+  // PlaceDetails object of its own when it's just live GPS (originOverride is null in that
+  // case) -- synthesized here the same way confirmOriginPin already synthesizes one for a
+  // dropped pin, using the real current coordinate and liveAddress reverse-geocoded label.
+  const onSwapOriginDestination = useCallback(() => {
+    if (!pendingDestination || !routeOriginLatLng) return;
+    const currentOriginPlace: PlaceDetails =
+      originOverride ?? {
+        placeId: `live:${routeOriginLatLng.latitude.toFixed(6)},${routeOriginLatLng.longitude.toFixed(6)}`,
+        name: liveAddress ?? "My Location",
+        address: liveAddress ?? "My Location",
+        location: routeOriginLatLng,
+      };
+    const newOrigin = pendingDestination;
+    const newDestination = currentOriginPlace;
+    setOriginOverride(newOrigin);
+    setPendingDestination(newDestination);
+    fetchRouteOptions(newOrigin.location, newDestination.location, stopLocation ?? undefined, travelMode);
+  }, [pendingDestination, routeOriginLatLng, originOverride, liveAddress, stopLocation, travelMode, fetchRouteOptions]);
 
   // Real, explicit request: "choose starting point" opens straight into the pin-drop picker
   // (below), seeded from wherever the current origin already is (a previously custom-picked
@@ -3725,71 +3857,132 @@ export function MapScreen() {
         {/* Real, explicit request -- "zoom out...display all that's available" for petrol
             stations beyond the sheet's own fixed-radius nearest-N list above (fuelViewportOnlyPins
             is already de-duped against it, see its own comment). Same open-sheet gating, same
-            tap-through to the detail sheet. */}
+            tap-through to the detail sheet. Clustered (see fuelViewportClusters above) so a
+            dense area doesn't render dozens of individual pins at once. */}
         {fuelStationsSheetOpen &&
-          fuelViewportOnlyPins.map((place) => (
-            <Marker
-              key={`fuel-vp-${place.placeId}`}
-              coordinate={place.location}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                onViewVenueDetails(place.placeId);
-              }}
-            >
-              <View style={styles.fuelPinWrap}>
-                <View style={styles.fuelPinBadge}>
-                  <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
+          fuelViewportClusters.map((c) =>
+            c.count === 1 ? (
+              <Marker
+                key={`fuel-vp-${c.points[0].place.placeId}`}
+                coordinate={c.points[0].place.location}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onViewVenueDetails(c.points[0].place.placeId);
+                }}
+              >
+                <View style={styles.fuelPinWrap}>
+                  <View style={styles.fuelPinBadge}>
+                    <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
+                  </View>
                 </View>
-              </View>
-            </Marker>
-          ))}
+              </Marker>
+            ) : (
+              <Marker
+                key={`fuel-vpc-${c.key}`}
+                coordinate={{ latitude: c.lat, longitude: c.lng }}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onPlaceClusterPress(c.lat, c.lng);
+                }}
+              >
+                <View style={styles.fuelPinWrap}>
+                  <View style={[styles.placeClusterBadge, { backgroundColor: "#16A34A" }]}>
+                    <MaterialCommunityIcons name="gas-station" size={14} color="#FFFFFF" />
+                    <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
+                  </View>
+                </View>
+              </Marker>
+            )
+          )}
         {/* Real, explicit request -- same "zoom out and see everything available" treatment for
             restaurants, including real fast-food chains (KFC, McDonald's, etc -- OSM's own
             amenity=fast_food tag, already included in osmPlaces.ts's CATEGORY_TAGS.restaurant).
             RestaurantsSheet has no GPS-anchored pin-reporting of its own the way FuelStationsSheet
             does, so this viewport layer is the only source of restaurant pins on the map -- no
-            dedup needed against anything else. */}
+            dedup needed against anything else. Clustered, same reasoning as the fuel layer above. */}
         {restaurantsSheetOpen &&
-          restaurantViewportPlaces.map((place) => (
-            <Marker
-              key={`rest-vp-${place.placeId}`}
-              coordinate={place.location}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                onViewVenueDetails(place.placeId);
-              }}
-            >
-              <View style={styles.fuelPinWrap}>
-                <View style={styles.restaurantPinBadge}>
-                  <Ionicons name="restaurant" size={15} color="#FFFFFF" />
+          restaurantViewportClusters.map((c) =>
+            c.count === 1 ? (
+              <Marker
+                key={`rest-vp-${c.points[0].place.placeId}`}
+                coordinate={c.points[0].place.location}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onViewVenueDetails(c.points[0].place.placeId);
+                }}
+              >
+                <View style={styles.fuelPinWrap}>
+                  <View style={styles.restaurantPinBadge}>
+                    <Ionicons name="restaurant" size={15} color="#FFFFFF" />
+                  </View>
                 </View>
-              </View>
-            </Marker>
-          ))}
+              </Marker>
+            ) : (
+              <Marker
+                key={`rest-vpc-${c.key}`}
+                coordinate={{ latitude: c.lat, longitude: c.lng }}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onPlaceClusterPress(c.lat, c.lng);
+                }}
+              >
+                <View style={styles.fuelPinWrap}>
+                  <View style={[styles.placeClusterBadge, { backgroundColor: "#F97316" }]}>
+                    <Ionicons name="restaurant" size={13} color="#FFFFFF" />
+                    <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
+                  </View>
+                </View>
+              </Marker>
+            )
+          )}
         {/* Same real treatment for hotels -- see restaurant block's own comment above. */}
         {hotelsSheetOpen &&
-          hotelViewportPlaces.map((place) => (
-            <Marker
-              key={`hotel-vp-${place.placeId}`}
-              coordinate={place.location}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                onViewVenueDetails(place.placeId);
-              }}
-            >
-              <View style={styles.fuelPinWrap}>
-                <View style={styles.hotelPinBadge}>
-                  <Ionicons name="bed" size={15} color="#FFFFFF" />
+          hotelViewportClusters.map((c) =>
+            c.count === 1 ? (
+              <Marker
+                key={`hotel-vp-${c.points[0].place.placeId}`}
+                coordinate={c.points[0].place.location}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onViewVenueDetails(c.points[0].place.placeId);
+                }}
+              >
+                <View style={styles.fuelPinWrap}>
+                  <View style={styles.hotelPinBadge}>
+                    <Ionicons name="bed" size={15} color="#FFFFFF" />
+                  </View>
                 </View>
-              </View>
-            </Marker>
-          ))}
+              </Marker>
+            ) : (
+              <Marker
+                key={`hotel-vpc-${c.key}`}
+                coordinate={{ latitude: c.lat, longitude: c.lng }}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onPlaceClusterPress(c.lat, c.lng);
+                }}
+              >
+                <View style={styles.fuelPinWrap}>
+                  <View style={[styles.placeClusterBadge, { backgroundColor: "#6366F1" }]}>
+                    <Ionicons name="bed" size={13} color="#FFFFFF" />
+                    <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
+                  </View>
+                </View>
+              </Marker>
+            )
+          )}
         {settings.showLiveCameras &&
           liveCameras.map((camera) => (
             <Marker
@@ -4001,6 +4194,8 @@ export function MapScreen() {
           onHeightChange={setRouteCardHeight}
           originLabel={routeOriginLabel}
           onChangeOrigin={openOriginPicker}
+          destinationLabel={pendingDestination.name}
+          onSwapOriginDestination={onSwapOriginDestination}
         />
       )}
 
@@ -4599,6 +4794,8 @@ export function MapScreen() {
       <PlaceInfoSheet
         ref={placeInfoSheetRef}
         place={placeInfo}
+        etaText={placeInfoEtaText}
+        streetViewUrl={placeInfoStreetViewUrl}
         onClose={() => placeInfoSheetRef.current?.close()}
         onGetDirections={(p) => {
           placeInfoSheetRef.current?.close();
@@ -4699,14 +4896,20 @@ export function MapScreen() {
         // handlers MapTopPillRow (now deleted) used to call directly.
         onFindRestaurants={() => {
           toolsSheetRef.current?.close();
+          hotelsSheetRef.current?.close();
+          fuelStationsSheetRef.current?.close();
           restaurantsSheetRef.current?.snapToIndex(0);
         }}
         onFindHotels={() => {
           toolsSheetRef.current?.close();
+          restaurantsSheetRef.current?.close();
+          fuelStationsSheetRef.current?.close();
           hotelsSheetRef.current?.snapToIndex(0);
         }}
         onFindPetrol={() => {
           toolsSheetRef.current?.close();
+          restaurantsSheetRef.current?.close();
+          hotelsSheetRef.current?.close();
           fuelStationsSheetRef.current?.snapToIndex(0);
         }}
         onOpenSettings={() => {
@@ -5053,6 +5256,24 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
+  },
+  // Shared cluster badge for the fuel/restaurant/hotel viewport layers -- wider than the single-
+  // pin badges above to fit an icon plus a real count, backgroundColor set per-category inline.
+  placeClusterBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    justifyContent: "center",
+  },
+  placeClusterBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   // Deliberately a different color from both OSM markers above (blue, not purple/teal) -- this
   // is a real live NSW government camera feed, an entirely separate dataset from the mapped

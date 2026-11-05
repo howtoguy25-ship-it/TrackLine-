@@ -94,9 +94,17 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
-    searchNearbyOsmPlaces(location, "fuel")
+    // Real, confirmed fix for "takes forever to load" -- see RestaurantsSheet.tsx's identical
+    // comment: shows each radius-widening round's real results the moment they land instead of
+    // only after every round finishes.
+    searchNearbyOsmPlaces(location, "fuel", (partial, isFinal) => {
+      if (partial.length > 0 || isFinal) {
+        setStations(partial);
+        setLoading(false);
+      }
+    })
       .then((results) => {
-        setStations(results.sort((a, b) => a.distanceMeters - b.distanceMeters));
+        setStations(results);
         setFetchedFor(key);
       })
       .catch((err) => {
@@ -123,7 +131,12 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
     }
     const timer = setTimeout(() => {
       setTextSearching(true);
-      searchOsmPlacesByText(q, location, "fuel")
+      searchOsmPlacesByText(q, location, "fuel", (partial, isFinal) => {
+        if (partial.length > 0 || isFinal) {
+          setTextSearchResults(partial);
+          setTextSearching(false);
+        }
+      })
         .then(setTextSearchResults)
         .catch(() => {})
         .finally(() => setTextSearching(false));

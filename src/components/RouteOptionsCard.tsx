@@ -99,6 +99,12 @@ interface Props {
   // the route list screen.
   originLabel?: string;
   onChangeOrigin?: () => void;
+  // The real picked destination's name -- shown as its own "To" row right under "From", same
+  // as Apple/Google Maps' route picker shows both ends of the trip, not just where you started.
+  destinationLabel?: string;
+  // Real swap -- flips origin and destination in place and re-fetches, like the swap button in
+  // Apple/Google Maps' own route picker. Only rendered when both rows above it are present.
+  onSwapOriginDestination?: () => void;
 }
 
 // "Bus 418", "T2 Train", or for a multi-leg trip "Bus 418 + Bus 333" -- the real line(s) this
@@ -137,6 +143,8 @@ export function RouteOptionsCard({
   onHeightChange,
   originLabel,
   onChangeOrigin,
+  destinationLabel,
+  onSwapOriginDestination,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -171,17 +179,41 @@ export function RouteOptionsCard({
       </View>
 
       {originLabel && onChangeOrigin && (
-        <Pressable
-          style={({ pressed }) => [styles.originRow, pressed && { opacity: pressedOpacity }]}
-          onPress={onChangeOrigin}
-          accessibilityLabel={`Starting from ${originLabel}. Tap to change.`}
-        >
-          <Ionicons name="ellipse" size={9} color={colors.accent} />
-          <Text style={styles.originText} numberOfLines={1}>
-            From {originLabel}
-          </Text>
-          <Ionicons name="pencil" size={13} color={colors.textFaint} />
-        </Pressable>
+        <View style={styles.fromToBlock}>
+          <View style={styles.fromToRows}>
+            <Pressable
+              style={({ pressed }) => [styles.originRow, pressed && { opacity: pressedOpacity }]}
+              onPress={onChangeOrigin}
+              accessibilityLabel={`Starting from ${originLabel}. Tap to change.`}
+            >
+              <Ionicons name="ellipse" size={9} color={colors.accent} />
+              <Text style={styles.originText} numberOfLines={1}>
+                From {originLabel}
+              </Text>
+              <Ionicons name="pencil" size={13} color={colors.textFaint} />
+            </Pressable>
+            {/* Real "To" row -- same two-ends-of-the-trip display Apple/Google Maps' own route
+                picker shows, not just where the trip starts. */}
+            {destinationLabel && (
+              <View style={styles.destinationRow}>
+                <Ionicons name="location" size={11} color={colors.danger} />
+                <Text style={styles.originText} numberOfLines={1}>
+                  To {destinationLabel}
+                </Text>
+              </View>
+            )}
+          </View>
+          {destinationLabel && onSwapOriginDestination && (
+            <Pressable
+              style={({ pressed }) => [styles.swapButton, pressed && { opacity: pressedOpacity }]}
+              onPress={onSwapOriginDestination}
+              accessibilityLabel={`Swap -- make ${destinationLabel} the starting point and ${originLabel} the destination`}
+              hitSlop={8}
+            >
+              <Ionicons name="swap-vertical" size={18} color={colors.accent} />
+            </Pressable>
+          )}
+        </View>
       )}
 
       {/* Scrollable, and Start now lives INSIDE this ScrollView as its last item (not a fixed
@@ -470,17 +502,39 @@ const styles = StyleSheet.create({
   scrollArea: {
     gap: spacing.sm,
   },
-  originRow: {
+  fromToBlock: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     marginBottom: spacing.sm,
+  },
+  fromToRows: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  originRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  destinationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   originText: {
     flex: 1,
     fontSize: 12,
     fontWeight: "600",
     color: colors.textMuted,
+  },
+  swapButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
   title: {
     fontSize: 17,

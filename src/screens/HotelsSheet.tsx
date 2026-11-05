@@ -83,7 +83,15 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
-    searchNearbyOsmPlaces(location, "hotel")
+    // Real, confirmed fix for "takes forever to load" -- see RestaurantsSheet.tsx's identical
+    // comment: shows each radius-widening round's real results the moment they land instead of
+    // only after every round finishes.
+    searchNearbyOsmPlaces(location, "hotel", (partial, isFinal) => {
+      if (partial.length > 0 || isFinal) {
+        setHotels(partial);
+        setLoading(false);
+      }
+    })
       .then((results) => {
         setHotels(results);
         setFetchedFor(key);
@@ -112,7 +120,12 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
     }
     const timer = setTimeout(() => {
       setTextSearching(true);
-      searchOsmPlacesByText(q, location, "hotel")
+      searchOsmPlacesByText(q, location, "hotel", (partial, isFinal) => {
+        if (partial.length > 0 || isFinal) {
+          setTextSearchResults(partial);
+          setTextSearching(false);
+        }
+      })
         .then(setTextSearchResults)
         .catch(() => {})
         .finally(() => setTextSearching(false));

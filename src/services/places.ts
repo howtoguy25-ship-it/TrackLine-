@@ -259,6 +259,29 @@ function nearbyPlacePhotoUrl(photoReference: string | undefined): string | null 
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=480&photo_reference=${photoReference}&key=${env.googlePlacesApiKey}`;
 }
 
+// Real Street View Static API thumbnail -- Apple Maps' own "Look Around" equivalent, "with a
+// touch of TrackLine" per explicit request. The real, documented Metadata endpoint is checked
+// first (a separate, free call, same API key) rather than building the image URL unconditionally
+// -- the Street View Static Image endpoint itself returns a generic gray "no imagery here" tile
+// for a location Google has no real panorama for, and showing that dressed up as a real street
+// photo would be exactly the kind of fabricated-looking result this app never shows. Returns
+// null (never a placeholder) when there's genuinely no real coverage at this location.
+export async function getStreetViewUrl(location: LatLng): Promise<string | null> {
+  const params = new URLSearchParams({
+    location: `${location.latitude},${location.longitude}`,
+    key: env.googlePlacesApiKey,
+  });
+  try {
+    const res = await fetch(`https://maps.googleapis.com/maps/api/streetview/metadata?${params.toString()}`);
+    const json = await res.json();
+    if (json.status !== "OK") return null;
+    return `https://maps.googleapis.com/maps/api/streetview?size=640x360&location=${location.latitude},${location.longitude}&key=${env.googlePlacesApiKey}`;
+  } catch (err) {
+    Sentry.logger.error("places: street view metadata request failed", { error: String(err) });
+    return null;
+  }
+}
+
 // Real distance (haversine), not Google's own ranking order -- Nearby Search's `rankby=distance`
 // mode already sorts by this, but the app still needs the actual meters figure to show/format
 // per result, which Google's response doesn't include directly.

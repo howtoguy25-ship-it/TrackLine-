@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo } from "react";
+import React, { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,18 +15,33 @@ interface Props {
   // Optional so a caller that only wants read-only info (none exist today, but kept honest to
   // the real shape) doesn't have to wire a no-op.
   onGetDirections?: (place: PlaceInfo) => void;
+  // Real quick drive-time check (MapScreen's own traffic-aware Directions lookup, fired once
+  // this sheet opens) -- like Apple Maps' "19 min." pill on a place card. Null while that
+  // lookup is still in flight or hasn't started; never a guessed/placeholder figure.
+  etaText?: string | null;
+  // Real Street View Static thumbnail for this exact place (MapScreen's own getStreetViewUrl,
+  // which only resolves when Google genuinely has coverage here) -- null means no real
+  // coverage, not a failed load, so nothing fabricated is ever shown in its place.
+  streetViewUrl?: string | null;
 }
 
 export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoSheet(
-  { place, onClose, onSheetChange, onGetDirections },
+  { place, onClose, onSheetChange, onGetDirections, etaText, streetViewUrl },
   ref
 ) {
   const insets = useSafeAreaInsets();
-  const snapPoints = useMemo(() => ["50%"], []);
+  // Two stages, like Apple Maps' own place card -- short stage lands enough to confirm the
+  // right place/name/rating/ETA at a glance without covering most of the map; the tall stage
+  // (opened via the swipe-up affordance on the Street View thumbnail below, or a manual drag)
+  // reveals the rest -- hours/phone/reviews/photos.
+  const snapPoints = useMemo(() => ["50%", "90%"], []);
+  const sheetRef = useRef<BottomSheet>(null);
+  useImperativeHandle(ref, () => sheetRef.current as BottomSheet);
+  const expandSheet = () => sheetRef.current?.snapToIndex(1);
 
   return (
     <BottomSheet
-      ref={ref}
+      ref={sheetRef}
       index={-1}
       snapPoints={snapPoints}
       enablePanDownToClose
@@ -57,6 +72,12 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
             </View>
 
             <View style={styles.statusRow}>
+              {etaText && (
+                <View style={styles.etaPill}>
+                  <Ionicons name="car" size={13} color="#FFFFFF" />
+                  <Text style={styles.etaPillText}>{etaText}</Text>
+                </View>
+              )}
               {place.rating != null && (
                 <View style={styles.ratingWrap}>
                   <Ionicons name="star" size={14} color="#F59E0B" />
@@ -85,6 +106,27 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                 </Pressable>
               )}
             </View>
+
+            {/* Real Street View Static thumbnail -- Apple Maps' own "Look Around" equivalent,
+                bottom-left of this initially-visible card per explicit request, with a chevron-
+                up affordance doubling as the swipe-up-for-more-info cue (tapping it, or actually
+                swiping up, both reach the same expanded 90% stage). Omitted entirely rather than
+                showing any placeholder when streetViewUrl is null -- see its own prop comment. */}
+            {streetViewUrl && (
+              <Pressable
+                onPress={expandSheet}
+                style={({ pressed }) => [styles.streetViewRow, pressed && { opacity: pressedOpacity }]}
+                accessibilityLabel="Street view. Swipe up for more details."
+              >
+                <View style={styles.streetViewThumbWrap}>
+                  <Image source={{ uri: streetViewUrl }} style={styles.streetViewThumb} />
+                  <View style={styles.streetViewExpandBadge}>
+                    <Ionicons name="chevron-up" size={13} color="#FFFFFF" />
+                  </View>
+                </View>
+                <Text style={styles.streetViewHint}>Street View -- swipe up for more</Text>
+              </Pressable>
+            )}
 
             {/* BottomSheetScrollView, not a plain ScrollView -- inside @gorhom/bottom-sheet, the
                 sheet's own pan gesture handler intercepts drag touches meant for a plain
@@ -242,6 +284,54 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
+  },
+  etaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#16A34A",
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+  },
+  etaPillText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  streetViewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  streetViewThumbWrap: {
+    width: 96,
+    height: 72,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    backgroundColor: colors.surfaceMuted,
+  },
+  streetViewThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  streetViewExpandBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  streetViewHint: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textMuted,
+    flexShrink: 1,
   },
   scroll: {
     marginTop: spacing.md,

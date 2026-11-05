@@ -202,13 +202,25 @@ function elementToNearbyPlace(el: OverpassElement, center: LatLng, category: Osm
   };
 }
 
+// Real, confirmed cause of "takes forever to load": every radius attempt was fully awaited in
+// sequence before the caller ever saw anything, so a genuinely sparse/regional area (where the
+// first radius legitimately comes back thin and this widens to the next one) left the sheet
+// showing nothing but a spinner for the combined latency of every radius tried, not just one.
+// onRadiusResult (optional) lets a caller show the first radius's real results THE MOMENT they
+// land -- same real data, same ordering, just surfaced progressively instead of only once all
+// widening is done. Widening still continues in the background and calls this again with the
+// better (bigger-radius) list if the first one was too sparse; a caller that doesn't care about
+// the intermediate frame can just ignore earlier calls and use the final return value, same as
+// before this existed.
 async function queryWithWidening(
   category: OsmPoiCategory,
   center: LatLng,
-  nameFilter?: string
+  nameFilter?: string,
+  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void
 ): Promise<NearbyPlace[]> {
   let results: NearbyPlace[] = [];
-  for (const radius of SEARCH_RADII_METERS) {
+  for (let i = 0; i < SEARCH_RADII_METERS.length; i++) {
+    const radius = SEARCH_RADII_METERS[i];
     const data = await runOverpassQuery(buildQuery(category, center, radius, nameFilter));
     const seen = new Set<string>();
     results = [];
@@ -219,6 +231,8 @@ async function queryWithWidening(
       results.push(place);
     }
     results.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    const isFinal = results.length >= MIN_RESULTS_BEFORE_WIDENING || i === SEARCH_RADII_METERS.length - 1;
+    onRadiusResult?.(results.slice(0, MAX_RESULTS), isFinal);
     if (results.length >= MIN_RESULTS_BEFORE_WIDENING) break;
     // Too sparse at this radius -- a real sign of a regional/remote area, not a bug. Widening
     // and re-querying gives that driver a real (if further-away) answer instead of an
@@ -230,18 +244,33 @@ async function queryWithWidening(
 
 /** Real nearby fuel stations/restaurants/hotels from OpenStreetMap, nearest-first -- see this
  *  file's own header for the real Google-vs-OSM trade-offs. Starts at a tight radius and widens
- *  automatically in genuinely low-density areas (see SEARCH_RADII_METERS). */
-export function searchNearbyOsmPlaces(location: LatLng, category: OsmPoiCategory): Promise<NearbyPlace[]> {
-  return withTimeout(queryWithWidening(category, location), OVERPASS_QUERY_MAX_MS * SEARCH_RADII_METERS.length, `nearby ${category} request`);
+ *  automatically in genuinely low-density areas (see SEARCH_RADII_METERS). Pass onRadiusResult to
+ *  get the first radius's real results immediately instead of waiting for widening to finish --
+ *  see queryWithWidening's own header for why. */
+export function searchNearbyOsmPlaces(
+  location: LatLng,
+  category: OsmPoiCategory,
+  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void
+): Promise<NearbyPlace[]> {
+  return withTimeout(
+    queryWithWidening(category, location, undefined, onRadiusResult),
+    OVERPASS_QUERY_MAX_MS * SEARCH_RADII_METERS.length,
+    `nearby ${category} request`
+  );
 }
 
 /** Same real OSM data, filtered to places whose own tagged name matches the driver's search
  *  text -- the OSM-backed equivalent of places.ts's searchPlacesByText, used by each sheet's own
  *  in-sheet search box. */
-export function searchOsmPlacesByText(query: string, location: LatLng, category: OsmPoiCategory): Promise<NearbyPlace[]> {
+export function searchOsmPlacesByText(
+  query: string,
+  location: LatLng,
+  category: OsmPoiCategory,
+  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void
+): Promise<NearbyPlace[]> {
   if (!query.trim()) return Promise.resolve([]);
   return withTimeout(
-    queryWithWidening(category, location, query.trim()),
+    queryWithWidening(category, location, query.trim(), onRadiusResult),
     OVERPASS_QUERY_MAX_MS * SEARCH_RADII_METERS.length,
     `${category} text search request`
   );
