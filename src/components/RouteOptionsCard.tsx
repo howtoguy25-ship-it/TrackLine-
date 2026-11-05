@@ -372,9 +372,19 @@ export function RouteOptionsCard({
               {(["tolls", "noTolls"] as const).map((key) => {
                 const isSelected = key === selected;
                 const toll = options![key].tollEstimate;
+                const route = options![key];
                 const label = key === "tolls" ? "With tolls" : "No tolls";
+                // Real, explicit request -- "No Tolls" should clearly say it avoids tolls AND
+                // which real road it uses instead (Google's own route.summary, e.g. "via
+                // Pennant Hills Rd"), not just a generic "avoids tolls" with no indication of
+                // the actual tradeoff. Falls back to the plain claim on the rare route Google
+                // itself didn't return a summary for (no single road dominates the path).
                 const sublabel =
-                  key === "tolls" ? toll?.priceText ?? "Price unavailable" : "Avoids every toll road";
+                  key === "tolls"
+                    ? toll?.priceText ?? "Price unavailable"
+                    : route.summary
+                      ? `Avoids tolls -- via ${route.summary}`
+                      : "Avoids every toll road";
                 return (
                   <Pressable
                     key={key}

@@ -41,6 +41,11 @@ export interface RouteStep {
 export interface Route {
   polyline: LatLng[];
   steps: RouteStep[];
+  // Google's own real short road-name summary for this route (e.g. "M2" or "Pennant Hills Rd")
+  // -- straight off the classic Directions API's own `route.summary` field, never derived/
+  // guessed from the steps. undefined on the rare route Google itself didn't return one for
+  // (no single road dominates the path), never a fabricated placeholder.
+  summary?: string;
   distanceMeters: number;
   durationSeconds: number;
   etaText: string;
@@ -174,6 +179,7 @@ function parseRoute(route: any): Route {
   return {
     polyline: decodePolyline(route.overview_polyline.points),
     steps,
+    summary: typeof route.summary === "string" && route.summary.length > 0 ? route.summary : undefined,
     distanceMeters: leg.distance?.value ?? 0,
     durationSeconds,
     etaText: leg.duration?.text ?? "",

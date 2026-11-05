@@ -11,6 +11,7 @@ import {
   AppState,
   ActionSheetIOS,
   useWindowDimensions,
+  Linking,
 } from "react-native";
 import MapView, {
   PROVIDER_GOOGLE,
@@ -19,6 +20,7 @@ import MapView, {
   Circle,
   type Region,
   type MapPressEvent,
+  type PoiClickEvent,
 } from "react-native-maps";
 import { Map3DView, isMap3DSupported, type Map3DViewHandle } from "map3d";
 import * as Location from "expo-location";
@@ -44,12 +46,14 @@ import { MapTopPillRow, MAP_TOP_PILL_ROW_HEIGHT, MAP_TOP_PILL_ROW_TOP_MARGIN } f
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
+import { MapMoreSheet } from "@/screens/MapMoreSheet";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import { RouteOptionsCard } from "@/components/RouteOptionsCard";
 import { AlertMarker } from "@/components/AlertMarker";
 import { AlertStillHereCard } from "@/components/AlertStillHereCard";
 import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
 import { AlertBanner } from "@/components/AlertBanner";
+import { NearbyAlertToast, type NearbyAlertNotification } from "@/components/NearbyAlertToast";
 import { BannerAdBar } from "@/components/BannerAdBar";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { AlertReportSheet } from "@/screens/AlertReportSheet";
@@ -77,7 +81,6 @@ import {
   type TravelMode,
 } from "@/services/directions";
 import {
-  findNearestPlace,
   findNearestTransitStation,
   getPlaceInfo,
   reverseGeocode,
@@ -118,10 +121,6 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
 const DIAGNOSTIC_DISABLE_MAPVIEW = false;
-// See onMapPress's POI lookup -- rankby=distance has no radius bound, so this is the sanity
-// check that keeps an empty tap (open water, a park, a gap between buildings) from confidently
-// showing whatever real business happens to be nearest, however far that actually is.
-const MAX_POI_TAP_DISTANCE_METERS = 120;
 // Traffic-light cluster badges show this many small light glyphs before folding the rest into a
 // "+N" suffix -- see the badge's own render for why (a badge that just kept growing wider for a
 // 15-light intersection would stop being a compact marker).
@@ -250,7 +249,7 @@ function routesAreNearlyIdentical(a: LatLng[], b: LatLng[]): boolean {
 }
 
 export function MapScreen() {
-  const { location } = useLocation();
+  const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
   const { user } = useAuth();
   const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
   // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
@@ -285,6 +284,7 @@ export function MapScreen() {
   const fuelStationsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
+  const moreSheetRef = useRef<BottomSheet>(null);
 
   const [route, setRoute] = useState<Route | null>(null);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -497,6 +497,7 @@ export function MapScreen() {
   const [osmMarkerSheetOpen, setOsmMarkerSheetOpen] = useState(false);
   const [liveCameraSheetOpen, setLiveCameraSheetOpen] = useState(false);
   const [navOptionsSheetOpen, setNavOptionsSheetOpen] = useState(false);
+  const [moreSheetOpen, setMoreSheetOpen] = useState(false);
   const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
@@ -527,6 +528,7 @@ export function MapScreen() {
     liveCameraSheetOpen ||
     directionsSheetOpen ||
     navOptionsSheetOpen ||
+    moreSheetOpen ||
     restaurantsSheetOpen ||
     hotelsSheetOpen ||
     fuelStationsSheetOpen;
@@ -1159,11 +1161,20 @@ export function MapScreen() {
     // chase-cam pitch with a true top-down pose the instant navigation starts; "tilted3d" and
     // "satellite3d" both keep the exact original 60/45 pitch values (mapType is what
     // distinguishes satellite3d, set separately -- see mapViewStyleAppliedRef above).
+    // Zoom nudged up (18 -> 18.5) for the tilted (non-flat, non-overview) driving pose per
+    // explicit request for bigger, more prominent 3D buildings -- Google's native 3D-buildings
+    // layer scales with zoom/pitch, not a separate stylable property, so this is the real lever.
+    // Pitch itself stays at 60 (not pushed higher) since a steeper angle on real adjacent
+    // buildings is what produced the squashed/hatched look already root-caused and fixed in the
+    // MapLibre prototype's own 3D buildings -- same underlying geometry risk here. Mirrored at
+    // every other site that shares this exact driving pose (exit-zoom revert, the locate-button
+    // front/overview toggle, confirmRoute's own immediate snap, the alert-placement restore) so
+    // the camera never lands on two different zooms depending on which path set it.
     const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
     mapRef.current?.animateCamera(
       overviewMode
         ? { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 45, zoom: isFlatViewStyle ? 17 : 15 }
-        : { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18 },
+        : { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18.5 },
       { duration: 700 }
     );
   }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle]);
@@ -1240,7 +1251,7 @@ export function MapScreen() {
       mapRef.current?.animateCamera(
         overviewMode
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : { center: currentLatLng, heading, pitch: 60, zoom: 18 },
+          : { center: currentLatLng, heading, pitch: 60, zoom: 18.5 },
         { duration: 700 }
       );
     }
@@ -1345,7 +1356,7 @@ export function MapScreen() {
       mapRef.current?.animateCamera(
         nextOverview
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : { center: currentLatLng, heading, pitch: 60, zoom: 18 },
+          : { center: currentLatLng, heading, pitch: 60, zoom: 18.5 },
         { duration: 500 }
       );
     },
@@ -1409,6 +1420,41 @@ export function MapScreen() {
     () => nearbyAlerts.filter((alert) => settings.visibleAlertTypes.includes(alert.type)),
     [nearbyAlerts, settings.visibleAlertTypes]
   );
+
+  // Real, explicit request -- a small, dismissible notification when ANOTHER user reports an
+  // alert within ~1km, queued one at a time (see NearbyAlertToast's own header for why it's its
+  // own component rather than reusing AlertBanner's single-slot pattern). `seenAlertIdsRef` is
+  // null until the very first subscription snapshot, which seeds it with every alert already
+  // visible at that moment WITHOUT queuing a toast for any of them -- without this, opening the
+  // app (or re-enabling alerts) would immediately flood the queue with every pre-existing nearby
+  // alert as if they'd all just been reported. Only an id that appears in a LATER snapshot,
+  // genuinely new since the last one, gets a toast. Never notifies about the user's own report
+  // (createdBy === user.uid) -- this is "someone else nearby just reported," not an echo of your
+  // own action.
+  const seenAlertIdsRef = useRef<Set<string> | null>(null);
+  const [alertToastQueue, setAlertToastQueue] = useState<NearbyAlertNotification[]>([]);
+  const NEARBY_ALERT_TOAST_RADIUS_METERS = 1000;
+  useEffect(() => {
+    const seen = seenAlertIdsRef.current;
+    if (seen === null) {
+      seenAlertIdsRef.current = new Set(visibleAlerts.map((a) => a.id));
+      return;
+    }
+    if (!currentLatLng) return;
+    const freshlySeen = new Set(seen);
+    const newToasts: NearbyAlertNotification[] = [];
+    for (const alert of visibleAlerts) {
+      if (seen.has(alert.id)) continue;
+      freshlySeen.add(alert.id);
+      if (alert.createdBy === user?.uid) continue;
+      const distanceM = distanceKm(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng) * 1000;
+      if (distanceM > NEARBY_ALERT_TOAST_RADIUS_METERS) continue;
+      newToasts.push({ id: alert.id, type: alert.type, distanceM });
+    }
+    seenAlertIdsRef.current = freshlySeen;
+    if (newToasts.length > 0) setAlertToastQueue((q) => [...q, ...newToasts]);
+  }, [visibleAlerts, currentLatLng, user?.uid]);
+  const dismissAlertToast = useCallback(() => setAlertToastQueue((q) => q.slice(1)), []);
 
   // Automatic proximity "Still here? / Not here" prompt -- picks at most one eligible alert per
   // tick (skips entirely while a prompt is already showing, so it never queues a second one
@@ -2032,39 +2078,33 @@ export function MapScreen() {
     );
   }, [osmZoomDelta]);
 
-  const onMapPress = useCallback(
-    (e: MapPressEvent) => {
-      // Don't hijack a tap that's meant for something else already in progress -- placing an
-      // alert pin, or a sheet already open and eating input.
-      if (placingAlert || anySheetOpen) return;
-      // react-native-maps fires the map's own onPress *in addition to* a tapped polyline's
-      // onPress on the same tap (confirmed in the native iOS handler), not instead of it -- so
-      // tapping the route line would otherwise also kick off a Places lookup for whatever's
-      // directly under that point at the same time as entering overview mode. Short-lived guard
-      // so a just-handled line tap doesn't double-fire this.
-      if (Date.now() - lineTapAtRef.current < 150) return;
-      const coordinate = e.nativeEvent.coordinate;
+  // Real, confirmed bug this fixes: this used to run a Google Places "Nearby Search, ranked by
+  // distance" lookup on EVERY raw map tap -- including a tap on an empty road, since Nearby
+  // Search has no radius bound in rankby=distance mode and the old 120m sanity check is smaller
+  // than the distance from most points on a city street to SOME real business. That's "tap a
+  // road, get the nearest unrelated business's card," not "tap a business, see its info."
+  // A plain map tap (road, empty land, water) now does nothing disruptive at all -- see
+  // onPoiClick below for the real fix: react-native-maps' own onPoiClick event (available on
+  // both platforms now that this screen explicitly uses PROVIDER_GOOGLE everywhere -- it
+  // predates that switch, from when iOS used Apple's MapKit, which has no such event) fires only
+  // for an actual tap on a real Google-rendered POI icon/footprint, carrying that business's own
+  // real placeId directly -- no distance-guessing needed at all.
+  const onMapPress = useCallback((_e: MapPressEvent) => {
+    // Intentionally empty -- tapping the bare map (road, land, water) is a no-op now. Kept as a
+    // real prop (rather than removing onPress entirely) only so a future "tap empty map to
+    // dismiss something" convenience has a real place to live without re-discovering this.
+  }, []);
+
+  const onMapPoiClick = useCallback(
+    (e: PoiClickEvent) => {
+      // Real, explicit request -- business popups fully disabled during active navigation, not
+      // just de-prioritized. A driver mid-turn-by-turn shouldn't have a tap open a business card.
+      if (route || placingAlert || anySheetOpen) return;
+      const { placeId } = e.nativeEvent;
       setPlaceInfoLoading(true);
-      findNearestPlace(coordinate)
-        .then((nearest) => {
-          if (!nearest) return null;
-          return getPlaceInfo(nearest.placeId);
-        })
+      getPlaceInfo(placeId)
         .then((info) => {
           if (!info) return;
-          // rankby=distance (see findNearestPlace) can still legitimately return a real
-          // business that's genuinely far from an empty tap (e.g. tapping open water or a
-          // park with no nearby POIs at all) -- Nearby Search has no radius bound in that
-          // mode. A sanity distance check here means a tap with nothing actually close by
-          // shows no sheet at all instead of confidently attaching an unrelated business to
-          // wherever was tapped.
-          const distMeters = distanceKm(
-            coordinate.latitude,
-            coordinate.longitude,
-            info.location.latitude,
-            info.location.longitude
-          ) * 1000;
-          if (distMeters > MAX_POI_TAP_DISTANCE_METERS) return;
           setPlaceInfo(info);
           placeInfoSheetRef.current?.expand();
         })
@@ -2074,7 +2114,7 @@ export function MapScreen() {
         })
         .finally(() => setPlaceInfoLoading(false));
     },
-    [placingAlert, anySheetOpen]
+    [route, placingAlert, anySheetOpen]
   );
 
   // Real, confirmed bug this fixes: picking a destination (typing one in, or "find nearest
@@ -2542,7 +2582,7 @@ export function MapScreen() {
     if (currentLatLng) {
       const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
       mapRef.current?.animateCamera(
-        { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18 },
+        { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18.5 },
         { duration: 600 }
       );
     }
@@ -2811,6 +2851,11 @@ export function MapScreen() {
     Sentry.logger.info("map: opening vehicle detection screen");
     navigation.navigate("VehicleDetection", { isNavigating: !!route });
   }, [navigation, route]);
+  const onMoreSheetOpenDetection = useCallback(() => {
+    moreSheetRef.current?.close();
+    Sentry.logger.info("map: opening vehicle detection screen");
+    navigation.navigate("VehicleDetection", { isNavigating: !!route });
+  }, [navigation, route]);
 
   const onAlertTypeSelected = useCallback(
     (type: AlertType) => {
@@ -2924,7 +2969,7 @@ export function MapScreen() {
       mapRef.current?.animateCamera(
         overviewMode
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : { center: currentLatLng, heading, pitch: 60, zoom: 18 },
+          : { center: currentLatLng, heading, pitch: 60, zoom: 18.5 },
         { duration: 400 }
       );
     }
@@ -3206,13 +3251,15 @@ export function MapScreen() {
         rotateEnabled
         pitchEnabled
         // `initialRegion` is a mount-time-only prop -- react-native-maps never re-reads it once
-        // the map has rendered once. A real GPS fix normally takes a second or two after
-        // launch/permission-grant to arrive, so this coordinate (San Francisco -- an arbitrary
-        // engineering placeholder, not meant to mean anything) briefly shows before the very
-        // next effect below corrects it to the real position the instant one exists. This used
-        // to have no such correction at all -- if the first fix hadn't landed yet at the exact
-        // moment this mounted, the map just silently stayed on this placeholder forever, which
-        // is exactly the confirmed "why is it showing San Francisco, I'm in Sydney" bug.
+        // the map has rendered once, so SOME value is required here even before a real fix
+        // exists. This coordinate (San Francisco) is an arbitrary engineering placeholder, never
+        // meant to mean anything -- and is never actually seen by a real user: the
+        // locationGateOverlay above covers the whole screen for as long as currentLatLng is null,
+        // so this placeholder renders invisibly underneath it until the recenter effect below
+        // (which fires the instant a real fix exists) corrects it. Real, confirmed bug this
+        // combination fixes: previously nothing covered this placeholder at all, so a slow first
+        // fix (or a genuinely denied permission) left a real user looking at San Francisco with
+        // no indication it wasn't their own live position.
         initialRegion={{
           latitude: currentLatLng?.latitude ?? 37.7749,
           longitude: currentLatLng?.longitude ?? -122.4194,
@@ -3221,22 +3268,32 @@ export function MapScreen() {
         }}
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={onMapPress}
+        onPoiClick={onMapPoiClick}
         onPanDrag={onMapPanDrag}
         onMapReady={() => setMapReady(true)}
       >
-        {/* Upgraded route line style, per explicit request -- a wider white "casing" line drawn
-            first (underneath), then the real colored route on top slightly narrower, the same
-            layered-outline look Google/Apple Maps use so the route reads as a single bold,
-            polished band against any map style/theme instead of a flat single-color stroke.
-            zIndex keeps the casing strictly below the colored line even though both are drawn
-            back-to-back here. Thickened again (14/9 -> 22/16) with rounded caps/joins per
-            explicit request for a bolder, Waze-style band -- meaningfully chunkier than the
-            original "just visible" line, easier to read at a glance while driving. */}
+        {/* Route line style -- a white "casing" line drawn first (underneath), then the real
+            colored route on top slightly narrower, the same layered-outline look Google/Apple
+            Maps use so the route reads as a single clean band against any map style/theme
+            instead of a flat single-color stroke. zIndex keeps the casing strictly below the
+            colored line even though both are drawn back-to-back here.
+            Real, confirmed bug this also fixes -- Android's own native Polyline view manager
+            (react-native-maps) never actually had a `lineJoin` prop wired up at all (confirmed
+            from its own source: only `lineCap` had a @ReactProp, `lineJoin` was a dead, never-
+            called method on the native view) -- so corners rendered with the Google Maps SDK's
+            default miter/sharp join on Android regardless of this `lineJoin="round"` prop, no
+            matter what width was used. Patched via patches/react-native-maps+*.patch (same
+            patch-package mechanism already used elsewhere in this project) to actually register
+            and call it. iOS's Google Maps SDK renders solid polyline joins/caps rounded by
+            default already, not independently configurable the way Android's is.
+            Slimmed down (22/16 -> 14/8) per explicit request for a clean, slim line rather than
+            a chunky/blocky band -- still a real, clearly-visible two-tone casing+color band at
+            typical driving zoom, just not an oversized one. */}
         {route && remainingPolyline.length > 1 && (
           <>
             <Polyline
               coordinates={remainingPolyline}
-              strokeWidth={22}
+              strokeWidth={14}
               strokeColor="#FFFFFF"
               lineCap="round"
               lineJoin="round"
@@ -3244,7 +3301,7 @@ export function MapScreen() {
             />
             <Polyline
               coordinates={remainingPolyline}
-              strokeWidth={16}
+              strokeWidth={8}
               strokeColor="#1D4ED8"
               lineCap="round"
               lineJoin="round"
@@ -3743,6 +3800,40 @@ export function MapScreen() {
             </Marker>
           ))}
       </MapView>
+      )}
+
+      {/* Real, confirmed bug: before this, nothing in the app ever reacted to a missing/denied
+          location permission -- the map's own mount-time placeholder coordinate (an arbitrary
+          engineering default, never meant to be shown to a real user) just sat there looking like
+          a real position, with no indication it wasn't. Covers the whole screen (so that
+          placeholder is never actually visible) until a real GPS fix lands; shows a real retry/
+          Settings path once permission is genuinely denied, instead of silently giving up. */}
+      {!currentLatLng && (
+        <View style={styles.locationGateOverlay} pointerEvents="auto">
+          {permissionDenied ? (
+            <>
+              <MaterialCommunityIcons name="map-marker-off-outline" size={40} color="#FFFFFF" />
+              <Text style={styles.locationGateTitle}>Location access needed</Text>
+              <Text style={styles.locationGateText}>
+                TrackLine needs your real location to show you on the map and navigate -- it never
+                shows a placeholder or guessed position.
+              </Text>
+              <Pressable
+                onPress={() => (canAskAgain ? requestLocationPermission() : Linking.openSettings())}
+                style={({ pressed }) => [styles.locationGateButton, pressed && { opacity: pressedOpacity }]}
+              >
+                <Text style={styles.locationGateButtonText}>
+                  {canAskAgain ? "Allow location access" : "Open Settings"}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <ActivityIndicator color="#FFFFFF" size="large" />
+              <Text style={styles.locationGateText}>Finding your real location…</Text>
+            </>
+          )}
+        </View>
       )}
 
       {/* Real, explicit request -- live speed + posted speed limit, bottom-left, on the Home map
@@ -4247,6 +4338,13 @@ export function MapScreen() {
         </Pressable>
       )}
 
+      {/* Real, explicit request -- declutter: AI Vehicle Detection and the 3D buildings toggle
+          used to each be their own always-visible FAB here (5 total stacked on this edge
+          alongside Satellite/Locate/+). Condensed into one "More" FAB opening MapMoreSheet below.
+          Satellite stays its OWN separate button (not folded in here) -- it's deliberately
+          reachable even while placingAlert is true (see that button's own comment, a real,
+          previously-confirmed fix), which this shared wrapper's `!placingAlert` gate would
+          otherwise regress if Satellite moved in here too. */}
       <Pressable
         style={({ pressed }) => [
           styles.fabSecondary,
@@ -4254,48 +4352,19 @@ export function MapScreen() {
           { bottom: fabSecondaryBottom(0), zIndex: 1 },
           pressed && { opacity: pressedOpacity },
         ]}
-        onPress={() => {
-          Sentry.logger.info("map: opening vehicle detection screen");
-          navigation.navigate("VehicleDetection", { isNavigating: !!route });
-        }}
+        onPress={() => moreSheetRef.current?.expand()}
         accessibilityLabel={
-          detectionBatteryLow
-            ? "Live vehicle detection -- battery below 50%, still works but may run slower"
-            : "Live vehicle detection"
+          detectionBatteryLow ? "More options -- vehicle detection battery below 50%" : "More options"
         }
       >
-        <Ionicons name="videocam" size={route ? 15 : 20} color="#FFFFFF" />
-        {/* Advisory only -- see detectionBatteryLow's own comment above. Never disables this
-            Pressable, just flags it before the driver taps in. */}
+        <Ionicons name="apps" size={route ? 15 : 20} color="#FFFFFF" />
+        {/* Advisory only -- see detectionBatteryLow's own comment at MapMoreSheet's usage below.
+            Never disables this Pressable, just flags before the driver opens the sheet. */}
         {detectionBatteryLow && (
           <View style={styles.fabBatteryBadge} pointerEvents="none">
             <Ionicons name="battery-dead-outline" size={11} color="#FFFFFF" />
           </View>
         )}
-      </Pressable>
-
-      {/* Real 3D buildings toggle -- Android mounts the custom Map3DView module (Google's
-          separate, richer "Maps 3D SDK"); iOS instead tilts the existing stable map camera
-          (see the effect above) rather than touching that same SDK's still-experimental,
-          pre-GA iOS build. Always rendered now on both platforms -- this used to be Android-
-          only (isMap3DSupported-gated) while iOS had no 3D buildings option at all. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.fabSecondary,
-          route && styles.fabSecondaryCompact,
-          { bottom: fabSecondaryBottom(1), zIndex: 2 },
-          show3D && styles.fabActive,
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={() =>
-          setShow3D((v) => {
-            Sentry.logger.info("map: toggling 3D view", { next: !v });
-            return !v;
-          })
-        }
-        accessibilityLabel={show3D ? "Switch to standard map" : "Switch to 3D buildings view"}
-      >
-        <Ionicons name="business-outline" size={route ? 14 : 18} color="#FFFFFF" />
       </Pressable>
 
       {/* Permanent recenter button -- always in this stack, on top of the satellite and "+"
@@ -4307,7 +4376,7 @@ export function MapScreen() {
         style={({ pressed }) => [
           styles.fabSecondary,
           route && styles.fabSecondaryCompact,
-          { bottom: fabSecondaryBottom(3), zIndex: 3 },
+          { bottom: fabSecondaryBottom(2), zIndex: 3 },
           pressed && { opacity: pressedOpacity },
         ]}
         onPress={onLocateButtonPress}
@@ -4344,10 +4413,10 @@ export function MapScreen() {
           style={({ pressed }) => [
             styles.fabSecondary,
             route && styles.fabSecondaryCompact,
-            // zIndex 0 (lowest of the FAB cluster) -- this button is rendered after the AI
-            // Detection/3D/locate cluster above, so without an explicit zIndex it would paint
-            // over them during any transient frame where their bottom offsets briefly coincide.
-            { bottom: fabSecondaryBottom(2), zIndex: 0 },
+            // zIndex 0 (lowest of the FAB cluster) -- this button is rendered after the More/
+            // locate cluster above, so without an explicit zIndex it would paint over them
+            // during any transient frame where their bottom offsets briefly coincide.
+            { bottom: fabSecondaryBottom(1), zIndex: 0 },
             mapType === "hybrid" && styles.fabActive,
             pressed && { opacity: pressedOpacity },
           ]}
@@ -4672,6 +4741,22 @@ export function MapScreen() {
         detectionBatteryLow={detectionBatteryLow}
       />
 
+      <MapMoreSheet
+        ref={moreSheetRef}
+        onOpenDetection={onMoreSheetOpenDetection}
+        detectionBatteryLow={detectionBatteryLow}
+        show3D={show3D}
+        onToggle3D={() =>
+          setShow3D((v) => {
+            Sentry.logger.info("map: toggling 3D view", { next: !v });
+            return !v;
+          })
+        }
+        satelliteOn={mapType === "hybrid"}
+        onToggleSatellite={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
+        onSheetChange={(index) => setMoreSheetOpen(index >= 0)}
+      />
+
       {placeInfoLoading && (
         <View style={styles.placeInfoLoadingBadge} pointerEvents="none">
           <ActivityIndicator size="small" color={colors.text} />
@@ -4685,6 +4770,8 @@ export function MapScreen() {
         message={bannerMessage}
         onDismiss={() => setBannerVisible(false)}
       />
+
+      <NearbyAlertToast notification={alertToastQueue[0] ?? null} onDismiss={dismissAlertToast} />
 
       {/* Rendered last of all -- an actionable prompt the driver is being actively asked to
           answer, so it needs to sit on top of everything else, same reasoning as AlertBanner
@@ -4705,6 +4792,43 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceMuted },
   mapArea: { flex: 1 },
   mapPlaceholder: { backgroundColor: colors.surfaceMuted },
+  locationGateOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.dark,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+    zIndex: 50,
+  },
+  locationGateTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginTop: spacing.xs,
+  },
+  locationGateText: {
+    fontSize: 14,
+    color: "#C7CDD6",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  locationGateButton: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  locationGateButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 15,
+  },
   trafficLegend: {
     position: "absolute",
     alignSelf: "center",

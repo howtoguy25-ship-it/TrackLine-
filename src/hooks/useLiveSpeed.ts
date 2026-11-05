@@ -104,7 +104,18 @@ export function useLiveSpeed(active: boolean): LiveSpeedState {
       }
       lastFixRef.current = { latitude: coords.latitude, longitude: coords.longitude, timestamp };
 
-      emaRef.current = emaRef.current == null ? rawKmh : EMA_ALPHA * rawKmh + (1 - EMA_ALPHA) * emaRef.current;
+      // Real, confirmed bug (screenshot evidence: 146 km/h shown the instant the app opened,
+      // phone stationary): a GPS chip's very first fix after a cold start is well-documented to
+      // report an unreliable coords.speed before the receiver's velocity solution has actually
+      // stabilized (poor initial satellite geometry/Doppler lock) -- and since emaRef.current
+      // starts out null, that first raw reading used to become the EMA's STARTING value directly,
+      // with zero smoothing applied, and got displayed immediately. Seeding at 0 instead means a
+      // bad first fix can't ever show up on screen un-smoothed -- genuine fast movement still
+      // ramps up correctly within the next couple of real, corroborating fixes (EMA_ALPHA=0.35),
+      // same honest "prove it over more than one reading" principle the stationary hold below
+      // already uses for the opposite case.
+      emaRef.current = emaRef.current == null ? 0 : emaRef.current;
+      emaRef.current = EMA_ALPHA * rawKmh + (1 - EMA_ALPHA) * emaRef.current;
       const smoothed = Math.max(0, emaRef.current);
 
       const now = Date.now();

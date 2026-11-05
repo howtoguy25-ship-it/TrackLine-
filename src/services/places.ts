@@ -108,56 +108,13 @@ export interface PlaceInfo extends PlaceDetails {
   photoUrls: string[];
 }
 
-// Real POI-tap-to-info requires *some* place near the tapped coordinate to look up.
-// react-native-maps' own onPoiClick would be a real native "which business did they tap" event
-// on the current Google-provider MapView, but this predates the switch to Google on iOS (it
-// used to be Apple's MapKit there, which has no such event) and works identically regardless of
-// provider, so it was left as-is rather than reworked into a still-untested native-event path
-// right alongside a provider change. Treats any map tap as "find whatever's closest to here"
-// via Nearby Search, then pulls full details for it.
-//
-// This used to pass a fixed `radius` with no `rankby`/`type` -- Nearby Search's default order
-// for a plain radius search is *prominence* (rating/importance), not distance, and with no
-// `type` filter that ranking pool includes localities/administrative areas alongside real
-// businesses. Confirmed on a real device: tapping directly on a small shop pin returned
-// "Sydney, Sydney NSW, Australia" (a locality result outranking the actual business a few
-// meters away) instead of the shop itself. `rankby=distance` fixes the ordering to genuine
-// closest-first, but Google requires either a `keyword`, `name`, or `type` alongside it --
-// `type=establishment` is exactly "any real business/POI," which both satisfies that
-// requirement and excludes locality/political results outright. `radius` isn't a valid param
-// together with `rankby=distance`, so the distance sanity-check moves to the caller (which
-// already fetches full place details, including geometry, right after this).
-export async function findNearestPlace(location: LatLng): Promise<{ placeId: string } | null> {
-  const params = new URLSearchParams({
-    location: `${location.latitude},${location.longitude}`,
-    rankby: "distance",
-    type: "establishment",
-    key: env.googlePlacesApiKey,
-  });
-
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`
-  );
-  const json = await res.json();
-
-  if (json.status === "ZERO_RESULTS") return null;
-  if (json.status !== "OK") {
-    Sentry.logger.error("places: nearby search request failed", {
-      status: json.status,
-      errorMessage: json.error_message,
-    });
-    throw new PlacesApiError(json.status, json.error_message);
-  }
-
-  const nearest = json.results?.[0];
-  return nearest ? { placeId: nearest.place_id } : null;
-}
-
-// "Nearest train/bus station" quick action -- same rankby=distance + real-type-filter shape as
-// findNearestPlace above, but scoped to `type=transit_station` (Google's own catch-all for bus
-// stops, train stations, light rail stops, etc.) instead of any establishment, and returns full
-// PlaceDetails directly (name + location) since the caller routes straight to it rather than
-// showing an intermediate result list.
+// "Nearest train/bus station" quick action -- rankby=distance + a real `type` filter
+// (`type=transit_station`, Google's own catch-all for bus stops, train stations, light rail
+// stops, etc.), returning full PlaceDetails directly (name + location) since the caller routes
+// straight to it rather than showing an intermediate result list. `rankby=distance` requires a
+// `keyword`/`name`/`type` alongside it (a plain `radius` search instead defaults to *prominence*
+// ranking, not distance, and would mix in locality/administrative results) -- `type=
+// transit_station` both satisfies that and keeps results to genuine transit stops.
 export async function findNearestTransitStation(location: LatLng): Promise<PlaceDetails | null> {
   const params = new URLSearchParams({
     location: `${location.latitude},${location.longitude}`,

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +23,12 @@ interface Props {
 // instead of assuming they always fit the screen width.
 export function MapTopPillRow({ alertsEnabled, onToggleAlerts, onFindRestaurants, onFindHotels, onFindPetrol }: Props) {
   const insets = useSafeAreaInsets();
+  // Real, explicit request -- declutter the home map: this row used to be 4 always-expanded
+  // pills competing for attention with the search bar right below it. Collapsed by default to a
+  // single "Nearby" summary pill (reusing the exact same tap-to-expand/collapse convention
+  // DestinationSearchBar's own "Recent searches" section already uses), expanding inline to the
+  // real Alerts/Restaurants/Hotels/Petrol pills only once the driver actually taps it.
+  const [expanded, setExpanded] = useState(false);
   return (
     // Real, confirmed complaint: insets.top alone (the safe-area inset) sat close enough to the
     // status bar's own clock/battery on some devices to read as crowding it -- a fixed extra
@@ -35,37 +41,54 @@ export function MapTopPillRow({ alertsEnabled, onToggleAlerts, onFindRestaurants
         contentContainerStyle={styles.row}
       >
         <Pressable
-          style={({ pressed }) => [styles.pill, alertsEnabled && styles.pillActive, pressed && { opacity: pressedOpacity }]}
-          onPress={onToggleAlerts}
-          accessibilityLabel={alertsEnabled ? "Alerts on -- tap to turn off" : "Alerts off -- tap to turn on"}
+          style={({ pressed }) => [
+            styles.pill,
+            (expanded || alertsEnabled) && styles.pillActive,
+            pressed && { opacity: pressedOpacity },
+          ]}
+          onPress={() => setExpanded((e) => !e)}
+          accessibilityLabel={expanded ? "Hide nearby options" : "Show nearby options"}
         >
-          <Ionicons name="radio-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.pillText}>Alerts</Text>
+          <Ionicons name="apps-outline" size={16} color="#FFFFFF" />
+          <Text style={styles.pillText}>Nearby</Text>
+          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color="#FFFFFF" />
         </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.pill, pressed && { opacity: pressedOpacity }]}
-          onPress={onFindRestaurants}
-          accessibilityLabel="Restaurants nearby"
-        >
-          <Ionicons name="restaurant-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.pillText}>Restaurants</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.pill, pressed && { opacity: pressedOpacity }]}
-          onPress={onFindHotels}
-          accessibilityLabel="Hotels nearby"
-        >
-          <Ionicons name="bed-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.pillText}>Hotels</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.pill, pressed && { opacity: pressedOpacity }]}
-          onPress={onFindPetrol}
-          accessibilityLabel="Petrol stations nearby"
-        >
-          <MaterialCommunityIcons name="gas-station-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.pillText}>Petrol</Text>
-        </Pressable>
+        {expanded && (
+          <>
+            <Pressable
+              style={({ pressed }) => [styles.pill, alertsEnabled && styles.pillActive, pressed && { opacity: pressedOpacity }]}
+              onPress={onToggleAlerts}
+              accessibilityLabel={alertsEnabled ? "Alerts on -- tap to turn off" : "Alerts off -- tap to turn on"}
+            >
+              <Ionicons name="radio-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.pillText}>Alerts</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.pill, pressed && { opacity: pressedOpacity }]}
+              onPress={onFindRestaurants}
+              accessibilityLabel="Restaurants nearby"
+            >
+              <Ionicons name="restaurant-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.pillText}>Restaurants</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.pill, pressed && { opacity: pressedOpacity }]}
+              onPress={onFindHotels}
+              accessibilityLabel="Hotels nearby"
+            >
+              <Ionicons name="bed-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.pillText}>Hotels</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.pill, pressed && { opacity: pressedOpacity }]}
+              onPress={onFindPetrol}
+              accessibilityLabel="Petrol stations nearby"
+            >
+              <MaterialCommunityIcons name="gas-station-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.pillText}>Petrol</Text>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
     </View>
   );
