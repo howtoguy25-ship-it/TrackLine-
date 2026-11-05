@@ -15,7 +15,13 @@ const SPEED_WATCH_DISTANCE_INTERVAL_M = 0;
 // Real, explicit spec values.
 const EMA_ALPHA = 0.35;
 const MAX_FIX_ACCURACY_M = 25;
-const STATIONARY_THRESHOLD_KMH = 3;
+// Real, confirmed bug: coords.speed (Doppler/consecutive-fix derived, not the same channel as
+// coords.accuracy) commonly settles on a steady ~3-4.5 km/h bias while the device is completely
+// stationary -- not noisy jitter straddling zero, a real sustained drift -- so a 3 km/h deadzone
+// never actually triggers the stationary hold below and the dial sticks on "4" forever. Raised to
+// match STILL_HERE_MIN_SPEED_KMH (MapScreen.tsx) -- the same real noise floor the app already
+// treats as "not actually moving" everywhere else it guards against this exact GPS behavior.
+const STATIONARY_THRESHOLD_KMH = 5;
 const STATIONARY_HOLD_MS = 3000;
 
 export interface LiveSpeedState {

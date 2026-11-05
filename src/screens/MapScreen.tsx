@@ -70,6 +70,7 @@ import {
   getDirectionsForMode,
   getModeRouteOptions,
   getHeadingAwareReroute,
+  detailedRoutePolyline,
   DirectionsApiError,
   type Route,
   type RouteProfileKey,
@@ -937,6 +938,23 @@ export function MapScreen() {
       ? location.coords.heading
       : derivedHeadingRef.current;
 
+  // Real Waze/Google Maps nav convention -- the car sits low on screen (roughly the lower third)
+  // with most of the view showing the road ahead, not dead-center. Google Maps SDK's own
+  // `padding`/mapPadding shrinks the "visible" region the camera treats as the viewport for
+  // centering purposes; padding the TOP pushes that visible region's center, and so the rendered
+  // camera target (the car), further down the real screen -- the opposite of what padding the
+  // bottom would do. Expressed as a fraction of real screen height (not a fixed px/meters value)
+  // so it stays visually correct across every pitch/zoom this screen uses (normal chase, overview,
+  // exit-zoom), rather than a geographic offset that would only look right at one specific zoom.
+  // Only applied during the actual tilted chase-cam drive (not overview mode, which wants an even,
+  // pulled-back view, and not the flat/overhead view-style, which has no "road ahead" perspective
+  // to bias toward).
+  const isNavChaseView =
+    !!route && followTilt && !overviewMode && settings.defaultMapViewStyle !== "flat";
+  const mapPadding = isNavChaseView
+    ? { top: windowHeight * 0.34, right: 0, bottom: 0, left: 0 }
+    : { top: 0, right: 0, bottom: 0, left: 0 };
+
   // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
   // coords.speed is m/s, converted here once rather than in the display component so every
   // caller gets the same real km/h number. null whenever there's no current fix or the OS hasn't
@@ -1067,10 +1085,6 @@ export function MapScreen() {
     };
   }, [route]);
 
-  // Guards the very first tick after a route starts so the fitToCoordinates overview (below,
-  // in onDestinationSelected) gets a moment on screen before the camera snaps into the tilted
-  // close-follow -- same "show the whole route, then follow" beat Apple Maps uses.
-  const navStartedAtRef = useRef(0);
   // Set once shareEta actually starts a live share for the current trip; cleared on
   // exitNavigation. Kept as a ref (not state) since only the periodic-update interval and
   // exitNavigation read it, and neither needs a re-render when it changes.
@@ -1091,7 +1105,6 @@ export function MapScreen() {
     // not wherever they'd actually panned the pin to. That's the confirmed cause of "Set"
     // saving a different spot than the one the pin visually showed.
     if (!route || !followTilt || !currentLatLng || detectionOpen || placingAlert) return;
-    if (Date.now() - navStartedAtRef.current < 1200) return;
     // Deliberately omits pitch/zoom here (animateCamera only touches the fields it's given,
     // leaving the rest alone) -- GPS updates land every ~2s or every 5m travelled, which while
     // actually driving can be several times a second. Including a fixed pitch/zoom on every one
@@ -1137,7 +1150,6 @@ export function MapScreen() {
     // enterOverviewMode (tap the route line) sets chaseCamAppliedRef itself and applies its own
     // pulled-back camera -- this only ever needs to handle the "just started/resumed following"
     // case, not the "user tapped the line" one.
-    if (Date.now() - navStartedAtRef.current < 1200) return;
     chaseCamAppliedRef.current = true;
     // overviewMode defaults false -- see its own comment -- so a fresh nav session lands on the
     // tight, tilted front-view pose by default; the pulled-back pose only applies here if the
@@ -1191,7 +1203,6 @@ export function MapScreen() {
   }, [route, followTilt]);
   useEffect(() => {
     if (!route || !followTilt || detectionOpen || placingAlert || !currentLatLng) return;
-    if (Date.now() - navStartedAtRef.current < 1200) return;
     const step = route.steps[activeStepIndex];
     const isExitStep = !!step && EXIT_MANEUVERS.has(step.maneuver ?? "");
 
@@ -2504,7 +2515,6 @@ export function MapScreen() {
     setRoute(chosen);
     setAcceptedSuggestionOriginalRoute(null);
     setDestinationLatLng(pendingDestination.location);
-    navStartedAtRef.current = Date.now();
     // Real native Live Activity (see modules/liveActivity) -- starts the moment a trip actually
     // begins, per explicit request to keep navigating visible on the Lock Screen/Dynamic Island
     // once the driver leaves the app. iOS-only and a safe no-op everywhere else (Android, an
@@ -2522,10 +2532,20 @@ export function MapScreen() {
       speedLimitKmh: null,
     });
     setFollowTilt(true);
-    mapRef.current?.fitToCoordinates(chosen.polyline, {
-      edgePadding: { top: 120, right: 60, bottom: 120, left: 60 },
-      animated: true,
-    });
+    // Real, explicit request -- go DIRECTLY into the Waze-style tilted close-follow view the
+    // instant Start is tapped, no flat/overhead "see the whole route" flash first. Previously this
+    // called fitToCoordinates (an un-tilted whole-route-bounds fit) and the real chase-cam pose
+    // was deliberately held off for another 1200ms+700ms (see chaseCamAppliedRef's effect below,
+    // now ungated) -- a confirmed ~1-2s window where the camera didn't look like nav mode at all.
+    // Mirrors the exact same pitch/zoom the chase-cam effect below applies for a fresh session, so
+    // there's no visible pose change once that effect's own (now immediate) re-application runs.
+    if (currentLatLng) {
+      const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
+      mapRef.current?.animateCamera(
+        { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18 },
+        { duration: 600 }
+      );
+    }
     setRouteOptions(null);
     setModeRoute(null);
     setModeRouteOptions([]);
@@ -2534,7 +2554,16 @@ export function MapScreen() {
     // -- clears any custom "From" so it doesn't silently carry over into the next, unrelated
     // destination search once this trip ends.
     setOriginOverride(null);
-  }, [routeOptions, modeRoute, travelMode, selectedProfile, pendingDestination]);
+  }, [
+    routeOptions,
+    modeRoute,
+    travelMode,
+    selectedProfile,
+    pendingDestination,
+    currentLatLng,
+    heading,
+    settings.defaultMapViewStyle,
+  ]);
 
   const cancelRouteOptions = useCallback(() => {
     setRouteOptions(null);
@@ -3163,6 +3192,7 @@ export function MapScreen() {
         // actually relevant (picking or following a route) rather than always-on, which would
         // clutter idle map browsing with congestion data nobody's using yet.
         showsTraffic={showsTrafficLayer}
+        mapPadding={mapPadding}
         style={StyleSheet.absoluteFill}
         // Always false -- the native blue dot is fully replaced by custom markers below (the
         // car puck while navigating, the person marker otherwise), not just swapped in during
@@ -3229,14 +3259,14 @@ export function MapScreen() {
             side-by-side comparison, not a replacement, until confirmStopPreview actually
             commits it (see the confirm/back bar below). */}
         {stopPreviewRoute && (
-          <Polyline coordinates={stopPreviewRoute.polyline} strokeWidth={7} strokeColor="#22C55E" />
+          <Polyline coordinates={detailedRoutePolyline(stopPreviewRoute)} strokeWidth={7} strokeColor="#22C55E" />
         )}
         {/* Real traffic-jam reroute suggestion -- same green-alongside-blue treatment as the
             add-stop preview above, drawn only once a genuinely faster side-streets alternative
             has actually been found (see the periodic check effect). Route 1 (blue, above) never
             stops being drawn while this is up. */}
         {trafficSuggestionRoute && !stopPreviewRoute && (
-          <Polyline coordinates={trafficSuggestionRoute.polyline} strokeWidth={7} strokeColor="#22C55E" />
+          <Polyline coordinates={detailedRoutePolyline(trafficSuggestionRoute)} strokeWidth={7} strokeColor="#22C55E" />
         )}
         {/* Live device-compass "flashlight" cone -- separate from the route arrow below and
             rotated by deviceHeading (magnetometer), not travel heading, so it visually shows
@@ -3297,7 +3327,15 @@ export function MapScreen() {
             the highlighted pick or one of the two previews. Tapping any of the three (line or
             ETA pill below) selects it, same as tapping its row in the RouteOptionsCard sheet. */}
         {routeOptions &&
-          ROUTE_PROFILE_ORDER.map((key) => {
+          // Real, explicit request -- tolls/noTolls are now a compact toggle in RouteOptionsCard,
+          // not a pick-able card with its own line on the map (see MAIN_PROFILE_ORDER there) --
+          // drawing an unselected ghost line/pill for either one here with no corresponding
+          // visible card to explain it was confusing clutter, not a real choice being offered.
+          // Still renders tolls/noTolls's own highlighted line if the driver actually picked it
+          // via that toggle (selectedProfile), same as any other selected profile.
+          ROUTE_PROFILE_ORDER.filter(
+            (key) => key === selectedProfile || (key !== "tolls" && key !== "noTolls")
+          ).map((key) => {
             const isSelected = key === selectedProfile;
             return (
               <React.Fragment key={key}>
@@ -3307,7 +3345,7 @@ export function MapScreen() {
                     bold, polished band the app now uses everywhere else a route is drawn. */}
                 {isSelected && (
                   <Polyline
-                    coordinates={routeOptions[key].polyline}
+                    coordinates={detailedRoutePolyline(routeOptions[key])}
                     strokeWidth={12}
                     strokeColor="#FFFFFF"
                     zIndex={2}
@@ -3326,7 +3364,7 @@ export function MapScreen() {
                     OVER the selected route's own casing, muddying its clean highlighted look
                     instead of it always reading clearly on top. */}
                 <Polyline
-                  coordinates={routeOptions[key].polyline}
+                  coordinates={detailedRoutePolyline(routeOptions[key])}
                   strokeWidth={isSelected ? 8 : 5}
                   strokeColor={isSelected ? ROUTE_PROFILE_COLORS[key] : ROUTE_PROFILE_COLORS_GHOST[key]}
                   tappable
@@ -3354,7 +3392,12 @@ export function MapScreen() {
           (() => {
             const orderedKeys = [
               selectedProfile,
-              ...ROUTE_PROFILE_ORDER.filter((k) => k !== selectedProfile),
+              // Same real reason as the line-rendering filter above -- no ETA pill for an
+              // unselected tolls/noTolls either, since there's no corresponding ghost line or
+              // sheet card for it to label.
+              ...ROUTE_PROFILE_ORDER.filter(
+                (k) => k !== selectedProfile && k !== "tolls" && k !== "noTolls"
+              ),
             ];
             const pilledPolylines: LatLng[][] = [];
             return orderedKeys.map((key) => {
@@ -3404,7 +3447,7 @@ export function MapScreen() {
         {modeRoute && !routeOptions && (
           <>
             <Polyline
-              coordinates={modeRoute.polyline}
+              coordinates={detailedRoutePolyline(modeRoute)}
               strokeWidth={12}
               strokeColor="#FFFFFF"
               zIndex={1}
@@ -3415,7 +3458,7 @@ export function MapScreen() {
                 blue to match the app's own accent color instead of red, which this screen
                 otherwise reserves for the emergency/lightbar-confirmed AI detection state. */}
             <Polyline
-              coordinates={modeRoute.polyline}
+              coordinates={detailedRoutePolyline(modeRoute)}
               strokeWidth={8}
               strokeColor="#1D4ED8"
               zIndex={2}

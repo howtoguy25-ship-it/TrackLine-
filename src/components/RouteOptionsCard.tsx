@@ -34,7 +34,12 @@ const PROFILE_SUBTITLES: Record<RouteProfileKey, string> = {
   noTolls: "Avoids every toll road, full stop",
 };
 
-const PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest", "tolls", "noTolls"];
+// Real, explicit request -- tolls/noTolls used to sit in this same list, rendered as two more
+// full-size cards identical in weight to the 3 real route choices, which is exactly the
+// "cluttered" complaint: on any toll-relevant trip the sheet showed 5 look-alike rows. They're
+// now a separate, compact 2-button toggle below these 3 (see the render site) instead of being
+// in this list at all.
+const MAIN_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest"];
 
 const TRAVEL_MODE_ORDER: TravelMode[] = ["driving", "walking", "bicycling", "transit"];
 
@@ -231,30 +236,12 @@ export function RouteOptionsCard({
       ) : (
         <>
           {isDriving
-            ? // Real, explicit request -- a trip with no toll road at all shouldn't clutter the
-              // picker with toll-related options. "With Tolls"/"No Tolls" only ever genuinely
-              // differ from "Normal" when this trip actually crosses a toll road (see
-              // tollEstimate.hasToll in directions.ts's own getRouteOptions) -- hidden entirely
-              // otherwise rather than shown with a "no toll needed" subtitle nobody asked to see.
-              (options!.tolls.tollEstimate?.hasToll
-                ? PROFILE_ORDER
-                : PROFILE_ORDER.filter((key) => key !== "tolls" && key !== "noTolls")
-              ).map((key) => {
+            ? // The 3 real route choices -- tolls/noTolls are handled separately below as a
+              // compact toggle, only when this trip is actually toll-relevant.
+              MAIN_PROFILE_ORDER.map((key) => {
                 const route = options![key];
                 const isSelected = key === selected;
                 const usingTraffic = route.etaInTrafficText != null;
-                // Real, explicit request: "Tolls" needs a subtitle/price that reflects THIS
-                // trip, not a generic static line -- see tollEstimate's own header in
-                // directions.ts for exactly what each state here really means.
-                const toll = route.tollEstimate;
-                const subtitle =
-                  key === "tolls"
-                    ? toll?.hasToll
-                      ? toll.priceText
-                        ? `Real toll cost: ${toll.priceText}`
-                        : "Uses a toll road -- price unavailable right now"
-                      : "No toll road needed for this trip"
-                    : PROFILE_SUBTITLES[key];
                 return (
                   <Pressable
                     key={key}
@@ -281,7 +268,7 @@ export function RouteOptionsCard({
                           </View>
                         )}
                       </View>
-                      <Text style={styles.optionSubtitle}>{subtitle}</Text>
+                      <Text style={styles.optionSubtitle}>{PROFILE_SUBTITLES[key]}</Text>
                     </View>
                     <View style={styles.optionStats}>
                       <Text style={styles.optionEta}>
@@ -372,6 +359,50 @@ export function RouteOptionsCard({
                   </View>
                 </View>
               )}
+
+          {/* Real, explicit request -- a trip with no toll road anywhere relevant shouldn't show
+              a toll choice at all; a trip that genuinely touches one (on Recommended, Fastest, or
+              Safest -- see anyShownRouteUsesToll in directions.ts) gets ONE compact 2-button
+              toggle here instead of two more full-size cards identical in weight to the 3 real
+              route choices above (the actual "cluttered" complaint). "With tolls" selects the
+              tolls entry (Recommended's own real path, tagged with its real price); "No tolls"
+              selects the dedicated real avoid-tolls route. */}
+          {isDriving && hasResult && options!.tolls.tollEstimate?.hasToll && (
+            <View style={styles.tollToggleRow}>
+              {(["tolls", "noTolls"] as const).map((key) => {
+                const isSelected = key === selected;
+                const toll = options![key].tollEstimate;
+                const label = key === "tolls" ? "With tolls" : "No tolls";
+                const sublabel =
+                  key === "tolls" ? toll?.priceText ?? "Price unavailable" : "Avoids every toll road";
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => onSelect(key)}
+                    style={({ pressed }) => [
+                      styles.tollToggleButton,
+                      isSelected && styles.tollToggleButtonSelected,
+                      pressed && { opacity: pressedOpacity },
+                    ]}
+                  >
+                    <Ionicons
+                      name={PROFILE_ICONS[key]}
+                      size={16}
+                      color={isSelected ? "#FFFFFF" : colors.textMuted}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.tollToggleLabel, isSelected && styles.tollToggleLabelSelected]}>
+                        {label}
+                      </Text>
+                      <Text style={[styles.tollToggleSublabel, isSelected && styles.tollToggleSublabelSelected]}>
+                        {sublabel}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
 
           {!showAllModeRoutes && modeRouteOptions.length > 5 && (
             <Pressable
@@ -549,6 +580,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
     marginTop: 2,
+  },
+  tollToggleRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  tollToggleButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs + 2,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  tollToggleButtonSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
+  },
+  tollToggleLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  tollToggleLabelSelected: {
+    color: "#FFFFFF",
+  },
+  tollToggleSublabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  tollToggleSublabelSelected: {
+    color: "#DBEAFE",
   },
   showMoreRow: {
     flexDirection: "row",

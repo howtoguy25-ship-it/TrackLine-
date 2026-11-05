@@ -62,6 +62,18 @@ export interface Route {
   tollEstimate?: TollEstimate;
 }
 
+// Google's overview_polyline (Route.polyline) is a deliberately simplified/lower-point-count
+// geometry -- fine for a quick ETA-pill placement, but visibly cuts corners against the real road
+// shape once drawn as an actual route line on screen at normal driving zoom (confirmed: the real
+// turn-by-turn line already avoids this by concatenating the per-step polylines instead, see
+// MapScreen.tsx's remainingPolyline). This gives every OTHER route-line render (route-picker
+// previews, walk/bike/transit previews, mid-trip add-stop/traffic-suggestion previews) the same
+// real, detailed, road-following geometry instead of the coarse overview one.
+export function detailedRoutePolyline(route: Route): LatLng[] {
+  const flattened = route.steps.flatMap((step) => step.polyline);
+  return flattened.length > 1 ? flattened : route.polyline;
+}
+
 export interface TollEstimate {
   // True only when this route's own real path has been directly confirmed to differ from the
   // no-tolls route for the same trip -- i.e. it genuinely crosses a toll road right now, not
@@ -604,8 +616,18 @@ export async function getRouteOptions(
   // path already IS "the real route that doesn't avoid tolls." When there's no real toll
   // involved at all, this stays honestly marked hasToll: false rather than inventing a
   // meaningfully-different "Tolls" option where none exists.
-  const normalUsesToll = !isSameRoute(normal, noTolls);
-  const tolls: Route = normalUsesToll
+  //
+  // Real, confirmed gap: this used to check ONLY whether normal (Recommended) itself crosses a
+  // toll. Fastest is independently built from whichever of normal/safestRaw/every alternatives
+  // candidate is genuinely quickest (see fasterOf above) and can legitimately land on a toll road
+  // even when Recommended doesn't (a faster alternate bridge/tunnel crossing, say) -- in that case
+  // hasToll read false and the toll choice was hidden entirely even though a shown candidate
+  // (Fastest) really does use one. Now true whenever ANY of the three shown route cards --
+  // normal, fastest, or safest -- actually differs from the dedicated no-tolls path, matching
+  // "hide toll options only when truly no candidate route touches a toll road anywhere."
+  const anyShownRouteUsesToll =
+    !isSameRoute(normal, noTolls) || !isSameRoute(fastest, noTolls) || !isSameRoute(safest, noTolls);
+  const tolls: Route = anyShownRouteUsesToll
     ? { ...normal, tollEstimate: { hasToll: true, priceText: await getTollPrice(origin, destination, waypoint) } }
     : { ...normal, tollEstimate: { hasToll: false, priceText: null } };
 

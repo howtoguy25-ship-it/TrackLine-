@@ -262,6 +262,24 @@ const CLOSING_RATE_DEADZONE_KMH = 8;
 // combination relies on holds much less often (cross traffic, pedestrians, a car turning).
 const EGO_SPEED_MIN_MPS = 1.5; // ~5.4 km/h
 
+// Real, confirmed false-positive this directly fixes: the whole speed model (see this file's own
+// header) only holds for a vehicle traveling roughly ALONG the camera's own sightline -- toward
+// or away from it. A vehicle genuinely crossing in front (an intersection, oncoming traffic
+// turning across, a car in an adjacent lane cutting across) barely changes DISTANCE from the
+// camera over a brief sampling window even while clearly, visibly moving, which the closing-rate
+// math alone reads as "not moving relative to camera" -- producing a confident-looking but false
+// "0 KMH"/"STEADY" on an obviously moving car, exactly the reported bug. The one signal this
+// model can actually check without a depth sensor: a vehicle sweeping sideways across the frame
+// (its box center moving horizontally fast relative to its own box size) is a real, physical
+// sign the sightline-closing assumption doesn't hold right now, regardless of what the distance
+// math says -- so the fix is to suppress (hide) the speed reading for exactly as long as that's
+// true, not report a number the model has no real basis for. Recovers immediately once the
+// vehicle's apparent horizontal motion settles back down (e.g. it straightens out ahead of you).
+// 1.5 box-widths of pure horizontal travel per second is a deliberately generous bar -- ordinary
+// camera shake/minor heading changes shouldn't trip it, a vehicle actually sweeping across the
+// frame does.
+const LATERAL_SWEEP_WIDTHS_PER_SEC = 1.5;
+
 /** Real relative-velocity kinematics, not a guess: for a vehicle ahead of the camera traveling
  *  the same direction (the actual, overwhelmingly common case for a forward-facing phone
  *  mounted while driving -- this is not claimed to hold for a vehicle crossing at an angle or
@@ -485,6 +503,12 @@ export function createSpeedTracker() {
         const distanceM = best.distanceM + (rawDistanceM - best.distanceM) * DISTANCE_SMOOTHING;
 
         const dtSec = (nowMs - best.lastSeenMs) / 1000;
+        // See LATERAL_SWEEP_WIDTHS_PER_SEC's own comment -- a real, physical sign the sightline-
+        // closing assumption doesn't hold right now, independent of whatever the distance/closing
+        // math below computes. Uses the track's own last known width (not this tick's bbox, not
+        // computed yet) -- close enough for a ratio check, and avoids ordering this after bbox.
+        const lateralPxPerSec = dtSec > 0 ? Math.abs(cx - best.center[0]) / dtSec : 0;
+        const isLateralCrossing = lateralPxPerSec > best.bbox[2] * LATERAL_SWEEP_WIDTHS_PER_SEC;
         if (state === "moving" && dtSec > 0.15) {
           const closingMPerSec = (best.distanceM - distanceM) / dtSec;
           let rawKmh = closingMPerSec * 3.6;
@@ -534,7 +558,14 @@ export function createSpeedTracker() {
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
         // know) is a separate, one-shot combination with the ego vehicle's own GPS speed,
         // computed fresh here for `result` only -- see combineWithEgoSpeed's own comment.
-        const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(speedKmh, state, egoSpeedMps);
+        const combined = combineWithEgoSpeed(speedKmh, state, egoSpeedMps);
+        // See LATERAL_SWEEP_WIDTHS_PER_SEC's own comment -- only suppresses this tick's OUTPUT
+        // reading (what the UI shows); the internal closing-rate/distance smoothing above keeps
+        // running unaffected, so a real speed reading resumes immediately once the sweep settles,
+        // with no re-acquisition delay.
+        const { speedKmh: outputSpeedKmh, speedKind } = isLateralCrossing
+          ? { speedKmh: null, speedKind: null }
+          : combined;
         nextTracks.push({
           id: best.id,
           bbox,
