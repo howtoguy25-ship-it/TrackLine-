@@ -78,6 +78,11 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
   // deliberate open.
   const [sheetIndex, setSheetIndex] = useState(-1);
   const wasOpenRef = useRef(false);
+  // Real, explicit request -- "a clear error... with retry," not a dead end. Bumping this
+  // re-runs the fetch effect below even though location/sheetIndex haven't changed; fetchedFor
+  // stays null after a failed attempt (only ever set on real success), so the effect's own
+  // "already fetched this" guard doesn't block the retry.
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     if (!location) return;
@@ -102,7 +107,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
         );
       })
       .finally(() => setLoading(false));
-  }, [location, fetchedFor, sheetIndex]);
+  }, [location, fetchedFor, sheetIndex, retryTick]);
 
   // Real, explicit request: "everything they can think of they can search" -- the plain
   // client-side filter below only ever covers the up-to-60 nearest results already fetched, so a
@@ -227,6 +232,15 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
           <View style={styles.centerRow}>
             <Ionicons name="alert-circle" size={18} color={colors.danger} />
             <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
+            <Pressable
+              onPress={() => setRetryTick((t) => t + 1)}
+              hitSlop={10}
+              style={styles.retryButton}
+              accessibilityLabel="Retry"
+            >
+              <Ionicons name="refresh" size={14} color={colors.accent} />
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
           </View>
         )}
         {!loading && !errorText && filteredPlaces.length === 0 && (
@@ -329,7 +343,17 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
-  centerText: { fontSize: 13, color: colors.textMuted },
+  centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  retryButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs },
   row: {

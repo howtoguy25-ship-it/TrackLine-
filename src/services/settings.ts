@@ -75,6 +75,15 @@ export interface AppSettings {
   // the posted limit by 3+ km/h, at most once every 30s (see LiveSpeedometer.tsx). Default ON,
   // same as every other audible-alert setting in this app.
   speedWarningChimeEnabled: boolean;
+  // Real, explicit request -- which camera pose the map opens into (idle browsing) and starts
+  // navigation in, applied with no flash of a different style first. "tilted3d" is a true no-op
+  // default (byte-identical to this app's existing always-on tilted chase-cam/idle-3D-buildings
+  // behavior, see MapScreen.tsx's own show3D/chase-cam effects) -- "flat" is a genuinely new
+  // top-down pitch-0 pose this app never had before; "satellite3d" is the same tilted pose with
+  // mapType set to hybrid instead of standard. A live map toggle (the existing 3D-buildings/
+  // satellite FABs) can still change the view mid-session same as always; this only controls
+  // what it opens/starts into.
+  defaultMapViewStyle: "tilted3d" | "flat" | "satellite3d";
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -98,6 +107,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertIconTheme: "default",
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
+  defaultMapViewStyle: "tilted3d",
 };
 
 const STORAGE_KEY = "@trackline/settings";

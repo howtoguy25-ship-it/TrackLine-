@@ -236,6 +236,7 @@ export function NavigationInstructionCard({
           guess), and stays visible even collapsed since it's one compact row. */}
       {roadName && (
         <View style={styles.roadRow}>
+          <Ionicons name="navigate" size={11} color={theme.actionText} style={{ transform: [{ rotate: "90deg" }] }} />
           <Text style={[styles.roadName, { color: theme.text }, textShadow]} numberOfLines={1}>
             {roadName}
           </Text>

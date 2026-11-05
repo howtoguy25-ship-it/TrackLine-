@@ -33,7 +33,7 @@ import { getPlateRecognizerProviderConfig, savePlateRecognizerProviderConfig } f
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
-import { ALL_ALERT_TYPES } from "@/services/settings";
+import { ALL_ALERT_TYPES, type AppSettings } from "@/services/settings";
 import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
@@ -86,6 +86,18 @@ const SETTINGS_BORDER = "#374151";
 const SETTINGS_TEXT = "#F9FAFB";
 const SETTINGS_TEXT_MUTED = "#9CA3AF";
 const SETTINGS_TEXT_FAINT = "#6B7280";
+
+const MAP_VIEW_STYLE_ORDER: AppSettings["defaultMapViewStyle"][] = ["tilted3d", "flat", "satellite3d"];
+const MAP_VIEW_STYLE_LABELS: Record<AppSettings["defaultMapViewStyle"], string> = {
+  tilted3d: "3D tilted",
+  flat: "Overhead",
+  satellite3d: "Satellite 3D",
+};
+const MAP_VIEW_STYLE_ICONS: Record<AppSettings["defaultMapViewStyle"], keyof typeof Ionicons.glyphMap> = {
+  tilted3d: "layers-outline",
+  flat: "square-outline",
+  satellite3d: "globe-outline",
+};
 
 const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow", "blue", "light"];
 const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
@@ -422,6 +434,11 @@ export function SettingsScreen() {
 
   const onMapThemeSelect = useCallback(
     (theme: MapThemeKey) => updateSettings({ mapTheme: theme }),
+    [updateSettings]
+  );
+
+  const onMapViewStyleSelect = useCallback(
+    (style: AppSettings["defaultMapViewStyle"]) => updateSettings({ defaultMapViewStyle: style }),
     [updateSettings]
   );
 
@@ -823,6 +840,39 @@ export function SettingsScreen() {
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {ROAD_THICKNESS_LABELS[thickness]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Real, explicit request -- which camera pose the map opens into and starts
+            navigation in, applied with no flash of a different style first (see MapScreen.tsx's
+            own mapViewStyleAppliedRef/chase-cam effects). A live toggle (the existing 3D-
+            buildings/satellite FABs on the map) still works mid-session same as always -- this
+            only picks what it opens/starts into. */}
+        <Text style={[styles.helperText, { marginTop: spacing.md }]}>Default map view</Text>
+        <View style={styles.themeGrid}>
+          {MAP_VIEW_STYLE_ORDER.map((style) => {
+            const isSelected = settings.defaultMapViewStyle === style;
+            return (
+              <Pressable
+                key={style}
+                onPress={() => onMapViewStyleSelect(style)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${MAP_VIEW_STYLE_LABELS[style]} default map view`}
+              >
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.mapViewStyleSwatch]}>
+                    <Ionicons name={MAP_VIEW_STYLE_ICONS[style]} size={22} color={isSelected ? colors.accent : SETTINGS_TEXT_MUTED} />
+                  </View>
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {MAP_VIEW_STYLE_LABELS[style]}
                 </Text>
               </Pressable>
             );
@@ -1820,6 +1870,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   roadThicknessSwatch: {
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mapViewStyleSwatch: {
     backgroundColor: SETTINGS_SURFACE_MUTED,
     alignItems: "center",
     justifyContent: "center",

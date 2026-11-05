@@ -231,7 +231,15 @@ export function RouteOptionsCard({
       ) : (
         <>
           {isDriving
-            ? PROFILE_ORDER.map((key) => {
+            ? // Real, explicit request -- a trip with no toll road at all shouldn't clutter the
+              // picker with toll-related options. "With Tolls"/"No Tolls" only ever genuinely
+              // differ from "Normal" when this trip actually crosses a toll road (see
+              // tollEstimate.hasToll in directions.ts's own getRouteOptions) -- hidden entirely
+              // otherwise rather than shown with a "no toll needed" subtitle nobody asked to see.
+              (options!.tolls.tollEstimate?.hasToll
+                ? PROFILE_ORDER
+                : PROFILE_ORDER.filter((key) => key !== "tolls" && key !== "noTolls")
+              ).map((key) => {
                 const route = options![key];
                 const isSelected = key === selected;
                 const usingTraffic = route.etaInTrafficText != null;

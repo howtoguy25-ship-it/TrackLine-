@@ -67,6 +67,11 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
   // exactly like a recoil. Gated to only ever refetch on first mount or a fresh reopen.
   const [sheetIndex, setSheetIndex] = useState(-1);
   const wasOpenRef = useRef(false);
+  // Real, explicit request -- "a clear error... with retry," not a dead end. Bumping this
+  // re-runs the fetch effect below even though location/sheetIndex haven't changed; fetchedFor
+  // stays null after a failed attempt (only ever set on real success), so the effect's own
+  // "already fetched this" guard doesn't block the retry.
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     if (!location) return;
@@ -91,7 +96,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
         );
       })
       .finally(() => setLoading(false));
-  }, [location, fetchedFor, sheetIndex]);
+  }, [location, fetchedFor, sheetIndex, retryTick]);
 
   // Real, explicit request: "everything they can think of they can search" -- same broadening as
   // RestaurantsSheet (see its own comment for the full reasoning) so a specific hotel chain
@@ -226,6 +231,15 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
           <View style={styles.centerRow}>
             <Ionicons name="alert-circle" size={18} color={colors.danger} />
             <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
+            <Pressable
+              onPress={() => setRetryTick((t) => t + 1)}
+              hitSlop={10}
+              style={styles.retryButton}
+              accessibilityLabel="Retry"
+            >
+              <Ionicons name="refresh" size={14} color={colors.accent} />
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
           </View>
         )}
         {!loading && !errorText && visibleHotels.length === 0 && (
@@ -383,7 +397,17 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
   filterChipTextActive: { color: "#FFFFFF" },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
-  centerText: { fontSize: 13, color: colors.textMuted },
+  centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  retryButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
   row: {

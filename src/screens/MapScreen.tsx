@@ -251,7 +251,7 @@ function routesAreNearlyIdentical(a: LatLng[], b: LatLng[]): boolean {
 export function MapScreen() {
   const { location } = useLocation();
   const { user } = useAuth();
-  const { settings, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
+  const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
   // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
   // memoized so a re-render that doesn't touch either doesn't rebuild this array (and every
   // styler object inside it) from scratch on every frame.
@@ -370,6 +370,18 @@ export function MapScreen() {
   // satellite view is close to unusable while actually navigating, and this is what most map
   // apps' own "Satellite" button actually switches to.
   const [mapType, setMapType] = useState<"standard" | "hybrid">("standard");
+  // Real, explicit request -- applies the driver's saved default map view (Settings ->
+  // defaultMapViewStyle) the instant settings finish loading, before the very first render a
+  // user could see, so there's no flash of the wrong style. Guarded to fire exactly once --
+  // after that, the existing satellite FAB (setMapType) is the live, manual override, same as
+  // every other "saved default, live toggle still works" setting in this app. "tilted3d" needs
+  // no correction at all here (mapType's own useState default above is already "standard").
+  const mapViewStyleAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!settingsLoaded || mapViewStyleAppliedRef.current) return;
+    mapViewStyleAppliedRef.current = true;
+    if (settings.defaultMapViewStyle === "satellite3d") setMapType("hybrid");
+  }, [settingsLoaded, settings.defaultMapViewStyle]);
 
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
@@ -1131,13 +1143,18 @@ export function MapScreen() {
     // tight, tilted front-view pose by default; the pulled-back pose only applies here if the
     // driver had already switched to it (tapping the locate button while already following)
     // before this fires, e.g. resuming follow after a manual pan while already pulled back.
+    // Real, explicit request -- "flat"/"Overhead" default view style replaces the usual tilted
+    // chase-cam pitch with a true top-down pose the instant navigation starts; "tilted3d" and
+    // "satellite3d" both keep the exact original 60/45 pitch values (mapType is what
+    // distinguishes satellite3d, set separately -- see mapViewStyleAppliedRef above).
+    const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
     mapRef.current?.animateCamera(
       overviewMode
-        ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-        : { center: currentLatLng, heading, pitch: 60, zoom: 18 },
+        ? { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 45, zoom: isFlatViewStyle ? 17 : 15 }
+        : { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18 },
       { duration: 700 }
     );
-  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert]);
+  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle]);
 
   // Real, confirmed request -- a closer, tighter "one person mode" camera specifically while
   // actually executing a highway exit/ramp/fork, matching how Waze/Google Maps zoom in tight

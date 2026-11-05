@@ -94,7 +94,7 @@ function buildQuery(
   return `[out:json][timeout:25];(${clauses});out center ${MAX_RESULTS * 2};`;
 }
 
-async function runOverpassQuery(query: string): Promise<OverpassResponse> {
+async function raceOverpassMirrors(query: string): Promise<OverpassResponse> {
   const body = `data=${encodeURIComponent(query)}`;
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -124,13 +124,44 @@ async function runOverpassQuery(query: string): Promise<OverpassResponse> {
     return await Promise.any(OVERPASS_ENDPOINTS.map(requestFrom));
   } catch {
     if (controller.signal.aborted) {
-      throw new Error("Nearby-places lookup timed out -- try again in a moment");
+      throw new Error("Nearby-places lookup timed out");
     }
     throw new Error("Nearby-places lookup failed -- all data sources unavailable");
   } finally {
     clearTimeout(timeoutHandle);
     controller.abort();
   }
+}
+
+// Real, explicit request -- "timeout + retry, not instant fail." A real, confirmed issue with
+// relying on free/unauthenticated Overpass mirrors (directly reproduced: all three public
+// mirrors this app uses genuinely timed out/504'd in the same brief window during testing) --
+// public Overpass overload is typically transient (a few seconds), not a real outage, so one
+// failed 3-mirror race isn't treated as a final answer. Retries the WHOLE race (not just one
+// endpoint) up to OVERPASS_RETRY_ATTEMPTS times with a real delay between attempts, so a driver
+// with a genuinely working connection doesn't see "couldn't load" just because every mirror
+// happened to be briefly overloaded at the exact moment of the first try.
+const OVERPASS_RETRY_ATTEMPTS = 3;
+const OVERPASS_RETRY_DELAY_MS = 1500;
+// Real worst-case time a single runOverpassQuery call can now take (every retry attempt timing
+// out, plus the delay between each) -- callers' own withTimeout budgets below are sized off this,
+// not the old single-attempt FETCH_TIMEOUT_MS, so the retries above actually get to run instead
+// of being cut off early by an outer timeout sized for only one attempt.
+const OVERPASS_QUERY_MAX_MS = FETCH_TIMEOUT_MS * OVERPASS_RETRY_ATTEMPTS + OVERPASS_RETRY_DELAY_MS * (OVERPASS_RETRY_ATTEMPTS - 1);
+
+async function runOverpassQuery(query: string): Promise<OverpassResponse> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= OVERPASS_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await raceOverpassMirrors(query);
+    } catch (err) {
+      lastError = err;
+      if (attempt < OVERPASS_RETRY_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, OVERPASS_RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Nearby-places lookup failed -- all data sources unavailable");
 }
 
 // Real address text from whichever OSM addr:* tags this specific place actually has -- these
@@ -201,7 +232,7 @@ async function queryWithWidening(
  *  file's own header for the real Google-vs-OSM trade-offs. Starts at a tight radius and widens
  *  automatically in genuinely low-density areas (see SEARCH_RADII_METERS). */
 export function searchNearbyOsmPlaces(location: LatLng, category: OsmPoiCategory): Promise<NearbyPlace[]> {
-  return withTimeout(queryWithWidening(category, location), FETCH_TIMEOUT_MS * SEARCH_RADII_METERS.length, `nearby ${category} request`);
+  return withTimeout(queryWithWidening(category, location), OVERPASS_QUERY_MAX_MS * SEARCH_RADII_METERS.length, `nearby ${category} request`);
 }
 
 /** Same real OSM data, filtered to places whose own tagged name matches the driver's search
@@ -211,7 +242,7 @@ export function searchOsmPlacesByText(query: string, location: LatLng, category:
   if (!query.trim()) return Promise.resolve([]);
   return withTimeout(
     queryWithWidening(category, location, query.trim()),
-    FETCH_TIMEOUT_MS * SEARCH_RADII_METERS.length,
+    OVERPASS_QUERY_MAX_MS * SEARCH_RADII_METERS.length,
     `${category} text search request`
   );
 }
@@ -265,7 +296,7 @@ export async function fetchOsmPlacesInBounds(bounds: OsmPlaceBounds, category: O
   };
   const data = await withTimeout(
     runOverpassQuery(buildBboxQuery(category, bounds)),
-    FETCH_TIMEOUT_MS,
+    OVERPASS_QUERY_MAX_MS,
     `${category} viewport request`
   );
   const seen = new Set<string>();
@@ -306,7 +337,7 @@ export async function getOsmPlaceInfo(placeId: string): Promise<PlaceInfo> {
   }
 
   const query = `[out:json][timeout:15];(${elementType}(${id}););out tags center;`;
-  const data = await withTimeout(runOverpassQuery(query), FETCH_TIMEOUT_MS, "OSM place detail request");
+  const data = await withTimeout(runOverpassQuery(query), OVERPASS_QUERY_MAX_MS, "OSM place detail request");
   const el = data.elements[0];
   if (!el) throw new Error("This place is no longer on OpenStreetMap");
 
