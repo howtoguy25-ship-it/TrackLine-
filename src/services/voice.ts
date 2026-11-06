@@ -56,18 +56,33 @@ export async function setVoiceIdentifier(identifier: string | null): Promise<voi
 // choice; Default-quality entries still show, just after.
 export async function getAvailableVoices(): Promise<Speech.Voice[]> {
   const voices = await Speech.getAvailableVoicesAsync();
-  return voices
+  const englishVoices = voices
     .filter((v) => v.language?.toLowerCase().startsWith("en"))
     .sort((a, b) => (a.quality === b.quality ? a.name.localeCompare(b.name) : a.quality === "Enhanced" ? -1 : 1));
+
+  // Real, confirmed duplicate: the same named voice (e.g. "Eddy", "Flo", "Grandma") is often
+  // registered under more than one English locale (en-US, en-GB, en-AU, ...) as two separate
+  // entries with the same real display name but different identifiers -- which is exactly why
+  // the picker showed the same pill twice. Keep just one real voice per distinct name; the sort
+  // above already puts an Enhanced-quality entry first for a given name, so that's the one kept.
+  const seenNames = new Set<string>();
+  const deduped: Speech.Voice[] = [];
+  for (const v of englishVoices) {
+    if (seenNames.has(v.name)) continue;
+    seenNames.add(v.name);
+    deduped.push(v);
+  }
+  return deduped;
 }
 
-export function speak(instruction: string, volume = 1.0, voiceIdentifier?: string | null): void {
+export function speak(instruction: string, volume = 1.0, voiceIdentifier?: string | null, onDone?: () => void): void {
   Speech.stop();
   Speech.speak(instruction, {
     rate: 1.0,
     pitch: 1.0,
     volume,
     ...(voiceIdentifier ? { voice: voiceIdentifier } : {}),
+    ...(onDone ? { onDone, onStopped: onDone, onError: onDone } : {}),
   });
 }
 

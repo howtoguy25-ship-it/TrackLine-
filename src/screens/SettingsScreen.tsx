@@ -15,7 +15,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { syncVisibleRegionsToProfile } from "@/services/userProfile";
-import { setVoiceEnabled, getAvailableVoices } from "@/services/voice";
+import { setVoiceEnabled, getAvailableVoices, speak, stopSpeaking } from "@/services/voice";
 import type * as Speech from "expo-speech";
 import {
   signOutUser,
@@ -140,7 +140,7 @@ const ALERT_ICON_THEME_ORDER: AlertIconThemeKey[] = ["default", "outline", "bold
 const ALERT_ICON_PREVIEW_TYPES: AlertType[] = ["police", "crash", "hazard", "traffic_light"];
 
 export function SettingsScreen() {
-  const { settings, updateSettings, voiceIdentifier, setVoiceIdentifier } = useSettings();
+  const { settings, updateSettings, voiceIdentifier, setVoiceIdentifier, voiceVolume } = useSettings();
   const { user } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   // Every device is signed in anonymously from launch (see firebase.ts's ensureSignedIn) --
@@ -425,12 +425,27 @@ export function SettingsScreen() {
       cancelled = true;
     };
   }, []);
+  // Real, explicit request: tapping a voice pill should let the driver actually HEAR that real
+  // installed voice before committing to it, not just read its name. Plays a real ~3s turn-by-
+  // turn-shaped sample through expo-speech using that exact voice identifier -- the very thing
+  // Speech.speak will use for every real instruction once selected, not a separate fake preview
+  // path. previewingKey (cleared via speak's onDone/onStopped/onError, see voice.ts) drives a
+  // small "playing" indicator on whichever pill is currently speaking.
+  const VOICE_PREVIEW_TEXT = "In 300 metres, turn left";
+  const [previewingKey, setPreviewingKey] = useState<string | null>(null);
   const onVoiceSelect = useCallback(
-    (identifier: string | null) => {
+    (identifier: string | null, key: string) => {
       setVoiceIdentifier(identifier);
+      setPreviewingKey(key);
+      speak(VOICE_PREVIEW_TEXT, voiceVolume, identifier, () => setPreviewingKey(null));
     },
-    [setVoiceIdentifier]
+    [setVoiceIdentifier, voiceVolume]
   );
+  // Real cleanup -- leaving this screen mid-preview shouldn't leave a voice sample still
+  // talking over whatever screen the driver navigated to next.
+  useEffect(() => {
+    return () => stopSpeaking();
+  }, []);
 
   const onMapThemeSelect = useCallback(
     (theme: MapThemeKey) => updateSettings({ mapTheme: theme }),
@@ -1477,39 +1492,46 @@ export function SettingsScreen() {
 
         <Text style={[styles.rowLabel, { marginTop: spacing.md }]}>Navigation voice</Text>
         <Text style={styles.helperText}>
-          Real voices actually installed on your own phone -- pick the one you want reading turn-
-          by-turn directions. "Device default" (the original behavior) lets your phone's own
-          system settings decide.
+          Real voices actually installed on your own phone -- tap one to hear a real sample and
+          select it. "Device default" (the original behavior) lets your phone's own system
+          settings decide.
         </Text>
         {!voicesLoaded ? (
           <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
         ) : (
-          <View style={styles.expiryChipRow}>
+          <View style={styles.voicePillRow}>
             <Pressable
-              onPress={() => onVoiceSelect(null)}
+              onPress={() => onVoiceSelect(null, "device-default")}
               style={({ pressed }) => [
-                styles.expiryChip,
-                voiceIdentifier === null && styles.expiryChipSelected,
+                styles.voicePill,
+                voiceIdentifier === null && styles.voicePillSelected,
                 pressed && { opacity: pressedOpacity },
               ]}
             >
-              <Text style={[styles.expiryChipText, voiceIdentifier === null && styles.expiryChipTextSelected]}>
+              {previewingKey === "device-default" && (
+                <Ionicons name="volume-high" size={13} color={voiceIdentifier === null ? "#FFFFFF" : colors.accent} />
+              )}
+              <Text style={[styles.voicePillText, voiceIdentifier === null && styles.voicePillTextSelected]}>
                 Device default
               </Text>
             </Pressable>
             {availableVoices.map((voice) => {
               const isSelected = voiceIdentifier === voice.identifier;
+              const isPreviewing = previewingKey === voice.identifier;
               return (
                 <Pressable
                   key={voice.identifier}
-                  onPress={() => onVoiceSelect(voice.identifier)}
+                  onPress={() => onVoiceSelect(voice.identifier, voice.identifier)}
                   style={({ pressed }) => [
-                    styles.expiryChip,
-                    isSelected && styles.expiryChipSelected,
+                    styles.voicePill,
+                    isSelected && styles.voicePillSelected,
                     pressed && { opacity: pressedOpacity },
                   ]}
                 >
-                  <Text style={[styles.expiryChipText, isSelected && styles.expiryChipTextSelected]}>
+                  {isPreviewing && (
+                    <Ionicons name="volume-high" size={13} color={isSelected ? "#FFFFFF" : colors.accent} />
+                  )}
+                  <Text style={[styles.voicePillText, isSelected && styles.voicePillTextSelected]}>
                     {voice.name}
                     {voice.quality === "Enhanced" ? " ✦" : ""}
                   </Text>
@@ -1936,6 +1958,38 @@ const styles = StyleSheet.create({
     color: SETTINGS_TEXT_MUTED,
   },
   expiryChipTextSelected: {
+    color: "#FFFFFF",
+  },
+  // Dedicated to the voice picker (not the borrowed expiryChip above) -- real, explicit request
+  // for a cleaner/more human look here specifically: a touch more breathing room between pills
+  // and inside each one, plus room for the preview "playing" icon.
+  voicePillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  voicePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  voicePillSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  voicePillText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: SETTINGS_TEXT_MUTED,
+  },
+  voicePillTextSelected: {
     color: "#FFFFFF",
   },
   customExpiryRow: {

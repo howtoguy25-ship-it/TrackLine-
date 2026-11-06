@@ -1520,6 +1520,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // might already be gone. The box/type tag still holds through the grace period
           // (deliberately, so a single missed frame doesn't flicker the whole lock off) -- only
           // the speed text itself is gated on a genuinely current match.
+          // Real, confirmed bug this fixes: combineWithEgoSpeed's "absolute" combination
+          // (ego GPS speed minus the closing rate -- see its own comment in speedTracker.ts) is
+          // only physically valid under its own stated assumption, a vehicle ahead traveling the
+          // SAME direction -- and comes back NEGATIVE exactly when that assumption has silently
+          // broken down (a crossing/oncoming vehicle, or a bad track match), never because the
+          // other vehicle is somehow moving backwards. `Math.max(0, ...)` used to floor that
+          // impossible negative result to a confident-looking "0 KMH" on a vehicle that could
+          // genuinely be moving fast -- the exact "0 on a clearly moving car" complaint. A
+          // negative absolute estimate now hides the label entirely instead of showing a number
+          // the model has no real basis for, same "hide rather than fabricate" rule the rest of
+          // this label already follows for coasting/parked/unknown.
           const speedLabel = box.coasting
             ? null
             : box.state === "parked"
@@ -1527,7 +1538,9 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               : box.speedKmh === null
                 ? null
                 : box.speedKind === "absolute"
-                  ? `${Math.max(0, Math.round(box.speedKmh))} KMH`
+                  ? box.speedKmh < 0
+                    ? null
+                    : `${Math.round(box.speedKmh)} KMH`
                   : Math.abs(box.speedKmh) < 3
                     ? "STEADY"
                     : `${box.speedKmh > 0 ? "▲" : "▼"} ${Math.round(Math.abs(box.speedKmh))} KMH`;

@@ -319,6 +319,48 @@ function boxCenter(bbox: [number, number, number, number]): [number, number] {
   return [bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2];
 }
 
+function boxIoU(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const [ax, ay, aw, ah] = a;
+  const [bx, by, bw, bh] = b;
+  const interLeft = Math.max(ax, bx);
+  const interTop = Math.max(ay, by);
+  const interRight = Math.min(ax + aw, bx + bw);
+  const interBottom = Math.min(ay + ah, by + bh);
+  const interW = Math.max(0, interRight - interLeft);
+  const interH = Math.max(0, interBottom - interTop);
+  const interArea = interW * interH;
+  if (interArea <= 0) return 0;
+  const unionArea = aw * ah + bw * bh - interArea;
+  return unionArea > 0 ? interArea / unionArea : 0;
+}
+
+// Real, confirmed gap this closes: VehicleDetectionScreen.tsx's own suppressOverlappingDetections
+// dedupes RAW, per-tick detections before they ever reach the tracker -- but it runs once, on
+// that tick's raw boxes, before any matching/smoothing happens. It has no way to catch two
+// already-CONFIRMED, separately-tracked boxes that end up overlapping heavily after the fact (a
+// transient mismatch spawning a second track for the same real vehicle a tick or two after the
+// first one already locked on) -- which is exactly what "duplicate labels on the one real
+// vehicle" looks like once it's past the raw-detection stage. A second, same-shaped dedup pass
+// over this function's own final `result` (confirmed/smoothed tracks, not raw detections) catches
+// that case specifically. Threshold set a bit higher than the raw pass's 0.25 -- these are
+// smoothed, confirmed boxes, not jittery raw ones, so two genuinely separate vehicles parked/
+// driving close together are less likely to overlap this much than two tracks actually describing
+// the same real vehicle are.
+const TRACK_DEDUP_IOU_THRESHOLD = 0.4;
+
+function dedupeOverlappingTracks(result: TrackedBox[]): TrackedBox[] {
+  if (result.length < 2) return result;
+  // Highest score first, same greedy-NMS-style priority as the raw-detection pass -- the
+  // stronger read of the (likely) one real vehicle is kept, the weaker duplicate is dropped.
+  const sorted = [...result].sort((a, b) => b.score - a.score);
+  const kept: TrackedBox[] = [];
+  for (const box of sorted) {
+    if (kept.some((k) => boxIoU(k.bbox, box.bbox) > TRACK_DEDUP_IOU_THRESHOLD)) continue;
+    kept.push(box);
+  }
+  return kept;
+}
+
 function smoothBbox(
   prev: [number, number, number, number],
   next: [number, number, number, number],
@@ -697,7 +739,7 @@ export function createSpeedTracker() {
     }
 
     tracks = nextTracks;
-    return result;
+    return dedupeOverlappingTracks(result);
   }
 
   // Every id currently held onto internally, including ones mid-grace-period that didn't

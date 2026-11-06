@@ -238,13 +238,28 @@ function pointAtPolylineFraction(polyline: LatLng[], fraction: number): LatLng |
 // too, see the "3 routes crumbled" fix above), so it's skipped rather than forced to overlap.
 const GEOMETRY_MATCH_TOLERANCE_KM = 0.03;
 const GEOMETRY_MATCH_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
-function routesAreNearlyIdentical(a: LatLng[], b: LatLng[]): boolean {
+// Real, confirmed gap in the fixed 30m tolerance above: it was tuned against SHORT trips (a
+// couple of nearby pin-drop points), where even a real few-hundred-meter divergence between two
+// profiles is a meaningfully different road. For a long trip (tens/hundreds of km) that merges
+// onto the same road for the overwhelming majority of its length but genuinely diverges by a few
+// hundred meters near one end (a different side-street choice right at the start/finish), a
+// fixed 30m bar correctly calls that "not identical" -- but at the zoom level a long trip like
+// that is actually VIEWED at, a few hundred meters of divergence out of 100km+ is completely
+// invisible, so two routes that read as one crumbled line on screen still got two separate,
+// overlapping ETA pills (real screenshot evidence: a 104km trip's "Recommended" and "Fastest"
+// pills landing directly on top of each other). Scaling the tolerance with the route's own real
+// length keeps the original short-trip behavior exactly as tight (the 30m floor still applies),
+// while treating a long trip's own proportionally small divergence as the same visual road it
+// actually reads as on screen.
+const GEOMETRY_MATCH_TOLERANCE_FRACTION_OF_ROUTE = 0.01;
+function routesAreNearlyIdentical(a: LatLng[], b: LatLng[], routeDistanceKm: number): boolean {
   if (a.length === 0 || b.length === 0) return false;
+  const toleranceKm = Math.max(GEOMETRY_MATCH_TOLERANCE_KM, routeDistanceKm * GEOMETRY_MATCH_TOLERANCE_FRACTION_OF_ROUTE);
   return GEOMETRY_MATCH_FRACTIONS.every((f) => {
     const pa = pointAtPolylineFraction(a, f);
     const pb = pointAtPolylineFraction(b, f);
     if (!pa || !pb) return false;
-    return distanceKm(pa.latitude, pa.longitude, pb.latitude, pb.longitude) < GEOMETRY_MATCH_TOLERANCE_KM;
+    return distanceKm(pa.latitude, pa.longitude, pb.latitude, pb.longitude) < toleranceKm;
   });
 }
 
@@ -252,13 +267,6 @@ export function MapScreen() {
   const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
   const { user } = useAuth();
   const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
-  // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
-  // memoized so a re-render that doesn't touch either doesn't rebuild this array (and every
-  // styler object inside it) from scratch on every frame.
-  const mapCustomStyle = useMemo(
-    () => getMapStyle(settings.mapTheme, settings.roadThickness),
-    [settings.mapTheme, settings.roadThickness]
-  );
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -387,6 +395,20 @@ export function MapScreen() {
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
   const [pendingDestination, setPendingDestination] = useState<PlaceDetails | null>(null);
+  // Real, explicit request: candidate route(s) must stand out clearly from the surrounding
+  // street network while picking one, not blend into it -- dims every other road (see
+  // getMapStyle's own ROUTE_PICKING_DIM_STYLERS) for exactly the window a destination is picked
+  // but Start hasn't been pressed yet. Never dims during active navigation/the pre-destination
+  // idle map -- both have a real reason to show the full, undimmed road network (reading cross
+  // streets while driving; general map browsing before picking anywhere).
+  const isPickingRoute = !!pendingDestination && !route;
+  // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
+  // memoized so a re-render that doesn't touch either (or the route-picking dim state) doesn't
+  // rebuild this array (and every styler object inside it) from scratch on every frame.
+  const mapCustomStyle = useMemo(
+    () => getMapStyle(settings.mapTheme, settings.roadThickness, isPickingRoute),
+    [settings.mapTheme, settings.roadThickness, isPickingRoute]
+  );
   // Real, confirmed request -- show a driver what the live traffic layer's own colors actually
   // mean, but only briefly and only the moment it actually turns on (route picking/following
   // starts), not a permanent fixture competing with the map for attention.
@@ -479,12 +501,26 @@ export function MapScreen() {
 
   const [bannerVisible, setBannerVisible] = useState(false);
   const [placingAlert, setPlacingAlert] = useState(false);
-  // Real "set incidents from 2 views" toggle, only offered while reporting during active
-  // navigation -- pitches the camera to a front/driving perspective at whatever spot the user
-  // has already panned to (see togglePlacementFrontView below), for easier placement of a
-  // location just passed. Deliberately resets to false whenever placement starts/ends so it
-  // never carries a stale tilt into the next report.
-  const [placementFrontView, setPlacementFrontView] = useState(false);
+  // Real "set incidents from 2 views" toggle -- pitches the camera to a front/driving
+  // perspective at whatever spot the user has already panned to (see togglePlacementFrontView
+  // below), for a clear view of where they're actually placing it. Real, confirmed bug this
+  // default fixes: this used to default to false (flat/overhead) the instant placement opened,
+  // with the tilted driving view only reachable by manually tapping the eye icon -- backwards
+  // from the explicit ask that placement should default to the normal driving-style angle, only
+  // dropping to overhead once genuinely zoomed out (see the auto-switch in
+  // onRegionChangeComplete). Defaulting true here, paired with onAlertTypeSelected now opening
+  // placement already tilted (see its own comment), makes this the actual default view instead
+  // of requiring a manual switch for the view every single report already defaulted to needing.
+  const [placementFrontView, setPlacementFrontView] = useState(true);
+  // Real, explicit request -- placement stays in the normal driving-style angle for a clear view
+  // of what's being placed, and only switches to overhead once the driver genuinely zooms out
+  // past this distance (region.latitudeDelta is this screen's existing real zoom proxy -- see
+  // OSM_LAYER_MAX_DELTA/PLACES_LAYER_MAX_DELTA for the same pattern). Tracks whether the CURRENT
+  // overhead view came from this auto-switch (vs. a deliberate manual eye-icon tap) so zooming
+  // back in only restores the tilt it auto-removed, never fighting a driver who manually chose
+  // overhead themselves at a normal zoom.
+  const ALERT_PLACEMENT_OVERHEAD_DELTA = 0.02;
+  const autoOverheadPlacementRef = useRef(false);
   // Tracks whether either alert sheet is actually open (not just mounted -- both are always
   // mounted, controlled via ref) so the FAB column below can hide itself while a sheet
   // covers most of the screen -- previously the FABs stayed rendered at their normal
@@ -1958,6 +1994,21 @@ export function MapScreen() {
       // settles after every pan/pinch-zoom gesture.
       if (placingAlert) {
         setAlertPlacementLatLng({ latitude: region.latitude, longitude: region.longitude });
+        // Real, explicit request -- auto-switch to overhead only once genuinely zoomed out past
+        // ALERT_PLACEMENT_OVERHEAD_DELTA, and only restore the tilt on the way back in when THIS
+        // auto-switch (not a manual eye-icon tap at a normal zoom) was what dropped it, so a
+        // driver who deliberately chose overhead at a close zoom never gets fought back into the
+        // tilted view just because they panned a little.
+        const isZoomedOutPastThreshold = region.latitudeDelta > ALERT_PLACEMENT_OVERHEAD_DELTA;
+        if (isZoomedOutPastThreshold && placementFrontView) {
+          autoOverheadPlacementRef.current = true;
+          setPlacementFrontView(false);
+          mapRef.current?.animateCamera({ pitch: 0, heading: 0 }, { duration: 300 });
+        } else if (!isZoomedOutPastThreshold && !placementFrontView && autoOverheadPlacementRef.current) {
+          autoOverheadPlacementRef.current = false;
+          setPlacementFrontView(true);
+          mapRef.current?.animateCamera({ pitch: 60, heading }, { duration: 300 });
+        }
       }
 
       // Same fixed-center-pin pattern as manual alert placement above, for the "choose starting
@@ -2034,6 +2085,8 @@ export function MapScreen() {
       followTilt,
       openPlaceCategories,
       fetchViewportPlaces,
+      placementFrontView,
+      heading,
     ]
   );
 
@@ -2784,11 +2837,37 @@ export function MapScreen() {
     }
   }, [originOverride, currentLatLng, liveAddress]);
 
-  // (X) on the pin picker -- per explicit request, exits pin mode in favor of the existing
-  // search-based flow rather than closing the whole "choose starting point" flow outright.
+  // Search icon on the pin picker -- exits pin-dragging in favor of typing an address instead,
+  // without closing the whole "choose starting point" flow outright.
   const switchOriginToSearch = useCallback(() => {
     setOriginPickerView("search");
   }, []);
+
+  // Real, explicit request: picking a result from search should drop the pin there and let the
+  // driver keep fine-tuning it (drag the map, then confirm with Set) -- the same real "search a
+  // place, then nudge the pin" flow Apple/Google Maps both use -- rather than immediately
+  // committing the moment a search result is tapped (what this used to do, by going straight
+  // through onOriginSelected -- the exact same function Set itself calls). Switches back to the
+  // pin view with the picked place's own real coordinate/address already filled in, so Set is
+  // now just confirming whatever's actually on screen, exactly like a manually-dragged pin.
+  const onOriginSearchPickedForPin = useCallback(
+    (place: PlaceDetails) => {
+      // "My Location" has no real fine-tuning to do -- it IS the live position, and committing
+      // it immediately also preserves its real "go back to following live GPS" meaning (see
+      // onOriginSelected's own MY_LOCATION_PLACE_ID check), which routing it through the pin
+      // flow first would otherwise lose (confirmOriginPin always builds a fresh "dropped pin"
+      // PlaceDetails from whatever coordinate is on screen, with no way back to that sentinel).
+      if (place.placeId === MY_LOCATION_PLACE_ID) {
+        onOriginSelected(place);
+        return;
+      }
+      setOriginPinLatLng(place.location);
+      setOriginPinAddress(place.address);
+      setOriginPickerView("pin");
+      mapRef.current?.animateToRegion({ ...place.location, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+    },
+    [onOriginSelected]
+  );
 
   // A true, full exit of the "choose starting point" flow -- reached from the search view's own
   // (X), which fully backs out rather than switching views again.
@@ -2825,6 +2904,14 @@ export function MapScreen() {
     setDestinationPickerView("search");
   }, []);
 
+  // Same real fine-tune-after-search fix as onOriginSearchPickedForPin above.
+  const onDestinationSearchPickedForPin = useCallback((place: PlaceDetails) => {
+    setDestinationPinLatLng(place.location);
+    setDestinationPinAddress(place.address);
+    setDestinationPickerView("pin");
+    mapRef.current?.animateToRegion({ ...place.location, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+  }, []);
+
   const cancelDestinationPicker = useCallback(() => {
     setPickingDestinationPoint(false);
     setDestinationPinLatLng(null);
@@ -2842,14 +2929,6 @@ export function MapScreen() {
     setPickingDestinationPoint(false);
     onDestinationSelected(place);
   }, [destinationPinLatLng, destinationPinAddress, onDestinationSelected]);
-
-  const onDestinationSearchPicked = useCallback(
-    (place: PlaceDetails) => {
-      setPickingDestinationPoint(false);
-      onDestinationSelected(place);
-    },
-    [onDestinationSelected]
-  );
 
   // Real, explicit request: a way to change the just-set starting point from the destination
   // step itself, not just before it was set -- backs out of picking a destination and reopens
@@ -2995,14 +3074,23 @@ export function MapScreen() {
       reportSheetRef.current?.close();
       setAlertPlacementLatLng(initialAlertPlacement(currentLatLng));
       setPlacingAlert(true);
+      setPlacementFrontView(true);
+      autoOverheadPlacementRef.current = false;
       // Snap the map to center on the current location so the fixed center pin starts exactly
-      // where alertPlacementLatLng says it is, even if the user had panned away beforehand.
-      mapRef.current?.animateToRegion(
-        { ...currentLatLng, latitudeDelta: 0.006, longitudeDelta: 0.006 },
-        300
+      // where alertPlacementLatLng says it is, even if the user had panned away beforehand. Real,
+      // confirmed fix: this used to be a plain animateToRegion (a region-fit call that resets
+      // pitch/heading to 0/north-up as part of fitting the given lat/lng deltas), which silently
+      // flattened the camera to overhead the instant placement opened regardless of
+      // placementFrontView's own state -- the actual root cause of placement always opening
+      // overhead no matter what. animateCamera with an explicit pitch/heading/zoom (matching the
+      // same tilt togglePlacementFrontView's own "front" pose already uses) opens already in the
+      // real driving-style angle this is supposed to default to.
+      mapRef.current?.animateCamera(
+        { center: currentLatLng, heading, pitch: 60, zoom: 17.5 },
+        { duration: 300 }
       );
     },
-    [currentLatLng, initialAlertPlacement]
+    [currentLatLng, initialAlertPlacement, heading]
   );
 
   // Optional `overrideLocation` -- the "Set at my location" button below passes the driver's
@@ -3600,7 +3688,9 @@ export function MapScreen() {
             return orderedKeys.map((key) => {
               const i = ROUTE_PROFILE_ORDER.indexOf(key);
               const r = routeOptions[key];
-              const isDuplicateGeometry = pilledPolylines.some((p) => routesAreNearlyIdentical(p, r.polyline));
+              const isDuplicateGeometry = pilledPolylines.some((p) =>
+                routesAreNearlyIdentical(p, r.polyline, r.distanceMeters / 1000)
+              );
               if (isDuplicateGeometry) return null;
               pilledPolylines.push(r.polyline);
               const labelPoint = pointAtPolylineFraction(r.polyline, ROUTE_ETA_PILL_FRACTIONS[i]);
@@ -4049,6 +4139,16 @@ export function MapScreen() {
           estimated={speedLimitEstimated}
           visible={speedometerVisible}
           chimeEnabled={settings.speedWarningChimeEnabled}
+          // Real, confirmed bug this fixes: this dial used a fixed bottom:24 regardless of
+          // whether NavBottomBar (the full-width live ETA/distance/arrival-time strip, only
+          // rendered once a route is active) was also on screen -- NavBottomBar's own real
+          // measured height easily reaches well past 24px up from the bottom, so during
+          // navigation the two sat directly on top of each other, the exact "speedometer
+          // covered by the ETA bar" complaint. Every other bottom-anchored control on this
+          // screen already shifts up by NavBottomBar's own real measured height
+          // (bottomBarHeight) while a route is active -- this now does the same instead of
+          // being the one exception.
+          bottom={route ? insets.bottom + bottomBarHeight + spacing.sm : undefined}
         />
       )}
 
@@ -4131,7 +4231,7 @@ export function MapScreen() {
       {!route && !placingAlert && pickingOrigin && originPickerView === "search" && (
         <DestinationSearchBar
           biasLocation={currentLatLng ?? undefined}
-          onDestinationSelected={onOriginSelected}
+          onDestinationSelected={onOriginSearchPickedForPin}
           placeholder="Choose starting point"
           onCancel={cancelOriginPicker}
           showMyLocation
@@ -4144,7 +4244,7 @@ export function MapScreen() {
       {!route && !placingAlert && pickingDestinationPoint && destinationPickerView === "search" && (
         <DestinationSearchBar
           biasLocation={originPinLatLng ?? currentLatLng ?? undefined}
-          onDestinationSelected={onDestinationSearchPicked}
+          onDestinationSelected={onDestinationSearchPickedForPin}
           placeholder="Choose destination"
           onCancel={cancelDestinationPicker}
         />
@@ -4693,7 +4793,12 @@ export function MapScreen() {
               onPress={switchOriginToSearch}
               accessibilityLabel="Search for a starting point instead"
             >
-              <Ionicons name="close" size={20} color={colors.text} />
+              {/* Real, confirmed discoverability bug this fixes: this used a plain "X" (close)
+                  icon, which reads as "cancel/dismiss" to anyone looking at it -- not "search
+                  instead", its real actual function. A real magnifying-glass icon makes that
+                  function obvious at a glance instead of only existing in its accessibility
+                  label. */}
+              <Ionicons name="search" size={20} color={colors.text} />
             </Pressable>
             <Pressable
               style={({ pressed }) => [
@@ -4746,7 +4851,8 @@ export function MapScreen() {
               onPress={switchDestinationToSearch}
               accessibilityLabel="Search for a destination instead"
             >
-              <Ionicons name="close" size={20} color={colors.text} />
+              {/* Same real discoverability fix as the starting-point picker's own button above. */}
+              <Ionicons name="search" size={20} color={colors.text} />
             </Pressable>
             <Pressable
               style={({ pressed }) => [

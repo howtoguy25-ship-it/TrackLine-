@@ -1,7 +1,17 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Text, StyleSheet, Animated } from "react-native";
 import { useAudioPlayer } from "expo-audio";
+import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SpeedLimitSign } from "@/components/SpeedLimitSign";
+
+// Real, explicit request -- shown exactly once, ever, the first time the chime actually fires
+// on this device, so a driver who's never seen this before understands what the buzz means.
+// Persisted (not just a this-session flag) since "the first time it ever triggers" means
+// exactly that, not "the first time per app launch."
+const EXPLAINER_SEEN_KEY = "@trackline/speedChimeExplainerSeen";
+const EXPLAINER_TEXT = "Speed reminder: you're 3+ km/h over the limit. Toggle off in Settings.";
+const EXPLAINER_VISIBLE_MS = 5000;
 
 interface Props {
   speedKmh: number;
@@ -15,6 +25,11 @@ interface Props {
   // in/out on whatever it's told).
   visible: boolean;
   chimeEnabled: boolean;
+  // Real, confirmed bug this fixes -- see the call site's own comment. Overrides the default
+  // bottom-24 position so the caller can shift this dial up out from under NavBottomBar's own
+  // real measured height whenever that bar is also on screen. undefined keeps the original
+  // fixed offset (the Home, not-navigating view, where no such bar exists).
+  bottom?: number;
 }
 
 const AMBER_OVER_KMH = 1;
@@ -28,7 +43,7 @@ const CHIME_COOLDOWN_MS = 30_000;
  *  with a gentle pulse 6+ km/h over -- plus an optional soft chime (real, synthesized two-tone
  *  WAV asset, not a placeholder) the first time the driver crosses 3+ km/h over, at most once
  *  every 30s. */
-export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, chimeEnabled }: Props) {
+export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, chimeEnabled, bottom }: Props) {
   const overBy = speedLimitKmh != null ? speedKmh - speedLimitKmh : 0;
   const isAmber = speedLimitKmh != null && overBy >= AMBER_OVER_KMH && overBy < RED_OVER_KMH;
   const isRed = speedLimitKmh != null && overBy >= RED_OVER_KMH;
@@ -60,13 +75,39 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
 
   const chimePlayer = useAudioPlayer(require("../../assets/sounds/speed_warning_chime.wav"));
   const lastChimeAtRef = useRef(0);
+  // Real, confirmed bug this replaces: the old check only looked at the CURRENT overBy value, so
+  // it kept re-firing every single time the 30s cooldown elapsed for as long as the driver
+  // stayed over the limit -- a continuous 5-minute stretch over the limit chimed roughly 10
+  // times, not once. wasOverRef makes this edge-triggered instead: it only counts as a new
+  // "event" the moment overBy actually CROSSES up into over-limit, so staying over continuously
+  // chimes exactly once per crossing, and the 30s cooldown below is now purely a safety cap
+  // against GPS noise flickering right at the threshold (drop under, bounce back over, repeat).
+  const wasOverRef = useRef(false);
+  const [explainerVisible, setExplainerVisible] = useState(false);
   useEffect(() => {
-    if (!chimeEnabled || speedLimitKmh == null) return;
-    if (overBy < CHIME_TRIGGER_OVER_KMH) return;
-    const now = Date.now();
-    if (now - lastChimeAtRef.current < CHIME_COOLDOWN_MS) return;
-    lastChimeAtRef.current = now;
-    chimePlayer.seekTo(0).then(() => chimePlayer.play());
+    if (!chimeEnabled || speedLimitKmh == null) {
+      wasOverRef.current = false;
+      return;
+    }
+    const isOverNow = overBy >= CHIME_TRIGGER_OVER_KMH;
+    if (isOverNow && !wasOverRef.current) {
+      const now = Date.now();
+      if (now - lastChimeAtRef.current >= CHIME_COOLDOWN_MS) {
+        lastChimeAtRef.current = now;
+        chimePlayer.seekTo(0).then(() => chimePlayer.play());
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        AsyncStorage.getItem(EXPLAINER_SEEN_KEY)
+          .then((seen) => {
+            if (seen) return;
+            return AsyncStorage.setItem(EXPLAINER_SEEN_KEY, "true").then(() => {
+              setExplainerVisible(true);
+              setTimeout(() => setExplainerVisible(false), EXPLAINER_VISIBLE_MS);
+            });
+          })
+          .catch(() => {});
+      }
+    }
+    wasOverRef.current = isOverNow;
     // Only speedKmh/speedLimitKmh/chimeEnabled should re-trigger this -- chimePlayer/overBy are
     // derived every render and would otherwise fire the effect (and re-read the cooldown ref)
     // far more often than the real speed actually changes.
@@ -76,7 +117,7 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
   return (
     <Animated.View
       pointerEvents="none"
-      style={[styles.wrap, { opacity }]}
+      style={[styles.wrap, { opacity }, bottom != null && { bottom }]}
       accessibilityLabel={`Current speed ${speedKmh} kilometers per hour${
         speedLimitKmh != null ? `, speed limit ${speedLimitKmh}` : ""
       }`}
@@ -93,6 +134,11 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
         <Text style={[styles.dialUnit, (isAmber || isRed) && styles.dialValueDark]}>km/h</Text>
       </Animated.View>
       {speedLimitKmh != null && <SpeedLimitSign kmh={speedLimitKmh} estimated={estimated} />}
+      {explainerVisible && (
+        <Animated.View style={styles.explainerBubble}>
+          <Text style={styles.explainerText}>{EXPLAINER_TEXT}</Text>
+        </Animated.View>
+      )}
     </Animated.View>
   );
 }
@@ -145,5 +191,23 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#D1D5DB",
     marginTop: -2,
+  },
+  explainerBubble: {
+    position: "absolute",
+    left: 0,
+    bottom: DIAL_SIZE + 14,
+    maxWidth: 220,
+    backgroundColor: "rgba(17, 24, 39, 0.92)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  explainerText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 16,
   },
 });

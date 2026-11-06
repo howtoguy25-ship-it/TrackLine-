@@ -237,7 +237,27 @@ const LIGHT_COLORS: ThemeColors = {
   waterLabel: "#2f5a8f",
 };
 
-export function getMapStyle(themeKey: MapThemeKey, thicknessKey: RoadThicknessKey) {
+// Real, explicit request: while picking a route, the actual candidate route line(s) should
+// stand out clearly from the surrounding street network, not blend into it -- the same
+// "everything else recedes" treatment Google/Apple Maps both already do during route selection.
+// Applied as extra style RULES appended after buildMapStyle's own explicit per-road-class color
+// rules (see buildMapStyle's own comment) rather than touching any theme's actual colors --
+// Google's style JSON applies same-selector stylers in array order, so a broad `saturation`/
+// `lightness` adjustment on "road" here lands on top of whatever color each theme already set,
+// desaturating and lightening every theme consistently without needing a second copy of each
+// theme's palette. Labels are deliberately left untouched (street names stay fully legible --
+// this is about de-emphasizing road GEOMETRY, not making the map harder to read), and POIs are
+// hidden outright -- a dense icon layer competing for attention is exactly the clutter route
+// selection is trying to cut through.
+const ROUTE_PICKING_DIM_STYLERS = [
+  { featureType: "road", elementType: "geometry", stylers: [{ saturation: -75 }, { lightness: 15 }] },
+  { featureType: "road.arterial", elementType: "geometry", stylers: [{ saturation: -75 }, { lightness: 15 }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ saturation: -75 }, { lightness: 15 }] },
+  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ saturation: -75 }, { lightness: 15 }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+];
+
+export function getMapStyle(themeKey: MapThemeKey, thicknessKey: RoadThicknessKey, dimRoads = false) {
   const colors: Record<MapThemeKey, ThemeColors> = {
     normal: NORMAL_COLORS,
     purpleBlue: PURPLE_BLUE_COLORS,
@@ -246,5 +266,6 @@ export function getMapStyle(themeKey: MapThemeKey, thicknessKey: RoadThicknessKe
     blue: BLUE_COLORS,
     light: LIGHT_COLORS,
   };
-  return buildMapStyle(colors[themeKey], thicknessKey);
+  const base = buildMapStyle(colors[themeKey], thicknessKey);
+  return dimRoads ? [...base, ...ROUTE_PICKING_DIM_STYLERS] : base;
 }
