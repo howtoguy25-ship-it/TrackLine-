@@ -203,16 +203,13 @@ module.exports = {
       // degrade gracefully at runtime. Keeping this out of the plugins array entirely until a
       // real token is set is what keeps "never break existing features" true while Mapbox is
       // still being wired up -- see NOTES.md.
-      ...(process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN
-        ? [
-            [
-              "@rnmapbox/maps",
-              {
-                RNMapboxMapsDownloadToken: process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN,
-              },
-            ],
-          ]
-        : []),
+      //
+      // No RNMapboxMapsDownloadToken plugin option passed -- confirmed via a real local prebuild
+      // that this installed plugin version (10.3.17) now reads RNMAPBOX_MAPS_DOWNLOAD_TOKEN
+      // directly from the environment itself and warns that passing it as a plugin option is
+      // deprecated. The `process.env` check below still does real, necessary work: it's this
+      // project's OWN conditional gate deciding whether the plugin entry is in the array at all.
+      ...(process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN ? ["@rnmapbox/maps"] : []),
       [
         "./modules/map3d/plugin/withMap3D.js",
         {
