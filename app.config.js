@@ -190,6 +190,11 @@ module.exports = {
       // ocrModels set) bundles all five script models (Chinese/Japanese/Korean/Devanagari
       // too), which just adds app size/build weight with nothing an AU plate would ever use.
       ["rn-mlkit-ocr", { ocrModels: ["latin"], ocrUseBundled: true }],
+      // Real, confirmed Android build fix for react-native-webview (added for the place-card's
+      // interactive Street View embed) -- see plugins/withAndroidWebviewGradleFix.js for the
+      // actual root cause (a missing `ext.webkitVersion` Gradle property its own build.gradle
+      // reads with no fallback).
+      "./plugins/withAndroidWebviewGradleFix.js",
       [
         "./modules/map3d/plugin/withMap3D.js",
         {
