@@ -42,6 +42,12 @@ export interface NavCardThemeColors {
   exitButtonIcon: string;
   toggleBg: string;
   toggleIcon: string;
+  // Real, explicit request (Waze-style redesign, Phase 1B section 5) -- the target street name
+  // shown large under the distance gets its own distinct accent color, separate from `text`
+  // (used for the full instruction sentence). #2EC4F1 cyan is the literal spec value for the
+  // default "dark" theme; every other theme gets its own accent kept consistent with its
+  // existing hue rather than reusing dark's cyan verbatim.
+  streetAccent: string;
 }
 
 export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
@@ -59,6 +65,7 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     exitButtonIcon: "#111827",
     toggleBg: "rgba(255,255,255,0.14)",
     toggleIcon: "#FFFFFF",
+    streetAccent: "#2EC4F1",
   },
   light: {
     background: "#FFFFFF",
@@ -74,6 +81,7 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     exitButtonIcon: "#FFFFFF",
     toggleBg: "rgba(17,24,39,0.08)",
     toggleIcon: "#111827",
+    streetAccent: "#0284C7",
   },
   transparentDark: {
     background: "rgba(10,14,24,0.55)",
@@ -90,6 +98,7 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     exitButtonIcon: "#0A0E18",
     toggleBg: "rgba(255,255,255,0.16)",
     toggleIcon: "#FFFFFF",
+    streetAccent: "#38BDF8",
   },
   midnight: {
     background: "#1E1B4B",
@@ -105,6 +114,7 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     exitButtonIcon: "#1E1B4B",
     toggleBg: "rgba(224,231,255,0.16)",
     toggleIcon: "#E0E7FF",
+    streetAccent: "#67E8F9",
   },
   sunset: {
     background: "#431407",
@@ -120,6 +130,7 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     exitButtonIcon: "#431407",
     toggleBg: "rgba(254,215,170,0.18)",
     toggleIcon: "#FED7AA",
+    streetAccent: "#FBBF24",
   },
   forest: {
     background: "#052E16",
@@ -135,5 +146,6 @@ export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
     exitButtonIcon: "#052E16",
     toggleBg: "rgba(187,247,208,0.18)",
     toggleIcon: "#BBF7D0",
+    streetAccent: "#5EEAD4",
   },
 };

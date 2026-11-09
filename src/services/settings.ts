@@ -103,6 +103,10 @@ export interface AppSettings {
   // priority over) the existing defaultVoiceEnabled/voiceEnabled master toggle -- that one is
   // "is guidance speech on at all", this is "how much of it".
   spokenDirections: SpokenDirectionsMode;
+  // Real, explicit request -- Settings > General > Distance units. Default "km" per "default
+  // units km, Australian English" -- see utils/navFormat.ts's own formatDistance for the exact
+  // threshold rules in each unit.
+  distanceUnit: "km" | "miles";
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -129,6 +133,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultMapViewStyle: "tilted3d",
   showCompass: true,
   spokenDirections: "normal",
+  distanceUnit: "km",
 };
 
 const STORAGE_KEY = "@trackline/settings";

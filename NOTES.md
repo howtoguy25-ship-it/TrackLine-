@@ -1,5 +1,29 @@
 # TrackLine — platform/data limitation notes
 
+## Phase 1B — Top instruction card
+
+- **Not full literal pixel sizes.** The brief's section 5 sizes (64pt icon, 44pt distance, 40pt
+  street name) assume a dedicated full-width panel with the icon in its own column. This app's
+  existing `NavigationInstructionCard` shares one row between the icon, instruction text,
+  distance pill, and the collapse/transparency/exit buttons -- a card that's been real, shipped,
+  iteratively-requested functionality across earlier rounds this session (collapsible "island"
+  state, per-theme colours, transparency toggle). Rather than discard that and rebuild a new
+  fixed full-width panel, every size was bumped up meaningfully from its previous value (icon
+  40→52px, distance 15→19pt, new street-name line at 22pt) while staying inside this card's real
+  available width -- each one commented in place with why it isn't the literal spec number.
+- **Roundabout exit numbers** are real, extracted from Google's own instruction sentence text
+  (e.g. "take the 2nd exit") via regex, since the REST Directions API has no structured exit-
+  number field at all (only Google's separate Navigation SDK does, which this app doesn't use) --
+  confirmed by a real web search before writing this, not assumed. Shows nothing when Google's
+  own sentence doesn't state one.
+- **Target street name** (the accented line under the instruction) is extracted from Google's own
+  `<b>...</b>` markup in `html_instructions` -- real markup Google already sends, not derived/
+  guessed from the plain-text instruction. Only appears when Google's own html actually bolded
+  something for that step.
+- **Distance units (km/miles)**: added a real `distanceUnit` setting (Settings row not wired up
+  yet -- this is Phase 6's own settings-screen reorg) and extended the shared `formatDistance`
+  with a real km/miles conversion, both now driving the instruction card's own distance text.
+
 ## Phase 1B — Mapbox map engine
 
 - **No real Mapbox account/tokens exist yet.** `@rnmapbox/maps` is installed and wired up

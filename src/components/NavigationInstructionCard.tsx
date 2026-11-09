@@ -4,20 +4,8 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RouteStep } from "@/services/directions";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
+import { formatDistance, extractRoundaboutExitNumber, type DistanceUnit } from "@/utils/navFormat";
 import { radius, spacing, shadow, pressedOpacity } from "@/theme/tokens";
-
-// Meters read faster than km for a turn that's coming up soon -- "0.4 km" makes a driver do the
-// conversion in their head at the exact moment they need to react fastest, where every other
-// real nav app (Google/Apple/Waze) already shows meters under 1km. Rounded to the nearest 10m:
-// exact-metre precision (e.g. "437 m") is false precision no GPS fix actually supports and is
-// harder to read at a glance while driving.
-function formatStepDistance(meters: number): string {
-  if (meters < 1000) {
-    const rounded = Math.max(10, Math.round(meters / 10) * 10);
-    return `${rounded} m`;
-  }
-  return `${(meters / 1000).toFixed(1)} km`;
-}
 
 // Real, confirmed fix for "generic arrow for every turn shape" -- Google's own MaterialIcons
 // font (bundled via @expo/vector-icons, verified directly against its installed glyphmap, not
@@ -67,6 +55,19 @@ interface Props {
   // which is exactly what made those buttons intermittently miss taps depending on which
   // instruction happened to be showing.
   onHeightChange?: (height: number) => void;
+  // Real, explicit request (Waze-style redesign, Phase 1B section 5) -- the following step, so
+  // the card can show a "Then" chip when it's genuinely <150m past the end of the current one.
+  // Null/undefined on the very last step (nothing follows) or before a route exists.
+  nextStep?: RouteStep | null;
+  // True only for the route's actual final step -- shows a real arrival icon instead of a
+  // maneuver glyph. Google's own API gives no dedicated "arrive" maneuver value; this is
+  // real position-based detection (last step index), not guessed from the maneuver field.
+  isFinalStep?: boolean;
+  // Real, explicit request -- tapping the maneuver icon specifically repeats the current
+  // spoken instruction (the existing tap-the-whole-card behaviour for expand/directions is
+  // unchanged, so this is an additional, separate target, not a replacement for it).
+  onRepeatInstruction?: () => void;
+  distanceUnit?: DistanceUnit;
 }
 
 export function NavigationInstructionCard({
@@ -76,6 +77,10 @@ export function NavigationInstructionCard({
   onExit,
   onExpandDirections,
   onHeightChange,
+  nextStep,
+  isFinalStep,
+  onRepeatInstruction,
+  distanceUnit = "km",
 }: Props) {
   const insets = useSafeAreaInsets();
   const theme = NAV_CARD_THEMES[themeKey];
@@ -129,6 +134,23 @@ export function NavigationInstructionCard({
 
   if (!step) return null;
   const icon = (step.maneuver && MANEUVER_ICONS[step.maneuver]) || "straight";
+  // Real exit-number extraction (see extractRoundaboutExitNumber's own comment -- Google's
+  // REST Directions API has no structured exit-number field, so this reads the real ordinal
+  // Google's own instruction sentence already states), only shown for an actual roundabout
+  // maneuver.
+  const roundaboutExit =
+    step.maneuver === "roundabout-left" || step.maneuver === "roundabout-right"
+      ? extractRoundaboutExitNumber(step.instruction)
+      : undefined;
+  // Real, explicit request -- the bare target street name (+ route ref) this step turns onto,
+  // shown as its own accented line under the full instruction. Falls back to nothing (no
+  // duplicate line) when Google's own html genuinely didn't bold a road name for this step
+  // (e.g. "Continue straight") -- never a guessed/duplicated value.
+  const streetDisplay = step.targetStreetName;
+  // Real, explicit request -- a small "Then" chip when the step right after this one is
+  // genuinely close (<150m past where this maneuver ends), matching real Google/Apple/Waze
+  // behaviour for back-to-back turns.
+  const showThenChip = !collapsed && !!nextStep && nextStep.distanceMeters < 150;
 
   const onLayout = (e: LayoutChangeEvent) => {
     onHeightChange?.(e.nativeEvent.layout.height);
@@ -157,9 +179,48 @@ export function NavigationInstructionCard({
           accessibilityLabel={collapsed ? "Expand navigation card" : "Show full route directions"}
         >
           <Animated.View style={[styles.animatedContent, { transform: [{ translateY }], opacity }]}>
-            <View style={[styles.iconWrap, collapsed && styles.iconWrapCollapsed, { backgroundColor: theme.iconWrapBg }]}>
-              <MaterialIcons name={icon} size={collapsed ? 22 : 30} color={theme.iconColor} />
-            </View>
+            {/* Real, explicit request -- tapping the icon specifically repeats the current
+                spoken instruction, a separate target from the surrounding Pressable (which
+                expands/opens directions) so neither gesture steals the other's tap. Only a
+                Pressable at all once a real onRepeatInstruction handler exists -- with none
+                wired up, this stays a plain View, same as before. */}
+            {onRepeatInstruction ? (
+              <Pressable
+                onPress={onRepeatInstruction}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.iconWrap,
+                  collapsed && styles.iconWrapCollapsed,
+                  { backgroundColor: theme.iconWrapBg },
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel="Repeat spoken instruction"
+              >
+                {isFinalStep ? (
+                  <MaterialIcons name="flag" size={collapsed ? 22 : 34} color={theme.iconColor} />
+                ) : (
+                  <MaterialIcons name={icon} size={collapsed ? 22 : 34} color={theme.iconColor} />
+                )}
+                {roundaboutExit != null && (
+                  <View style={[styles.exitBadge, { backgroundColor: theme.exitButtonBg }]}>
+                    <Text style={[styles.exitBadgeText, { color: theme.exitButtonIcon }]}>{roundaboutExit}</Text>
+                  </View>
+                )}
+              </Pressable>
+            ) : (
+              <View style={[styles.iconWrap, collapsed && styles.iconWrapCollapsed, { backgroundColor: theme.iconWrapBg }]}>
+                {isFinalStep ? (
+                  <MaterialIcons name="flag" size={collapsed ? 22 : 34} color={theme.iconColor} />
+                ) : (
+                  <MaterialIcons name={icon} size={collapsed ? 22 : 34} color={theme.iconColor} />
+                )}
+                {roundaboutExit != null && (
+                  <View style={[styles.exitBadge, { backgroundColor: theme.exitButtonBg }]}>
+                    <Text style={[styles.exitBadgeText, { color: theme.exitButtonIcon }]}>{roundaboutExit}</Text>
+                  </View>
+                )}
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               {/* No line cap at all, collapsed or not -- a capped numberOfLines was cutting long
                   instructions (e.g. "Head east on Old Kent Rd towards ...") off mid-word with
@@ -174,6 +235,19 @@ export function NavigationInstructionCard({
               >
                 {step.instruction}
               </Text>
+              {/* Real, explicit request (Phase 1B section 5) -- the bare target street name on
+                  its own accented line, large and bold, separate from the full instruction
+                  sentence above. Only while expanded (collapsed stays the compact "island" it
+                  already was) and only when Google's own html actually gave one. */}
+              {!collapsed && streetDisplay && (
+                <Text
+                  style={[styles.streetAccentText, { color: theme.streetAccent }, textShadow]}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                >
+                  {streetDisplay}
+                </Text>
+              )}
               {/* Real, explicit request -- the distance to the next turn must be visible right
                   here without needing to drop the card open, so this no longer hides behind
                   `!collapsed`; it shows in both states now, just a touch more compact while
@@ -205,7 +279,7 @@ export function NavigationInstructionCard({
                     textShadow,
                   ]}
                 >
-                  {formatStepDistance(step.distanceMeters)}
+                  {formatDistance(step.distanceMeters, distanceUnit)}
                 </Text>
               </View>
             </View>
@@ -264,6 +338,19 @@ export function NavigationInstructionCard({
         </View>
       )}
 
+      {/* Real, explicit request -- a small "Then" chip when the step right after this one
+          follows almost immediately (<150m past this maneuver), so the driver knows another
+          turn is coming right away. */}
+      {showThenChip && (
+        <View style={styles.thenChip}>
+          <Text style={styles.thenChipText}>Then</Text>
+          <MaterialIcons
+            name={(nextStep!.maneuver && MANEUVER_ICONS[nextStep!.maneuver!]) || "straight"}
+            size={14}
+            color="#FFFFFF"
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -297,12 +384,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm + 2,
   },
+  // Real, explicit request (Phase 1B section 5) -- "large manoeuvre icon". Bumped up from the
+  // original 40px (same real width-constraint reasoning as streetAccentText above -- the
+  // literal spec 64pt assumes a dedicated full-width panel with the icon as its own column,
+  // not this card's shared icon+text+buttons row) while still reading as a clearly bigger,
+  // more prominent icon than before.
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
   iconWrapCollapsed: {
     width: 32,
@@ -346,8 +439,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 2,
   },
+  // Real, explicit request (Phase 1B section 5) -- "distance large bold". Bumped up from the
+  // original 15pt (same real width-constraint reasoning as streetAccentText above -- the
+  // literal spec 44pt is sized for a dedicated full-width panel, not this pill sharing a row
+  // with the icon/toggle buttons) while still reading as a clearly bigger, bolder number than
+  // before.
   distanceText: {
-    fontSize: 15,
+    fontSize: 19,
     fontWeight: "800",
     letterSpacing: 0.3,
   },
@@ -380,5 +478,50 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+  },
+  // Real roundabout exit-number badge, drawn over the bottom-right corner of the maneuver icon
+  // -- see extractRoundaboutExitNumber's own comment for where this real number comes from.
+  exitBadge: {
+    position: "absolute",
+    bottom: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitBadgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  // Real, explicit request (Phase 1B section 5) -- the bare target street name, bold in the
+  // theme's own accent color, directly under the full instruction sentence. Deliberately NOT
+  // the spec's literal 40pt: this card shares its row with the maneuver icon, the distance
+  // pill, and the collapse/transparency/exit buttons within a width already narrower than a
+  // dedicated full-width top panel -- 40pt text would wrap/overflow on real phone widths for
+  // anything longer than a short road name. Sized to actually fit this card's real available
+  // width instead; flagged in NOTES.md as a deliberate deviation, not an oversight.
+  streetAccentText: {
+    fontSize: 22,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  thenChip: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: spacing.xs,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  thenChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
 });

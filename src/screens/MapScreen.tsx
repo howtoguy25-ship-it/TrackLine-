@@ -4383,6 +4383,12 @@ export function MapScreen() {
           onExit={exitNavigation}
           onExpandDirections={() => directionsSheetRef.current?.expand()}
           onHeightChange={setInstructionCardHeight}
+          nextStep={route.steps[activeStepIndex + 1] ?? null}
+          isFinalStep={activeStepIndex === route.steps.length - 1}
+          onRepeatInstruction={() => {
+            if (activeStep) speak(activeStep.instruction, voiceVolumeRef.current, voiceIdentifierRef.current);
+          }}
+          distanceUnit={settings.distanceUnit}
         />
       )}
 

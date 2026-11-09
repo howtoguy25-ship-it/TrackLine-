@@ -30,6 +30,12 @@ export type ManeuverType =
 
 export interface RouteStep {
   instruction: string; // plain-text, HTML stripped
+  // Real, explicit request -- just the road name (+ route ref, when the road has one) this
+  // step turns onto, extracted from Google's own <b> markup (see extractBoldRoadName). Used by
+  // the Phase 1B-style top instruction card, which shows this large on its own rather than the
+  // full instruction sentence. Undefined when Google's own html genuinely didn't bold anything
+  // (e.g. "Continue straight") -- the card falls back to the full instruction text then.
+  targetStreetName?: string;
   maneuver: ManeuverType;
   distanceMeters: number;
   durationSeconds: number;
@@ -128,6 +134,25 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+// Real, explicit request (Waze-style redesign, Phase 1B section 5) -- the top instruction card
+// needs the bare STREET NAME this step turns onto (e.g. "Victoria Rd", or "A3/Wiley Ave" when
+// the road also has a route ref), separate from the full "Turn left onto X" sentence. Google's
+// own Directions API already marks exactly this substring: html_instructions wraps the road
+// name (and its route ref, as a separate <b> span, when the road has one) in <b> tags -- e.g.
+// "Turn right onto <b>A3</b>/<b>Wiley Ave</b>". Extracting the real substring from the FIRST
+// <b> to the LAST </b> (keeping whatever literal text Google itself put between them, like the
+// "/" above) is the real, non-fabricated way to get this -- never a guess derived from the
+// plain-text instruction sentence. Undefined when the step's own html genuinely has no bold
+// span (never a guessed fallback).
+function extractBoldRoadName(html: string): string | undefined {
+  const firstOpen = html.indexOf("<b>");
+  const lastClose = html.lastIndexOf("</b>");
+  if (firstOpen === -1 || lastClose === -1 || lastClose < firstOpen) return undefined;
+  const inner = html.slice(firstOpen, lastClose + 4);
+  const text = stripHtml(inner);
+  return text.length > 0 ? text : undefined;
+}
+
 function parseTransitSummary(leg: any): TransitSummary | undefined {
   const legs: TransitLeg[] = leg.steps
     .filter((step: any) => step.travel_mode === "TRANSIT" && step.transit_details)
@@ -165,6 +190,7 @@ function parseRoute(route: any): Route {
 
   const steps: RouteStep[] = leg.steps.map((step: any) => ({
     instruction: stripHtml(step.html_instructions ?? ""),
+    targetStreetName: extractBoldRoadName(step.html_instructions ?? ""),
     maneuver: step.maneuver,
     distanceMeters: step.distance?.value ?? 0,
     durationSeconds: step.duration?.value ?? 0,
