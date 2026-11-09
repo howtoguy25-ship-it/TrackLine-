@@ -23,6 +23,7 @@
     "@react-native-google-signin/google-signin": "^16.1.4",
     "@react-navigation/native": "^6.1.17",
     "@react-navigation/native-stack": "^6.9.26",
+    "@rnmapbox/maps": "^10.3.17",
     "@sentry/react-native": "~7.11.0",
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",

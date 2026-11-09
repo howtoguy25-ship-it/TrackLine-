@@ -31,20 +31,17 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 
 ## Hard blockers needing the project owner directly (not fabricatable)
 
-1. **Mapbox**: Phase 1B asks for `@rnmapbox/maps`, which needs a real Mapbox account: a public
-   access token (`EXPO_PUBLIC_MAPBOX_TOKEN`) AND a **secret downloads token**
-   (`RNMAPBOX_MAPS_DOWNLOAD_TOKEN`) — the downloads token authenticates the native SDK fetch at
-   *build* time (CocoaPods/Gradle), not just a runtime API call, so a real native build cannot
-   even complete without it. This project has no Mapbox account today. **Real, free, zero-token
-   alternative already partially in this repo**: `@maplibre/maplibre-react-native` (already
-   installed, an open-source fork of the same Mapbox GL engine, same style-JSON spec, same
-   ShapeSource/SymbolLayer API) is currently sitting as an owner-only internal prototype
-   (`MapLibrePreviewScreen.tsx`) — it can do everything Phase 1B's style/zoom/route-rendering
-   spec asks for, at zero cost, and would reuse rather than discard that existing prototype work.
-   **This needs an explicit choice from you**: commit to a real Mapbox account/token, or build
-   the new map engine on the already-free MapLibre instead. Proceeding with real engineering work
-   either way in the meantime (style JSON, camera/zoom logic, route rendering) where it doesn't
-   require the token specifically.
+1. **Mapbox tokens — decided, waiting on the real values.** You chose real Mapbox over the free
+   MapLibre alternative. `@rnmapbox/maps` is installed and wired up (conditional config plugin,
+   env scaffolding in `.env.example`, an owner-only `MapboxMapScreen` preview) — see NOTES.md for
+   the full real-build-safety story (the package throws at import time with no native module
+   linked, so the plugin only activates once a real download token exists). Still needed from
+   you, both from mapbox.com → Account → Tokens:
+   - `MAPBOX_PUBLIC_TOKEN` — a normal public token.
+   - `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` — a token with "Downloads:Read" scope, set as a real EAS
+     secret: `eas secret:create --scope project --name RNMAPBOX_MAPS_DOWNLOAD_TOKEN --value <token> --type string`.
+   The live navigation map keeps running on Google Maps, completely unaffected, until both exist
+   and a real build can be attempted against them.
 2. **Live Traffic NSW Cloud Function** (Phase 5) needs a real `TFNSW_API_KEY` set via `firebase
    functions:secrets:set TFNSW_API_KEY` — this project has `nswTransportApiKey` as an existing,
    genuinely-optional client-side env var (`services/liveVehiclePositions.ts`), but no Cloud
@@ -71,13 +68,15 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 - [ ] Phase 6 — polish/QA/version bump
 
 ### New "Phase 1B" / full redesign spec
-- [ ] Map engine decision (Mapbox vs MapLibre) — **blocked on you, see above**
-- [ ] Map style JSON (trackline-light/dark) — buildable now, no blocker
-- [ ] User marker + street pill (teal arrow variant) — buildable now
-- [ ] Route drawing (ShapeSource/SymbolLayer) — needs the engine decision first
-- [ ] Top instruction card restyle — buildable now (mostly independent of engine)
-- [ ] Bottom banner (follow/re-centre/overview) — buildable now (mostly independent of engine)
-- [ ] Camera & zoom behaviour — needs the engine decision first
+- [x] Map engine decision — real Mapbox, `@rnmapbox/maps` installed + wired (plugin, env,
+      owner-only preview screen) — **waiting on your real tokens, see above, to go further**
+- [x] Map style JSON (trackline-light/dark) — both written against the real Mapbox Streets v8
+      schema, matching every given colour/zoom/width value
+- [ ] User marker + street pill (teal arrow variant) — not started
+- [ ] Route drawing (ShapeSource/SymbolLayer) — not started, needs a real token to visually verify
+- [ ] Top instruction card restyle — not started
+- [ ] Bottom banner (follow/re-centre/overview) — not started
+- [ ] Camera & zoom behaviour — not started, needs a real token to visually verify
 - [ ] Search sheet (Phase 3 of new doc) — same as old Phase 2
 - [ ] Voices (Phase 4 of new doc) — same as old Phase 3
 - [ ] Menu/Plan a drive/Inbox/Live Traffic NSW (Phase 5 of new doc) — needs TfNSW secret for the

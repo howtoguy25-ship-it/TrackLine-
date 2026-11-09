@@ -1,5 +1,36 @@
 # TrackLine — platform/data limitation notes
 
+## Phase 1B — Mapbox map engine
+
+- **No real Mapbox account/tokens exist yet.** `@rnmapbox/maps` is installed and wired up
+  (config plugin, env scaffolding, an owner-only `MapboxMapScreen` preview reached the same way
+  the existing MapLibre prototype is), but shows a real, honest "Mapbox not configured yet"
+  screen instead of a map, because `MAPBOX_PUBLIC_TOKEN`/`RNMAPBOX_MAPS_DOWNLOAD_TOKEN` are both
+  unset. **Critical, confirmed-real safety detail**: `@rnmapbox/maps`'s own JS
+  (`RNMBXModule.js`) throws immediately at *module import time* if its native code isn't
+  linked -- not a soft runtime failure. Its own `@rnmapbox/maps` Expo config plugin is therefore
+  only added to `app.config.js`'s plugins array when `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` is actually
+  set (so the native module is never linked without it), and `MapboxMapScreen.tsx` only ever
+  reaches the package via a deferred `require()` inside a function gated on
+  `isMapboxAvailable()`, never a static `import` -- confirmed safe by an actual `expo prebuild`
+  for both platforms showing zero Mapbox references in the generated Podfile/Gradle files, and a
+  real `expo export` for both platforms succeeding. Until real tokens exist, the live navigation
+  map keeps running on Google Maps exactly as before, completely unaffected.
+- **Style JSON** (`src/map/styles/trackline-light.json` / `trackline-dark.json`) is built against
+  the real, documented Mapbox Streets v8 vector tileset schema, matching every colour/zoom/width
+  value the brief gave for the light style. The dark palette was NOT given exact values in the
+  brief -- it's an original derivation (same structure, inverted land/road contrast), flagged in
+  each file's own `metadata` field so it's never mistaken for a literal spec value. A few details
+  genuinely can't be verified without a real token + Mapbox Studio/a live build: exact postcode
+  field availability on `place_label` for Australian suburbs, and the 3D-building-only-above-
+  pitch-30 behaviour (not expressible in static style JSON at all -- the file ships both a flat
+  and an extrusion building layer, with the pitch-based swap between them left as runtime JS
+  logic still to be wired into the map screen once real tiles can be visually checked).
+- **Highway route shields** (`road-shield` layer) reference sprite image names
+  (`shield-motorway` etc.) that need a real, separately-authored sprite sheet image -- not
+  something a style JSON file alone can produce. Tracked as a real asset-creation task, not yet
+  done.
+
 Per the Waze-style redesign build rules: this file lists anything that can't be done
 for real on a given platform or with currently-available data, with an honest in-app
 message shown in its place instead of a fake/placeholder result. Updated as each

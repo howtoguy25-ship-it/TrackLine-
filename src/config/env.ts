@@ -49,4 +49,10 @@ export const env = {
   // tracking is a real bonus feature, not something the app depends on; see
   // services/liveVehiclePositions.ts.
   nswTransportApiKey: extra.nswTransportApiKey ?? "",
+  // Waze-style redesign's map engine (@rnmapbox/maps) -- genuinely optional, same treatment as
+  // every other optional key above. src/map/mapboxAvailability.ts is the real, honest check for
+  // whether Mapbox is actually usable right now (this alone isn't enough -- the native SDK
+  // itself has to have been fetched at build time too, which needs the separate download token,
+  // see app.config.js's own comment on the @rnmapbox/maps plugin entry).
+  mapboxPublicToken: extra.mapboxPublicToken ?? "",
 };

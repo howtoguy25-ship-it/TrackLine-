@@ -12,6 +12,7 @@ import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
 import { MapLibrePreviewScreen } from "@/screens/MapLibrePreviewScreen";
+import { MapboxMapScreen } from "@/screens/MapboxMapScreen";
 import { navigationIntegration } from "@/services/sentry";
 
 export type RevCheckParams = {
@@ -47,6 +48,9 @@ export type RootStackParamList = {
   // Phase 1 standalone prototype for the custom MapLibre + OpenStreetMap map engine -- see
   // MapLibrePreviewScreen.tsx's own header. Not the live navigation map.
   MapLibrePreview: undefined;
+  // Phase 1B of the Waze-style redesign -- the @rnmapbox/maps engine evaluation, same isolated
+  // owner-only prototype pattern as MapLibrePreview above. See MapboxMapScreen.tsx's own header.
+  MapboxMapPreview: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -127,6 +131,11 @@ export function RootNavigator() {
           name="MapLibrePreview"
           component={MapLibrePreviewScreen}
           options={{ headerShown: true, title: "Custom map preview" }}
+        />
+        <Stack.Screen
+          name="MapboxMapPreview"
+          component={MapboxMapScreen}
+          options={{ headerShown: true, title: "Mapbox map preview" }}
         />
         <Stack.Screen
           name="VehicleDetection"

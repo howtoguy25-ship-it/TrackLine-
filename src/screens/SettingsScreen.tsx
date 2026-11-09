@@ -1251,6 +1251,20 @@ export function SettingsScreen() {
               <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
             </Pressable>
 
+            {/* Phase 1B of the Waze-style redesign -- the @rnmapbox/maps engine evaluation,
+                same isolated-prototype pattern as the MapLibre preview above. Renders a real
+                honest "not configured yet" state until real Mapbox tokens exist (see
+                MapboxMapScreen.tsx's own header for why it never touches the native module
+                until then) -- never the live navigation map either way. */}
+            <Pressable
+              onPress={() => navigation.navigate("MapboxMapPreview")}
+              style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
+            >
+              <MaterialCommunityIcons name="map-marker-path" size={20} color={colors.accent} />
+              <Text style={styles.revCheckLinkText}>Mapbox map preview (owner only)</Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+            </Pressable>
+
             <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>Provider keys (owner only)</Text>
             <Text style={styles.helperText}>
               Real vehicle history isn't free -- PPSR (stolen/written-off/money-owing) and NEVDIS

@@ -195,6 +195,24 @@ module.exports = {
       // actual root cause (a missing `ext.webkitVersion` Gradle property its own build.gradle
       // reads with no fallback).
       "./plugins/withAndroidWebviewGradleFix.js",
+      // Waze-style redesign's map engine -- deliberately CONDITIONAL, included only once a real
+      // RNMAPBOX_MAPS_DOWNLOAD_TOKEN actually exists. That token authenticates fetching Mapbox's
+      // own native SDK at BUILD time (CocoaPods/Gradle) -- without it, Mapbox's own install step
+      // has no way to fetch the SDK at all, which would fail EVERY build (iOS and Android,
+      // including the existing Google-Maps-based app this project ships today), not just
+      // degrade gracefully at runtime. Keeping this out of the plugins array entirely until a
+      // real token is set is what keeps "never break existing features" true while Mapbox is
+      // still being wired up -- see NOTES.md.
+      ...(process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN
+        ? [
+            [
+              "@rnmapbox/maps",
+              {
+                RNMapboxMapsDownloadToken: process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN,
+              },
+            ],
+          ]
+        : []),
       [
         "./modules/map3d/plugin/withMap3D.js",
         {
@@ -273,6 +291,11 @@ module.exports = {
       // the app works fine without it (Transit mode already shows real timetable-based ETAs
       // via Google Directions either way, see the "Public transit" note in Settings).
       nswTransportApiKey: process.env.NSW_TRANSPORT_API_KEY,
+      // Waze-style redesign's map engine (@rnmapbox/maps) -- genuinely optional for now, same
+      // "build the feature anyway, show an honest state" treatment as every other optional key
+      // here. See src/map/mapboxAvailability.ts for the real, non-fabricated "is Mapbox actually
+      // usable right now" check this backs, and NOTES.md for the full story.
+      mapboxPublicToken: process.env.MAPBOX_PUBLIC_TOKEN,
       sentryDsn: process.env.SENTRY_DSN,
       eas: {
         // Not a secret -- EAS project IDs are meant to live directly in config, which is
