@@ -3485,6 +3485,13 @@ export function MapScreen() {
         // actually relevant (picking or following a route) rather than always-on, which would
         // clutter idle map browsing with congestion data nobody's using yet.
         showsTraffic={showsTrafficLayer}
+        // Real, explicit request -- match Waze's own map, which renders building footprints as
+        // flat 2D blocks (styled via `customMapStyle`'s "building" rules in mapStyle.ts), never
+        // Google's native raised/extruded 3D buildings. Without this, Google's SDK still draws
+        // its own grey 3D building geometry on top of/instead of the styled flat polygons at
+        // close zoom, regardless of customMapStyle -- a real, documented native layer that's
+        // separate from the JSON style and has to be turned off explicitly.
+        showsBuildings={false}
         mapPadding={mapPadding}
         style={StyleSheet.absoluteFill}
         // Always false -- the native blue dot is fully replaced by custom markers below (the

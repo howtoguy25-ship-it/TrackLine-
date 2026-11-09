@@ -71,6 +71,13 @@ interface ThemeColors {
   highwayLabel: string;
   water: string;
   waterLabel: string;
+  // Real, explicit request -- Waze's own map renders building footprints as a distinct flat
+  // block layer (a real, visible step between the land/background color and the road network),
+  // not left the same flat color as the land underneath them. buildingFill sits between
+  // `background` and `roadLocal` in each theme below; buildingStroke is a slightly darker/
+  // lighter edge so adjacent buildings still read as separate blocks rather than one fused mass.
+  buildingFill: string;
+  buildingStroke: string;
 }
 
 function buildMapStyle(c: ThemeColors, thicknessKey: RoadThicknessKey) {
@@ -84,6 +91,16 @@ function buildMapStyle(c: ThemeColors, thicknessKey: RoadThicknessKey) {
     { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: c.poiLabel }] },
     { featureType: "poi.park", elementType: "geometry", stylers: [{ color: c.parkGeometry }] },
     { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: c.parkLabel }] },
+    // Real, explicit request -- Waze's own map renders building footprints as a distinct flat
+    // block layer (visibly different from the bare land underneath), never left the same flat
+    // color as the ground. Building NAME labels are turned off -- Waze doesn't label individual
+    // buildings either, and a label on every block would be exactly the clutter this app's
+    // existing `poi` simplification above is already trying to avoid. Parking lots
+    // (landscape.man_made) get the same block treatment, matching how Waze renders those too.
+    { featureType: "building", elementType: "geometry.fill", stylers: [{ color: c.buildingFill }] },
+    { featureType: "building", elementType: "geometry.stroke", stylers: [{ color: c.buildingStroke }] },
+    { featureType: "building", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: c.buildingFill }] },
     { featureType: "road.local", elementType: "geometry", stylers: [{ color: c.roadLocal, weight: BASE_ROAD_WEIGHTS.local * m }] },
     { featureType: "road", elementType: "geometry", stylers: [{ color: c.roadLocal, weight: BASE_ROAD_WEIGHTS.local * m }] },
     { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: c.roadStroke }] },
@@ -122,6 +139,8 @@ const NORMAL_COLORS: ThemeColors = {
   highwayLabel: "#eafff1",
   water: "#0a2318",
   waterLabel: "#5c9c74",
+  buildingFill: "#1e2f26",
+  buildingStroke: "#0d1712",
 };
 
 // Deep indigo/purple land, violet-blue water, bright lavender highways.
@@ -141,6 +160,8 @@ const PURPLE_BLUE_COLORS: ThemeColors = {
   highwayLabel: "#f2eeff",
   water: "#16224a",
   waterLabel: "#7d93d6",
+  buildingFill: "#241a46",
+  buildingStroke: "#120b29",
 };
 
 // Cool slate-grey land, deep blue water, bright sky-blue highways -- a neutral, low-glare
@@ -161,6 +182,8 @@ const BLUE_GREY_COLORS: ThemeColors = {
   highwayLabel: "#eaf3ff",
   water: "#16273f",
   waterLabel: "#6f93bf",
+  buildingFill: "#2c3542",
+  buildingStroke: "#171d24",
 };
 
 // Deep forest-green land, teal water, bright gold/yellow highways -- the highest-contrast pair
@@ -181,6 +204,8 @@ const GREEN_YELLOW_COLORS: ThemeColors = {
   highwayLabel: "#fffbe6",
   water: "#0a2e2a",
   waterLabel: "#4fa090",
+  buildingFill: "#183420",
+  buildingStroke: "#09160d",
 };
 
 // Real, confirmed request -- a pure, saturated blue theme distinct from Blue & Grey's muted
@@ -202,6 +227,8 @@ const BLUE_COLORS: ThemeColors = {
   highwayLabel: "#eaf4ff",
   water: "#081a3d",
   waterLabel: "#5389d6",
+  buildingFill: "#112747",
+  buildingStroke: "#060f1f",
 };
 
 // Real, confirmed request -- the one genuinely LIGHT theme of the set (every other theme here
@@ -235,6 +262,8 @@ const LIGHT_COLORS: ThemeColors = {
   highwayLabel: "#ffffff",
   water: "#bcd4f0",
   waterLabel: "#2f5a8f",
+  buildingFill: "#dde3ec",
+  buildingStroke: "#c3cbda",
 };
 
 // Real, explicit request: while picking a route, the actual candidate route line(s) should
