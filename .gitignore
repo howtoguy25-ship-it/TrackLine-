@@ -15,6 +15,13 @@ npm-debug.*
 *.tsbuildinfo
 /android/
 /ios/
+# Real local-module native build output (Gradle/Xcode build caches) -- generated fresh by any
+# real local verification build, same as the top-level /android//ios/ above, just for the
+# modules/*/android/, modules/*/ios/ native module source directories themselves, which DO stay
+# checked in (they're real source, not generated).
+modules/*/android/build/
+modules/*/android/.cxx/
+modules/*/ios/build/
 .metro-health-check*
 firebase-debug.log
 firestore-debug.log
