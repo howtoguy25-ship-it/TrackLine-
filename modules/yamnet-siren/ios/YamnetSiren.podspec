@@ -13,7 +13,16 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.dependency 'TensorFlowLiteSwift', '~> 2.14.0'
+  # Real, confirmed cause of a real build failure this exact version pin fixes
+  # (EAS_BUILD_INCOMPATIBLE_PODS_ERROR, "Compatible versions of some pods could not be
+  # resolved"): this app already uses react-native-fast-tflite for vehicle detection, whose own
+  # podspec pins `TensorFlowLiteC` to EXACTLY 2.17.0 (not a range) -- CocoaPods can only resolve
+  # one version of TensorFlowLiteC project-wide, so an independent `~> 2.14.0` constraint here
+  # (which itself depends on TensorFlowLiteC 2.14.0) was never satisfiable alongside it. Pinned
+  # to the exact same 2.17.0 (confirmed via CocoaPods trunk's own real published podspec:
+  # TensorFlowLiteSwift 2.17.0 depends on TensorFlowLiteC 2.17.0) so both modules resolve to and
+  # share the one real TFLite C runtime already in this project.
+  s.dependency 'TensorFlowLiteSwift', '2.17.0'
 
   s.source_files = '**/*.{h,m,mm,swift}'
 

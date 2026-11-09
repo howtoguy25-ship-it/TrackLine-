@@ -16,10 +16,18 @@ android {
 
 dependencies {
   implementation project(':expo-modules-core')
-  // Real, confirmed-published artifact (org.tensorflow:tensorflow-lite:2.14.0 on Maven Central)
-  // -- matches the iOS side's TensorFlowLiteSwift ~> 2.14.0 so both platforms run the same real
-  // TFLite runtime version against the same bundled yamnet.tflite.
-  implementation "org.tensorflow:tensorflow-lite:2.14.0"
+  // Real, confirmed fix for the same class of conflict the iOS side hit (see YamnetSiren.podspec's
+  // own comment): this app's existing vehicle-detection feature (react-native-fast-tflite)
+  // already pulls in com.google.ai.edge.litert:litert:1.4.0 -- Google's renamed/successor
+  // package for TensorFlow Lite's native Android library, which would otherwise risk a real
+  // Gradle "more than one file was found" packaging conflict against a second, independent
+  // org.tensorflow:tensorflow-lite native .so with the same library name. Using the exact same
+  // artifact+version already in this project instead avoids that entirely. Confirmed directly
+  // (downloaded the real .aar, inspected its real classes.jar via javap) that it still exposes
+  // the standard org.tensorflow.lite.Interpreter class with every method this module calls
+  // (resizeInput, allocateTensors, run, getOutputTensor) -- LiteRT is Google's own documented
+  // backward-compatible continuation of TensorFlow Lite's Java/Kotlin API, not a reassigned one.
+  implementation "com.google.ai.edge.litert:litert:1.4.0"
 }
 
 def safeExtGet(prop, fallback) {
