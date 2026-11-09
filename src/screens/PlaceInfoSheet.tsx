@@ -3,7 +3,8 @@ import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image, Animated
 import BottomSheet, { BottomSheetView, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import type { PlaceInfo } from "@/services/places";
+import { WebView } from "react-native-webview";
+import { priceLevelText, type PlaceInfo } from "@/services/places";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
@@ -15,6 +16,10 @@ interface Props {
   // Optional so a caller that only wants read-only info (none exist today, but kept honest to
   // the real shape) doesn't have to wire a no-op.
   onGetDirections?: (place: PlaceInfo) => void;
+  // Real, explicit request -- a second, faster action beside Directions: fetches the real
+  // recommended route and begins navigating immediately, matching Apple/Google Maps' own
+  // place-card "Start" button. Optional for the same reason onGetDirections is.
+  onStartNavigation?: (place: PlaceInfo) => void;
   // Real quick drive-time check (MapScreen's own traffic-aware Directions lookup, fired once
   // this sheet opens) -- like Apple Maps' "19 min." pill on a place card. Null while that
   // lookup is still in flight or hasn't started; never a guessed/placeholder figure.
@@ -23,6 +28,13 @@ interface Props {
   // which only resolves when Google genuinely has coverage here) -- null means no real
   // coverage, not a failed load, so nothing fabricated is ever shown in its place.
   streetViewUrl?: string | null;
+  // Real interactive (pan/zoom) Street View embed for this exact place, via Google's Maps Embed
+  // API -- see getStreetViewEmbedUrl's own comment. Null whenever streetViewUrl is null (no real
+  // coverage) or the caller hasn't computed it yet; this sheet never fabricates one from
+  // streetViewUrl alone. If the embed genuinely fails to load (e.g. "Maps Embed API" isn't
+  // enabled on this project's key), this sheet falls back to the plain static thumbnail below --
+  // never a blank panel.
+  streetViewEmbedUrl?: string | null;
 }
 
 // Real, explicit request -- the Street View thumbnail used to just pop in the instant its real
@@ -44,8 +56,40 @@ function FadeInImage({ uri, style }: { uri: string; style: any }) {
   );
 }
 
+// Real, explicit request -- an actually-interactive (pan/zoom) Street View, not just a static
+// photo. Tries the real Maps Embed API iframe first; if it genuinely fails to load (network
+// error, HTTP error, or "Maps Embed API" not enabled on this project's key), falls back to the
+// already-working static thumbnail below rather than ever showing a blank/broken panel.
+function StreetViewPanel({
+  embedUrl,
+  staticUrl,
+  style,
+}: {
+  embedUrl: string | null | undefined;
+  staticUrl: string;
+  style: any;
+}) {
+  const [embedFailed, setEmbedFailed] = useState(false);
+  useEffect(() => {
+    setEmbedFailed(false);
+  }, [embedUrl]);
+  if (!embedUrl || embedFailed) {
+    return <FadeInImage uri={staticUrl} style={style} />;
+  }
+  return (
+    <WebView
+      source={{ uri: embedUrl }}
+      style={style}
+      onError={() => setEmbedFailed(true)}
+      onHttpError={() => setEmbedFailed(true)}
+      startInLoadingState
+      renderLoading={() => <FadeInImage uri={staticUrl} style={style} />}
+    />
+  );
+}
+
 export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoSheet(
-  { place, onClose, onSheetChange, onGetDirections, etaText, streetViewUrl },
+  { place, onClose, onSheetChange, onGetDirections, onStartNavigation, etaText, streetViewUrl, streetViewEmbedUrl },
   ref
 ) {
   const insets = useSafeAreaInsets();
@@ -79,6 +123,14 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                 <Text style={styles.subtitle} numberOfLines={2}>
                   {place.address}
                 </Text>
+                {/* Real category/price line -- only renders when Google/OSM actually returned
+                    one of these for this place; never fabricated, never shown for a plain
+                    address with no business data attached. */}
+                {(place.category || priceLevelText(place.priceLevel)) && (
+                  <Text style={styles.categoryLine} numberOfLines={1}>
+                    {[place.category, priceLevelText(place.priceLevel)].filter(Boolean).join(" · ")}
+                  </Text>
+                )}
               </View>
               <Pressable
                 onPress={onClose}
@@ -91,9 +143,12 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
             </View>
 
             <View style={styles.statusRow}>
+              {/* Real, explicit request -- a direction/arrow-shaped icon next to the live ETA
+                  (was a car icon) -- this is a quick drive-time check, not a vehicle-type
+                  indicator, so the icon reads as "this way, this long" rather than "by car". */}
               {etaText && (
                 <View style={styles.etaPill}>
-                  <Ionicons name="car" size={13} color="#FFFFFF" />
+                  <Ionicons name="navigate" size={13} color="#FFFFFF" />
                   <Text style={styles.etaPillText}>{etaText}</Text>
                 </View>
               )}
@@ -111,40 +166,72 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                   {place.openNow ? "Open now" : "Closed"}
                 </Text>
               )}
-              {onGetDirections && (
-                <Pressable
-                  onPress={() => onGetDirections(place)}
-                  style={({ pressed }) => [
-                    styles.directionsButton,
-                    { marginLeft: "auto" },
-                    pressed && { opacity: pressedOpacity },
-                  ]}
-                >
-                  <Ionicons name="navigate" size={14} color="#FFFFFF" />
-                  <Text style={styles.directionsButtonText}>Directions</Text>
-                </Pressable>
-              )}
             </View>
 
-            {/* Real Street View Static thumbnail -- Apple Maps' own "Look Around" equivalent,
-                bottom-left of this initially-visible card per explicit request, with a chevron-
-                up affordance doubling as the swipe-up-for-more-info cue (tapping it, or actually
-                swiping up, both reach the same expanded 90% stage). Omitted entirely rather than
-                showing any placeholder when streetViewUrl is null -- see its own prop comment. */}
+            {/* Real, explicit request -- a proper primary-actions row (Apple/Google Maps'
+                own place-card convention), separate from the rating/open-now status line above:
+                Directions (opens the real route picker -- alternatives, tolls, Add a stop) and a
+                second, faster Start (fetches the real recommended route and begins navigating
+                immediately, no picker). Either, both, or neither render depending on which
+                callbacks the caller actually wired -- never a dead button. */}
+            {(onGetDirections || onStartNavigation) && (
+              <View style={styles.actionsRow}>
+                {onGetDirections && (
+                  <Pressable
+                    onPress={() => onGetDirections(place)}
+                    style={({ pressed }) => [
+                      styles.actionButton,
+                      styles.directionsButton,
+                      pressed && { opacity: pressedOpacity },
+                    ]}
+                  >
+                    <Ionicons name="navigate-outline" size={16} color={colors.accent} />
+                    <Text style={styles.directionsButtonText}>Directions</Text>
+                  </Pressable>
+                )}
+                {onStartNavigation && (
+                  <Pressable
+                    onPress={() => onStartNavigation(place)}
+                    style={({ pressed }) => [
+                      styles.actionButton,
+                      styles.startButton,
+                      pressed && { opacity: pressedOpacity },
+                    ]}
+                  >
+                    <Ionicons name="play" size={15} color="#FFFFFF" />
+                    <Text style={styles.startButtonText}>Start</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* Real Street View -- Apple Maps' own "Look Around" equivalent, bottom-left of this
+                initially-visible card per explicit request. The thumbnail itself is a plain View
+                (not a Pressable) so the interactive embed's own pan/zoom touches inside it are
+                never fought over by an outer tap handler; the chevron badge and hint text beside
+                it are the actual tap-to-expand affordance (swiping up reaches the same expanded
+                90% stage too). Omitted entirely rather than showing any placeholder when
+                streetViewUrl is null -- see its own prop comment. */}
             {streetViewUrl && (
-              <Pressable
-                onPress={expandSheet}
-                style={({ pressed }) => [styles.streetViewRow, pressed && { opacity: pressedOpacity }]}
-                accessibilityLabel="Street view. Swipe up for more details."
-              >
+              <View style={styles.streetViewRow}>
                 <View style={styles.streetViewThumbWrap}>
-                  <FadeInImage uri={streetViewUrl} style={styles.streetViewThumb} />
-                  <View style={styles.streetViewExpandBadge}>
-                    <Ionicons name="chevron-up" size={13} color="#FFFFFF" />
-                  </View>
+                  <StreetViewPanel
+                    embedUrl={streetViewEmbedUrl}
+                    staticUrl={streetViewUrl}
+                    style={styles.streetViewThumb}
+                  />
                 </View>
-                <Text style={styles.streetViewHint}>Street View -- swipe up for more</Text>
-              </Pressable>
+                <Pressable
+                  onPress={expandSheet}
+                  style={({ pressed }) => [styles.streetViewExpandHint, pressed && { opacity: pressedOpacity }]}
+                  accessibilityLabel="Street view. Swipe up for more details."
+                >
+                  <Text style={styles.streetViewHint}>Street View -- swipe up for more</Text>
+                  <View style={styles.streetViewExpandBadge}>
+                    <Ionicons name="chevron-up" size={13} color={colors.accent} />
+                  </View>
+                </Pressable>
+              </View>
             )}
 
             {/* BottomSheetScrollView, not a plain ScrollView -- inside @gorhom/bottom-sheet, the
@@ -262,6 +349,12 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
+  categoryLine: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.accent,
+    marginTop: 3,
+  },
   closeButton: {
     width: 32,
     height: 32,
@@ -290,18 +383,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
-  directionsButton: {
+  actionsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  actionButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    backgroundColor: colors.accent,
+    justifyContent: "center",
+    gap: 6,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
+    paddingVertical: 11,
+  },
+  // Secondary/outline treatment -- Start is the one real "go now" action, so Directions (opens
+  // the picker, doesn't commit to anything yet) reads as the lighter-weight choice beside it.
+  directionsButton: {
+    backgroundColor: colors.accentSoft,
   },
   directionsButtonText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  startButton: {
+    backgroundColor: colors.accent,
+    ...shadow.low,
+  },
+  startButtonText: {
     color: "#FFFFFF",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
   },
   etaPill: {
@@ -335,14 +447,19 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  streetViewExpandHint: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    alignSelf: "stretch",
+  },
   streetViewExpandBadge: {
-    position: "absolute",
-    bottom: 4,
-    left: 4,
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },

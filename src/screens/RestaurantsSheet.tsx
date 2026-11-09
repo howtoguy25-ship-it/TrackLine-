@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, Image, ActivityIndicator,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { PlacesApiError, type NearbyPlace } from "@/services/places";
+import { PlacesApiError, priceLevelText, type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
@@ -23,11 +23,6 @@ interface Props {
 
 function formatDistance(meters: number): string {
   return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
-}
-
-function priceLevelText(level: number | undefined): string | null {
-  if (level === undefined) return null;
-  return "$".repeat(Math.max(1, level));
 }
 
 export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function RestaurantsSheet(

@@ -374,6 +374,16 @@ export async function getOsmPlaceInfo(placeId: string): Promise<PlaceInfo> {
   const lon = el.lon ?? el.center?.lon;
   if (lat == null || lon == null) throw new Error("This place has no real location on record");
 
+  // Real OSM category tag (amenity=restaurant, shop=supermarket, etc. -- whichever one this
+  // element actually has) -- never Google's price_level, which OSM has no real equivalent for.
+  const rawCategory = el.tags?.amenity || el.tags?.shop || el.tags?.tourism || el.tags?.leisure;
+  const category = rawCategory
+    ? rawCategory
+        .split(/[_-]/)
+        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ")
+    : undefined;
+
   return {
     placeId,
     name: el.tags?.name || "Unnamed place",
@@ -383,5 +393,6 @@ export async function getOsmPlaceInfo(placeId: string): Promise<PlaceInfo> {
     website: el.tags?.website || el.tags?.["contact:website"],
     reviews: [],
     photoUrls: [],
+    category,
   };
 }

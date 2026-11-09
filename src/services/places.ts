@@ -106,6 +106,69 @@ export interface PlaceInfo extends PlaceDetails {
   // Real Google Places photos for this business -- up to PLACE_INFO_MAX_PHOTOS, empty array
   // (never fabricated) when Google has none on file for it.
   photoUrls: string[];
+  // Google's own real 0-4 price scale -- see priceLevelText below. undefined means Google has
+  // no price data for this place (most non-business addresses), never guessed.
+  priceLevel?: number;
+  // A clean, human-readable category derived from Google's own real `types` array (e.g.
+  // "Restaurant", "Hair Salon") -- see primaryCategoryLabel below for how the generic/
+  // administrative entries every type array carries (point_of_interest, establishment, ...)
+  // get filtered out first. undefined for a plain address/non-business place, or if every real
+  // type Google returned was one of those generic ones -- never a guessed category.
+  category?: string;
+}
+
+// Shared across PlaceInfoSheet/RestaurantsSheet/HotelsSheet -- Google's own real 0-4 price_level
+// scale, rendered the same real "$" x N way everywhere it's shown.
+export function priceLevelText(level: number | undefined): string | null {
+  if (level === undefined) return null;
+  return "$".repeat(Math.max(1, level));
+}
+
+// Google's own place `types` array always includes several generic/administrative entries
+// alongside the one or two that actually describe what kind of business this is --
+// "point_of_interest" and "establishment" are on nearly every result, and a street address
+// additionally carries "route"/"street_address"/"geocode"/"political"/locality-ish entries.
+// Real, confirmed-real exclusion list (Google's own documented place type taxonomy, not
+// guessed) so the first REMAINING type -- the actual category Google itself assigned -- is what
+// gets shown, formatted from snake_case into a real readable label ("hair_care" -> "Hair Care").
+const GENERIC_PLACE_TYPES = new Set([
+  "point_of_interest",
+  "establishment",
+  "premise",
+  "subpremise",
+  "political",
+  "geocode",
+  "plus_code",
+  "route",
+  "street_address",
+  "street_number",
+  "intersection",
+  "locality",
+  "sublocality",
+  "sublocality_level_1",
+  "sublocality_level_2",
+  "sublocality_level_3",
+  "sublocality_level_4",
+  "sublocality_level_5",
+  "neighborhood",
+  "administrative_area_level_1",
+  "administrative_area_level_2",
+  "administrative_area_level_3",
+  "administrative_area_level_4",
+  "administrative_area_level_5",
+  "postal_code",
+  "postal_code_suffix",
+  "postal_town",
+  "country",
+]);
+
+export function primaryCategoryLabel(types: string[] | undefined): string | undefined {
+  const real = (types ?? []).find((t) => !GENERIC_PLACE_TYPES.has(t));
+  if (!real) return undefined;
+  return real
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 // "Nearest train/bus station" quick action -- rankby=distance + a real `type` filter
@@ -160,7 +223,7 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
     place_id: placeId,
     key: env.googlePlacesApiKey,
     fields:
-      "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews,photos",
+      "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews,photos,price_level,types",
   });
 
   const res = await fetch(
@@ -202,6 +265,8 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
       .slice(0, PLACE_INFO_MAX_PHOTOS)
       .map((p: any) => nearbyPlacePhotoUrl(p.photo_reference))
       .filter((url: string | null): url is string => url !== null),
+    priceLevel: result.price_level,
+    category: primaryCategoryLabel(result.types),
   };
 }
 
@@ -280,6 +345,26 @@ export async function getStreetViewUrl(location: LatLng): Promise<string | null>
     Sentry.logger.error("places: street view metadata request failed", { error: String(err) });
     return null;
   }
+}
+
+// Real, explicit request -- an interactive (pan/zoom/walk) Street View embed via Google's Maps
+// Embed API, same documented "streetview" mode, same API key already used for every other Google
+// call in this app. Only ever built as a companion to a `getStreetViewUrl` result that already
+// passed the real metadata coverage check above -- this function does no coverage check of its
+// own because Static and Embed Street View draw from the same underlying panorama coverage, so a
+// confirmed-real location for one is a confirmed-real location for the other. Whether "Maps Embed
+// API" is actually enabled on this project's key is NOT something this app can check in advance;
+// the caller (PlaceInfoSheet) loads this in a WebView and falls back to the static thumbnail on a
+// real load failure -- never a silently blank panel.
+export function getStreetViewEmbedUrl(location: LatLng): string {
+  const params = new URLSearchParams({
+    key: env.googlePlacesApiKey,
+    location: `${location.latitude},${location.longitude}`,
+    heading: "0",
+    pitch: "0",
+    fov: "90",
+  });
+  return `https://www.google.com/maps/embed/v1/streetview?${params.toString()}`;
 }
 
 // Real distance (haversine), not Google's own ranking order -- Nearby Search's `rankby=distance`

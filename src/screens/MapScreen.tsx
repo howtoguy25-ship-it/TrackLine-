@@ -83,6 +83,7 @@ import {
   findNearestTransitStation,
   getPlaceInfo,
   getStreetViewUrl,
+  getStreetViewEmbedUrl,
   reverseGeocode,
   type PlaceDetails,
   type PlaceInfo,
@@ -604,6 +605,14 @@ export function MapScreen() {
   // getStreetViewUrl's own comment for why this can genuinely come back null (no real coverage)
   // rather than ever showing a fabricated placeholder image.
   const [placeInfoStreetViewUrl, setPlaceInfoStreetViewUrl] = useState<string | null>(null);
+  // Real interactive Street View embed URL -- only ever derived once the metadata-checked
+  // static URL above has confirmed real coverage for this exact place, so it's never built for
+  // a location Google has no panorama for. Recomputed from the same place+url pair, not stored
+  // separately, so it can never drift out of sync with placeInfoStreetViewUrl.
+  const placeInfoStreetViewEmbedUrl = useMemo(() => {
+    if (!placeInfoStreetViewUrl || !placeInfo) return null;
+    return getStreetViewEmbedUrl(placeInfo.location);
+  }, [placeInfoStreetViewUrl, placeInfo]);
 
   const [osmMarkerKind, setOsmMarkerKind] = useState<OsmMarkerKind | null>(null);
   const [osmMarkerLocation, setOsmMarkerLocation] = useState<LatLng | null>(null);
@@ -2708,63 +2717,93 @@ export function MapScreen() {
     [modeRouteOptions, routeCardHeight, selectedModeRouteIndex]
   );
 
+  // Real, shared commit logic -- extracted from confirmRoute (the RouteOptionsCard "Start"
+  // button) so a second real entry point (onQuickStartFromPlace below, the place card's own
+  // "Start" quick action) can start navigation on an explicit, already-resolved route/
+  // destination pair without needing routeOptions/selectedProfile/pendingDestination state to
+  // have gone through the full picker flow first -- it takes both as real parameters instead of
+  // reading them off state, so there's no race with whatever just resolved them.
+  const startRoute = useCallback(
+    (chosen: Route, destination: PlaceDetails) => {
+      guidanceRef.current = createGuidanceState();
+      setActiveStepIndex(0);
+      setRoute(chosen);
+      setAcceptedSuggestionOriginalRoute(null);
+      setDestinationLatLng(destination.location);
+      // Real native Live Activity (see modules/liveActivity) -- starts the moment a trip
+      // actually begins, per explicit request to keep navigating visible on the Lock Screen/
+      // Dynamic Island once the driver leaves the app. iOS-only and a safe no-op everywhere else
+      // (Android, an unsupported OS version, or the user has Live Activities off in Settings) --
+      // see the module's own isSupported()/try-catch guards. The first real content follows a
+      // moment later from the guidance effect below, once activeStep/etaText are actually
+      // available for this fresh route; this call only needs a destination name and a
+      // placeholder first line.
+      startLiveActivity(destination.name, {
+        instruction: chosen.steps[0]?.instruction ?? "Starting navigation",
+        maneuverSymbol: maneuverToSfSymbol(chosen.steps[0]?.maneuver),
+        distanceText: chosen.distanceText,
+        etaText: chosen.etaInTrafficText ?? chosen.etaText,
+        roadName: "",
+        currentSpeedKmh: null,
+        speedLimitKmh: null,
+      });
+      setFollowTilt(true);
+      // Real, explicit request -- go DIRECTLY into the Waze-style tilted close-follow view the
+      // instant Start is tapped, no flat/overhead "see the whole route" flash first. Previously
+      // this called fitToCoordinates (an un-tilted whole-route-bounds fit) and the real chase-
+      // cam pose was deliberately held off for another 1200ms+700ms (see chaseCamAppliedRef's
+      // effect below, now ungated) -- a confirmed ~1-2s window where the camera didn't look like
+      // nav mode at all. Mirrors the exact same pitch/zoom the chase-cam effect below applies
+      // for a fresh session, so there's no visible pose change once that effect's own (now
+      // immediate) re-application runs.
+      if (currentLatLng) {
+        const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
+        mapRef.current?.animateCamera(
+          { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18.5 },
+          { duration: 600 }
+        );
+      }
+      setRouteOptions(null);
+      setModeRoute(null);
+      setModeRouteOptions([]);
+      setPendingDestination(null);
+      // Live navigation always tracks real GPS from here on (see routeOriginLatLng's own
+      // comment) -- clears any custom "From" so it doesn't silently carry over into the next,
+      // unrelated destination search once this trip ends.
+      setOriginOverride(null);
+    },
+    [currentLatLng, heading, settings.defaultMapViewStyle]
+  );
+
   const confirmRoute = useCallback(() => {
     const chosen = travelMode === "driving" ? routeOptions?.[selectedProfile] : modeRoute;
     if (!chosen || !pendingDestination) return;
-    guidanceRef.current = createGuidanceState();
-    setActiveStepIndex(0);
-    setRoute(chosen);
-    setAcceptedSuggestionOriginalRoute(null);
-    setDestinationLatLng(pendingDestination.location);
-    // Real native Live Activity (see modules/liveActivity) -- starts the moment a trip actually
-    // begins, per explicit request to keep navigating visible on the Lock Screen/Dynamic Island
-    // once the driver leaves the app. iOS-only and a safe no-op everywhere else (Android, an
-    // unsupported OS version, or the user has Live Activities off in Settings) -- see the
-    // module's own isSupported()/try-catch guards. The first real content follows a moment later
-    // from the guidance effect below, once activeStep/etaText are actually available for this
-    // fresh route; this call only needs a destination name and a placeholder first line.
-    startLiveActivity(pendingDestination.name, {
-      instruction: chosen.steps[0]?.instruction ?? "Starting navigation",
-      maneuverSymbol: maneuverToSfSymbol(chosen.steps[0]?.maneuver),
-      distanceText: chosen.distanceText,
-      etaText: chosen.etaInTrafficText ?? chosen.etaText,
-      roadName: "",
-      currentSpeedKmh: null,
-      speedLimitKmh: null,
-    });
-    setFollowTilt(true);
-    // Real, explicit request -- go DIRECTLY into the Waze-style tilted close-follow view the
-    // instant Start is tapped, no flat/overhead "see the whole route" flash first. Previously this
-    // called fitToCoordinates (an un-tilted whole-route-bounds fit) and the real chase-cam pose
-    // was deliberately held off for another 1200ms+700ms (see chaseCamAppliedRef's effect below,
-    // now ungated) -- a confirmed ~1-2s window where the camera didn't look like nav mode at all.
-    // Mirrors the exact same pitch/zoom the chase-cam effect below applies for a fresh session, so
-    // there's no visible pose change once that effect's own (now immediate) re-application runs.
-    if (currentLatLng) {
-      const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
-      mapRef.current?.animateCamera(
-        { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18.5 },
-        { duration: 600 }
-      );
-    }
-    setRouteOptions(null);
-    setModeRoute(null);
-    setModeRouteOptions([]);
-    setPendingDestination(null);
-    // Live navigation always tracks real GPS from here on (see routeOriginLatLng's own comment)
-    // -- clears any custom "From" so it doesn't silently carry over into the next, unrelated
-    // destination search once this trip ends.
-    setOriginOverride(null);
-  }, [
-    routeOptions,
-    modeRoute,
-    travelMode,
-    selectedProfile,
-    pendingDestination,
-    currentLatLng,
-    heading,
-    settings.defaultMapViewStyle,
-  ]);
+    startRoute(chosen, pendingDestination);
+  }, [routeOptions, modeRoute, travelMode, selectedProfile, pendingDestination, startRoute]);
+
+  // Real, explicit request -- a one-tap "Start" quick action directly on the place card
+  // (PlaceInfoSheet), matching Apple/Google Maps' own place-card "Start" button: fetches the
+  // real recommended driving route from the current origin and begins navigating immediately,
+  // skipping the full "Choose a route" picker for a driver who just wants to go. "Directions"
+  // on that same card still goes through the real picker (routeOptions/alternatives/tolls) --
+  // this is a second, faster real entry point, not a replacement.
+  const onQuickStartFromPlace = useCallback(
+    async (place: PlaceInfo) => {
+      const origin = routeOriginLatLng;
+      if (!origin) return;
+      placeInfoSheetRef.current?.close();
+      try {
+        const options = await getRouteOptions(origin, place.location, stopLocation ?? undefined);
+        startRoute(options.normal, place);
+      } catch (err) {
+        console.warn("[map] quick-start route fetch failed", err);
+        Sentry.logger.error("map: quick-start route fetch failed", { error: String(err) });
+        setBannerMessage("Couldn't start navigation -- check your connection and try again.");
+        setBannerVisible(true);
+      }
+    },
+    [routeOriginLatLng, stopLocation, startRoute]
+  );
 
   const cancelRouteOptions = useCallback(() => {
     setRouteOptions(null);
@@ -4964,11 +5003,13 @@ export function MapScreen() {
         place={placeInfo}
         etaText={placeInfoEtaText}
         streetViewUrl={placeInfoStreetViewUrl}
+        streetViewEmbedUrl={placeInfoStreetViewEmbedUrl}
         onClose={() => placeInfoSheetRef.current?.close()}
         onGetDirections={(p) => {
           placeInfoSheetRef.current?.close();
           onDestinationSelected(p);
         }}
+        onStartNavigation={onQuickStartFromPlace}
         onSheetChange={(index) => setPlaceInfoSheetOpen(index >= 0)}
       />
       <OsmMarkerSheet
