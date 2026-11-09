@@ -1,10 +1,19 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from "@/services/firebase";
 import type { AlertType } from "@/types/alert";
 import type { MapThemeKey, RoadThicknessKey } from "@/utils/mapStyle";
 import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import type { AuRegionCode } from "@/utils/auStates";
 import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+
+// Real, explicit request (Waze-style redesign build rules) -- every setting persists locally
+// via AsyncStorage AND syncs to Firestore once a driver is actually signed in (not the app's own
+// always-on anonymous session, see firebase.ts's ensureSignedIn), so a setting changed on one
+// device shows up on another. "Which audio output is currently in use" is never one of these --
+// that's live device state, not a stored preference.
+export type SpokenDirectionsMode = "normal" | "lessChatty" | "onlyAlerts" | "off";
 
 export const ALL_ALERT_TYPES: AlertType[] = [
   "police",
@@ -84,6 +93,16 @@ export interface AppSettings {
   // satellite FABs) can still change the view mid-session same as always; this only controls
   // what it opens/starts into.
   defaultMapViewStyle: "tilted3d" | "flat" | "satellite3d";
+  // Real, explicit request -- Waze-style home screen's compass button, directly under the new
+  // Menu button, resets heading/north on tap. Settings > Map shortcuts > Show compass controls
+  // whether it's actually rendered at all.
+  showCompass: boolean;
+  // Real, explicit request -- how chatty spoken turn-by-turn guidance is: "normal" speaks every
+  // manoeuvre, "lessChatty" trims routine ones, "onlyAlerts" speaks only hazard/police/camera
+  // call-outs (no turn-by-turn speech at all), "off" is fully silent. Distinct from (and takes
+  // priority over) the existing defaultVoiceEnabled/voiceEnabled master toggle -- that one is
+  // "is guidance speech on at all", this is "how much of it".
+  spokenDirections: SpokenDirectionsMode;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -108,6 +127,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
   defaultMapViewStyle: "tilted3d",
+  showCompass: true,
+  spokenDirections: "normal",
 };
 
 const STORAGE_KEY = "@trackline/settings";
@@ -136,4 +157,24 @@ export async function loadSettings(): Promise<AppSettings> {
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+// Real, explicit request -- cross-device settings sync for a real signed-in account. Same
+// `users/{uid}` doc userProfile.ts already writes to (displayName/email/provider,
+// visibleRegions), under its own `settings` field so it can't collide with those. Pushed on
+// every updateSettings call (see SettingsContext.tsx) while signed in with a real (non-
+// anonymous) account -- never for the app's own always-on anonymous session, which has no
+// other device to sync with anyway.
+export async function pushSettingsToProfile(uid: string, settings: AppSettings): Promise<void> {
+  await setDoc(doc(db, "users", uid), { settings, settingsUpdatedAt: Date.now() }, { merge: true });
+}
+
+// Pulled once per real sign-in (see SettingsContext.tsx) -- returns null when this account has
+// never synced settings from any device yet (a real "nothing to merge" case, not a fetch
+// failure), so the caller keeps whatever's already stored locally instead of overwriting it
+// with an empty object.
+export async function pullSettingsFromProfile(uid: string): Promise<Partial<AppSettings> | null> {
+  const snap = await getDoc(doc(db, "users", uid));
+  const remote = snap.exists() ? (snap.data().settings as Partial<AppSettings> | undefined) : undefined;
+  return remote ?? null;
 }

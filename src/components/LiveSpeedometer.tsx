@@ -143,7 +143,11 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
   );
 }
 
-const DIAL_SIZE = 84;
+// Real, explicit request -- Waze-style redesign: smaller, cleaner dial than this app's original
+// (was 84px/3px border/heavy shadow). Every other measurement below (font sizes, border width,
+// shadow) scales down with it, not just this one constant, for a genuinely lighter look rather
+// than the same chunky dial just resized.
+const DIAL_SIZE = 64;
 
 const styles = StyleSheet.create({
   wrap: {
@@ -159,15 +163,15 @@ const styles = StyleSheet.create({
     height: DIAL_SIZE,
     borderRadius: DIAL_SIZE / 2,
     backgroundColor: "rgba(17, 24, 39, 0.88)",
-    borderWidth: 3,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
   },
   dialAmber: {
     backgroundColor: "#F59E0B",
@@ -178,16 +182,16 @@ const styles = StyleSheet.create({
     borderColor: "#FCA5A5",
   },
   dialValue: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: "900",
-    lineHeight: 30,
+    lineHeight: 22,
     color: "#FFFFFF",
   },
   dialValueDark: {
     color: "#111827",
   },
   dialUnit: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: "700",
     color: "#D1D5DB",
     marginTop: -2,

@@ -46,6 +46,10 @@ import { NavigationInstructionCard } from "@/components/NavigationInstructionCar
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
 import { MapToolsSheet } from "@/screens/MapToolsSheet";
+import { SoundSheet } from "@/screens/SoundSheet";
+import { MenuButton } from "@/components/MenuButton";
+import { CompassButton } from "@/components/CompassButton";
+import { SoundButton } from "@/components/SoundButton";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import { RouteOptionsCard } from "@/components/RouteOptionsCard";
 import { AlertMarker } from "@/components/AlertMarker";
@@ -294,6 +298,7 @@ export function MapScreen() {
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
   const toolsSheetRef = useRef<BottomSheet>(null);
+  const soundSheetRef = useRef<BottomSheet>(null);
 
   const [route, setRoute] = useState<Route | null>(null);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -535,6 +540,7 @@ export function MapScreen() {
   const [liveCameraSheetOpen, setLiveCameraSheetOpen] = useState(false);
   const [navOptionsSheetOpen, setNavOptionsSheetOpen] = useState(false);
   const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
+  const [soundSheetOpen, setSoundSheetOpen] = useState(false);
   const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
@@ -566,6 +572,7 @@ export function MapScreen() {
     directionsSheetOpen ||
     navOptionsSheetOpen ||
     toolsSheetOpen ||
+    soundSheetOpen ||
     restaurantsSheetOpen ||
     hotelsSheetOpen ||
     fuelStationsSheetOpen;
@@ -4324,6 +4331,13 @@ export function MapScreen() {
           findingNearestStation={findingNearestStation}
           originLabel={routeOriginLabel}
           onPressOrigin={openOriginPicker}
+          // Real, explicit request -- Waze-style redesign, Phase 1: the new top-left Menu +
+          // Compass column (see just above) now occupies the same top-left corner this bar used
+          // to start flush against. Pushed down just far enough to clear it (roughly 56px Menu
+          // + 8px gap + 40px Compass, rounded up) rather than overlapping. This bar itself moves
+          // into a proper bottom "Where to?" sheet in Phase 2, which removes the need for this
+          // offset entirely -- an interim position, not the final Waze layout.
+          topOffset={108}
         />
       )}
 
@@ -4409,6 +4423,23 @@ export function MapScreen() {
           <View style={styles.currentStreetChip}>
             <Ionicons name="navigate" size={11} color="#FFFFFF" style={{ transform: [{ rotate: "90deg" }] }} />
             <Text style={styles.currentStreetChipText} numberOfLines={1}>
+              {currentRoadName}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Real, explicit request -- the same live currentRoadName lookup above, surfaced on the
+          plain home map too (not just during navigation) as a white, rounded, bold pill
+          centred just under the driver's own live marker -- Waze-style. currentRoadName is
+          already fetched continuously off the real GPS fix regardless of whether a route is
+          active (see its own effect above), so this is the exact same real, live data, just
+          also shown before a trip starts. Hidden the instant navigation actually begins (the
+          dark nav-time chip above takes over then) and while anything else covers the map. */}
+      {!route && !anySheetOpen && !placingAlert && !pendingDestination && currentRoadName && (
+        <View pointerEvents="none" style={styles.idleStreetChipWrap}>
+          <View style={styles.idleStreetChip}>
+            <Text style={styles.idleStreetChipText} numberOfLines={1}>
               {currentRoadName}
             </Text>
           </View>
@@ -4695,12 +4726,41 @@ export function MapScreen() {
           bottom bar. Still the only way to report an alert while just browsing the map. */}
       {!route && (
         <Pressable
-          style={({ pressed }) => [styles.fab, { bottom: insets.bottom + 24 }, pressed && { opacity: pressedOpacity }]}
+          style={({ pressed }) => [styles.reportFab, { bottom: insets.bottom + 24 }, pressed && { opacity: pressedOpacity }]}
           onPress={openAlertTypePicker}
           accessibilityLabel="Report an alert"
         >
-          <Ionicons name="add" size={28} color="#FFFFFF" />
+          {/* Waze-style yellow triangle report button -- a real filled Ionicons "triangle"
+              glyph as the shape itself (not a circle with a triangle icon inside it), with the
+              white "+" layered centered on top. nudged down slightly since a triangle's visual
+              weight sits lower than its bounding box's true center. */}
+          <Ionicons name="triangle" size={58} color="#FBBF24" style={styles.reportFabTriangle} />
+          <Ionicons name="add" size={22} color="#1F2937" style={styles.reportFabPlus} />
         </Pressable>
+      )}
+
+      {/* Waze-style top-left Menu + Compass column, and the mid-right Sound button -- only on
+          the plain home map (same gating as the Report/Tools/Recenter stack above), never
+          during navigation, which has its own dedicated nav UI. */}
+      {!route && (
+        <>
+          <MenuButton
+            onPress={() => navigation.navigate("MainMenu")}
+            unreadCount={0}
+            style={[styles.menuButtonPosition, { top: insets.top + spacing.md }]}
+          />
+          {settings.showCompass && (
+            <CompassButton
+              onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 })}
+              style={[styles.menuButtonPosition, { top: insets.top + spacing.md + 56 }]}
+            />
+          )}
+          <SoundButton
+            muted={settings.spokenDirections === "off"}
+            onPress={() => soundSheetRef.current?.expand()}
+            style={styles.soundButtonPosition}
+          />
+        </>
       )}
 
         </>
@@ -5085,6 +5145,13 @@ export function MapScreen() {
         onClose={() => navOptionsSheetRef.current?.close()}
         onSheetChange={(index) => setNavOptionsSheetOpen(index >= 0)}
         detectionBatteryLow={detectionBatteryLow}
+      />
+
+      <SoundSheet
+        ref={soundSheetRef}
+        onClose={() => soundSheetRef.current?.close()}
+        onSheetChange={(index) => setSoundSheetOpen(index >= 0)}
+        onOpenVoiceSettings={() => navigation.navigate("Settings")}
       />
 
       <MapToolsSheet
@@ -5585,6 +5652,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  idleStreetChipWrap: {
+    position: "absolute",
+    left: spacing.xl,
+    right: spacing.xl,
+    // "Just under the user's arrow" -- the map keeps the live user marker roughly screen-
+    // center while idle and not panned away (same real assumption placementPinOverlay's own
+    // top: "50%" already makes elsewhere in this screen), so this sits a little below that,
+    // not a fixed pixel offset from the top that would drift relative to the marker on a
+    // taller/shorter device.
+    top: "50%",
+    marginTop: 28,
+    alignItems: "center",
+  },
+  idleStreetChip: {
+    maxWidth: "80%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: "#FFFFFF",
+    ...shadow.low,
+  },
+  idleStreetChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+  },
   osmLoadingBadge: {
     width: 40,
     height: 40,
@@ -5756,6 +5849,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     ...shadow.accentGlow,
+  },
+  reportFab: {
+    position: "absolute",
+    right: spacing.xl,
+    width: 58,
+    height: 58,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.medium,
+  },
+  reportFabTriangle: {
+    position: "absolute",
+  },
+  reportFabPlus: {
+    position: "absolute",
+    marginTop: 10,
+  },
+  menuButtonPosition: {
+    position: "absolute",
+    left: spacing.md,
+  },
+  soundButtonPosition: {
+    position: "absolute",
+    right: spacing.md,
+    // "Mid-screen" per spec -- a percentage of real screen height (like placementPinOverlay's
+    // own top: "50%" above), not a fixed pixel offset from the top, so it stays genuinely
+    // mid-screen across every device size (iPhone SE through Pro Max) rather than drifting
+    // higher/lower relative to the visible map on a shorter/taller screen. Nudged a little above
+    // true center to leave more breathing room below for the speedometer/street pill.
+    top: "42%",
   },
   fabSecondary: {
     position: "absolute",

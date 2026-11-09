@@ -3,6 +3,7 @@ import { NavigationContainer, type NavigationContainerRef } from "@react-navigat
 import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MapScreen } from "@/screens/MapScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
+import { MainMenuScreen } from "@/screens/MainMenuScreen";
 import { SignInScreen } from "@/screens/SignInScreen";
 import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
@@ -32,6 +33,7 @@ export type RevCheckParams = {
 export type RootStackParamList = {
   Map: undefined;
   Settings: undefined;
+  MainMenu: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
@@ -99,6 +101,11 @@ export function RootNavigator() {
           name="SignIn"
           component={SignInScreen}
           options={{ headerShown: true, title: "Sign In" }}
+        />
+        <Stack.Screen
+          name="MainMenu"
+          component={MainMenuScreen}
+          options={{ presentation: "transparentModal", animation: "slide_from_left" }}
         />
         <Stack.Screen
           name="VehicleHistory"
