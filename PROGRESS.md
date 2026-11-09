@@ -31,17 +31,13 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 
 ## Hard blockers needing the project owner directly (not fabricatable)
 
-1. **Mapbox tokens — decided, waiting on the real values.** You chose real Mapbox over the free
-   MapLibre alternative. `@rnmapbox/maps` is installed and wired up (conditional config plugin,
-   env scaffolding in `.env.example`, an owner-only `MapboxMapScreen` preview) — see NOTES.md for
-   the full real-build-safety story (the package throws at import time with no native module
-   linked, so the plugin only activates once a real download token exists). Still needed from
-   you, both from mapbox.com → Account → Tokens:
-   - `MAPBOX_PUBLIC_TOKEN` — a normal public token.
-   - `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` — a token with "Downloads:Read" scope, set as a real EAS
-     secret: `eas secret:create --scope project --name RNMAPBOX_MAPS_DOWNLOAD_TOKEN --value <token> --type string`.
-   The live navigation map keeps running on Google Maps, completely unaffected, until both exist
-   and a real build can be attempted against them.
+1. **Mapbox tokens — one down, one to go.** `MAPBOX_PUBLIC_TOKEN` is real and live as an EAS
+   environment variable (production/preview/development, set via `eas env:set`, confirmed with
+   `eas env:list`). Still need `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (a token with "Downloads:Read"
+   scope from mapbox.com → Account → Tokens) before the `@rnmapbox/maps` config plugin activates
+   (it's conditionally excluded from the build until this exists — see NOTES.md for why) and a
+   real native build against the Mapbox engine can be attempted for the first time. The live
+   navigation map keeps running on Google Maps, completely unaffected, until then.
 2. **Live Traffic NSW Cloud Function** (Phase 5) needs a real `TFNSW_API_KEY` set via `firebase
    functions:secrets:set TFNSW_API_KEY` — this project has `nswTransportApiKey` as an existing,
    genuinely-optional client-side env var (`services/liveVehiclePositions.ts`), but no Cloud
