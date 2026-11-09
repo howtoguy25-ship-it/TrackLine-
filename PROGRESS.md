@@ -31,13 +31,21 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 
 ## Hard blockers needing the project owner directly (not fabricatable)
 
-1. **Mapbox tokens — one down, one to go.** `MAPBOX_PUBLIC_TOKEN` is real and live as an EAS
-   environment variable (production/preview/development, set via `eas env:set`, confirmed with
-   `eas env:list`). Still need `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (a token with "Downloads:Read"
-   scope from mapbox.com → Account → Tokens) before the `@rnmapbox/maps` config plugin activates
-   (it's conditionally excluded from the build until this exists — see NOTES.md for why) and a
-   real native build against the Mapbox engine can be attempted for the first time. The live
-   navigation map keeps running on Google Maps, completely unaffected, until then.
+1. **Mapbox tokens — both live now.** `MAPBOX_PUBLIC_TOKEN` (plaintext) and
+   `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (secret) are both real and set as EAS environment variables
+   (production/preview/development, via `eas env:set`, confirmed with `eas env:list`). The
+   `@rnmapbox/maps` config plugin is now active (no longer conditionally excluded) and a real
+   local prebuild + `./gradlew :app:assembleDebug` confirmed the Mapbox native SDK actually
+   downloads and links via the real download token: `rnmapbox_maps`'s Gradle module resolved and
+   ran its resource-processing tasks (`compileDebugLibraryResources`, `parseDebugLocalResources`,
+   `generateDebugRFile`) cleanly. That same local build still fails — but only on the pre-existing,
+   unrelated `react-native-google-mobile-ads:compileDebugKotlin` issue documented above, which halts
+   Gradle's task graph before it reaches `rnmapbox_maps`'s own Kotlin/Java compile task, so the
+   native module's own source code is not yet locally confirmed to compile (only its dependency
+   resolution and resource processing are). A real EAS cloud build (Android + iOS) was kicked off
+   to get a from-scratch, authoritative answer, including on iOS, which can't be verified locally
+   in this sandbox at all (no Mac/Xcode toolchain). The live navigation map keeps running on Google
+   Maps, completely unaffected, until the Mapbox engine itself is wired into a real screen.
 2. **Live Traffic NSW Cloud Function** (Phase 5) needs a real `TFNSW_API_KEY` set via `firebase
    functions:secrets:set TFNSW_API_KEY` — this project has `nswTransportApiKey` as an existing,
    genuinely-optional client-side env var (`services/liveVehiclePositions.ts`), but no Cloud
