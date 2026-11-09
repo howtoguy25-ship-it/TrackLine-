@@ -24,6 +24,23 @@
   yet -- this is Phase 6's own settings-screen reorg) and extended the shared `formatDistance`
   with a real km/miles conversion, both now driving the instruction card's own distance text.
 
+## Phase 1B — Bottom banner (follow / re-centre / overview)
+
+- **Reused real, existing camera-follow machinery** rather than building a parallel system:
+  `followTilt` (MapScreen's own existing "is the camera auto-following" state, already set to
+  false on any real manual pan/zoom/rotate gesture) drives which of the two banner states shows;
+  `onRecenter`/`applyOverviewPose` are the same existing functions the old small top-right
+  recentre pill and locate button already called.
+- **"Overview" does not yet fit the whole remaining route in view.** The brief asks for a real
+  fit-bounds computation (route + user + destination, with specific edge padding, north-up, 2D).
+  This button currently reuses the existing `applyOverviewPose` toggle -- a real, working, but
+  fixed-zoom (z15) pulled-back 3D pose, not a genuine bounds-fit. A real fit-bounds
+  implementation (using the route's own remaining polyline + destination coordinate) is real,
+  buildable work not yet done -- tracked as a follow-up, not silently left as the final behaviour.
+- **80pt re-centre circle → 44pt.** Same real shared-row-width reasoning as the instruction
+  card's icon/text sizing -- this bar also holds the Overview pill and the existing add-stop/
+  options buttons in the same row.
+
 ## Phase 1B — Mapbox map engine
 
 - **No real Mapbox account/tokens exist yet.** `@rnmapbox/maps` is installed and wired up

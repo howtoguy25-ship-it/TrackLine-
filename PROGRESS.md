@@ -74,8 +74,12 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
       schema, matching every given colour/zoom/width value
 - [ ] User marker + street pill (teal arrow variant) — not started
 - [ ] Route drawing (ShapeSource/SymbolLayer) — not started, needs a real token to visually verify
-- [ ] Top instruction card restyle — not started
-- [ ] Bottom banner (follow/re-centre/overview) — not started
+- [x] Top instruction card restyle — bigger icon/distance, accented street-name line, real
+      roundabout exit number, "Then" chip, tap-to-repeat voice, arrival flag icon. Literal
+      64pt/44pt/40pt sizes deliberately not used — see NOTES.md
+- [x] Bottom banner (follow/re-centre/overview) — real two-state banner wired to the existing
+      followTilt/onRecenter machinery; Overview button reuses the existing pulled-back pose
+      toggle, not yet a real fit-bounds-to-route computation — see NOTES.md
 - [ ] Camera & zoom behaviour — not started, needs a real token to visually verify
 - [ ] Search sheet (Phase 3 of new doc) — same as old Phase 2
 - [ ] Voices (Phase 4 of new doc) — same as old Phase 3

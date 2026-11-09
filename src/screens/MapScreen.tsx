@@ -105,7 +105,7 @@ import {
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance } from "@/services/navigationGuidance";
 import { speak, stopSpeaking } from "@/services/voice";
-import { formatArrivalClock, formatDurationText } from "@/utils/navFormat";
+import { formatArrivalClock, formatDurationText, formatDistance } from "@/utils/navFormat";
 import {
   subscribeVisibleAlerts,
   reportAlert,
@@ -4400,7 +4400,7 @@ export function MapScreen() {
         <NavBottomBar
           etaText={formatDurationText(remainingDurationSeconds)}
           arrivalClockText={arrivalClockText}
-          distanceRemainingText={`${(remainingDistanceMeters / 1000).toFixed(1)} km`}
+          distanceRemainingText={formatDistance(remainingDistanceMeters, settings.distanceUnit)}
           roadName={currentRoadName}
           themeKey={settings.navCardTheme}
           hasStop={!!stopLocation}
@@ -4408,6 +4408,9 @@ export function MapScreen() {
           onRemoveStop={removeStopDuringNav}
           onOptions={() => navOptionsSheetRef.current?.expand()}
           onHeightChange={setBottomBarHeight}
+          isFollowing={followTilt}
+          onRecenter={onRecenter}
+          onOverview={() => applyOverviewPose(!overviewMode)}
         />
       )}
 
