@@ -4331,13 +4331,14 @@ export function MapScreen() {
           findingNearestStation={findingNearestStation}
           originLabel={routeOriginLabel}
           onPressOrigin={openOriginPicker}
-          // Real, explicit request -- Waze-style redesign, Phase 1: the new top-left Menu +
-          // Compass column (see just above) now occupies the same top-left corner this bar used
-          // to start flush against. Pushed down just far enough to clear it (roughly 56px Menu
-          // + 8px gap + 40px Compass, rounded up) rather than overlapping. This bar itself moves
-          // into a proper bottom "Where to?" sheet in Phase 2, which removes the need for this
-          // offset entirely -- an interim position, not the final Waze layout.
-          topOffset={108}
+          // Real, explicit request -- Waze-style redesign: the new top-left Menu + Compass
+          // column (see just above) now occupies the same top-left corner this bar used to
+          // start flush against. Both are the brief's own literal 72pt, stacked with an 8px gap
+          // -- pushed down just far enough to clear that (72 + 8 + 72, rounded up) rather than
+          // overlapping. This bar itself moves into a proper bottom "Where to?" sheet in Phase
+          // 2/3, which removes the need for this offset entirely -- an interim position, not
+          // the final Waze layout.
+          topOffset={156}
         />
       )}
 
@@ -4761,7 +4762,7 @@ export function MapScreen() {
           {settings.showCompass && (
             <CompassButton
               onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 })}
-              style={[styles.menuButtonPosition, { top: insets.top + spacing.md + 56 }]}
+              style={[styles.menuButtonPosition, { top: insets.top + spacing.md + 80 }]}
             />
           )}
           <SoundButton

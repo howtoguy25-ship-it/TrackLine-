@@ -21,16 +21,19 @@ export function MenuButton({ onPress, unreadCount, style }: Props) {
       style={({ pressed }) => [styles.button, style, pressed && { opacity: pressedOpacity }]}
       accessibilityLabel={unreadCount > 0 ? `Menu, ${unreadCount} unread` : "Menu"}
     >
-      <Ionicons name="menu" size={24} color={colors.text} />
+      <Ionicons name="menu" size={32} color={colors.text} />
       {unreadCount > 0 && <View style={styles.badge} pointerEvents="none" />}
     </Pressable>
   );
 }
 
+// Real, explicit request (Waze-style redesign, Phase 1B section 9) -- literal 72pt. Unlike the
+// nav instruction card/bottom banner elsewhere in this redesign, this button doesn't share a
+// row with other controls, so the literal spec size is used as-is rather than scaled down.
 const styles = StyleSheet.create({
   button: {
-    width: 48,
-    height: 48,
+    width: 72,
+    height: 72,
     borderRadius: radius.lg,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
@@ -39,11 +42,11 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: "absolute",
-    top: 6,
-    right: 6,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 10,
+    right: 10,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: colors.danger,
     borderWidth: 1.5,
     borderColor: "#FFFFFF",

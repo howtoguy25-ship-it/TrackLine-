@@ -19,16 +19,18 @@ export function SoundButton({ muted, onPress, style }: Props) {
       style={({ pressed }) => [styles.button, style, pressed && { opacity: pressedOpacity }]}
       accessibilityLabel={muted ? "Sound, currently off" : "Sound"}
     >
-      <Ionicons name={muted ? "volume-mute" : "volume-high"} size={20} color="#111827" />
+      <Ionicons name={muted ? "volume-mute" : "volume-high"} size={30} color="#111827" />
     </Pressable>
   );
 }
 
+// Real, explicit request (Waze-style redesign, Phase 1B section 6/9) -- literal 72pt, same
+// reasoning as Menu/Compass -- this button doesn't share a row with other controls.
 const styles = StyleSheet.create({
   button: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
