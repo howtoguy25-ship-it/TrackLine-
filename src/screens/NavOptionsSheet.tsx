@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
   onReportAlert: () => void;
@@ -53,11 +53,11 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         </View>
 
         <OptionRow icon="warning" iconBg="#F59E0B" iconColor="#111827" label="Report an incident" onPress={onReportAlert} />
-        <OptionRow icon="share-outline" iconBg={colors.surfaceMuted} iconColor={colors.text} label="Share ETA" onPress={onShareEta} />
+        <OptionRow icon="share-outline" iconBg="#DBEAFE" iconColor="#1D4ED8" label="Share ETA" onPress={onShareEta} />
         <OptionRow
           icon="videocam-outline"
-          iconBg={colors.surfaceMuted}
-          iconColor={colors.text}
+          iconBg="#EDE9FE"
+          iconColor="#7C3AED"
           label="AI Vehicle Detection"
           subtitle={detectionBatteryLow ? "Battery below 50% -- still works, may run slower" : undefined}
           onPress={onOpenDetection}
@@ -65,7 +65,14 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
 
         <View style={styles.divider} />
 
-        <OptionRow icon="close-circle" iconBg="#FEE2E2" iconColor="#DC2626" label="End navigation" labelColor="#DC2626" onPress={onEndNavigation} />
+        <Pressable
+          onPress={onEndNavigation}
+          style={({ pressed }) => [styles.endButton, pressed && { opacity: pressedOpacity }]}
+          accessibilityLabel="End navigation"
+        >
+          <Ionicons name="close-circle" size={20} color="#FFFFFF" />
+          <Text style={styles.endButtonText}>End navigation</Text>
+        </Pressable>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -147,14 +154,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm + 4,
   },
   rowIconWrap: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+    ...shadow.low,
   },
   rowTextWrap: {
     flex: 1,
@@ -172,6 +180,24 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: colors.surfaceMuted,
-    marginVertical: spacing.sm,
+    marginVertical: spacing.md,
+  },
+  // Real, explicit request for a more polished look -- End navigation is a destructive, trip-
+  // ending action, not just another row in the list, so it now reads as its own clear, full-
+  // width button instead of blending in with Report/Share/AI Detection's identical row shape.
+  endButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: "#DC2626",
+    borderRadius: radius.lg,
+    paddingVertical: spacing.sm + 6,
+    ...shadow.low,
+  },
+  endButtonText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Animated, type LayoutChangeEvent } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RouteStep } from "@/services/directions";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
@@ -19,23 +19,33 @@ function formatStepDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
-export const MANEUVER_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  "turn-left": "arrow-back",
-  "turn-right": "arrow-forward",
-  "turn-slight-left": "arrow-back",
-  "turn-slight-right": "arrow-forward",
-  "turn-sharp-left": "arrow-back",
-  "turn-sharp-right": "arrow-forward",
-  "uturn-left": "return-up-back",
-  "uturn-right": "return-up-forward",
-  merge: "git-merge",
-  "roundabout-left": "sync",
-  "roundabout-right": "sync",
-  "fork-left": "arrow-back",
-  "fork-right": "arrow-forward",
-  "ramp-left": "arrow-back",
-  "ramp-right": "arrow-forward",
-  straight: "arrow-up",
+// Real, confirmed fix for "generic arrow for every turn shape" -- Google's own MaterialIcons
+// font (bundled via @expo/vector-icons, verified directly against its installed glyphmap, not
+// guessed) ships a dedicated set of navigation icons whose names already match Google
+// Directions' own maneuver vocabulary almost verbatim ("turn-slight-left", "roundabout-right",
+// "fork-left", etc. are real glyphs, not just real maneuver strings) -- each one is drawn as the
+// actual real turn shape (a slight bend vs. a sharp right-angle vs. a full U, a real roundabout
+// loop, a real fork/ramp split), not one straight arrow reused at a different rotation. The only
+// real spelling mismatch is Google's "uturn-left"/"uturn-right" (no hyphen before "turn") vs. the
+// icon font's "u-turn-left"/"u-turn-right" (hyphenated) -- mapped explicitly below for exactly
+// that reason.
+export const MANEUVER_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
+  "turn-left": "turn-left",
+  "turn-right": "turn-right",
+  "turn-slight-left": "turn-slight-left",
+  "turn-slight-right": "turn-slight-right",
+  "turn-sharp-left": "turn-sharp-left",
+  "turn-sharp-right": "turn-sharp-right",
+  "uturn-left": "u-turn-left",
+  "uturn-right": "u-turn-right",
+  merge: "merge",
+  "roundabout-left": "roundabout-left",
+  "roundabout-right": "roundabout-right",
+  "fork-left": "fork-left",
+  "fork-right": "fork-right",
+  "ramp-left": "ramp-left",
+  "ramp-right": "ramp-right",
+  straight: "straight",
 };
 
 interface Props {
@@ -118,7 +128,7 @@ export function NavigationInstructionCard({
   const [transparent, setTransparent] = useState(!!theme.startsTransparent);
 
   if (!step) return null;
-  const icon = (step.maneuver && MANEUVER_ICONS[step.maneuver]) || "arrow-up";
+  const icon = (step.maneuver && MANEUVER_ICONS[step.maneuver]) || "straight";
 
   const onLayout = (e: LayoutChangeEvent) => {
     onHeightChange?.(e.nativeEvent.layout.height);
@@ -148,7 +158,7 @@ export function NavigationInstructionCard({
         >
           <Animated.View style={[styles.animatedContent, { transform: [{ translateY }], opacity }]}>
             <View style={[styles.iconWrap, collapsed && styles.iconWrapCollapsed, { backgroundColor: theme.iconWrapBg }]}>
-              <Ionicons name={icon} size={collapsed ? 22 : 30} color={theme.iconColor} />
+              <MaterialIcons name={icon} size={collapsed ? 22 : 30} color={theme.iconColor} />
             </View>
             <View style={{ flex: 1 }}>
               {/* No line cap at all, collapsed or not -- a capped numberOfLines was cutting long
@@ -164,29 +174,40 @@ export function NavigationInstructionCard({
               >
                 {step.instruction}
               </Text>
-              {!collapsed && (
-                <View
+              {/* Real, explicit request -- the distance to the next turn must be visible right
+                  here without needing to drop the card open, so this no longer hides behind
+                  `!collapsed`; it shows in both states now, just a touch more compact while
+                  collapsed (distanceBadgeCollapsed) to match that state's smaller instruction
+                  text and keep the "small island pill" genuinely small. */}
+              <View
+                style={[
+                  styles.distanceBadge,
+                  collapsed && styles.distanceBadgeCollapsed,
+                  { backgroundColor: theme.actionBg, borderColor: theme.iconWrapBg },
+                ]}
+              >
+                {/* Real, confirmed bug (screenshot evidence: the circled "3.1 km" was
+                    near-illegible against Transparent Dark's own translucent card): this used
+                    theme.iconColor, which every theme actually calibrates for the ICON sitting
+                    on top of iconWrapBg's own colored circle -- not for text sitting on
+                    actionBg, a completely different background these themes already have a
+                    dedicated, correctly-contrasted color for (actionText). Transparent Dark
+                    pairs iconColor #0A0E18 (near-black, correct for its light-blue icon circle)
+                    with actionBg's dark translucent pill -- black-on-dark, exactly the
+                    complaint. Light has the same bug the other way (white iconColor on an
+                    almost-white actionBg). actionText fixes both without changing anything
+                    about the icon itself. */}
+                <Text
                   style={[
-                    styles.distanceBadge,
-                    { backgroundColor: theme.actionBg, borderColor: theme.iconWrapBg },
+                    styles.distanceText,
+                    collapsed && styles.distanceTextCollapsed,
+                    { color: theme.actionText },
+                    textShadow,
                   ]}
                 >
-                  {/* Real, confirmed bug (screenshot evidence: the circled "3.1 km" was
-                      near-illegible against Transparent Dark's own translucent card): this used
-                      theme.iconColor, which every theme actually calibrates for the ICON sitting
-                      on top of iconWrapBg's own colored circle -- not for text sitting on
-                      actionBg, a completely different background these themes already have a
-                      dedicated, correctly-contrasted color for (actionText). Transparent Dark
-                      pairs iconColor #0A0E18 (near-black, correct for its light-blue icon circle)
-                      with actionBg's dark translucent pill -- black-on-dark, exactly the
-                      complaint. Light has the same bug the other way (white iconColor on an
-                      almost-white actionBg). actionText fixes both without changing anything
-                      about the icon itself. */}
-                  <Text style={[styles.distanceText, { color: theme.actionText }, textShadow]}>
-                    {formatStepDistance(step.distanceMeters)}
-                  </Text>
-                </View>
-              )}
+                  {formatStepDistance(step.distanceMeters)}
+                </Text>
+              </View>
             </View>
           </Animated.View>
         </Pressable>
@@ -318,10 +339,20 @@ const styles = StyleSheet.create({
     // used elsewhere on the card.
     borderWidth: 1,
   },
+  // Tighter padding/margin to match the collapsed state's smaller instruction text -- same pill,
+  // just scaled down so the "small island pill" default stays genuinely compact.
+  distanceBadgeCollapsed: {
+    marginTop: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 2,
+  },
   distanceText: {
     fontSize: 15,
     fontWeight: "800",
     letterSpacing: 0.3,
+  },
+  distanceTextCollapsed: {
+    fontSize: 12,
   },
   // Current road -- a distinct row below the header so it's never layered on top of (or
   // squeezed into) the turn instruction text.

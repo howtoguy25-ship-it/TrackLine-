@@ -1,5 +1,5 @@
-import React, { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image } from "react-native";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image, Animated } from "react-native";
 import BottomSheet, { BottomSheetView, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -23,6 +23,25 @@ interface Props {
   // which only resolves when Google genuinely has coverage here) -- null means no real
   // coverage, not a failed load, so nothing fabricated is ever shown in its place.
   streetViewUrl?: string | null;
+}
+
+// Real, explicit request -- the Street View thumbnail used to just pop in the instant its real
+// network fetch finished, which read as an abrupt flash against this sheet's otherwise smooth
+// animations. Plain RN <Image> has no cross-platform fade (fadeDuration is Android-only), so
+// this fades the real loaded image in itself via a genuine Animated.Image opacity transition
+// fired from the real onLoad event -- not a fixed timer guessing how long the fetch will take.
+function FadeInImage({ uri, style }: { uri: string; style: any }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    opacity.setValue(0);
+  }, [uri, opacity]);
+  return (
+    <Animated.Image
+      source={{ uri }}
+      style={[style, { opacity }]}
+      onLoad={() => Animated.timing(opacity, { toValue: 1, duration: 280, useNativeDriver: true }).start()}
+    />
+  );
 }
 
 export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoSheet(
@@ -119,7 +138,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                 accessibilityLabel="Street view. Swipe up for more details."
               >
                 <View style={styles.streetViewThumbWrap}>
-                  <Image source={{ uri: streetViewUrl }} style={styles.streetViewThumb} />
+                  <FadeInImage uri={streetViewUrl} style={styles.streetViewThumb} />
                   <View style={styles.streetViewExpandBadge}>
                     <Ionicons name="chevron-up" size={13} color="#FFFFFF" />
                   </View>

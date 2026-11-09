@@ -41,7 +41,18 @@ class SirenDetectionEngine {
       return;
     }
 
-    await YamnetSiren.loadModel();
+    // Real, confirmed bug this fixes: the return value was never checked, so a real model/label
+    // load failure (bundled asset missing, a bad TFLite interpreter init, etc.) still fell
+    // through into starting the recorder/poll loop -- every window would then classify against a
+    // null interpreter (classifyFile's own real guard returns [] for that), silently running
+    // "EV Radar: on" for the rest of the session while never actually detecting anything, with no
+    // way for the driver to know. Bailing out here instead surfaces that failure the same honest
+    // way the permission/no-native-module checks above already do.
+    const loaded = await YamnetSiren.loadModel();
+    if (!loaded) {
+      console.warn("[siren] Model failed to load; EV Radar disabled for this session.");
+      return;
+    }
 
     await setAudioModeAsync({
       allowsRecording: true,
@@ -93,11 +104,13 @@ class SirenDetectionEngine {
   }
 
   private async captureAndClassifyWindow(): Promise<void> {
-    // Capture a short recording, hand its raw PCM samples to the native classifier, then
-    // discard the audio immediately — nothing is ever written to persistent storage or
-    // uploaded, matching the "no recording stored" promise shown in the mic permission prompt.
-    // Reuses the single recorder created once in start() -- see its own comment for why a fresh
-    // AudioRecorder every single window was real, confirmed audio-glitch territory.
+    // Capture a short recording, hand the real recorded file straight to the native classifier
+    // (which decodes it itself -- see classifyFile's own comment for why: this app never has
+    // raw PCM on hand, only a compressed .m4a, on either platform), then discard the audio
+    // immediately — nothing is ever written to persistent storage or uploaded, matching the "no
+    // recording stored" promise shown in the mic permission prompt. Reuses the single recorder
+    // created once in start() -- see its own comment for why a fresh AudioRecorder every single
+    // window was real, confirmed audio-glitch territory.
     const recorder = this.recorder;
     if (!recorder) return;
     await recorder.prepareToRecordAsync();
@@ -108,8 +121,7 @@ class SirenDetectionEngine {
     const uri = recorder.uri;
     if (!uri) return;
 
-    const pcmSamples = await readPcmSamplesFromUri(uri);
-    const results = await YamnetSiren.classify(pcmSamples);
+    const results = await YamnetSiren.classifyFile(uri);
 
     const sirenResult = results.find((r) => SIREN_LABELS.has(r.label));
     const confidence = sirenResult?.confidence ?? 0;
@@ -127,16 +139,6 @@ class SirenDetectionEngine {
       );
     }
   }
-}
-
-/**
- * Reads raw PCM float samples from a recorded audio file for handoff to the native
- * classifier. The actual decode happens on the native side inside YamnetSiren.classify()
- * in production builds; this stub exists so the JS orchestration loop above has a stable
- * call shape regardless of platform decode details.
- */
-async function readPcmSamplesFromUri(_uri: string): Promise<number[]> {
-  return [];
 }
 
 export const sirenDetection = new SirenDetectionEngine();

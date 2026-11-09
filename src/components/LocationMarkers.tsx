@@ -1,9 +1,11 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import Svg, { Path } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, shadow } from "@/theme/tokens";
 import { MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { shadeColor } from "@/utils/color";
 
 // Real, professionally-drawn vector icons (react-native-svg), replacing the earlier photo-based
 // markers -- per explicit request to move back to an app-designed look, and a real technical
@@ -29,19 +31,33 @@ const ARROW_PATH = "M12 1.5 L21 21.5 L12 17 L3 21.5 Z";
  */
 export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMarkerStyleKey }) {
   const iconSpec = markerStyle !== "default" ? MAP_MARKER_STYLE_ICONS[markerStyle] : null;
+  // Real, explicit request for a "more realistic, polished, professional" badge -- a single flat
+  // fill colour read as a cheap placeholder. A real two-stop gradient (a lighter tint of the
+  // vehicle's own colour at the top, its true colour at the bottom) plus a genuine glossy
+  // highlight ellipse is the same "glossy pin" treatment real map-pin icon sets (Google Maps' own
+  // coloured pins, for one) use for exactly this reason -- it reads as a deliberately designed,
+  // dimensional badge instead of a flat coloured circle with an icon stamped on it.
+  const baseColor = iconSpec?.color ?? colors.accent;
+  const gradientColors = [shadeColor(baseColor, 0.28), baseColor, shadeColor(baseColor, -0.18)] as const;
   return (
-    <View style={[styles.navBadge, iconSpec && { backgroundColor: iconSpec.color }]}>
-      {/* Soft top-left highlight -- a cheap fake-gloss touch (an offset, partially-transparent
-          circle) since RN's View styling has no true gradient support without another native
-          dependency; this alone is enough to keep the badge from reading as a single flat disc. */}
-      <View style={styles.navBadgeHighlight} pointerEvents="none" />
-      {iconSpec ? (
-        <MaterialCommunityIcons name={iconSpec.name as any} size={18} color="#FFFFFF" />
-      ) : (
-        <Svg width={22} height={22} viewBox="0 0 24 24">
-          <Path d={ARROW_PATH} fill="#FFFFFF" stroke={colors.accent} strokeWidth={1} strokeLinejoin="round" />
-        </Svg>
-      )}
+    <View style={styles.navBadgeShadowWrap}>
+      <LinearGradient
+        colors={gradientColors}
+        locations={[0, 0.55, 1]}
+        style={styles.navBadge}
+      >
+        {/* Real glossy highlight -- an angled, soft-edged ellipse near the top, not a plain
+            centered circle, so it reads as a light source catching a curved surface rather than
+            a flat decal. */}
+        <View style={styles.navBadgeHighlight} pointerEvents="none" />
+        {iconSpec ? (
+          <MaterialCommunityIcons name={iconSpec.name as any} size={20} color="#FFFFFF" />
+        ) : (
+          <Svg width={22} height={22} viewBox="0 0 24 24">
+            <Path d={ARROW_PATH} fill="#FFFFFF" stroke={colors.accent} strokeWidth={1} strokeLinejoin="round" />
+          </Svg>
+        )}
+      </LinearGradient>
     </View>
   );
 }
@@ -67,26 +83,34 @@ export function PersonLocationDot() {
 }
 
 const styles = StyleSheet.create({
+  // Shadow lives on this outer, unclipped wrap -- RN shadows don't render through a clipped
+  // (overflow:hidden) parent, which navBadge itself needs for the gradient/highlight to respect
+  // its own rounded corners.
+  navBadgeShadowWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    ...shadow.medium,
+  },
   navBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 3,
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    ...shadow.medium,
   },
   navBadgeHighlight: {
     position: "absolute",
-    top: -10,
-    left: -6,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    top: -14,
+    left: -2,
+    width: 38,
+    height: 24,
+    borderRadius: 19,
+    transform: [{ rotate: "-18deg" }],
+    backgroundColor: "rgba(255,255,255,0.3)",
   },
   personWrap: {
     width: 64,

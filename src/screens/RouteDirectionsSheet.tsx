@@ -2,7 +2,7 @@ import React, { forwardRef, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { MANEUVER_ICONS } from "@/components/NavigationInstructionCard";
 import type { Route, RouteStep } from "@/services/directions";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -55,13 +55,13 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
             keyExtractor={(_: RouteStep, i: number) => String(i)}
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.lg }}
             renderItem={({ item, index }: { item: RouteStep; index: number }) => {
-              const icon = (item.maneuver && MANEUVER_ICONS[item.maneuver]) || "arrow-up";
+              const icon = (item.maneuver && MANEUVER_ICONS[item.maneuver]) || "straight";
               const isActive = index === activeStepIndex;
               const isPast = index < activeStepIndex;
               return (
                 <View style={[styles.row, isActive && styles.rowActive]}>
                   <View style={[styles.iconWrap, isActive && styles.iconWrapActive, isPast && styles.iconWrapPast]}>
-                    <Ionicons name={icon} size={18} color="#FFFFFF" />
+                    <MaterialIcons name={icon} size={18} color="#FFFFFF" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.instruction, isPast && styles.instructionPast]}>

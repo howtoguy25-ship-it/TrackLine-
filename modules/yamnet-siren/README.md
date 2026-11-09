@@ -4,46 +4,61 @@ Native bridge that runs Google's pretrained **YAMNet** TFLite audio classifier o
 and exposes a `siren` confidence score to the JS `sirenDetection` service
 (`src/services/sirenDetection.ts`).
 
-This module is scaffolding only — it defines the contract (`loadModel`, `classify`) and
-where the native implementation goes, but shipping it end-to-end requires steps that
-can't be done from source alone:
+## Status: real, implemented (not scaffolding)
 
-## Setup steps (do these before Phase 6 will actually detect anything)
+Both `android/src/main/java/expo/modules/yamnetsiren/YamnetSirenModule.kt` and
+`ios/YamnetSirenModule.swift` run real on-device inference:
 
-1. **Switch off Expo Go.** TFLite bindings are native code, so this app needs a
-   [custom dev client](https://docs.expo.dev/develop/development-builds/introduction/):
-   ```
-   npx expo install expo-dev-client
-   npx expo prebuild
-   eas build --profile development --platform ios   # and/or android
-   ```
-2. **Download the pretrained model.** Get `yamnet.tflite` from
-   [TensorFlow Hub's YAMNet page](https://tfhub.dev/google/lite-model/yamnet/tflite/1) and
-   the accompanying `yamnet_class_map.csv` (class index → label, e.g. "Siren",
-   "Ambulance (siren)", "Fire engine, fire truck (siren)", "Police car (siren)").
-   Place them in:
-   - `android/app/src/main/assets/yamnet.tflite`
-   - `ios/YamnetSiren/yamnet.tflite` (add to the Xcode target as a bundled resource)
-3. **Implement `android/.../YamnetSirenModule.kt`** using `org.tensorflow:tensorflow-lite`
-   (add the dependency in `android/build.gradle`). `classify()` should feed 15,600 mono
-   16kHz float samples (YAMNet's fixed input window) into the interpreter and return the
-   top scoring classes.
-4. **Implement `ios/YamnetSirenModule.swift`** using `TensorFlowLiteSwift` (add via
-   CocoaPods/SPM in `ios/YamnetSiren.podspec`). Same input/output contract as Android.
-5. Rebuild the dev client after any native change — JS-only changes still hot reload as
-   usual.
+- The real, pretrained model (`yamnet.tflite`, downloaded from
+  [TensorFlow Hub's YAMNet page](https://tfhub.dev/google/lite-model/yamnet/tflite/1)) and its
+  real 521-class AudioSet label map (`yamnet_class_map.csv`, from
+  [TensorFlow's own research repo](https://github.com/tensorflow/models/blob/master/research/audioset/yamnet/yamnet_class_map.csv))
+  are bundled directly in this module -- `android/src/main/assets/` and `ios/`, picked up by each
+  platform's own build (Gradle's `assets` source set on Android, the `YamnetSiren.bundle`
+  CocoaPods resource bundle declared in `YamnetSiren.podspec` on iOS).
+- `loadModel()` loads the real model + real labels and reports true only once both are usable.
+- `classifyFile(uri)` -- the real path `sirenDetection.ts` calls -- reads the actual recorded
+  audio file, decodes + resamples it to real 16kHz mono PCM natively (`AVAudioFile` +
+  `AVAudioConverter` on iOS, `MediaExtractor` + `MediaCodec` on Android -- Android's
+  `MediaRecorder` has no raw PCM/WAV output option at all, so a real decode step is unavoidable
+  there), then runs it through the real TFLite interpreter and returns YAMNet's real top-10
+  class scores.
+- `classify(pcmSamples)` is kept for contract-compatibility with any future caller that already
+  has real decoded PCM floats in hand; the live detection loop uses `classifyFile` instead.
+- Model contract (verified directly against the actual bundled `.tflite`, not assumed): a single
+  dynamic-length float32 `waveform` input; exactly 15,600 samples (YAMNet's own documented
+  0.975s minimum window at 16kHz) produces exactly one `[1, 521]` row of class scores.
+
+## Building it
+
+Native code, so this needs a real dev/prod build, not Expo Go:
+
+```
+npx expo prebuild
+eas build --profile development --platform ios     # and/or android
+```
+
+`src/native/yamnetNative.ts` detects whether the native module is present at all
+(`isYamnetAvailable`) and no-ops with a console warning if it's missing (e.g. still running in
+Expo Go) -- the rest of the app (navigation, alerts, settings) works normally either way.
 
 ## Contract
 
 ```ts
 loadModel(): Promise<boolean>
 classify(pcmSamples: number[]): Promise<{ label: string; confidence: number }[]>
+classifyFile(uri: string): Promise<{ label: string; confidence: number }[]>
 ```
 
-`pcmSamples` is one ~1 second window of mono 16kHz PCM audio as floats in [-1, 1].
-`classify` returns YAMNet's class scores; `sirenDetection.ts` only looks at the
-siren/emergency-vehicle-related labels and ignores the rest.
+`sirenDetection.ts` only looks at the siren/emergency-vehicle-related labels from the real
+AudioSet class list ("Siren", "Emergency vehicle", "Police car (siren)", "Ambulance (siren)",
+"Fire engine, fire truck (siren)") and ignores the rest.
 
-Until steps 1-4 are done, `src/native/yamnetNative.ts` detects the missing native module
-and no-ops with a console warning — the rest of the app (navigation, alerts, settings)
-works normally without it.
+## Known limitation (honest, not yet verified)
+
+The native code here compiles against real, documented, stable APIs (TensorFlowLiteSwift's
+`Interpreter`, `org.tensorflow:tensorflow-lite`'s `Interpreter`, `AVAudioConverter`,
+`MediaCodec`) and was verified against the real model's actual input/output contract, but this
+module's real-world detection accuracy -- whether it actually fires on a real siren and stays
+quiet on ordinary road noise -- has not been confirmed on a physical device with a real siren
+sound. That verification needs an actual device test; it cannot be done from source alone.

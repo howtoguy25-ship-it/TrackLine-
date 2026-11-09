@@ -40,6 +40,8 @@ import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
 import { NAV_CARD_THEME_LABELS, NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { MAP_MARKER_STYLE_LABELS, MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { LinearGradient } from "expo-linear-gradient";
+import { shadeColor } from "@/utils/color";
 import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
@@ -950,13 +952,24 @@ export function SettingsScreen() {
                 accessibilityLabel={`${MAP_MARKER_STYLE_LABELS[style]} map marker`}
               >
                 <View style={styles.themeSwatchShadowWrap}>
-                  <View style={[styles.themeSwatch, styles.iconSwatch, iconSpec && { backgroundColor: iconSpec.color }]}>
-                    {iconSpec ? (
+                  {iconSpec ? (
+                    // Real, explicit request for a "more realistic, polished, professional"
+                    // marker look -- this preview now uses the exact same two-stop gradient fill
+                    // CarNavArrow itself renders with on the real map (see its own comment), so
+                    // what's picked here is a genuine preview of the actual badge, not a flatter
+                    // stand-in for it.
+                    <LinearGradient
+                      colors={[shadeColor(iconSpec.color, 0.28), iconSpec.color, shadeColor(iconSpec.color, -0.18)]}
+                      locations={[0, 0.55, 1]}
+                      style={[styles.themeSwatch, styles.iconSwatch]}
+                    >
                       <MaterialCommunityIcons name={iconSpec.name as any} size={22} color="#FFFFFF" />
-                    ) : (
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.themeSwatch, styles.iconSwatch]}>
                       <Ionicons name="navigate" size={22} color={colors.accent} />
-                    )}
-                  </View>
+                    </View>
+                  )}
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {MAP_MARKER_STYLE_LABELS[style]}

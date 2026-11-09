@@ -3581,7 +3581,23 @@ export function MapScreen() {
             have that problem, so tracksViewChanges can safely stay false here, matching every
             other static marker in this app. */}
         {route && currentLatLng && (
-          <Marker coordinate={currentLatLng} anchor={{ x: 0.5, y: 0.5 }} flat rotation={heading} tracksViewChanges={false}>
+          // Real, confirmed bug this key fixes: tracksViewChanges={false} is correct for live
+          // rotation (see this block's own comment -- the native `rotation` prop handles that
+          // independently), but it ALSO froze this marker's rendered bitmap at whatever
+          // markerStyle was active the very first time it mounted -- picking a different map
+          // marker in Settings while already navigating silently did nothing on screen until
+          // the app restarted, since react-native-maps never re-snapshots a tracksViewChanges=
+          // false marker just because its JS child re-rendered. Keying on markerStyle forces a
+          // real remount (a fresh native marker, not a re-render) the instant it changes, which
+          // sidesteps needing tracksViewChanges at all.
+          <Marker
+            key={`nav-arrow-${settings.mapMarkerStyle}`}
+            coordinate={currentLatLng}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat
+            rotation={heading}
+            tracksViewChanges={false}
+          >
             <CarNavArrow markerStyle={settings.mapMarkerStyle} />
           </Marker>
         )}
@@ -4329,6 +4345,30 @@ export function MapScreen() {
         />
       )}
 
+      {/* Real, explicit request -- a small, distinct, Apple-Maps-style live "current street"
+          chip, separate from the plain text rows already inside NavigationInstructionCard/
+          NavBottomBar: a real, compact rounded badge of its own rather than a line of text
+          folded into a bigger card. Reads the exact same currentRoadName those two cards already
+          show (the real OSM road lookup keyed on live GPS position -- see its own state comment),
+          so it updates and swaps the instant the driver actually crosses onto a different real
+          road, same "ongoing, live in sync" value, just surfaced as its own glanceable element
+          too. Floats just above NavBottomBar, horizontally centered -- same hide conditions as
+          that bar (the add-stop search/confirm bars occupy this same screen region) so nothing
+          ever stacks on top of it. */}
+      {route && !addingStopDuringNav && !stopPreviewRoute && currentRoadName && (
+        <View
+          pointerEvents="none"
+          style={[styles.currentStreetChipWrap, { bottom: insets.bottom + bottomBarHeight + spacing.md + 8 }]}
+        >
+          <View style={styles.currentStreetChip}>
+            <Ionicons name="navigate" size={11} color="#FFFFFF" style={{ transform: [{ rotate: "90deg" }] }} />
+            <Text style={styles.currentStreetChipText} numberOfLines={1}>
+              {currentRoadName}
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* Real, explicit request: a dedicated exit-lane guidance bar, shown only during the
           exit-zoom camera window above (see exitZoomActive) -- deliberately separate from the
           always-on NavigationInstructionCard at the top so this reads as a distinct, urgent,
@@ -4652,6 +4692,28 @@ export function MapScreen() {
               <Ionicons name="battery-dead-outline" size={11} color="#FFFFFF" />
             </View>
           )}
+        </Pressable>
+      )}
+      {/* Real, explicit request -- a real, always-visible, one-tap Recenter button on the front
+          (not-navigating) map, not just the "Recenter" row buried a tap deeper inside the Tools
+          sheet above (that row still exists too, for whoever's already got the sheet open). Same
+          real onLocateButtonPress handler either way -- this is just a second, faster entry point
+          to it. Stacked one slot above the Report "+" and Tools "..." FABs (fabSecondaryBottom(1),
+          the next position up in the same column) with an explicit zIndex so it always renders on
+          top of them rather than risking either covering it depending on render order. Hidden
+          during navigation -- that case already has its own dedicated Recenter pill in
+          topRightControls once the driver pans away from the live chase-cam view. */}
+      {!route && !anySheetOpen && !pendingDestination && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.fabSecondary,
+            { bottom: fabSecondaryBottom(1), zIndex: 1 },
+            pressed && { opacity: pressedOpacity },
+          ]}
+          onPress={onLocateButtonPress}
+          accessibilityLabel="Recenter on my location"
+        >
+          <Ionicons name="navigate" size={20} color="#FFFFFF" />
         </Pressable>
       )}
       </View>
@@ -5452,6 +5514,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     ...shadow.low,
+  },
+  currentStreetChipWrap: {
+    position: "absolute",
+    left: spacing.xl,
+    right: spacing.xl,
+    alignItems: "center",
+  },
+  currentStreetChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "80%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(17, 24, 39, 0.88)",
+    ...shadow.low,
+  },
+  currentStreetChipText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   osmLoadingBadge: {
     width: 40,

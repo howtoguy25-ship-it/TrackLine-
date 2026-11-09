@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { Marker } from "react-native-maps";
 import { ALERT_COLORS, type AlertDoc } from "@/types/alert";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
+import { useSettings } from "@/context/SettingsContext";
 
 interface Props {
   alert: AlertDoc;
@@ -26,6 +27,16 @@ const COMMENT_GAP = 3;
 const COMMENT_HEIGHT = 30;
 
 export const AlertMarker = React.memo(function AlertMarker({ alert, onPress, isSelected }: Props) {
+  // Real, confirmed bug this fixes: tracksViewChanges={false} below (the correct, cheap default
+  // for a marker with no comment) ALSO froze this pin's rendered bitmap at whatever
+  // alertIconTheme was active the moment it first mounted -- picking a different icon pack in
+  // Settings silently did nothing for any alert already on screen, even though AlertTypeGlyph
+  // (which reads this same setting) was genuinely re-rendering the right glyph internally the
+  // whole time; react-native-maps just never re-snapshotted the native bitmap to show it. Reading
+  // the setting directly here (not just inside the AlertTypeGlyph child) and keying the Marker on
+  // it forces a real remount -- a fresh native marker, not a no-op re-render -- the instant the
+  // theme changes, which sidesteps needing tracksViewChanges for this case entirely.
+  const { settings } = useSettings();
   // react-native-maps anchors a Marker's geographic coordinate to a FRACTION of its own
   // rendered content box (default {x:0.5, y:1}, i.e. bottom-center) -- which was fine when the
   // pin circle was the marker's only content, but a comment caption stacked below it (per
@@ -42,6 +53,7 @@ export const AlertMarker = React.memo(function AlertMarker({ alert, onPress, isS
     : { x: 0.5, y: 1 };
   return (
     <Marker
+      key={settings.alertIconTheme}
       coordinate={{ latitude: alert.lat, longitude: alert.lng }}
       anchor={anchor}
       // react-native-maps fires MapView's own onPress *in addition to* a tapped Marker's onPress

@@ -16,7 +16,10 @@ android {
 
 dependencies {
   implementation project(':expo-modules-core')
-  // TODO (README.md step 3): implementation "org.tensorflow:tensorflow-lite:2.14.0"
+  // Real, confirmed-published artifact (org.tensorflow:tensorflow-lite:2.14.0 on Maven Central)
+  // -- matches the iOS side's TensorFlowLiteSwift ~> 2.14.0 so both platforms run the same real
+  // TFLite runtime version against the same bundled yamnet.tflite.
+  implementation "org.tensorflow:tensorflow-lite:2.14.0"
 }
 
 def safeExtGet(prop, fallback) {
