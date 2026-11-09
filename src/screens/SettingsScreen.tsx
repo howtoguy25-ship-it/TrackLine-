@@ -1238,24 +1238,16 @@ export function SettingsScreen() {
               <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
             </Pressable>
 
-            {/* Phase 1 standalone prototype of a custom MapLibre + OpenStreetMap map engine --
-                see MapLibrePreviewScreen.tsx's own header. Owner-only entry point so it can be
-                reviewed in a real build without exposing an unfinished map to every user; the
-                live navigation map (above) is untouched either way. */}
-            <Pressable
-              onPress={() => navigation.navigate("MapLibrePreview")}
-              style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
-            >
-              <MaterialCommunityIcons name="map-outline" size={20} color={colors.accent} />
-              <Text style={styles.revCheckLinkText}>Custom map preview (owner only)</Text>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
-            </Pressable>
-
-            {/* Phase 1B of the Waze-style redesign -- the @rnmapbox/maps engine evaluation,
-                same isolated-prototype pattern as the MapLibre preview above. Renders a real
-                honest "not configured yet" state until real Mapbox tokens exist (see
-                MapboxMapScreen.tsx's own header for why it never touches the native module
-                until then) -- never the live navigation map either way. */}
+            {/* Phase 1B of the Waze-style redesign -- the @rnmapbox/maps engine evaluation, an
+                isolated owner-only prototype screen (reviewable in a real build without
+                exposing an unfinished map to every user; the live navigation map above is
+                untouched either way). Renders a real honest "not configured yet" state until
+                real Mapbox tokens exist (see MapboxMapScreen.tsx's own header for why it never
+                touches the native module until then). The equivalent MapLibre preview that used
+                to sit here was removed -- confirmed via a real EAS iOS build that it and
+                @rnmapbox/maps collide at the iOS linker (both generate a Codegen native-module
+                spec literally named `NativeMapViewModule`), and real Mapbox is the user's own
+                explicit map-engine choice. */}
             <Pressable
               onPress={() => navigation.navigate("MapboxMapPreview")}
               style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}

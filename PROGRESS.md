@@ -31,21 +31,20 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 
 ## Hard blockers needing the project owner directly (not fabricatable)
 
-1. **Mapbox tokens — both live now.** `MAPBOX_PUBLIC_TOKEN` (plaintext) and
-   `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (secret) are both real and set as EAS environment variables
-   (production/preview/development, via `eas env:set`, confirmed with `eas env:list`). The
-   `@rnmapbox/maps` config plugin is now active (no longer conditionally excluded) and a real
-   local prebuild + `./gradlew :app:assembleDebug` confirmed the Mapbox native SDK actually
-   downloads and links via the real download token: `rnmapbox_maps`'s Gradle module resolved and
-   ran its resource-processing tasks (`compileDebugLibraryResources`, `parseDebugLocalResources`,
-   `generateDebugRFile`) cleanly. That same local build still fails — but only on the pre-existing,
-   unrelated `react-native-google-mobile-ads:compileDebugKotlin` issue documented above, which halts
-   Gradle's task graph before it reaches `rnmapbox_maps`'s own Kotlin/Java compile task, so the
-   native module's own source code is not yet locally confirmed to compile (only its dependency
-   resolution and resource processing are). A real EAS cloud build (Android + iOS) was kicked off
-   to get a from-scratch, authoritative answer, including on iOS, which can't be verified locally
-   in this sandbox at all (no Mac/Xcode toolchain). The live navigation map keeps running on Google
-   Maps, completely unaffected, until the Mapbox engine itself is wired into a real screen.
+1. **Mapbox tokens — both live, and the real engine is now confirmed building on both
+   platforms.** `MAPBOX_PUBLIC_TOKEN`/`RNMAPBOX_MAPS_DOWNLOAD_TOKEN` are both real EAS env vars.
+   A real EAS cloud build (Android + iOS) against the tokens showed: Android's
+   `rnmapbox_maps:compileReleaseKotlin` genuinely succeeded (all 469 tasks ran; the build's only
+   failure was the pre-existing, unrelated google-mobile-ads Kotlin issue below) — but iOS failed
+   for a real, new reason: a linker collision (`ld: 5 duplicate symbols`) between `@rnmapbox/maps`
+   and the (by-then-superseded) MapLibre prototype, both generating a Codegen native-module spec
+   named `NativeMapViewModule`. Fixed by removing the MapLibre prototype entirely (it was already
+   superseded by the user's own explicit choice of real Mapbox) — `@maplibre/maplibre-react-native`
+   uninstalled, `MapLibrePreviewScreen.tsx` + its route/settings entry deleted. Confirmed via
+   `tsc --noEmit` and a real `expo export` (both platforms, zero MapLibre references left). Fresh
+   EAS builds re-kicked off with the conflict removed — see NOTES.md for the full real log
+   evidence. The live navigation map keeps running on Google Maps, completely unaffected, until
+   the Mapbox engine itself is wired into a real screen.
 2. **Live Traffic NSW Cloud Function** (Phase 5) needs a real `TFNSW_API_KEY` set via `firebase
    functions:secrets:set TFNSW_API_KEY` — this project has `nswTransportApiKey` as an existing,
    genuinely-optional client-side env var (`services/liveVehiclePositions.ts`), but no Cloud

@@ -43,20 +43,38 @@
 
 ## Phase 1B — Mapbox map engine
 
-- **No real Mapbox account/tokens exist yet.** `@rnmapbox/maps` is installed and wired up
-  (config plugin, env scaffolding, an owner-only `MapboxMapScreen` preview reached the same way
-  the existing MapLibre prototype is), but shows a real, honest "Mapbox not configured yet"
-  screen instead of a map, because `MAPBOX_PUBLIC_TOKEN`/`RNMAPBOX_MAPS_DOWNLOAD_TOKEN` are both
-  unset. **Critical, confirmed-real safety detail**: `@rnmapbox/maps`'s own JS
-  (`RNMBXModule.js`) throws immediately at *module import time* if its native code isn't
-  linked -- not a soft runtime failure. Its own `@rnmapbox/maps` Expo config plugin is therefore
-  only added to `app.config.js`'s plugins array when `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` is actually
-  set (so the native module is never linked without it), and `MapboxMapScreen.tsx` only ever
-  reaches the package via a deferred `require()` inside a function gated on
-  `isMapboxAvailable()`, never a static `import` -- confirmed safe by an actual `expo prebuild`
-  for both platforms showing zero Mapbox references in the generated Podfile/Gradle files, and a
-  real `expo export` for both platforms succeeding. Until real tokens exist, the live navigation
-  map keeps running on Google Maps exactly as before, completely unaffected.
+- **Both real Mapbox tokens are now live** (`MAPBOX_PUBLIC_TOKEN`, `RNMAPBOX_MAPS_DOWNLOAD_TOKEN`,
+  set as real EAS environment variables). `@rnmapbox/maps` is installed and wired up (config
+  plugin, env scaffolding, an owner-only `MapboxMapScreen` preview). **Critical, confirmed-real
+  safety detail**: `@rnmapbox/maps`'s own JS (`RNMBXModule.js`) throws immediately at *module
+  import time* if its native code isn't linked -- not a soft runtime failure. Its own
+  `@rnmapbox/maps` Expo config plugin is therefore only added to `app.config.js`'s plugins array
+  when `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` is actually set (so the native module is never linked
+  without it), and `MapboxMapScreen.tsx` only ever reaches the package via a deferred `require()`
+  inside a function gated on `isMapboxAvailable()`, never a static `import`.
+- **Real EAS cloud builds (Android + iOS) confirmed the Mapbox native module genuinely compiles
+  on both platforms**, and surfaced one real, now-fixed cross-engine conflict. Android: a full
+  `./gradlew`-equivalent run showed `rnmapbox_maps:compileReleaseKotlin` succeeding cleanly (only
+  deprecation warnings, no errors) with all 469 actionable tasks executed -- the build's only
+  failure was the pre-existing, unrelated `react-native-google-mobile-ads:compileReleaseKotlin`
+  issue documented below. iOS: the build genuinely failed, but with a real, diagnosable linker
+  error -- `ld: 5 duplicate symbols`, naming `NativeMapViewModuleSpecJSI`/
+  `NativeMapViewModuleSpecBase` defined in BOTH `rnmapbox_maps_specs-generated.o` and
+  `MapLibreReactNativeSpec-generated.o` inside `libReactCodegen.a`. Root cause: `@rnmapbox/maps`
+  and the (by-then-superseded) `@maplibre/maplibre-react-native` prototype both generate a React
+  Native Codegen native-module spec literally named `NativeMapViewModule`, which Android's
+  per-package Java codegen output never collides on but iOS's single static archive link does.
+  Since real Mapbox was the user's own explicit, already-made engine choice, the fix was to
+  remove the now-superseded MapLibre prototype entirely (`@maplibre/maplibre-react-native`
+  uninstalled, `MapLibrePreviewScreen.tsx` deleted, its route/settings entry point removed) rather
+  than the real engine -- confirmed via `npx tsc --noEmit` and a real `expo export` (both
+  platforms) with zero MapLibre references left anywhere. Fresh EAS builds re-kicked off to get a
+  from-scratch confirmation with the conflict actually removed.
+  (This also obsoletes the previously-documented, three-attempts-reverted "fix the Kotlin
+  version for google-mobile-ads" dead end below as far as Mapbox is concerned -- that issue is
+  real and still unresolved, but was never a Mapbox problem to begin with, and this iOS finding
+  shows local-Android-only verification genuinely can't surface everything a real multi-platform
+  cloud build can.)
 - **Style JSON** (`src/map/styles/trackline-light.json` / `trackline-dark.json`) is built against
   the real, documented Mapbox Streets v8 vector tileset schema, matching every colour/zoom/width
   value the brief gave for the light style. The dark palette was NOT given exact values in the

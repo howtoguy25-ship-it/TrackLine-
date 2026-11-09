@@ -11,7 +11,6 @@ import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
-import { MapLibrePreviewScreen } from "@/screens/MapLibrePreviewScreen";
 import { MapboxMapScreen } from "@/screens/MapboxMapScreen";
 import { navigationIntegration } from "@/services/sentry";
 
@@ -45,11 +44,16 @@ export type RootStackParamList = {
   // for why this affects its side-capture interval timing.
   VehicleDetection: { isNavigating?: boolean } | undefined;
   OwnerDashboard: undefined;
-  // Phase 1 standalone prototype for the custom MapLibre + OpenStreetMap map engine -- see
-  // MapLibrePreviewScreen.tsx's own header. Not the live navigation map.
-  MapLibrePreview: undefined;
-  // Phase 1B of the Waze-style redesign -- the @rnmapbox/maps engine evaluation, same isolated
-  // owner-only prototype pattern as MapLibrePreview above. See MapboxMapScreen.tsx's own header.
+  // Phase 1B of the Waze-style redesign -- the @rnmapbox/maps engine evaluation, an isolated
+  // owner-only prototype screen. See MapboxMapScreen.tsx's own header. (The equivalent MapLibre
+  // prototype that used to live here was removed -- see its own deletion commit for why: it and
+  // @rnmapbox/maps both generate an iOS Codegen native-module spec literally named
+  // `NativeMapViewModule`, which collided at the final static link step the moment both were
+  // compiled into the same app, confirmed via a real EAS iOS build's actual linker error
+  // ("duplicate symbol ... NativeMapViewModuleSpecJSI ... in rnmapbox_maps_specs-generated.o /
+  // MapLibreReactNativeSpec-generated.o"). Real Mapbox was the user's own explicit engine
+  // choice, so the now-superseded, already-broken-by-this prototype was deleted rather than the
+  // real engine.
   MapboxMapPreview: undefined;
 };
 
@@ -127,11 +131,6 @@ export function RootNavigator() {
           options={{ headerShown: true, title: "Owner Dashboard" }}
         />
         <Stack.Screen name="DocumentScan" component={DocumentScanScreen} />
-        <Stack.Screen
-          name="MapLibrePreview"
-          component={MapLibrePreviewScreen}
-          options={{ headerShown: true, title: "Custom map preview" }}
-        />
         <Stack.Screen
           name="MapboxMapPreview"
           component={MapboxMapScreen}

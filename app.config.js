@@ -144,11 +144,6 @@ module.exports = {
           iosGoogleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
         },
       ],
-      // MapLibre GL (standalone prototype only, src/screens/MapLibrePreviewScreen.tsx) -- the
-      // custom OpenStreetMap-tiled Waze-style 3D map engine being proven out in isolation here.
-      // The live navigation map (MapScreen.tsx, react-native-maps/Google Maps above) is
-      // untouched and keeps shipping as-is until this prototype is approved for a real migration.
-      "@maplibre/maplibre-react-native",
       [
         "expo-location",
         {

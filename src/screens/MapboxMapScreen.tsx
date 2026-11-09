@@ -32,11 +32,12 @@ function loadMapboxModule(): typeof import("@rnmapbox/maps") | null {
 }
 
 // Real, explicit request (Phase 1B) -- this screen exists to let the Mapbox engine be proven
-// out and iterated on in isolation, same pattern this app already uses for the MapLibre
-// prototype (MapLibrePreviewScreen.tsx) before anything touches the live, shipping navigation
-// map (MapScreen.tsx, still Google Maps). NOT wired into the real navigation flow yet -- see
-// PROGRESS.md/NOTES.md for what's still ahead once a real Mapbox token exists to actually test
-// against.
+// out and iterated on in isolation before anything touches the live, shipping navigation map
+// (MapScreen.tsx, still Google Maps). NOT wired into the real navigation flow yet -- see
+// PROGRESS.md/NOTES.md for what's still ahead. (An equivalent MapLibre prototype used to sit
+// alongside this one -- deleted once a real EAS iOS build proved it and @rnmapbox/maps collide
+// at the linker, both generating a Codegen native-module spec literally named
+// `NativeMapViewModule`; real Mapbox is the confirmed, user-chosen engine going forward.)
 export function MapboxMapScreen() {
   const insets = useSafeAreaInsets();
   const [moduleReady, setModuleReady] = useState(false);

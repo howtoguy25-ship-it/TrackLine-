@@ -15,11 +15,13 @@ phase-by-phase status.
   `src/services/firebase.ts`.
 - React Navigation (native-stack) — `src/navigation/RootNavigator.tsx`.
 - Map rendering today: **`react-native-maps` (Google Maps SDK, `PROVIDER_GOOGLE`)** for the real,
-  live navigation map (`MapScreen.tsx`). A second, separate, **owner-only internal prototype**
-  using **`@maplibre/maplibre-react-native`** (`MapLibrePreviewScreen.tsx`) exists in isolation,
-  evaluating a custom OSM-vector-tile map engine — not reachable by real users, not the live
-  navigation map. `@rnmapbox/maps` (commercial Mapbox GL) is **not installed** — see the Phase 1B
-  note below.
+  live navigation map (`MapScreen.tsx`). The Phase 1B map-engine swap to real **`@rnmapbox/maps`**
+  (commercial Mapbox GL) is installed and has real tokens live as EAS env vars, reached in
+  isolation via an owner-only `MapboxMapScreen.tsx` preview — not yet the live navigation map. A
+  real EAS cloud build confirmed the Mapbox native module compiles on both platforms; see
+  PROGRESS.md/NOTES.md. (An earlier `@maplibre/maplibre-react-native` prototype that evaluated a
+  free/open-source alternative engine was removed once real Mapbox tokens made it redundant and a
+  real iOS build showed the two colliding at the linker — see NOTES.md.)
 - Monetisation: `react-native-google-mobile-ads` (banner + app-open ads), `react-native-iap`
   (REV Check purchase).
 - Settings: `src/services/settings.ts` (`AppSettings` interface + `AsyncStorage`), wrapped by
@@ -42,7 +44,7 @@ phase-by-phase status.
 | `DocumentScanScreen.tsx` | Camera capture for VIN/plate OCR (ML Kit). |
 | `OwnerDashboardScreen.tsx` | Owner-only admin screen (sign-ins, device sessions, etc.) |
 | `SignInScreen.tsx` | Google/Apple/email sign-in. |
-| `MapLibrePreviewScreen.tsx` | The MapLibre prototype described above — owner-only entry point in Settings. |
+| `MapboxMapScreen.tsx` | The real Mapbox engine preview described above — owner-only entry point in Settings. |
 
 ## Components (`src/components/`)
 
@@ -59,7 +61,7 @@ arrows), `NavBottomBar.tsx` (live ETA/distance/arrival strip during nav), `Locat
 
 Native-stack, `headerShown: false` by default. Routes: `Map`, `Settings`, `SignIn`, `MainMenu`
 (new), `VehicleHistory`, `RevCheck`, `DocumentScan`, `VehicleDetection` (fullscreen modal, its own
-rotation handling), `OwnerDashboard`, `MapLibrePreview`.
+rotation handling), `OwnerDashboard`, `MapboxMapPreview`.
 
 ## Settings storage (`src/services/settings.ts` + `SettingsContext.tsx`)
 
@@ -96,33 +98,24 @@ rotation handling), `OwnerDashboard`, `MapLibrePreview`.
   built out this session.
 - `liveActivity/` — iOS Live Activity (lock-screen nav widget).
 
-## Config plugins (`plugins/`, new this session)
+## Config plugins (`plugins/`)
 
 - `withAndroidWebviewGradleFix.js` — sets a missing `ext.webkitVersion` Gradle property that
-  `react-native-webview`'s own `build.gradle` reads with no fallback.
-- `withAndroidKotlinVersionFix.js` — sets `android.kotlinVersion` in `gradle.properties` (the
-  real, documented override point for Expo's generated "expoLibs" version catalog) to satisfy
-  `react-native-google-mobile-ads`'s pinned `play-services-ads` Kotlin-metadata requirement.
-- `react-native.config.js` (repo root, new) — excludes `@maplibre/maplibre-react-native` from
-  **Android** autolinking only, because its latest release crashes the Kotlin K2 compiler at
-  every version this project tried other than the original default — see that file's own header
-  and `NOTES.md`. iOS is unaffected.
+  `react-native-webview`'s own `build.gradle` reads with no fallback. (A `withAndroidKotlinVersionFix.js`
+  and a root `react-native.config.js` were tried and then fully reverted/deleted earlier this
+  session — see NOTES.md's google-mobile-ads section for why neither actually worked.)
 
-## Known architectural gap vs. the new "Phase 1B" map-engine spec
+## Phase 1B map-engine spec — resolved
 
-The new brief's Phase 1 (map engine) asks for `@rnmapbox/maps` (commercial Mapbox GL, token-
+The new brief's Phase 1 (map engine) asked for `@rnmapbox/maps` (commercial Mapbox GL, token-
 gated SDK) with custom Mapbox-Studio-style JSON files, zoom-based label/road visibility rules,
-ShapeSource/SymbolLayer route rendering, etc. Today:
-
-- `@rnmapbox/maps` is not installed and this project has **no Mapbox account/token** — a real,
-  paid, token-gated SDK that genuinely cannot be added without the project owner creating a
-  Mapbox account and handing over a real public token + a downloads token (`eas secret:create
-  --name RNMAPBOX_MAPS_DOWNLOAD_TOKEN`). This is a hard blocker raised separately, not something
-  that can be fabricated.
-- The already-installed, **free, open-source** `@maplibre/maplibre-react-native` (a fork of
-  Mapbox GL from before its licence change) speaks the *same* Mapbox GL JS style specification —
-  the custom style-JSON work (land/water/building colours, road width-by-zoom expressions, label
-  visibility thresholds, route ShapeSource/SymbolLayer rendering) is equally buildable on it, at
-  zero cost and reusing the existing (currently owner-only) prototype, **except** for the live
-  Android Kotlin-compiler conflict with `react-native-google-mobile-ads` noted above, which is
-  itself fixable (patch, or an upstream maplibre release) independent of which engine is chosen.
+ShapeSource/SymbolLayer route rendering, etc. **Resolved**: the user explicitly chose real
+Mapbox over a free/open-source MapLibre alternative and provided both real tokens
+(`MAPBOX_PUBLIC_TOKEN`, `RNMAPBOX_MAPS_DOWNLOAD_TOKEN`, live as EAS env vars). `@rnmapbox/maps`
+is installed, and a real EAS cloud build confirmed its native module compiles on both platforms
+(see PROGRESS.md/NOTES.md for the real build-log evidence, including the one real cross-engine
+linker conflict this surfaced and how it was fixed — removing the now-superseded MapLibre
+prototype entirely). What's left is wiring the engine into the live navigation map itself
+(teal user marker, real route ShapeSource/SymbolLayer rendering, the camera/zoom logic already
+written in `src/map/cameraZoom.ts`, light/dark style switching) — tracked in PROGRESS.md, not yet
+started.
