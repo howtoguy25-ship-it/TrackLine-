@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   query,
@@ -12,6 +13,7 @@ import {
   addDoc,
   type Unsubscribe,
 } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "@/services/firebase";
 import { encodeGeohash } from "@/utils/geo";
 import { classifyAuRegion, type AuRegionCode } from "@/utils/auStates";
@@ -167,6 +169,31 @@ export async function hideAlertForUser(alertId: string, uid: string): Promise<vo
   await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
     [`hiddenBy.${uid}`]: Date.now(),
   });
+}
+
+// Real, explicit request -- the new Inbox screen's own "delete + undo" row action. Reverses
+// hideAlertForUser by removing this uid's own entry from the map entirely (not just letting the
+// 1-hour timer run out), so "Undo" genuinely puts the alert straight back rather than only
+// working within whatever time happens to be left on the hide.
+export async function unhideAlertForUser(alertId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
+    [`hiddenBy.${uid}`]: deleteField(),
+  });
+}
+
+const INBOX_LAST_VIEWED_KEY = "@trackline/inboxLastViewedAt";
+
+// Real "unread" badge count for the main menu's Inbox row -- persisted locally (not synced
+// across devices; a real, deliberately simple per-device "have I opened the Inbox since this
+// alert came in" signal, same scope every other local AsyncStorage-backed counter in this app
+// already has, e.g. services/voice.ts's consent-shown counter).
+export async function getInboxLastViewedAt(): Promise<number> {
+  const raw = await AsyncStorage.getItem(INBOX_LAST_VIEWED_KEY);
+  return raw ? Number(raw) : 0;
+}
+
+export async function markInboxViewedNow(): Promise<void> {
+  await AsyncStorage.setItem(INBOX_LAST_VIEWED_KEY, String(Date.now()));
 }
 
 export async function confirmAlert(alertId: string): Promise<void> {

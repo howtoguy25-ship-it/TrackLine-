@@ -4,6 +4,7 @@ import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-
 import { MapScreen } from "@/screens/MapScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { MainMenuScreen } from "@/screens/MainMenuScreen";
+import { InboxScreen } from "@/screens/InboxScreen";
 import { SignInScreen } from "@/screens/SignInScreen";
 import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
@@ -36,6 +37,9 @@ export type RootStackParamList = {
   Map: undefined;
   Settings: undefined;
   MainMenu: undefined;
+  // Real feed of currently-visible community alerts, Phase 4's own main-menu Inbox row. See
+  // InboxScreen.tsx.
+  Inbox: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
@@ -123,6 +127,7 @@ export function RootNavigator() {
           component={MainMenuScreen}
           options={{ presentation: "transparentModal", animation: "slide_from_left" }}
         />
+        <Stack.Screen name="Inbox" component={InboxScreen} />
         <Stack.Screen
           name="VehicleHistory"
           component={VehicleHistoryScreen}
