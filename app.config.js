@@ -83,6 +83,15 @@ module.exports = {
         // stored either way -- this doesn't change.
         NSCameraUsageDescription:
           "TrackLine uses your camera for live AI Vehicle Detection, analyzed on-device in real time. Video is never recorded or stored. A cropped image of a detected number plate may be sent to a third-party plate-recognition service when that feature is enabled.",
+        // Real, explicit request (Phase 4 main menu's "Drive to friends & family via Contacts"
+        // row) -- only ever reads a contact's name/address when the driver explicitly picks one
+        // to navigate to, nothing synced/stored/uploaded.
+        NSContactsUsageDescription:
+          "TrackLine can look up a contact's address so you can get directions to them.",
+        // Real, explicit request (Phase 4 main menu's calendar-events row) -- only reads event
+        // titles/times/locations to show upcoming drives, never writes/modifies calendar data.
+        NSCalendarsUsageDescription:
+          "TrackLine can read your calendar to show upcoming events with a location, so you can plan a drive to them.",
         UIBackgroundModes: ["audio", "location", "fetch"],
         // App only uses standard HTTPS/TLS (Firebase, Google Maps, AdMob) -- no custom
         // encryption -- so it qualifies as exempt. Declaring this here answers Apple's
@@ -104,6 +113,8 @@ module.exports = {
         "RECORD_AUDIO",
         "CAMERA",
         "FOREGROUND_SERVICE",
+        "READ_CONTACTS",
+        "READ_CALENDAR",
       ],
       config: {
         googleMaps: {
@@ -193,6 +204,19 @@ module.exports = {
       // ocrModels set) bundles all five script models (Chinese/Japanese/Korean/Devanagari
       // too), which just adds app size/build weight with nothing an AU plate would ever use.
       ["rn-mlkit-ocr", { ocrModels: ["latin"], ocrUseBundled: true }],
+      [
+        "expo-contacts",
+        {
+          contactsPermission: "TrackLine can look up a contact's address so you can get directions to them.",
+        },
+      ],
+      [
+        "expo-calendar",
+        {
+          calendarPermission:
+            "TrackLine can read your calendar to show upcoming events with a location, so you can plan a drive to them.",
+        },
+      ],
       // Real, confirmed Android build fix for react-native-webview (added for the place-card's
       // interactive Street View embed) -- see plugins/withAndroidWebviewGradleFix.js for the
       // actual root cause (a missing `ext.webkitVersion` Gradle property its own build.gradle
