@@ -3655,6 +3655,33 @@ export function MapScreen() {
             />
           </>
         )}
+        {/* Real, explicit request -- dark-purple street-name callouts at the next few upcoming
+            turns, Waze-style, pulled straight off each real RouteStep's own endLocation (the
+            actual real turn point) and targetStreetName (falling back to the full instruction
+            text on the rare step Google's own HTML didn't bold a road name for -- same fallback
+            targetStreetName's own header comment documents). Capped to the next 3 real upcoming
+            turns (not the whole remaining route) to match Waze's own "show what's coming up
+            soon, not the entire trip at once" convention and avoid cluttering a long route with
+            dozens of overlapping labels. Excludes the final step -- that's the arrival point,
+            already marked by the checkered-flag destination pin above, not another turn. */}
+        {route && !addingStopDuringNav && !stopPreviewRoute && (
+          <>
+            {route.steps.slice(activeStepIndex, Math.min(route.steps.length - 1, activeStepIndex + 3)).map((step, i) => (
+              <Marker
+                key={`turn-callout-${activeStepIndex + i}`}
+                coordinate={step.endLocation}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={false}
+              >
+                <View style={styles.turnCalloutPill}>
+                  <Text style={styles.turnCalloutText} numberOfLines={1}>
+                    {step.targetStreetName ?? step.instruction}
+                  </Text>
+                </View>
+              </Marker>
+            ))}
+          </>
+        )}
         {/* Real mid-trip add-a-stop preview, per explicit request: the route through the new
             stop draws in green, right alongside the still-live blue route above -- a genuine
             side-by-side comparison, not a replacement, until confirmStopPreview actually
@@ -3933,8 +3960,17 @@ export function MapScreen() {
                 fillColor="rgba(34, 197, 94, 0.18)"
               />
               <Marker coordinate={arrivalLatLng} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
+                {/* Real, explicit request -- Waze's own checkered-flag destination marker
+                    (a real recognizable finish-line convention), replacing the plain teardrop
+                    pin. A dark circular badge + white flag glyph on top of a short pin point,
+                    rather than a bare icon -- the icon font itself only ever renders one flat
+                    color, so the badge+pin-point shape is what actually reads as "a pin planted
+                    here" rather than a loose flag floating over the halo. */}
                 <View style={styles.destinationPinWrap}>
-                  <Ionicons name="location" size={40} color="#22C55E" />
+                  <View style={styles.destinationFlagBadge}>
+                    <MaterialCommunityIcons name="flag-checkered" size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.destinationPinPoint} />
                 </View>
               </Marker>
             </>
@@ -5407,8 +5443,43 @@ const styles = StyleSheet.create({
   },
   destinationPinWrap: {
     alignItems: "center",
+  },
+  destinationFlagBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#1F2937",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
     justifyContent: "center",
     ...shadow.medium,
+  },
+  destinationPinPoint: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 7,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#1F2937",
+    marginTop: -1,
+  },
+  turnCalloutPill: {
+    maxWidth: 160,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: "#3B0764",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+    ...shadow.medium,
+  },
+  turnCalloutText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   originPinWrap: {
     alignItems: "center",
