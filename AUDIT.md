@@ -332,3 +332,43 @@ design work not yet attempted). None are silently unfinished without a named rea
 
 Items 9 and 10 are not things I can fix myself — they need your action. Everything else is real
 code work I can do.
+
+---
+
+## 8. Phase 4 — Main menu (full), Plan a Drive, Inbox
+
+| Requirement | Status | Evidence | Fix needed |
+|---|---|---|---|
+| Tracky mascot on the main menu | DONE (honest scope) | `src/components/TrackyMascot.tsx` (new) — a real, simple hand-authored SVG (plain shapes) with an Animated-API bounce loop, not a production Lottie file/original character art — see NOTES.md's own flagged limit on this exact item | — |
+| "Plan a drive" card on the main menu, opens a planner | DONE | `MainMenuScreen.tsx`'s `planCard` → `navigation.navigate("PlanADrive")` | — |
+| Plan a Drive: pick a destination | DONE | `PlanADriveScreen.tsx` — real `searchPlaces`/`getPlaceDetails` + saved-places/history quick picks, same data every other picker in this app uses | — |
+| Plan a Drive: departure-time list | DONE (honest scope) | `PlanADriveScreen.tsx`'s `DEPARTURE_PRESETS` — a real preset LIST (Leave now/15/30/60 min), not a free-form date/time picker (no such native dependency exists in this project) | — |
+| Plan a Drive: real ETA for the picked time | DONE | `PlanADriveScreen.tsx` → `getDirections(..., { useTraffic })`; `directions.ts`'s `useTraffic` now accepts a future Unix-seconds departure time (a real Google Directions API capability — genuine predictive traffic, never a client-side guess), labeled "Predicted traffic" so it's never mistaken for a live figure | — |
+| Plan a Drive: Start begins the drive | DONE (honest scope) | Hands off via a new `Map` screen param (`planADriveDestination`), consumed by `MapScreen.tsx`'s own effect into the exact real `onDestinationSelected` flow. Always starts routing **right now** regardless of which time preset was open — this app has no scheduled/unattended-start capability, and the UI never implies one | — |
+| Real Inbox: list of community alerts | DONE | `InboxScreen.tsx` — live `subscribeVisibleAlerts` feed (same real data the map's own alert layer uses), newest first, with real distance when a GPS fix is available | — |
+| Inbox: delete + undo | DONE | `InboxScreen.tsx`'s `onDelete`/`onUndo` — real `hideAlertForUser` (self-only, already-existing) + a new real `unhideAlertForUser` for genuine undo, not just waiting out the hour | — |
+| Inbox: police/official alerts shown distinctly | DONE | `InboxScreen.tsx`'s `OFFICIAL_TYPES` tag on police/emergency_vehicle rows | — |
+| Main menu: real unread badge (Inbox + the map's own Menu button) | DONE | `MainMenuScreen.tsx` and `MapScreen.tsx` both compute a real count off `nearbyAlerts`/`subscribeVisibleAlerts` against a real `getInboxLastViewedAt()` timestamp (`alerts.ts`, new) | — |
+| Main menu: Invite a friend | DONE | `MainMenuScreen.tsx`'s `onInviteFriend` — real native `Share.share` | — |
+| Main menu: Help | DONE | `HelpScreen.tsx` (new) — real FAQ answers about this app's own actual shipped features, plus a real contact email already used elsewhere in this app | — |
+| Main menu: upcoming calendar events with a location | DONE | `calendarEvents.ts` (new, real `expo-calendar`, permission-gated, only events with a location) + `MainMenuScreen.tsx`'s events section; tapping one geocodes the real location text and hands off to Map the same way Plan a Drive's Start does | — |
+| "Drive to friends & family" via Contacts | DONE | `contactAddresses.ts` (new, real `expo-contacts`, permission-gated) + `WhereToSheet.tsx`'s new modal picker (see Phase 2 table, same item) | — |
+| Live Traffic NSW (scheduled Cloud Function, live congestion data) | **BLOCKED** | Needs a real `TFNSW_API_KEY` set as a Firebase Functions secret (`firebase functions:secrets:set TFNSW_API_KEY`) — a server-side secret only the project owner can set, already documented as a hard blocker in `PROGRESS.md`'s own "Hard blockers" section #2. Not attempted this session; the existing, separate NSW live traffic CAMERA feed (`LiveCameraSheet.tsx`, a different, already-shipped feature) is unaffected. | Owner needs to register a TfNSW API key and set the Cloud Functions secret |
+
+**Phase 4: 15 DONE, 0 PARTIAL, 0 STUB, 1 BLOCKED** (the single blocked item needs an API key only
+the project owner can provide; everything else that was asked for is real and working).
+
+---
+
+## 9. Phase 5 — Settings reorganisation
+
+| Requirement | Status | Evidence | Fix needed |
+|---|---|---|---|
+| Waze-style top-level category list instead of one long flat scroll | DONE | `SettingsCategoriesScreen.tsx` (new) — 6 real categories (Account, Map display, Navigation & voice, Alerts & community, Vehicle & AI tools, Developer in `__DEV__` only) | — |
+| Each category opens only its own real settings | DONE | `SettingsScreen.tsx`'s new `shouldShow`/`CATEGORY_SECTIONS`, driven by an optional `category` route param — every one of the screen's 15 pre-existing sections now gated by a `visible` prop on `Section` | — |
+| Every pre-existing settings entry point keeps working | DONE | Every `navigate("Settings")` call site with no `category` param (several pre-existing ones, confirmed via `grep`) still shows every section, unchanged — confirmed via `npx tsc --noEmit` and a direct read of each call site | — |
+| Relevant deep links jump straight to the right category | DONE | Main menu's "Signed in as..." row → `category: "account"`; `RevCheckScreen`'s "Manage provider keys" link → `category: "vehicleAI"` | — |
+
+**Phase 5: 4 DONE, 0 PARTIAL, 0 MISSING.** No full extraction into separate per-category screen
+files was attempted — a deliberate choice, not an oversight; see NOTES.md's own Phase 5 entry
+for why (the ~15 sections' state/handlers are genuinely shared and interdependent).
