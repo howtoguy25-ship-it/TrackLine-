@@ -32,7 +32,7 @@ import { getPlateRecognizerProviderConfig, savePlateRecognizerProviderConfig } f
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
-import { ALL_ALERT_TYPES, type AppSettings } from "@/services/settings";
+import { ALL_ALERT_TYPES, type AppSettings, type VisibilityMode } from "@/services/settings";
 import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
@@ -54,10 +54,11 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 // every section (no category param -- every existing `navigation.navigate("Settings")` call
 // site keeps working exactly as before) or only the sections belonging to one category, via the
 // new SettingsCategoriesScreen's own list of category cards.
-export type SettingsCategory = "account" | "mapDisplay" | "navigationVoice" | "alertsCommunity" | "vehicleAI" | "developer";
+export type SettingsCategory = "account" | "privacy" | "mapDisplay" | "navigationVoice" | "alertsCommunity" | "vehicleAI" | "developer";
 
 export const SETTINGS_CATEGORY_LABELS: Record<SettingsCategory, string> = {
   account: "Account",
+  privacy: "Privacy",
   mapDisplay: "Map display",
   navigationVoice: "Navigation & voice",
   alertsCommunity: "Alerts & community",
@@ -67,6 +68,7 @@ export const SETTINGS_CATEGORY_LABELS: Record<SettingsCategory, string> = {
 
 export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, keyof typeof Ionicons.glyphMap> = {
   account: "person-circle-outline",
+  privacy: "eye-off-outline",
   mapDisplay: "map-outline",
   navigationVoice: "navigate-outline",
   alertsCommunity: "notifications-outline",
@@ -76,6 +78,7 @@ export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, keyof typeof Ioni
 
 const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   account: ["Account", "Purchases"],
+  privacy: ["Privacy"],
   mapDisplay: ["Map appearance", "Navigation card colors", "Your map marker", "Map layers"],
   navigationVoice: ["Voice guidance", "Speed", "Public transit"],
   alertsCommunity: ["Live alerts", "Alert icons"],
@@ -94,6 +97,16 @@ function sensitivityLabel(value: number): string {
 // uses as the real Firestore expiresAt for any alert this device reports, replacing the app's
 // own per-type default (types/alert.ts's ALERT_TTL_MS) for as long as it's set. "Default"
 // (null) reverts to that original per-type behavior.
+// Real, explicit request (Ghost mode + visibility control) -- same three choices and copy as
+// VisibilitySheet.tsx's own quick picker (opened by long-pressing the home map's Menu button),
+// kept here too since both read/write the exact same settings.visibility field and a driver
+// should see the identical choice wherever they land.
+const VISIBILITY_OPTIONS: { key: VisibilityMode; label: string; description: string }[] = [
+  { key: "everyone", label: "Visible to everyone", description: "Other drivers nearby can see your Tracky on the map while you're driving" },
+  { key: "friendsOnly", label: "Friends only", description: "Only drivers you've added as a friend can see you" },
+  { key: "ghost", label: "Ghost mode", description: "Invisible to everyone -- you can still see and report alerts" },
+];
+
 const EXPIRY_PRESETS: { label: string; ms: number | null }[] = [
   { label: "Default", ms: null },
   { label: "12 hours", ms: 12 * 60 * 60 * 1000 },
@@ -699,6 +712,44 @@ export function SettingsScreen() {
           )}
         </Pressable>
         {restoreMessage && <Text style={styles.helperText}>{restoreMessage}</Text>}
+      </Section>
+
+      <Section title="Privacy" visible={shouldShow("Privacy")}>
+        <Text style={styles.helperText}>
+          TrackLine starts every driver in Ghost mode -- opt in here any time you&apos;d like
+          other nearby drivers to see your Tracky on the map while you&apos;re driving.
+        </Text>
+        {VISIBILITY_OPTIONS.map((option) => {
+          const selected = settings.visibility === option.key;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => updateSettings({ visibility: option.key })}
+              style={({ pressed }) => [styles.radioRow, pressed && { opacity: pressedOpacity }]}
+              accessibilityLabel={`${option.label}. ${option.description}`}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>{option.label}</Text>
+                <Text style={styles.helperText}>{option.description}</Text>
+              </View>
+              <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
+                {selected && <View style={styles.radioInner} />}
+              </View>
+            </Pressable>
+          );
+        })}
+
+        <Row label="Show my name on reports">
+          <Switch
+            value={settings.showNameOnReports}
+            onValueChange={(value) => updateSettings({ showNameOnReports: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          Off -- reports show as &quot;A Tracky&quot; instead of your real name, regardless of
+          your visibility above.
+        </Text>
       </Section>
 
       <Section title="Live alerts" visible={shouldShow("Live alerts")}>
@@ -2027,5 +2078,29 @@ const styles = StyleSheet.create({
   aboutMeta: {
     fontSize: 12,
     color: SETTINGS_TEXT_FAINT,
+  },
+  radioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.md,
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: SETTINGS_BORDER,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioOuterSelected: {
+    borderColor: colors.accent,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
   },
 });

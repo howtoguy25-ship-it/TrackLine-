@@ -5,6 +5,10 @@ import { colors, radius, shadow, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
   onPress: () => void;
+  // Real, explicit request (Ghost mode + visibility control) -- long-pressing this same button
+  // opens the Visibility sheet, same convention as a long-press on an iOS/Android home screen
+  // icon opening a quick-actions menu instead of a second button fighting for the same space.
+  onLongPress?: () => void;
   // Real unread count -- see MainMenuScreen/inbox.ts. Zero (no badge rendered) is a genuine
   // "nothing unread" state, not a placeholder; this never shows a number that wasn't actually
   // counted from real data.
@@ -14,10 +18,11 @@ interface Props {
 
 // Waze-style top-left square white rounded "Menu" button -- see MapScreen.tsx's own Phase 1
 // layout comment for where this sits relative to the Compass button directly under it.
-export function MenuButton({ onPress, unreadCount, style }: Props) {
+export function MenuButton({ onPress, onLongPress, unreadCount, style }: Props) {
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [styles.button, style, pressed && { opacity: pressedOpacity }]}
       accessibilityLabel={unreadCount > 0 ? `Menu, ${unreadCount} unread` : "Menu"}
     >

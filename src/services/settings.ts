@@ -107,7 +107,21 @@ export interface AppSettings {
   // units km, Australian English" -- see utils/navFormat.ts's own formatDistance for the exact
   // threshold rules in each unit.
   distanceUnit: "km" | "miles";
+  // Real, explicit request (Ghost mode + visibility control) -- whether this driver's presence
+  // can be shown to other drivers at all (see Part 3's presence system, not yet built): "ghost"
+  // never writes a presence doc, "friendsOnly" restricts it to accepted friends only once that
+  // system exists, "everyone" is the fully-visible, opt-in choice. Defaults to "ghost" for every
+  // install (new AND pre-existing, since a device that's never set this has never actually opted
+  // in to being shown either) per the explicit "default for new users: GHOST MODE -- opt-in to
+  // be visible" requirement -- see VisibilitySheet.tsx/SettingsScreen.tsx's own Privacy section.
+  visibility: VisibilityMode;
+  // Real, explicit request -- when a report (alert) is attributed to this driver's presence
+  // card, whether their real display name is shown instead of "A Tracky". Off by default --
+  // reporting itself never requires giving up anonymity.
+  showNameOnReports: boolean;
 }
+
+export type VisibilityMode = "everyone" | "friendsOnly" | "ghost";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // Empty on a fresh install -- MapScreen.tsx's first-launch effect seeds this with whichever
@@ -137,6 +151,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showCompass: true,
   spokenDirections: "normal",
   distanceUnit: "km",
+  visibility: "ghost",
+  showNameOnReports: false,
 };
 
 const STORAGE_KEY = "@trackline/settings";

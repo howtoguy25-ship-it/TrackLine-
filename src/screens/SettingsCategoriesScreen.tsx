@@ -16,6 +16,7 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 // place they already lived.
 const CATEGORY_ORDER: SettingsCategory[] = [
   "account",
+  "privacy",
   "mapDisplay",
   "navigationVoice",
   "alertsCommunity",

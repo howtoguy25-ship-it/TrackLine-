@@ -6,6 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import { Tracky } from "@/components/trackys/Tracky";
 import { TRACKY_MOODS, TRACKY_MOOD_ORDER, isMoodUnlocked } from "@/components/trackys/moods";
 import { useTrackyMood } from "@/hooks/useTrackyMood";
+import { useSettings } from "@/context/SettingsContext";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
 // Real, explicit request -- "Profile → 'Your mood': grid of all moods (locked ones show how to
@@ -16,9 +17,9 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 export function TrackyProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  // TODO(Part 2): pass the real Ghost Mode state through once Part 2's visibility settings
-  // land -- see useTrackyMood's own header comment.
-  const { displayMood, selected, drivingStreakDays, setMood, setAuto } = useTrackyMood();
+  const { settings } = useSettings();
+  const isGhostMode = settings.visibility === "ghost";
+  const { displayMood, selected, drivingStreakDays, setMood, setAuto } = useTrackyMood(isGhostMode);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
@@ -53,7 +54,7 @@ export function TrackyProfileScreen() {
             const mood = TRACKY_MOODS[key];
             const unlocked = isMoodUnlocked(mood, {
               drivingStreakDays,
-              isGhostMode: false,
+              isGhostMode,
               isBirthdayToday: displayMood === "birthday" && mood.key === "birthday",
             });
             const isSelected = selected === key;

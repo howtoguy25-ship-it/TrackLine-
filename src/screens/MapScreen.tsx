@@ -47,8 +47,12 @@ import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
 import { MapToolsSheet } from "@/screens/MapToolsSheet";
 import { SoundSheet } from "@/screens/SoundSheet";
+import { VisibilitySheet } from "@/screens/VisibilitySheet";
 import { MenuButton } from "@/components/MenuButton";
 import { CompassButton } from "@/components/CompassButton";
+import { GhostModeExplainerModal, hasSeenGhostModeExplainer, markGhostModeExplainerSeen } from "@/components/GhostModeExplainerModal";
+import { useAutoGhostMode, autoGhostOnArrival } from "@/hooks/useAutoGhostMode";
+import { Tracky } from "@/components/trackys/Tracky";
 import { SoundButton } from "@/components/SoundButton";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import { RouteOptionsCard } from "@/components/RouteOptionsCard";
@@ -307,6 +311,7 @@ export function MapScreen() {
   const navOptionsSheetRef = useRef<BottomSheet>(null);
   const toolsSheetRef = useRef<BottomSheet>(null);
   const soundSheetRef = useRef<BottomSheet>(null);
+  const visibilitySheetRef = useRef<BottomSheet>(null);
 
   const [route, setRoute] = useState<Route | null>(null);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -1559,6 +1564,40 @@ export function MapScreen() {
     regionSeededRef.current = true;
     updateSettings({ visibleRegions: [classifyAuRegion(currentLatLng.latitude, currentLatLng.longitude)] });
   }, [currentLatLng, settings.visibleRegions, updateSettings]);
+
+  // Real, explicit request -- "Default for new users: GHOST MODE ... first-launch explainer."
+  // settings.visibility already defaults to "ghost" (see services/settings.ts) for every
+  // install, so this is purely informational and shown once ever -- see
+  // GhostModeExplainerModal.tsx's own comment for the exact gating.
+  const [ghostExplainerVisible, setGhostExplainerVisible] = useState(false);
+  useEffect(() => {
+    hasSeenGhostModeExplainer().then((seen) => {
+      if (!seen) setGhostExplainerVisible(true);
+    });
+  }, []);
+  const dismissGhostExplainer = useCallback(() => {
+    setGhostExplainerVisible(false);
+    markGhostModeExplainerSeen();
+  }, []);
+
+  // Real, explicit request -- "Auto-ghost after >30min background or on arrival." The
+  // background half lives entirely in this hook (its own AppState listener); the arrival half
+  // is a direct call from exitNavigation below, the one real place a trip ends.
+  useAutoGhostMode();
+
+  // Kept fresh via refs (same convention as routeActiveRef above) rather than listed as
+  // exitNavigation's own deps -- that useCallback intentionally stays referentially stable
+  // (deps `[]`) since several other callbacks/effects below close over it, so reading
+  // settings.visibility/updateSettings directly off of closure would go stale the moment either
+  // changes after mount.
+  const visibilityRef = useRef(settings.visibility);
+  useEffect(() => {
+    visibilityRef.current = settings.visibility;
+  }, [settings.visibility]);
+  const updateSettingsRef = useRef(updateSettings);
+  useEffect(() => {
+    updateSettingsRef.current = updateSettings;
+  }, [updateSettings]);
 
   // Subscribe to alerts in every toggled-on region (Phase 3 + Phase 5), real Australian state/
   // territory selection instead of a distance radius. Fully off (and cleared) when the user has
@@ -3240,6 +3279,11 @@ export function MapScreen() {
         Sentry.logger.error("map: end live share failed", { error: String(err) });
       });
     }
+    // Real, explicit request -- "Auto-ghost ... on arrival." This is the one real place a trip
+    // ends (the manual Exit button today; any future automatic arrival detection would call
+    // this same function), so it's the real, single hook point for that trigger -- see
+    // useAutoGhostMode.ts's own comment.
+    autoGhostOnArrival(visibilityRef.current, updateSettingsRef.current);
   }, []);
 
   // Flow (per spec: select the type first, then drag to place, then Set/Save):
@@ -3900,6 +3944,15 @@ export function MapScreen() {
         {!route && currentLatLng && (
           <Marker coordinate={currentLatLng} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
             <PersonLocationDot />
+          </Marker>
+        )}
+        {/* Real, explicit request -- "Own marker shows translucent 'Spooky' Tracky outline when
+            hidden." A separate, small badge Marker next to the real position marker above
+            (rather than replacing it) -- CarNavArrow's own live heading rotation is safety-
+            relevant while driving and never something Ghost mode should take away. */}
+        {settings.visibility === "ghost" && currentLatLng && (
+          <Marker coordinate={currentLatLng} anchor={{ x: -0.1, y: 1.4 }} tracksViewChanges={false}>
+            <Tracky mood="spooky" size={28} animated={false} reactOnTap={false} translucent />
           </Marker>
         )}
         {/* Preview of whichever route profile is highlighted in the picker below, before
@@ -5023,6 +5076,7 @@ export function MapScreen() {
         <>
           <MenuButton
             onPress={() => navigation.navigate("MainMenu")}
+            onLongPress={() => visibilitySheetRef.current?.expand()}
             unreadCount={inboxUnreadCount}
             style={[styles.menuButtonPosition, { top: insets.top + spacing.md }]}
           />
@@ -5435,6 +5489,24 @@ export function MapScreen() {
         onClose={() => soundSheetRef.current?.close()}
         onSheetChange={(index) => setSoundSheetOpen(index >= 0)}
         onOpenVoiceSettings={() => navigation.navigate("VoicePicker")}
+      />
+
+      <VisibilitySheet
+        ref={visibilitySheetRef}
+        onClose={() => visibilitySheetRef.current?.close()}
+        onOpenPrivacySettings={() => {
+          visibilitySheetRef.current?.close();
+          navigation.navigate("Settings", { category: "privacy" });
+        }}
+      />
+
+      <GhostModeExplainerModal
+        visible={ghostExplainerVisible}
+        onStayHidden={dismissGhostExplainer}
+        onBecomeVisible={() => {
+          updateSettings({ visibility: "everyone" });
+          dismissGhostExplainer();
+        }}
       />
 
       <MapToolsSheet

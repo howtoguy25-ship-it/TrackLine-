@@ -31,7 +31,8 @@ export function MainMenuScreen() {
   const { user } = useAuth();
   const { settings } = useSettings();
   const isSignedIn = !!user && !user.isAnonymous;
-  const { displayMood } = useTrackyMood();
+  const isGhostMode = settings.visibility === "ghost";
+  const { displayMood } = useTrackyMood(isGhostMode);
   const firstName = (user?.displayName ?? "").split(" ")[0];
 
   const [unreadCount, setUnreadCount] = useState(0);
@@ -119,6 +120,25 @@ export function MainMenuScreen() {
             </Pressable>
           </View>
         </View>
+
+        {/* Real, explicit request -- "Pill on Menu header ... 'Visible to other drivers' <->
+            'Ghost mode'." Tapping it jumps straight to the full Privacy picker (same one the
+            Menu button's own long-press sheet offers) rather than duplicating a quick-toggle
+            here too. */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.visibilityPill,
+            isGhostMode && styles.visibilityPillGhost,
+            pressed && { opacity: pressedOpacity },
+          ]}
+          onPress={() => navigation.navigate("Settings", { category: "privacy" })}
+          accessibilityLabel={isGhostMode ? "Ghost mode. Tap to change" : "Visible to other drivers. Tap to change"}
+        >
+          <Ionicons name={isGhostMode ? "eye-off" : "eye"} size={14} color={isGhostMode ? colors.textMuted : colors.accent} />
+          <Text style={[styles.visibilityPillText, isGhostMode && styles.visibilityPillTextGhost]}>
+            {isGhostMode ? "Ghost mode" : "Visible to other drivers"}
+          </Text>
+        </Pressable>
 
         <Pressable
           style={({ pressed }) => [styles.planCard, pressed && { opacity: pressedOpacity }]}
@@ -283,6 +303,20 @@ const styles = StyleSheet.create({
   },
   mascotGreeting: { fontSize: 15, fontWeight: "800", color: colors.text },
   viewProfileLink: { fontSize: 12, fontWeight: "700", color: colors.accent, marginTop: 2 },
+  visibilityPill: {
+    flexDirection: "row",
+    alignSelf: "flex-start",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentSoft,
+    marginBottom: spacing.md,
+  },
+  visibilityPillGhost: { backgroundColor: colors.surfaceMuted },
+  visibilityPillText: { fontSize: 12, fontWeight: "700", color: colors.accent },
+  visibilityPillTextGhost: { color: colors.textMuted },
   planCard: {
     flexDirection: "row",
     alignItems: "center",
