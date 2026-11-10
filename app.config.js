@@ -27,7 +27,10 @@ module.exports = {
     // actually has the matching native code, so this bump is what stops this update from ever
     // being offered to an existing 1.1.0 install that has no expo-notifications module compiled
     // in at all -- that would be a guaranteed crash on load, not a real fix.
-    version: "1.2.0",
+    // Bumped again to 1.3.0 for the Waze-style redesign (Phases 1-5): new native modules
+    // (expo-contacts, expo-calendar) need a real new native build for the same runtimeVersion
+    // reason as the 1.2.0 bump above.
+    version: "1.3.0",
     // "default" (was "portrait") -- a portrait-only native Info.plist blocks ANY runtime
     // rotation regardless of JS calls, no matter what expo-screen-orientation does. The app
     // itself still only ever JS-locks to portrait everywhere except the AI Detection screen
