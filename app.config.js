@@ -332,6 +332,12 @@ module.exports = {
       // Waze-style redesign's Phase 3 voice picker persona voices -- genuinely optional, same
       // treatment as every other key here. See src/services/personaVoices.ts and NOTES.md.
       elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
+      // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
+      // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
+      // false (never fabricated) when this is unset, so auto-mood just skips that one signal.
+      // OpenWeatherMap's free-tier Current Weather API is the real, documented target this is
+      // written against.
+      openWeatherApiKey: process.env.OPENWEATHER_API_KEY,
       sentryDsn: process.env.SENTRY_DSN,
       eas: {
         // Not a secret -- EAS project IDs are meant to live directly in config, which is

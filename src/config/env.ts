@@ -60,4 +60,7 @@ export const env = {
   // bundled/cached, not live"). Genuinely optional, same treatment as every other key above --
   // src/services/personaVoices.ts is the real, honest check for whether these are usable yet.
   elevenLabsApiKey: extra.elevenLabsApiKey ?? "",
+  // Genuinely optional, same treatment as every other key above -- src/services/trackyMood.ts
+  // is the real, honest check for whether the "Rain at location" auto-mood trigger can run.
+  openWeatherApiKey: extra.openWeatherApiKey ?? "",
 };

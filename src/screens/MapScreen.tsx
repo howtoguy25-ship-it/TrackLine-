@@ -125,6 +125,7 @@ import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmTrafficData } from "@
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
 import { setNavigationActive } from "@/services/navState";
 import { startLiveActivity, updateLiveActivity, endLiveActivity, maneuverToSfSymbol } from "live-activity";
+import { recordDriveToday } from "@/services/trackyMood";
 import type { AlertDoc, AlertType } from "@/types/alert";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
@@ -2922,6 +2923,10 @@ export function MapScreen() {
       guidanceRef.current = createGuidanceState();
       setActiveStepIndex(0);
       setRoute(chosen);
+      // Real Tracky auto-mood driving-streak tracker -- the one real "a trip actually started
+      // today" signal (see trackyMood.ts's own header). Fire-and-forget: never blocks/affects
+      // the real navigation start below.
+      recordDriveToday().catch(() => {});
       setAcceptedSuggestionOriginalRoute(null);
       setDestinationLatLng(destination.location);
       // Real native Live Activity (see modules/liveActivity) -- starts the moment a trip
