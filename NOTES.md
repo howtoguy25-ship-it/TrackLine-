@@ -258,3 +258,32 @@ All five confirmed fixed via a real `./gradlew :map3d:compileDebugKotlin` → `B
   `expo-audio` `microphonePermission` strings used to claim microphone audio "is never recorded
   or stored" -- true for siren listening, but now genuinely false for this real recording
   feature. Both updated to accurately describe both real uses.
+
+## Phase 4 -- Main menu (full), Plan a Drive, Inbox
+
+- **Real, shipped this round**: the full main-menu panel (`MainMenuScreen.tsx`) -- a Tracky
+  mascot greeting, a "Plan a drive" card, a real upcoming-events section (`calendarEvents.ts`,
+  real `expo-calendar` read, permission-gated, only events with a location), a real Inbox row
+  with an unread badge, Invite a friend (native Share), and Help. A real `InboxScreen.tsx` (live
+  feed off the same `subscribeVisibleAlerts` the map's own alert layer uses, delete + undo via a
+  new `unhideAlertForUser`, an "Official" tag on police/emergency-vehicle rows). A real
+  `PlanADriveScreen.tsx` (destination search/saved/recent + departure-time presets + real/
+  predictive ETA via `directions.ts`'s own `useTraffic` now accepting a future Unix-seconds
+  departure time, a real Google Directions API capability, never a client-side guess). Real
+  Contacts integration in `WhereToSheet.tsx`'s "Drive to friends & family" row
+  (`contactAddresses.ts`), previously honestly deferred for lack of the dependency.
+- **Honest, deliberate scope limits, not oversights**:
+  - **Tracky mascot** is a real, simple, hand-authored SVG (plain shapes, a gentle Animated-API
+    bounce) per this file's own earlier-flagged limit on the brief's ~30-icon/Lottie-animation
+    ask -- not a production Lottie file or original character art.
+  - **Plan a Drive's departure time** is a real preset LIST (Leave now/15/30/60 min), not a
+    free-form date/time picker -- there's no date-picker native dependency in this project, and
+    a short preset list both matches "time list" literally and avoids adding one just for this
+    screen. Only the ETA preview differs per preset; **tapping Start always begins routing right
+    now** regardless of which preset was open -- this app has no scheduled/unattended-start
+    capability, and the UI never implies one.
+  - **Contacts** only ever reads each contact's FIRST saved address -- picking a specific one
+    among several (home vs. work) isn't built.
+  - **Inbox's own unread badge** is a local, per-device `AsyncStorage` counter (not synced
+    across devices) -- same real scope as this app's other local-only counters (e.g. the voice
+    consent-shown counter in `voice.ts`).

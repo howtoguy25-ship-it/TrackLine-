@@ -80,7 +80,11 @@ out along the way).
       and a real guided `RecordVoiceScreen` (6s auto-stop, SVG countdown ring, playback/re-
       record/delete, all 31 real brief phrases, local storage + Firebase Storage upload). Not
       yet wired into live navigation's own spoken-instruction engine — see NOTES.md
-- [ ] Phase 4 — main menu (full), plan a drive, inbox
+- [x] Phase 4 — main menu (full: Tracky mascot, Plan a drive card, real calendar-events row,
+      real Inbox row with unread badge, Invite a friend, Help), real Plan a Drive screen (real
+      destination picker + departure-time presets + real/predictive ETA), real Inbox screen
+      (delete + undo, official-alert tag), real Contacts "Drive to friends & family" -- see
+      NOTES.md's own Phase 4 entry
 - [ ] Phase 5 — settings reorg
 - [ ] Phase 6 — polish/QA/version bump
 
