@@ -20,6 +20,12 @@ export const NAV_CARD_THEME_LABELS: Record<NavCardThemeKey, string> = {
 
 export interface NavCardThemeColors {
   background: string;
+  // Real, explicit request -- Waze's own bottom trip bar (NavBottomBar.tsx) is a distinct grey,
+  // not the same near-black the top instruction card uses, even on the default theme. Optional
+  // and only set where a theme actually wants that split (currently just "dark"); every other
+  // theme falls back to `background` (see NavBottomBar.tsx's own usage), so this is purely
+  // additive -- no existing theme's look changes.
+  bottomBarBackground?: string;
   // Same background color at reduced opacity, used when the transparency toggle is on -- the
   // map/live camera behind the card stays visible through it. textShadowColor below is what
   // keeps text readable at this opacity, not the background alone.
@@ -53,6 +59,7 @@ export interface NavCardThemeColors {
 export const NAV_CARD_THEMES: Record<NavCardThemeKey, NavCardThemeColors> = {
   dark: {
     background: "#111827",
+    bottomBarBackground: "#2E3138",
     backgroundTransparent: "rgba(17,24,39,0.38)",
     text: "#FFFFFF",
     textSecondary: "#D1D5DB",

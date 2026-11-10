@@ -60,7 +60,7 @@ export function NavBottomBar({
 
   return (
     <View
-      style={[styles.bar, { backgroundColor: theme.background, bottom: insets.bottom + spacing.sm }]}
+      style={[styles.bar, { backgroundColor: theme.bottomBarBackground ?? theme.background, bottom: insets.bottom + spacing.sm }]}
       onLayout={onLayout}
     >
       {isFollowing ? (

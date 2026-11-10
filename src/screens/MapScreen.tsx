@@ -754,6 +754,12 @@ export function MapScreen() {
     [location]
   );
 
+  // Real, explicit request -- a Waze-style accuracy circle around the live position marker,
+  // straight off expo-location's own real reported horizontal accuracy (meters) for this fix,
+  // never a guessed/fixed radius. Null on a fix that genuinely didn't report one (handled by the
+  // render site below, which just skips drawing the circle rather than fabricating a number).
+  const currentAccuracyMeters = location?.coords.accuracy ?? null;
+
   // The real route origin -- a custom "From" place if one's been picked, otherwise the driver's
   // own live GPS fix (the only behavior before this existed). Only meaningful for the
   // pre-Start planning flow below (fetchRouteOptions/onSelectTravelMode) -- once a trip is
@@ -1469,6 +1475,21 @@ export function MapScreen() {
     userMovedMapRef.current = true;
     if (!route) setPannedAwayIdle(true);
   }, [followTilt, route]);
+
+  // Real, explicit request -- Waze's own "resume following automatically after a short while"
+  // behaviour: once a manual gesture has dropped the camera out of auto-follow DURING an active
+  // trip (followTilt false, route active -- the exact state NavBottomBar's own Re-centre view
+  // above already reflects), a real 10-second idle timer brings it back on its own rather than
+  // leaving the driver stuck off-follow until they tap Re-centre themselves. Re-armed every time
+  // this transitions from following to not-following again (a fresh manual pan after an earlier
+  // auto-recentre), and cleared outright the moment following resumes (manual tap or the earlier
+  // one firing) or the trip ends.
+  const AUTO_RECENTER_IDLE_MS = 10_000;
+  useEffect(() => {
+    if (!route || followTilt) return;
+    const timer = setTimeout(() => onRecenter(), AUTO_RECENTER_IDLE_MS);
+    return () => clearTimeout(timer);
+  }, [route, followTilt, onRecenter]);
 
   // First-launch default: the moment a real GPS fix comes in, if the driver hasn't toggled on
   // any region yet, seed visibleRegions with whichever real Australian state/territory their
@@ -3714,6 +3735,22 @@ export function MapScreen() {
               );
             })()}
           </>
+        )}
+        {/* Real, explicit request -- a Waze-style accuracy circle under the live position
+            marker, radius set to the real GPS horizontal accuracy value for this fix (see
+            currentAccuracyMeters above), teal to match the recolored marker it surrounds.
+            Skipped outright on a fix with no reported accuracy, or one so precise (<3m) the
+            circle would just be a sliver smaller than the marker itself and add visual noise
+            for no real information. */}
+        {currentLatLng && currentAccuracyMeters != null && currentAccuracyMeters >= 3 && (
+          <Circle
+            center={currentLatLng}
+            radius={currentAccuracyMeters}
+            strokeWidth={1}
+            strokeColor="rgba(20, 184, 166, 0.5)"
+            fillColor="rgba(20, 184, 166, 0.12)"
+            zIndex={0}
+          />
         )}
         {/* Live device-compass "flashlight" cone -- separate from the route arrow below and
             rotated by deviceHeading (magnetometer), not travel heading, so it visually shows

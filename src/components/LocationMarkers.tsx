@@ -3,7 +3,7 @@ import { View, StyleSheet } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { colors, shadow } from "@/theme/tokens";
+import { shadow } from "@/theme/tokens";
 import { MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { shadeColor } from "@/utils/color";
 
@@ -19,6 +19,11 @@ import { shadeColor } from "@/utils/color";
 // the same shape convention Google/Apple Maps' own live-navigation pucks use, not a plain
 // triangle, so it reads as a real directional arrow at a glance rather than an abstract shape.
 const ARROW_PATH = "M12 1.5 L21 21.5 L12 17 L3 21.5 Z";
+
+// Real, explicit request -- Waze's own live-position marker is teal, not this app's usual blue
+// brand accent. Scoped to just these two markers (not theme/tokens.ts's shared `colors.accent`)
+// since nothing else in the app should change color along with it.
+export const LIVE_MARKER_TEAL = "#14B8A6";
 
 /**
  * The live navigation puck -- rendered inside a Marker with flat + rotation={heading} by the
@@ -37,7 +42,7 @@ export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMark
   // highlight ellipse is the same "glossy pin" treatment real map-pin icon sets (Google Maps' own
   // coloured pins, for one) use for exactly this reason -- it reads as a deliberately designed,
   // dimensional badge instead of a flat coloured circle with an icon stamped on it.
-  const baseColor = iconSpec?.color ?? colors.accent;
+  const baseColor = iconSpec?.color ?? LIVE_MARKER_TEAL;
   const gradientColors = [shadeColor(baseColor, 0.28), baseColor, shadeColor(baseColor, -0.18)] as const;
   return (
     <View style={styles.navBadgeShadowWrap}>
@@ -54,7 +59,7 @@ export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMark
           <MaterialCommunityIcons name={iconSpec.name as any} size={20} color="#FFFFFF" />
         ) : (
           <Svg width={22} height={22} viewBox="0 0 24 24">
-            <Path d={ARROW_PATH} fill="#FFFFFF" stroke={colors.accent} strokeWidth={1} strokeLinejoin="round" />
+            <Path d={ARROW_PATH} fill="#FFFFFF" stroke={LIVE_MARKER_TEAL} strokeWidth={1} strokeLinejoin="round" />
           </Svg>
         )}
       </LinearGradient>
@@ -123,14 +128,14 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.accent,
+    backgroundColor: LIVE_MARKER_TEAL,
     opacity: 0.18,
   },
   personDot: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: colors.accent,
+    backgroundColor: LIVE_MARKER_TEAL,
     borderWidth: 3,
     borderColor: "#FFFFFF",
     ...shadow.medium,
