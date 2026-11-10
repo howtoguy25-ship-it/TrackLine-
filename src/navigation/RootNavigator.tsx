@@ -21,6 +21,7 @@ import { PlanADriveScreen } from "@/screens/PlanADriveScreen";
 import { HelpScreen } from "@/screens/HelpScreen";
 import { LicensesScreen } from "@/screens/LicensesScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
+import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
 import type { PlaceDetails } from "@/services/places";
 
 export type RevCheckParams = {
@@ -68,6 +69,9 @@ export type RootStackParamList = {
   Licenses: undefined;
   // Real Tracky mood grid ("View profile" from the main menu header). See TrackyProfileScreen.tsx.
   TrackyProfile: undefined;
+  // ADD-ON Part A -- the "Make your Tracky" customiser, reached from TrackyProfile. See
+  // TrackyCustomizerScreen.tsx.
+  TrackyCustomizer: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
@@ -164,6 +168,7 @@ export function RootNavigator() {
         <Stack.Screen name="Help" component={HelpScreen} />
         <Stack.Screen name="Licenses" component={LicensesScreen} />
         <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} />
+        <Stack.Screen name="TrackyCustomizer" component={TrackyCustomizerScreen} />
         <Stack.Screen
           name="VehicleHistory"
           component={VehicleHistoryScreen}

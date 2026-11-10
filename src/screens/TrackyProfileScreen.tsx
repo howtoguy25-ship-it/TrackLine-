@@ -3,9 +3,12 @@ import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Tracky } from "@/components/trackys/Tracky";
 import { TRACKY_MOODS, TRACKY_MOOD_ORDER, isMoodUnlocked } from "@/components/trackys/moods";
 import { useTrackyMood } from "@/hooks/useTrackyMood";
+import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
 import { useSettings } from "@/context/SettingsContext";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
@@ -16,10 +19,12 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 // real, complete scope.
 export function TrackyProfileScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { settings } = useSettings();
   const isGhostMode = settings.visibility === "ghost";
   const { displayMood, selected, drivingStreakDays, setMood, setAuto } = useTrackyMood(isGhostMode);
+  const appearance = useTrackyAppearance(isGhostMode);
+  const usingCustom = appearance.mode === "custom";
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
@@ -36,7 +41,24 @@ export function TrackyProfileScreen() {
       </View>
 
       <View style={styles.previewRow}>
-        <Tracky mood={displayMood} size={120} animated reactOnTap />
+        {usingCustom ? (
+          <Tracky customization={appearance.customization} size={120} animated reactOnTap />
+        ) : (
+          <Tracky mood={displayMood} size={120} animated reactOnTap />
+        )}
+        <Pressable
+          onPress={() => navigation.navigate("TrackyCustomizer")}
+          style={({ pressed }) => [styles.customizeButton, pressed && { opacity: pressedOpacity }]}
+          accessibilityLabel="Make your Tracky"
+        >
+          <Ionicons name="color-palette-outline" size={16} color="#FFFFFF" />
+          <Text style={styles.customizeButtonText}>Make your Tracky</Text>
+        </Pressable>
+        {usingCustom && (
+          <Text style={styles.customNotice}>
+            Showing your own design. Pick a mood below to switch back to moods.
+          </Text>
+        )}
       </View>
 
       <View style={styles.titleRow}>
@@ -57,12 +79,16 @@ export function TrackyProfileScreen() {
               isGhostMode,
               isBirthdayToday: displayMood === "birthday" && mood.key === "birthday",
             });
-            const isSelected = selected === key;
+            const isSelected = !usingCustom && selected === key;
             return (
               <Pressable
                 key={key}
                 style={({ pressed }) => [styles.tile, isSelected && styles.tileSelected, pressed && unlocked && { opacity: pressedOpacity }]}
-                onPress={() => unlocked && setMood(key)}
+                onPress={() => {
+                  if (!unlocked) return;
+                  setMood(key);
+                  if (usingCustom) appearance.setMode("mood");
+                }}
                 disabled={!unlocked}
                 accessibilityLabel={mood.label}
               >
@@ -109,6 +135,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   previewRow: { alignItems: "center", paddingVertical: spacing.lg },
+  customizeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  customizeButtonText: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
+  customNotice: { fontSize: 12, color: colors.textMuted, marginTop: spacing.sm, textAlign: "center" },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
   autoLink: { fontSize: 13, fontWeight: "700", color: colors.accent },

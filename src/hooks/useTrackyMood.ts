@@ -4,6 +4,7 @@ import { useLocation } from "@/context/LocationContext";
 import {
   getLocalMoodState,
   setLocalMoodState,
+  subscribeMoodState,
   pushMoodToProfile,
   pullMoodFromProfile,
   getUserBirthday,
@@ -23,6 +24,10 @@ export interface UseTrackyMoodResult {
   selected: TrackyMoodKey | "auto";
   loaded: boolean;
   drivingStreakDays: number;
+  // Real, explicit request (ADD-ON Part A) -- the customiser's own accessory/trail unlocks
+  // reuse these exact same real milestones, so they need the same inputs isMoodUnlocked's own
+  // ctx does. Already resolved internally for the auto-mood engine; just exposed here too.
+  isBirthdayToday: boolean;
   setMood: (mood: TrackyMoodKey) => void;
   setAuto: () => void;
 }
@@ -39,6 +44,7 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
   const [loaded, setLoaded] = useState(false);
   const [resolvedAuto, setResolvedAuto] = useState<TrackyMoodKey>("happy");
   const [drivingStreakDays, setDrivingStreakDays] = useState(0);
+  const [isBirthdayTodayState, setIsBirthdayTodayState] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +81,13 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
       const isRaining = location ? await isRainingAt(location.coords).catch(() => false) : false;
       if (cancelled) return;
 
+      const birthdayToday = isBirthdayToday(birthdayMonthDay);
+      setIsBirthdayTodayState(birthdayToday);
       setResolvedAuto(
         resolveAutoMood({
           drivingStreakDays: streakDays,
           isRaining,
-          isBirthdayToday: isBirthdayToday(birthdayMonthDay),
+          isBirthdayToday: birthdayToday,
           isGhostMode,
         })
       );
@@ -89,9 +97,10 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
     };
   }, [user?.uid, location?.coords.latitude, location?.coords.longitude, isGhostMode]);
 
+  useEffect(() => subscribeMoodState(setState), []);
+
   const persist = useCallback(
     (next: TrackyMoodState) => {
-      setState(next);
       setLocalMoodState(next).catch(() => {});
       if (user && !user.isAnonymous) pushMoodToProfile(user.uid, next).catch(() => {});
     },
@@ -106,6 +115,7 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
     selected: state.selected,
     loaded,
     drivingStreakDays,
+    isBirthdayToday: isBirthdayTodayState,
     setMood,
     setAuto,
   };

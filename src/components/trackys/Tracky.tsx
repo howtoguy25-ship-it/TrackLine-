@@ -7,11 +7,17 @@ import { TrackyBody } from "./TrackyBody";
 import { TrackyEyes, TrackyMouth } from "./parts";
 import { TrackyAccessory } from "./accessories";
 import { TRACKY_MOODS, type TrackyMoodKey } from "./moods";
+import type { TrackyCustomization } from "./customization";
 
 let instanceCounter = 0;
 
 export interface TrackyProps {
-  mood: TrackyMoodKey;
+  // Exactly one of these two determines how this Tracky actually looks. `mood` is every
+  // existing render site's own real auto/selected mood (unchanged). `customization` is the
+  // ADD-ON's own "Make your Tracky" design (customization.ts) -- when given, it takes over the
+  // visuals entirely (color/eyeStyle/mouthStyle/accessory) and `mood` is ignored.
+  mood?: TrackyMoodKey;
+  customization?: TrackyCustomization;
   size?: number;
   // Idle bob + blink loop. Default true for single-instance renders (menu header, profile,
   // cards); pass false for anything rendering many at once (map markers) to avoid dozens of
@@ -32,8 +38,8 @@ const AnimatedView = Animated.View;
  *  profile mood grid, map markers, empty states) goes through this component so there's a
  *  single source of truth for how a mood actually looks, never a second hand-copied version
  *  drifting out of sync. See TrackyBody.tsx's own header for the full originality note. */
-export function Tracky({ mood, size = 64, animated = true, reactOnTap = true, onPress, translucent = false }: TrackyProps) {
-  const def = TRACKY_MOODS[mood];
+export function Tracky({ mood, customization, size = 64, animated = true, reactOnTap = true, onPress, translucent = false }: TrackyProps) {
+  const def = customization ?? TRACKY_MOODS[mood ?? "happy"];
   const reduceMotion = useReduceMotion();
   const shouldAnimate = animated && !reduceMotion;
   const instanceId = useMemo(() => String(instanceCounter++), []);

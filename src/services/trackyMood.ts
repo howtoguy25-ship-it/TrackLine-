@@ -27,7 +27,20 @@ export async function getLocalMoodState(): Promise<TrackyMoodState> {
   }
 }
 
+// Every mounted useTrackyMood instance (menu header, profile screen, map) holds its own copy of
+// this state -- without this, picking a mood on the profile screen left the still-mounted menu
+// header behind it showing the old one until it happened to remount.
+const moodListeners = new Set<(state: TrackyMoodState) => void>();
+
+export function subscribeMoodState(listener: (state: TrackyMoodState) => void): () => void {
+  moodListeners.add(listener);
+  return () => {
+    moodListeners.delete(listener);
+  };
+}
+
 export async function setLocalMoodState(state: TrackyMoodState): Promise<void> {
+  moodListeners.forEach((listener) => listener(state));
   await AsyncStorage.setItem(MOOD_STATE_KEY, JSON.stringify(state));
 }
 

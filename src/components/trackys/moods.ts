@@ -232,19 +232,24 @@ export const TRACKY_MOOD_ORDER: TrackyMoodKey[] = [
   "birthday",
 ];
 
+export interface TrackyUnlockContext {
+  drivingStreakDays: number;
+  isGhostMode: boolean;
+  isBirthdayToday: boolean;
+}
+
 /** Real unlock check against the driver's own real stats -- never a guess. `isGhostMode` and
  *  `isBirthdayToday` are real, already-known booleans at every call site (settings/presence
  *  state, a real date compare), `drivingStreakDays` is the real streak this same feature's own
- *  tracker computes (see trackyAutoMood.ts). */
-export function isMoodUnlocked(
-  mood: TrackyMoodDef,
-  ctx: { drivingStreakDays: number; isGhostMode: boolean; isBirthdayToday: boolean }
-): boolean {
-  switch (mood.unlock.type) {
+ *  tracker computes (see trackyMood.ts). Generic over a bare `TrackyUnlock` (not just a mood's
+ *  own) so the "Make your Tracky" customiser's accessory/trail unlocks (customization.ts) can
+ *  reuse these exact same real milestones instead of inventing a second, parallel gate system. */
+export function isUnlocked(unlock: TrackyUnlock, ctx: TrackyUnlockContext): boolean {
+  switch (unlock.type) {
     case "always":
       return true;
     case "streak":
-      return ctx.drivingStreakDays >= mood.unlock.days;
+      return ctx.drivingStreakDays >= unlock.days;
     case "ghostOnly":
       return ctx.isGhostMode;
     case "birthdayOnly":
@@ -252,4 +257,8 @@ export function isMoodUnlocked(
     default:
       return false;
   }
+}
+
+export function isMoodUnlocked(mood: TrackyMoodDef, ctx: TrackyUnlockContext): boolean {
+  return isUnlocked(mood.unlock, ctx);
 }

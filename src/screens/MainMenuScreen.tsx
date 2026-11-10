@@ -9,7 +9,7 @@ import { useSettings } from "@/context/SettingsContext";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import { Tracky } from "@/components/trackys/Tracky";
-import { useTrackyMood } from "@/hooks/useTrackyMood";
+import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
 import { subscribeVisibleAlerts, getInboxLastViewedAt } from "@/services/alerts";
 import type { AlertDoc } from "@/types/alert";
 import {
@@ -32,7 +32,7 @@ export function MainMenuScreen() {
   const { settings } = useSettings();
   const isSignedIn = !!user && !user.isAnonymous;
   const isGhostMode = settings.visibility === "ghost";
-  const { displayMood } = useTrackyMood(isGhostMode);
+  const appearance = useTrackyAppearance(isGhostMode);
   const firstName = (user?.displayName ?? "").split(" ")[0];
 
   const [unreadCount, setUnreadCount] = useState(0);
@@ -111,7 +111,11 @@ export function MainMenuScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.mascotRow}>
-          <Tracky mood={displayMood} size={96} />
+          {appearance.mode === "custom" ? (
+            <Tracky customization={appearance.customization} size={96} />
+          ) : (
+            <Tracky mood={appearance.displayMood} size={96} />
+          )}
           <View style={styles.speechBubble}>
             <View style={styles.speechBubbleTail} />
             <Text style={styles.mascotGreeting}>{firstName ? `Hey ${firstName}!` : "Hey there!"}</Text>
