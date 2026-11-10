@@ -21,7 +21,7 @@
         <span>TrackLine</span>
       </div>
       <h1>Privacy Policy</h1>
-      <div class="updated">Effective August 18, 2026</div>
+      <div class="updated">Effective November 10, 2026</div>
 
       <p>
         TrackLine is a live navigation, driving-safety, and community hazard/emergency-vehicle
@@ -58,6 +58,47 @@
         — only the visible map area (a bounding box), never your personal coordinates, is sent to
         it. If you use the NSW FuelCheck fuel-price feature, your approximate location is sent to
         the NSW Government's own FuelCheck service to find nearby stations and prices.
+      </p>
+
+      <h3>Presence — showing you to other drivers</h3>
+      <p>
+        <strong>TrackLine starts every account in "Ghost mode" — invisible to other drivers —
+        and visibility is opt-in, not opt-out.</strong> Nothing below happens unless you
+        explicitly choose "Visible to everyone" or "Friends only" in the app's Menu or
+        Settings &gt; Privacy. You can always see every other visible driver and report alerts
+        while in Ghost mode; Ghost mode only controls whether <em>you</em> are shown to others.
+      </p>
+      <p>While you've chosen to be visible AND are actually driving (your speed is above 15
+        km/h), the app periodically (about once a minute) sends your position to our server,
+        which:</p>
+      <ul>
+        <li>Snaps it to the nearest real road, using the Mapbox Map Matching API, so what's
+          shown is "on this street," not your exact raw GPS fix.</li>
+        <li>Rounds that snapped position to a coarse ~150-metre grid before it's ever stored or
+          shown to anyone.</li>
+        <li>Withholds your position entirely whenever it would fall within about 500 metres of
+          your saved Home or Work address, or your current trip's starting point or
+          destination — those zones are never shown to other drivers, even while you're
+          otherwise visible.</li>
+        <li>Stores only that rounded, road-snapped position, your current direction of travel,
+          your chosen Tracky mood, and — only if you also turn on "Show my name on reports" in
+          Settings &gt; Privacy — your display name. We never store, and no other driver ever
+          sees, your raw GPS coordinates or any history of where you've been.</li>
+      </ul>
+      <p>
+        This stored position is temporary, not a profile: it's automatically deleted about 2
+        minutes after your last update, and immediately — not just eventually — the moment you
+        stop driving, turn on Ghost mode, or arrive at your destination. There is no record kept
+        of anywhere you've driven; each update fully replaces the last one rather than adding to
+        a history.
+      </p>
+      <p>
+        Other visible, currently-driving drivers near you are shown the same way on your own
+        map, unless you turn off "Show Trackys" in Settings &gt; Map layers — a separate control
+        that only affects what you see, not whether you're shown to others. Tapping another
+        driver's Tracky lets you send them a one-tap "Wave" (rate-limited and never identifies
+        you), or block or report them; a driver you block never sees your Tracky again, and we
+        never tell a blocked driver that they've been blocked.
       </p>
 
       <h3>Camera — AI Vehicle Detection</h3>
@@ -176,6 +217,13 @@
         phone) — never for anonymous/guest sessions — and is refreshed periodically while you use
         the app, not continuously tracked in the background.
       </p>
+      <p>
+        If, and only if, you've chosen to be visible (see "Presence" above), your rounded,
+        road-snapped position, heading, and mood — and your name, only if you've also turned on
+        "Show my name on reports" — are visible to other signed-in drivers who have "Show
+        Trackys" turned on. Ghost mode (the default) hides all of this from everyone; it's never
+        shown to anyone, including us, beyond the temporary ~2-minute record described above.
+      </p>
 
       <h2>Data Sharing</h2>
       <p>We do not sell, rent, or trade your personal information.</p>
@@ -197,6 +245,9 @@
       <ul>
         <li><strong>Firebase (Google)</strong> — authentication, the alerts database, and REV Check/fuel-price server functions.</li>
         <li><strong>Google Maps, Places, and Directions</strong> — the map, search, and routing.</li>
+        <li><strong>Mapbox (Map Matching API)</strong> — snaps a visible, driving account's
+          rounded position to the nearest road before it's shown to other drivers (see
+          "Presence" above); only used while you've opted in to being visible.</li>
         <li><strong>OpenStreetMap (Overpass API)</strong> — community-mapped traffic-light and speed-camera locations.</li>
         <li><strong>NSW Government FuelCheck</strong> — live fuel prices, when you use that feature.</li>
         <li><strong>BusinessAPI.com.au (PPSR Searches API)</strong> — vehicle history/spec data for REV Check.</li>
@@ -213,9 +264,12 @@
       </p>
       <p>
         Community alerts are automatically deleted 45 minutes to 24 hours after being reported,
-        depending on type. Saved REV Check/vehicle history entries and account sign-in info are
-        kept for as long as your account exists, or until you ask us to delete them. Anonymous
-        analytics and crash-diagnostic data may be retained for statistical purposes.
+        depending on type. Your presence (position, heading, mood, name if shared) is deleted
+        about 2 minutes after your last update, and immediately on arrival or turning on Ghost
+        mode — see "Presence" above; nothing from it is kept any longer than that. Saved REV
+        Check/vehicle history entries and account sign-in info are kept for as long as your
+        account exists, or until you ask us to delete them. Anonymous analytics and
+        crash-diagnostic data may be retained for statistical purposes.
       </p>
 
       <h2>Your Rights</h2>
@@ -226,6 +280,7 @@
         <li>Request deletion of your personal information</li>
         <li>Restrict or object to certain processing activities</li>
         <li>Withdraw permissions, including location, camera, or microphone access, through your device settings</li>
+        <li>Turn on Ghost mode at any time to immediately stop being shown to other drivers — see "Presence" above; this is on by default for every account</li>
       </ul>
       <p>
         You can use TrackLine without ever signing in. To exercise any of these rights, or to have
