@@ -112,7 +112,38 @@ out along the way).
       yet wired into a live camera
 - [x] Search sheet (Phase 3 of new doc) — same as old Phase 2, see above
 - [x] Voices (Phase 4 of new doc) — same as old Phase 3, see above
-- [ ] Menu/Plan a drive/Inbox/Live Traffic NSW (Phase 5 of new doc) — needs TfNSW secret for the
-      live-data half; menu/plan-a-drive UI itself is buildable now
-- [ ] Settings reorg (Phase 6 of new doc) — same as old Phase 5
-- [ ] Final QA — last
+- [x] Menu/Plan a drive/Inbox/Live Traffic NSW (Phase 5 of new doc) — real Menu panel, Plan a
+      Drive screen, Inbox screen, and contacts "Drive to friends & family" all shipped (old
+      Phase 4a-4e); Live Traffic NSW cameras shipped separately earlier — see NOTES.md
+- [x] Settings reorg (Phase 6 of new doc) — same as old Phase 5, `SettingsCategoriesScreen.tsx`
+- [x] Final QA (old Phase 6) — version bump, permission-string review, tsc/lint/doctor pass —
+      see NOTES.md's own Phase 6 entry
+
+## Tracky mood characters + Ghost mode + presence system + copyright audit
+
+Real, explicit new feature request (separate from the Waze-style redesign above): original
+"Tracky" mascot family with 18 moods, a default-Ghost-mode visibility/privacy system, a
+Mapbox-road-snapped presence system showing other visible+driving drivers on the map, and a
+whole-app copyright/trademark audit. See NOTES.md's own dedicated entry for the full breakdown
+— summary:
+
+- [x] Part 1 — Tracky SVG character system (18 original moods, idle bob/blink/tap animations,
+      Reduce Motion fallback, real auto-mood engine), placed in the menu header, a new "Your
+      mood" profile screen, and empty states
+- [x] Part 2 — Ghost mode + visibility control (default Ghost for every account, Settings >
+      Privacy, menu header pill, long-press Menu button sheet, first-launch explainer,
+      auto-ghost after >30min background or on arrival, translucent "Spooky" own-marker badge)
+- [x] Part 3 — presence system, server (Cloud Functions: `updatePresence`/`clearPresence`/
+      `sendWave`, Mapbox Map Matching road-snapping, Firestore rules) and client (map markers,
+      clustering, the presence card, Wave/Block/Report, "Show Trackys" toggle)
+- [x] Part 4 — copyright/trademark safety audit (`COPYRIGHT_AUDIT.md`) — one user-facing
+      competitor name-drop removed, one undocumented audio asset replaced with an original
+      synthesized tone, a new Settings > About > "Licences & attributions" screen, zero
+      GPL/AGPL dependencies found across all four package trees
+- [x] Real Firebase Emulator Suite tests (Firestore/Storage rules + the three new Cloud
+      Functions) — 31/31 passing, real pasted output in `TEST_RESULTS.md`
+- [x] `TEST_ON_PHONE.md` — the real two-account device test plan, since this environment has no
+      device to run it on itself
+- [ ] ADD-ON ("Make your Tracky" customizer + Waze-style smooth time-lapse movement on roads) —
+      explicitly deferred to a separate future pass per the user's own sequencing choice
+      ("Part 1-4 first, then the ADD-ON"), not started

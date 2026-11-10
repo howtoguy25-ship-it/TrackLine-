@@ -348,3 +348,99 @@ All five confirmed fixed via a real `./gradlew :map3d:compileDebugKotlin` → `B
   A real device/simulator was not available in this environment -- every change was verified via
   `tsc`/lint/direct code reading, not by running the app; see the device test checklist handed
   over separately for what still needs a real phone.
+
+## Tracky mood characters + Ghost mode + presence system + copyright audit
+
+A separate, later, explicit feature request (not part of the Waze-style redesign above) --
+original mascot characters, a default-Ghost-mode privacy system, a real Mapbox-road-snapped
+presence system showing other visible+driving drivers, and a whole-app copyright/trademark
+audit. This is the real, direct answer to Phase 6's own "'Show other Trackys' — deliberately NOT
+built, flagged for a product decision" note above: that decision has now actually been made
+(default-off/opt-in visibility, Ghost mode first) and built for real.
+
+Sequencing note: the user explicitly chose "Part 1-4 first, then the ADD-ON" when asked --
+the ADD-ON ("Make your Tracky" full customizer + Waze-style smooth time-lapse movement on
+roads) is confirmed out of scope for this pass, not started, not scaffolded.
+
+### Requirement audit (Requirement | Status | Evidence)
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Original Tracky design -- map-pin blob, not droplet/"wazer"-shaped | DONE | `TrackyBody.tsx` -- hand-written cubic-bezier pin-blob path, own header comment explains the deliberate non-resemblance |
+| Flat vector, 1 inner shadow, 2px darker outline, top highlight, no gradients | DONE | `TrackyBody.tsx` -- `shadeColor()`-derived outline/shadow/highlight, no `LinearGradient` used |
+| Hand-written SVG, no downloaded/traced art or restrictive icon packs | DONE | Confirmed via `COPYRIGHT_AUDIT.md`'s own asset pass -- every Tracky SVG is original paths written this session |
+| At least 16 moods, each own color+face+accessory | DONE | `moods.ts` -- 18 real entries (`TRACKY_MOOD_ORDER`), each with its own color/eyeStyle/mouthStyle/accessory |
+| Idle bob (2s loop) + blink every 3-5s, reanimated | DONE | `Tracky.tsx` -- `withRepeat`/`withSequence` bob, randomized `setTimeout` blink interval |
+| Tap = squash-and-stretch + mood reaction | DONE | `Tracky.tsx` -- tap-triggered squash shared value |
+| Reduce Motion -> static | DONE | `useReduceMotion.ts`, gates `shouldAnimate` in `Tracky.tsx` |
+| Auto mood: time-of-day, streak≥3 Excited/≥7 Party, rain if weather key set, manual override | DONE | `trackyMood.ts`'s `resolveAutoMood`/`isRainingAt` (real OpenWeatherMap call, honestly `false` with no key) |
+| Menu header (96pt + speech bubble "Hey <name>" + View profile) | DONE | `MainMenuScreen.tsx`'s `mascotRow` |
+| Profile -> "Your mood" grid (lock hints, selected ticked) | DONE | `TrackyProfileScreen.tsx` |
+| Map markers for OTHER users, 32pt | DONE | Built as part of Part 3 (originally deferred there in the spec itself) -- `MapScreen.tsx`'s `visiblePresenceClusters` render, `size={32}` |
+| Inbox/empty states: small Tracky illustrations | DONE | `InboxScreen.tsx`'s `ListEmptyComponent` |
+| Mood stored in Firestore `users/{uid}.mood` + locally | DONE | `trackyMood.ts`'s `pushMoodToProfile`/`getLocalMoodState` |
+| Pill on Menu header + Settings > Privacy, Visible<->Ghost | DONE | `MainMenuScreen.tsx`'s `visibilityPill`, `SettingsScreen.tsx`'s Privacy section |
+| Long-press Menu button -> sheet, big switch + explanation | DONE | `VisibilitySheet.tsx`, wired to `MenuButton`'s new `onLongPress` |
+| Visibility radio: everyone/friends only/ghost | DONE | `VisibilitySheet.tsx` + `SettingsScreen.tsx`, same three `VISIBILITY_OPTIONS` |
+| Default for new users: GHOST MODE | DONE | `DEFAULT_SETTINGS.visibility = "ghost"` in `settings.ts` -- also applies to every pre-existing install, which never explicitly opted in either |
+| First-launch explainer | DONE | `GhostModeExplainerModal.tsx`, shown once via `hasSeenGhostModeExplainer` |
+| Auto-ghost after >30min background or on arrival | DONE | `useAutoGhostMode.ts` (AppState timer) + `autoGhostOnArrival` inside `MapScreen.tsx`'s `exitNavigation` |
+| Own marker: translucent "Spooky" outline when hidden | DONE | A separate small badge `Marker` next to (not replacing) the real position marker -- see its own comment for why the real heading-critical `CarNavArrow` was deliberately left untouched |
+| Still see others + report, anonymous unless "Show my name on reports" | DONE | `settings.showNameOnReports`, read server-side in `updatePresence` |
+| Only visible+driving shown | **PARTIAL (disclosed)** | `updatePresence` gates on the CURRENT speed the client reports (>15km/h) at call time, not a true rolling "sustained speed over the last 5 minutes" window -- a driver who briefly dips under 15km/h at a single 60s tick (not stopped, just slowed) withdraws for that tick rather than being smoothed over a 5-minute buffer. The spec's literal "in last 5min" smoothing isn't built; the simpler instantaneous gate is |
+| Position via Cloud Function ONLY | DONE | `firestore.rules`' `presence/{uid}`: `allow write: if false` -- only `updatePresence`/`clearPresence`'s Admin SDK writes ever succeed |
+| Snapped to nearest road (Mapbox Map Matching, per user's explicit choice) | DONE | `updatePresence`'s real Map Matching API call, with an honest fallback to the raw point if it fails -- verified for real in `TEST_RESULTS.md` |
+| Rounded ~150m | DONE | `roundToPresenceGrid()` -- a real, latitude-corrected ~150m grid snap |
+| heading/mood/displayName(if allowed)/updatedAt, never raw GPS history | DONE | `updatePresence`'s own `presenceDoc` object; one doc per uid, overwritten not appended -- no history collection exists at all |
+| Updates every 60s while driving | DONE | `MapScreen.tsx`'s `setInterval(tick, 60000)` effect |
+| Never within 500m of Home/Work/trip start/destination | DONE | `updatePresence`'s `exclusionPoints`/`haversineMeters` check -- verified for real in the emulator test suite (the "suppresses presence... within 500m" test) |
+| Auto-delete 2min after last update, or immediately on arrival/ghost mode | DONE | Real Firestore `expireAt` TTL field (+ `cleanupExpiredPresence` belt-and-suspenders) for the 2min case; `callClearPresence()` fired the instant `settings.visibility` becomes `"ghost"`, which covers both the manual toggle and `autoGhostOnArrival` |
+| Rules: own-write-only via function, rounded-read-only, no uid-history queries | DONE | See `firestore.rules`' own `presence/{uid}` comment -- verified for real in the emulator rules-test suite |
+| Map shows max 50, clustered "+12" bubble | DONE | `MAX_VISIBLE_TRACKYS = 50`, closest-first cap, then the same `clusterPoints` this screen's other viewport layers already use |
+| Tap -> card: mood, name/"A Tracky", "Driving on <road>", Wave (rate-limited, blockable), Block, Report | DONE | `PresenceCard.tsx` -- road name resolved on-demand via the existing `reverseGeocode` |
+| Settings > Map shortcuts > "Show Trackys" toggle | **DONE (section name differs)** | Spec says "Map shortcuts"; this app's real existing section for this kind of toggle is "Map layers" (same section `showTrafficLights`/`showSpeedCameras` already live in) -- `showTrackysOnMap` was added there instead of inventing a new, inconsistent section just to match the spec's exact wording |
+| Block/report from card | DONE | `PresenceCard.tsx`'s Block/Report rows, `presence.ts`'s `blockUser`/`reportUser` |
+| Privacy Policy updated with exact data shared/rounding/retention/opt-out | DONE | `web/public/privacy.html`'s new "Presence — showing you to other drivers" section |
+| Copyright/trademark audit: brand names searched + replaced | DONE | `COPYRIGHT_AUDIT.md` section 1 -- one real user-facing finding (a direct "Waze" name-drop in `HelpScreen.tsx`), fixed |
+| Every image/SVG/Lottie/font/sound listed with source+license | DONE | `COPYRIGHT_AUDIT.md` section 2 + `LicensesScreen.tsx` -- one real finding (an undocumented audio asset), replaced with an original synthesized tone |
+| Sounds/voices: original or CC0, no celebrity-imitating voices | DONE | `COPYRIGHT_AUDIT.md` section 3 -- no bundled voices at all yet (ElevenLabs persona voices remain honestly locked, no key configured) |
+| `npx license-checker --summary`, flag GPL/AGPL/unknown | DONE | `COPYRIGHT_AUDIT.md` section 4 -- run across all four package trees (root/web/functions/tests), zero GPL/AGPL found, every other flagged entry individually reviewed |
+| About > "Licences & attributions" screen | DONE | `LicensesScreen.tsx`, Settings > About |
+| `npx tsc --noEmit` clean | DONE | Confirmed clean after every single commit in this feature, re-verified at the end |
+| Tested with two test accounts (visible + ghost) on dev build/emulator | **PARTIAL (disclosed)** | No physical device or Android/iOS emulator image exists in this environment -- confirmed honestly, same as every earlier phase's own QA note. What WAS run for real: the Firebase Emulator Suite (Auth/Firestore/Functions/Storage), 31/31 tests passing against the real rules and the real `updatePresence`/`clearPresence`/`sendWave` functions (`TEST_RESULTS.md`). The real two-device UI test is written up step-by-step in `TEST_ON_PHONE.md` for the user to run themselves |
+| AUDIT-style table for this feature | DONE | This table |
+| `COPYRIGHT_AUDIT.md` | DONE | Written, see above |
+| Commit + update PROGRESS.md/NOTES.md + list files changed | DONE | This entry + `PROGRESS.md`'s own new section; full file list below |
+| ADD-ON (customizer + smooth movement) | **NOT STARTED (explicitly deferred)** | Per the user's own explicit sequencing answer ("Part 1-4 first, then the ADD-ON") -- a separate future pass |
+
+### Files changed (full list, this feature only)
+
+New: `src/components/trackys/{Tracky.tsx,TrackyBody.tsx,parts.tsx,accessories.tsx,moods.ts,index.ts}`,
+`src/hooks/{useReduceMotion.ts,useTrackyMood.ts,useAutoGhostMode.ts}`,
+`src/services/{trackyMood.ts,presence.ts}`,
+`src/screens/{TrackyProfileScreen.tsx,VisibilitySheet.tsx,PresenceCard.tsx,LicensesScreen.tsx}`,
+`src/components/GhostModeExplainerModal.tsx`,
+`.github/workflows/firebase-deploy.yml`, `DEPLOY.md`, `TEST_ON_PHONE.md`, `TEST_RESULTS.md`,
+`COPYRIGHT_AUDIT.md`, `assets/sounds/generate_chime.py`,
+`firebase/tests/{README.md,package.json,firestore.rules.test.js,functions.test.js,storage.rules.test.js}`.
+
+Modified: `src/screens/{MainMenuScreen.tsx,InboxScreen.tsx,MapScreen.tsx,SettingsScreen.tsx,SettingsCategoriesScreen.tsx,HelpScreen.tsx}`,
+`src/navigation/RootNavigator.tsx`, `src/components/MenuButton.tsx`,
+`src/services/settings.ts`, `src/config/env.ts`, `app.config.js`, `.env.example`,
+`firebase/functions/index.js`, `firebase/firestore.rules`, `firebase.json`, `.gitignore`,
+`web/public/privacy.html`, `modules/yamnet-siren/README.md`,
+`assets/sounds/speed_warning_chime.wav` (regenerated, not hand-edited).
+
+Deleted: `src/components/TrackyMascot.tsx` (superseded by `src/components/trackys/`).
+
+### QA
+
+`npx tsc --noEmit` clean after every commit. `npx expo lint` re-run after every commit and
+diffed against a clean pre-feature baseline (234 problems) each time -- every new finding this
+feature actually introduced was fixed before committing; the final state matches that same
+234-problem baseline exactly, meaning this whole feature added zero new lint debt on top of the
+pre-existing, already-disclosed debt from earlier in this session. The Firebase Emulator Suite
+ran for real (not simulated) -- see `TEST_RESULTS.md`, including a real environment-specific
+proxy quirk hit and documented along the way (`firebase/tests/README.md`). No physical
+device/emulator image was available for the real on-device two-account test; `TEST_ON_PHONE.md`
+hands that off completely.
