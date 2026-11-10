@@ -122,7 +122,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showSpeedCameras: true,
   showLiveCameras: false,
   osmLayerRadiusKm: 5,
-  mapTheme: "normal",
+  // Real, confirmed audit fix -- the brief's own Phase 1 spec explicitly asks for a "default
+  // Waze-like light vector style." "normal" (the old default) is a dark forest-green theme,
+  // not light -- see mapStyle.ts's own `light` theme (background #eef1f6) for the real one.
+  mapTheme: "light",
   roadThickness: "normal",
   nightModePreference: "auto",
   navCardTheme: "dark",

@@ -903,6 +903,13 @@ export function MapScreen() {
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, mapReady]);
 
+  // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
+  // that only appears once the driver has actually panned away, mirroring Waze's own behaviour.
+  // userMovedMapRef above is a ref (doesn't trigger a re-render), so this parallel useState tracks
+  // the same "has the user panned away" condition for the purpose of conditionally rendering this
+  // button -- kept in sync with every place that ref is set/cleared below.
+  const [pannedAwayIdle, setPannedAwayIdle] = useState(false);
+
   // Real, confirmed FIFTH cause of "opens showing San Francisco" (see the four causes already
   // fixed above): this screen doesn't unmount on a normal backgrounding/foregrounding cycle
   // (only a genuine force-quit resets userMovedMapRef back to its fresh false default via a real
@@ -924,6 +931,7 @@ export function MapScreen() {
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active" && !routeActiveRef.current) {
         userMovedMapRef.current = false;
+        setPannedAwayIdle(false);
       }
     });
     return () => subscription.remove();
@@ -953,6 +961,7 @@ export function MapScreen() {
     const driftKm = distanceKm(currentLatLng.latitude, currentLatLng.longitude, lastCenter.latitude, lastCenter.longitude);
     if (driftKm < SANITY_RECENTER_DISTANCE_KM) return;
     userMovedMapRef.current = false;
+    setPannedAwayIdle(false);
     lastRegionCenterRef.current = currentLatLng;
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route]);
@@ -1386,6 +1395,7 @@ export function MapScreen() {
     // is the real fix -- matches Apple/Google Maps' own "recenter" button convention, where
     // tapping it always resumes live tracking, not just a single jump.
     userMovedMapRef.current = false;
+    setPannedAwayIdle(false);
     mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
   }, [currentLatLng, route, followTilt, toggleFollowTilt]);
 
@@ -1457,7 +1467,8 @@ export function MapScreen() {
     // See the map-recenter effect below (userMovedMapRef) -- a manual drag stops the app from
     // fighting the driver's own pan, same "manual gesture wins" convention as followTilt above.
     userMovedMapRef.current = true;
-  }, [followTilt]);
+    if (!route) setPannedAwayIdle(true);
+  }, [followTilt, route]);
 
   // First-launch default: the moment a real GPS fix comes in, if the driver hasn't toggled on
   // any region yet, seed visibleRegions with whichever real Australian state/territory their
@@ -1962,11 +1973,26 @@ export function MapScreen() {
     return cats;
   }, [fuelStationsSheetOpen, restaurantsSheetOpen, hotelsSheetOpen]);
 
+  // Real, explicit request -- tapping a category chip (Fuel/Food/Hotels) should zoom the map out
+  // to actually show the real nearby results it just fetched, Waze/Google-style, rather than
+  // leaving the camera wherever it happened to already be and only showing pins that fall inside
+  // that unrelated view by luck. fitCategories lists which of this call's categories just opened
+  // for the first time (see the initial-load effect below, the only caller that passes it) --
+  // the ambient pan-triggered re-fetch (onRegionChangeComplete) always omits it, so panning
+  // around with a sheet already open never yanks the camera back out from under the driver.
   const fetchViewportPlaces = useCallback(
-    (bounds: { sw: LatLng; ne: LatLng }, categories: ViewportPinCategory[]) => {
+    (bounds: { sw: LatLng; ne: LatLng }, categories: ViewportPinCategory[], fitCategories: ViewportPinCategory[] = []) => {
       for (const category of categories) {
         fetchOsmPlacesInBounds(bounds, category)
-          .then(placesCategorySetters[category])
+          .then((places) => {
+            placesCategorySetters[category](places);
+            if (fitCategories.includes(category) && places.length > 0) {
+              mapRef.current?.fitToCoordinates(places.map((p) => p.location), {
+                edgePadding: { top: 100, right: 60, bottom: 380, left: 60 },
+                animated: true,
+              });
+            }
+          })
           .catch((err) => console.warn(`[map] ${category} viewport fetch failed`, err));
       }
     },
@@ -2001,7 +2027,7 @@ export function MapScreen() {
       sw: { latitude: currentLatLng.latitude - delta / 2, longitude: currentLatLng.longitude - delta / 2 },
       ne: { latitude: currentLatLng.latitude + delta / 2, longitude: currentLatLng.longitude + delta / 2 },
     };
-    fetchViewportPlaces(bounds, toFetch);
+    fetchViewportPlaces(bounds, toFetch, toFetch);
   }, [currentLatLng, openPlaceCategories]);
 
   const onRegionChangeComplete = useCallback(
@@ -3617,7 +3643,10 @@ export function MapScreen() {
             <Polyline
               coordinates={remainingPolyline}
               strokeWidth={8}
-              strokeColor="#1D4ED8"
+              // Real, confirmed audit fix -- the brief's own Phase 2 spec literally specifies a
+              // purple active-route line (#6A1FD1 in the "full redesign" doc's own exact
+              // colour); this used to be the app's blue accent instead.
+              strokeColor="#6A1FD1"
               lineCap="round"
               lineJoin="round"
               tappable
@@ -4801,6 +4830,27 @@ export function MapScreen() {
         </Pressable>
       )}
 
+      {/* Real, explicit request -- Waze-style bottom-left Re-centre FAB on the idle home map,
+          appearing ONLY once the driver has actually panned/dragged the map away from their own
+          live position (pannedAwayIdle, kept in sync with userMovedMapRef's own set/reset sites
+          above). Distinct from the always-visible right-side fabSecondary recenter button
+          (onLocateButtonPress, which also toggles camera height once following) -- this one is
+          purely the "you've drifted, tap to snap back" affordance and disappears again the
+          moment onRecenter runs. */}
+      {!route && pannedAwayIdle && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.recenterFabLeft,
+            { bottom: insets.bottom + 24 },
+            pressed && { opacity: pressedOpacity },
+          ]}
+          onPress={onRecenter}
+          accessibilityLabel="Re-centre on my location"
+        >
+          <Ionicons name="navigate" size={22} color="#FFFFFF" />
+        </Pressable>
+      )}
+
       {/* Waze-style top-left Menu + Compass column, and the mid-right Sound button -- only on
           the plain home map (same gating as the Report/Tools/Recenter stack above), never
           during navigation, which has its own dedicated nav UI. */}
@@ -5920,6 +5970,17 @@ const styles = StyleSheet.create({
   reportFabPlus: {
     position: "absolute",
     marginTop: 10,
+  },
+  recenterFabLeft: {
+    position: "absolute",
+    left: spacing.xl,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.medium,
   },
   menuButtonPosition: {
     position: "absolute",

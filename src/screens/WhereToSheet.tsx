@@ -11,7 +11,7 @@ import {
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { ThreeSnapBottomSheet, type ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
 import {
   searchPlaces,
@@ -30,7 +30,6 @@ import {
   pushSavedPlacesToProfile,
   pullSavedPlacesFromProfile,
   type SavedPlaces,
-  type SavedPlace,
   type SavedPlaceSlot,
 } from "@/services/savedPlaces";
 import { useAuth } from "@/context/AuthContext";
@@ -463,7 +462,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
             style={styles.listFlex}
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
             ListEmptyComponent={
-              <Text style={styles.emptyText}>No saved places yet -- tap "New" above to add one.</Text>
+              <Text style={styles.emptyText}>No saved places yet -- tap &quot;New&quot; above to add one.</Text>
             }
             renderItem={({ item }) => (
               <View style={styles.row}>

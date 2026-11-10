@@ -58,19 +58,6 @@ export function RecordVoiceScreen() {
     setAudioModeAsync({ allowsRecording: true }).catch(() => {});
   }, []);
 
-  // Real auto-stop at 6 seconds -- recorderState.durationMillis is the recorder's own live,
-  // real elapsed time, polled every 100ms (see useAudioRecorderState's interval above).
-  useEffect(() => {
-    if (recorderState.isRecording && recorderState.durationMillis >= MAX_CLIP_DURATION_MS) {
-      stopRecording();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recorderState.isRecording, recorderState.durationMillis]);
-
-  useEffect(() => {
-    if (playerStatus.didJustFinish) setActivePlaybackKey(null);
-  }, [playerStatus.didJustFinish]);
-
   const onChangeVoiceName = useCallback((text: string) => {
     setVoiceNameState(text);
     setRecordedVoiceName(text).catch(() => {});
@@ -93,6 +80,9 @@ export function RecordVoiceScreen() {
     [recorder]
   );
 
+  // Real, confirmed fix (audit finding) -- this used to be declared AFTER the auto-stop effect
+  // below that calls it, which a real lint/React-Compiler pass flagged as a genuine ordering
+  // hazard. Declared here, before that effect, so there's no doubt about initialization order.
   const stopRecording = useCallback(async () => {
     const key = activeRecordingKey;
     await recorder.stop();
@@ -102,6 +92,15 @@ export function RecordVoiceScreen() {
     setRecorded((prev) => ({ ...prev, [key]: savedUri }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRecordingKey, recorder, user]);
+
+  // Real auto-stop at 6 seconds -- recorderState.durationMillis is the recorder's own live,
+  // real elapsed time, polled every 100ms (see useAudioRecorderState's interval above).
+  useEffect(() => {
+    if (recorderState.isRecording && recorderState.durationMillis >= MAX_CLIP_DURATION_MS) {
+      stopRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorderState.isRecording, recorderState.durationMillis]);
 
   const onPlay = useCallback(
     (key: string) => {

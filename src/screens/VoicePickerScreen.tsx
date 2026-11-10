@@ -212,7 +212,7 @@ export function VoicePickerScreen() {
           renderSectionFooter={({ section }) =>
             section.title === "My recorded voices" && section.data.length === 0 ? (
               <Text style={styles.emptySectionText}>
-                No recorded voices yet. Tap "Record your own" above to guide yourself through a
+                No recorded voices yet. Tap &quot;Record your own&quot; above to guide yourself through a
                 real, on-device recording for every turn-by-turn phrase.
               </Text>
             ) : null
