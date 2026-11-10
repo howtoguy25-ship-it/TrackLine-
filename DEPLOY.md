@@ -49,8 +49,40 @@ it afterward.
 6. Delete the downloaded `.json` file from your device once it's saved as the secret — you
    don't need to keep a second copy lying around.
 
-That's it — no other secret or variable is needed. The workflow reads the Firebase project ID
-directly out of the service account key itself at run time, so there's nothing else to add.
+That's it for the GitHub Action itself — no other GitHub secret or variable is needed, the
+workflow reads the Firebase project ID directly out of the service account key at run time.
+
+### 4. One-time Firebase setup for the presence feature (Tracky/Ghost mode, Part 3)
+
+Two things below are **not** part of the GitHub Action above and can't be, since neither is a
+file this repo deploys — they're account-level settings you set once, directly, from a computer
+with the Firebase CLI logged in (`npx firebase-tools login`, then run the commands below from
+this repo's root). Skip both and the presence feature's Cloud Function will still deploy fine
+through the Action, it'll just error at call time until you've done this once.
+
+**a. The Mapbox server token** (`updatePresence`'s own Map Matching API calls):
+
+```
+npx firebase-tools functions:secrets:set MAPBOX_SERVER_TOKEN --project <your-project-id>
+```
+
+When it prompts for the value, paste a real Mapbox access token (the same value you used for
+`MAPBOX_PUBLIC_TOKEN` works fine — Map Matching only needs a normal public-scope token; this is
+a *separate* secret because EAS/Expo build-time env vars never reach the Cloud Functions
+runtime, not because the token itself needs to be different).
+
+**b. The Firestore TTL policy on `presence.expireAt`** (so Firestore itself, not just the
+`cleanupExpiredPresence` scheduled function, auto-deletes a stale presence doc):
+
+```
+gcloud firestore fields ttl-policies create expireAt \
+  --collection-group=presence \
+  --project=<your-project-id>
+```
+
+This needs the `gcloud` CLI logged in (`gcloud auth login`) with the same Google account that
+has access to the Firebase project. You only ever need to run this once per project — it's a
+standing policy, not something that re-runs on every deploy.
 
 ## Running a deploy
 
@@ -74,5 +106,6 @@ directly out of the service account key itself at run time, so there's nothing e
 - **Firestore rules** (`firebase/firestore.rules`).
 - **Storage rules** (`firebase/storage.rules`).
 
-It does **not** deploy Hosting (the web app) or Firestore indexes — those aren't part of this
-workflow; ask if you want them added too.
+It does **not** deploy Hosting (the web app), Firestore indexes, Cloud Functions *secrets*
+(`MAPBOX_SERVER_TOKEN`), or the Firestore TTL policy on `presence.expireAt` — those aren't part
+of this workflow; the last two are one-time setup steps, see step 4 above.

@@ -1,6 +1,7 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestore");
 const Stripe = require("stripe");
@@ -565,4 +566,228 @@ exports.broadcastNotification = onCall(async (request) => {
     sentCount: sent,
     failedCount: failed,
   };
+});
+
+// =====================================================================
+// Presence system (Tracky mood characters + Ghost mode, Part 3) -- real, explicit request: show
+// other visible+driving users on the map via a `presence/{uid}` doc written ONLY through this
+// server, snapped to the road network via a real third-party map-matching call (the user's own
+// explicit choice: Mapbox Map Matching API, not Google Roads), rounded to a coarse ~150m grid,
+// and never containing raw GPS history -- this collection holds exactly one doc per user (the
+// user's own CURRENT state, overwritten every call), never an append-only log, which is what
+// actually makes "no uid-history queries" true: there's no history collection to query in the
+// first place. See firestore.rules' own `match /presence/{uid}` block for the client-facing
+// read/write rules this pairs with.
+//
+// This secret holds a real Mapbox access token (Map Matching works with a normal public-scope
+// token -- it does NOT need to be the app's own client-side MAPBOX_PUBLIC_TOKEN, since EAS
+// build-time secrets never reach this separate Cloud Functions runtime). Set once with
+// `firebase functions:secrets:set MAPBOX_SERVER_TOKEN` -- see DEPLOY.md's own step for this.
+const MAPBOX_SERVER_TOKEN = defineSecret("MAPBOX_SERVER_TOKEN");
+
+// Same real haversine formula as src/services/places.ts's own haversineMeters -- duplicated
+// (not imported) since this is a separate Node package/runtime from the mobile app's src/, same
+// reasoning as ADMIN_EMAILS' own duplication comment above.
+function haversineMeters(aLat, aLng, bLat, bLng) {
+  const R = 6371000;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const lat1 = (aLat * Math.PI) / 180;
+  const lat2 = (bLat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Real, explicit request -- "rounded ~150m." Snaps to the nearest point on a ~150m x 150m grid,
+// anisotropically correcting the longitude step by latitude (a degree of longitude is shorter
+// than a degree of latitude away from the equator) so the real-world cell stays roughly square
+// everywhere Australian drivers actually are, not just near the equator.
+const PRESENCE_GRID_METERS = 150;
+const METERS_PER_DEGREE_LAT = 111320;
+function roundToPresenceGrid(lat, lng) {
+  const gridLatDeg = PRESENCE_GRID_METERS / METERS_PER_DEGREE_LAT;
+  const gridLngDeg = PRESENCE_GRID_METERS / (METERS_PER_DEGREE_LAT * Math.cos((lat * Math.PI) / 180));
+  return {
+    lat: Math.round(lat / gridLatDeg) * gridLatDeg,
+    lng: Math.round(lng / gridLngDeg) * gridLngDeg,
+  };
+}
+
+// Real, explicit request -- "only visible+driving... speed>15km/h in last 5min."
+const PRESENCE_MIN_SPEED_KMH = 15;
+// "Never shown within 500m of Home/Work/trip start/destination."
+const PRESENCE_EXCLUSION_RADIUS_METERS = 500;
+// "Auto-deletes 2min after last update" -- both a real Firestore TTL field (see DEPLOY.md's own
+// one-time `gcloud firestore fields ttl-policies create` step -- TTL policies aren't something
+// firestore.rules/firebase.json can declare) AND the belt-and-suspenders cleanupExpiredPresence
+// scheduled function below, same double-coverage convention as cleanupExpiredAlerts already
+// uses for the `alerts` collection.
+const PRESENCE_TTL_MS = 2 * 60 * 1000;
+
+// Keep in sync with src/components/trackys/moods.ts's own TRACKY_MOOD_ORDER -- duplicated for
+// the same cross-runtime reason as ADMIN_EMAILS above. Anything outside this whitelist is
+// replaced with "happy" rather than rejecting the whole presence write over a cosmetic field.
+const VALID_MOOD_KEYS = new Set([
+  "happy", "chill", "excited", "sleepy", "hungry", "party", "focused", "lovestruck", "grumpy",
+  "cool", "nerd", "spooky", "sporty", "musical", "rainy", "sunny", "aussieArvo", "birthday",
+]);
+
+async function deletePresenceDoc(db, uid) {
+  await db.doc(`presence/${uid}`).delete().catch(() => {});
+}
+
+// Real, explicit request -- "Position written to Firestore presence/{uid} via Cloud Function
+// ONLY." The client (see Part 3's own client-side work) calls this roughly every 60s while
+// driving and visible, passing a short recent GPS trace (oldest first, current fix last) rather
+// than a single point, because Mapbox's Map Matching API matches a TRACE against the road
+// network, not an isolated coordinate -- this is the real, correct way to use that API for
+// road-snapping, not a single-point "nearest road" lookup (which Map Matching doesn't offer).
+exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const uid = request.auth.uid;
+  const db = getFirestore();
+  const data = request.data || {};
+
+  const trace = Array.isArray(data.trace) ? data.trace : [];
+  const validTrace = trace.filter(
+    (p) =>
+      p &&
+      typeof p.lat === "number" &&
+      typeof p.lng === "number" &&
+      p.lat >= -90 &&
+      p.lat <= 90 &&
+      p.lng >= -180 &&
+      p.lng <= 180
+  );
+  if (validTrace.length < 2) {
+    throw new HttpsError("invalid-argument", "trace needs at least 2 real GPS points.");
+  }
+
+  const speedKmh = typeof data.speedKmh === "number" ? data.speedKmh : 0;
+  if (speedKmh < PRESENCE_MIN_SPEED_KMH) {
+    // Not currently "driving" per the spec's own threshold -- withdraw any stale presence
+    // rather than leave a last-known position showing a stopped/parked driver as still live.
+    await deletePresenceDoc(db, uid);
+    return { outcome: "not_driving" };
+  }
+
+  const current = validTrace[validTrace.length - 1];
+  let snapped = { lat: current.lat, lng: current.lng };
+  try {
+    const coordinates = validTrace.map((p) => `${p.lng},${p.lat}`).join(";");
+    const url =
+      `https://api.mapbox.com/matching/v5/mapbox/driving/${coordinates}` +
+      `?geometries=geojson&overview=full&access_token=${MAPBOX_SERVER_TOKEN.value()}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    const matchedCoords = json?.matchings?.[0]?.geometry?.coordinates;
+    if (Array.isArray(matchedCoords) && matchedCoords.length > 0) {
+      const last = matchedCoords[matchedCoords.length - 1];
+      if (Array.isArray(last) && typeof last[0] === "number" && typeof last[1] === "number") {
+        snapped = { lat: last[1], lng: last[0] };
+      }
+    }
+  } catch (err) {
+    // A failed map-match is never a reason to refuse presence outright -- fall back to the raw
+    // (still-rounded-below) current fix, same honest-degradation convention as this app's other
+    // optional third-party calls (e.g. isRainingAt in trackyMood.ts).
+    console.warn("updatePresence: Mapbox Map Matching request failed", err);
+  }
+
+  // Real, explicit request -- "never within 500m of Home/Work/trip start/destination." Home/
+  // Work only exist server-side for a real signed-in (non-anonymous) account that has actually
+  // synced them (see savedPlaces.ts's own pushSavedPlacesToProfile) -- an anonymous session's
+  // Home/Work live only in that device's own AsyncStorage, which this server has no access to,
+  // so this exclusion is honestly best-effort for anonymous users, not something faked here.
+  const exclusionPoints = [];
+  if (!request.auth.token.firebase?.sign_in_provider || request.auth.token.firebase.sign_in_provider !== "anonymous") {
+    const userSnap = await db.doc(`users/${uid}`).get();
+    const savedPlaces = userSnap.exists ? userSnap.data()?.savedPlaces : null;
+    if (savedPlaces?.home?.location) exclusionPoints.push(savedPlaces.home.location);
+    if (savedPlaces?.work?.location) exclusionPoints.push(savedPlaces.work.location);
+  }
+  const tripContext = data.tripContext || {};
+  if (typeof tripContext.sourceLat === "number" && typeof tripContext.sourceLng === "number") {
+    exclusionPoints.push({ latitude: tripContext.sourceLat, longitude: tripContext.sourceLng });
+  }
+  if (typeof tripContext.destLat === "number" && typeof tripContext.destLng === "number") {
+    exclusionPoints.push({ latitude: tripContext.destLat, longitude: tripContext.destLng });
+  }
+  const nearSensitiveLocation = exclusionPoints.some(
+    (p) =>
+      typeof p.latitude === "number" &&
+      typeof p.longitude === "number" &&
+      haversineMeters(snapped.lat, snapped.lng, p.latitude, p.longitude) < PRESENCE_EXCLUSION_RADIUS_METERS
+  );
+  if (nearSensitiveLocation) {
+    await deletePresenceDoc(db, uid);
+    return { outcome: "suppressed_near_sensitive_location" };
+  }
+
+  const rounded = roundToPresenceGrid(snapped.lat, snapped.lng);
+  const moodKey = VALID_MOOD_KEYS.has(data.mood) ? data.mood : "happy";
+  const headingDeg = typeof data.headingDeg === "number" && Number.isFinite(data.headingDeg) ? data.headingDeg : null;
+
+  const presenceDoc = {
+    lat: rounded.lat,
+    lng: rounded.lng,
+    headingDeg,
+    mood: moodKey,
+    updatedAt: FieldValue.serverTimestamp(),
+    // Real Firestore TTL field -- see this section's own header comment for why the policy
+    // itself is a one-time manual gcloud step rather than something deployed from this repo.
+    expireAt: Timestamp.fromMillis(Date.now() + PRESENCE_TTL_MS),
+  };
+  // Only ever included when the driver has explicitly opted in (settings.showNameOnReports) AND
+  // a real verified name actually exists on their Firebase Auth token -- omitted entirely
+  // (never an empty string) otherwise, so a client reading this doc can't tell the difference
+  // between "chose to stay anonymous" and "has no name on file".
+  if (data.allowName === true && typeof request.auth.token.name === "string" && request.auth.token.name.trim()) {
+    presenceDoc.displayName = request.auth.token.name.trim();
+  }
+
+  await db.doc(`presence/${uid}`).set(presenceDoc);
+  return { outcome: "success" };
+});
+
+// Real, explicit request -- the other half of "auto-deletes... immediately on arrival/ghost
+// mode." Called directly by the client the instant a trip ends or Ghost mode turns on, rather
+// than waiting out the TTL/scheduled cleanup below for what's really an immediate, deliberate
+// withdrawal.
+exports.clearPresence = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  await deletePresenceDoc(getFirestore(), request.auth.uid);
+  return { outcome: "success" };
+});
+
+/**
+ * Belt-and-suspenders cleanup alongside the real Firestore TTL policy on presence.expireAt --
+ * same batched-delete pattern as cleanupExpiredAlerts above. A driver who force-quits mid-trip
+ * (no clearPresence call, no further updatePresence calls either) is exactly the real case this
+ * covers: TTL alone would still catch it, but not necessarily within the spec's own "2min"
+ * window depending on Firestore's TTL background-sweep latency.
+ */
+exports.cleanupExpiredPresence = onSchedule("every 2 minutes", async () => {
+  const db = getFirestore();
+  const now = Timestamp.now();
+
+  let deletedTotal = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const snapshot = await db.collection("presence").where("expireAt", "<=", now).limit(BATCH_SIZE).get();
+    if (snapshot.empty) break;
+
+    const batch = db.batch();
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+
+    deletedTotal += snapshot.size;
+    if (snapshot.size < BATCH_SIZE) break;
+  }
+
+  console.log(`cleanupExpiredPresence: removed ${deletedTotal} expired presence doc(s)`);
 });
