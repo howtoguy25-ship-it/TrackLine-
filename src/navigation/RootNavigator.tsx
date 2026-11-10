@@ -2,7 +2,8 @@ import React, { useRef } from "react";
 import { NavigationContainer, type NavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MapScreen } from "@/screens/MapScreen";
-import { SettingsScreen } from "@/screens/SettingsScreen";
+import { SettingsScreen, SETTINGS_CATEGORY_LABELS, type SettingsCategory } from "@/screens/SettingsScreen";
+import { SettingsCategoriesScreen } from "@/screens/SettingsCategoriesScreen";
 import { MainMenuScreen } from "@/screens/MainMenuScreen";
 import { InboxScreen } from "@/screens/InboxScreen";
 import { SignInScreen } from "@/screens/SignInScreen";
@@ -44,7 +45,13 @@ export type RootStackParamList = {
   // once via useRoute/useFocusEffect and clears them (setParams) so returning to Map normally
   // afterward never re-triggers the same hand-off.
   Map: { planADriveDestination?: PlaceDetails } | undefined;
-  Settings: undefined;
+  // Real, explicit request (Waze-style redesign Phase 5) -- optional category filters this
+  // screen down to just one group's real sections (see SettingsScreen.tsx's own shouldShow).
+  // Omitted (every pre-existing navigate("Settings") call site) shows every section, unchanged.
+  Settings: { category?: SettingsCategory } | undefined;
+  // The new top-level Waze-style category list this screen is reached from. See
+  // SettingsCategoriesScreen.tsx.
+  SettingsCategories: undefined;
   MainMenu: undefined;
   // Real feed of currently-visible community alerts, Phase 4's own main-menu Inbox row. See
   // InboxScreen.tsx.
@@ -129,8 +136,12 @@ export function RootNavigator() {
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
-          options={{ headerShown: true, title: "Settings" }}
+          options={({ route }) => ({
+            headerShown: true,
+            title: route.params?.category ? SETTINGS_CATEGORY_LABELS[route.params.category] : "Settings",
+          })}
         />
+        <Stack.Screen name="SettingsCategories" component={SettingsCategoriesScreen} />
         <Stack.Screen
           name="SignIn"
           component={SignInScreen}

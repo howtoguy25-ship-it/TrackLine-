@@ -631,7 +631,7 @@ export function RevCheckScreen() {
       )}
 
       <Pressable
-        onPress={() => navigation.navigate("Settings")}
+        onPress={() => navigation.navigate("Settings", { category: "vehicleAI" })}
         style={({ pressed }) => [styles.settingsLink, pressed && { opacity: pressedOpacity }]}
       >
         <MaterialCommunityIcons name="key-variant" size={16} color={colors.accent} />

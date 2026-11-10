@@ -129,7 +129,7 @@ export function MainMenuScreen() {
         <MenuRow
           icon="person-circle-outline"
           label={isSignedIn ? `Signed in as ${user!.email ?? user!.displayName ?? "you"}` : "Sign in"}
-          onPress={() => navigation.navigate(isSignedIn ? "Settings" : "SignIn")}
+          onPress={() => (isSignedIn ? navigation.navigate("Settings", { category: "account" }) : navigation.navigate("SignIn"))}
         />
         <MenuRow
           icon="mail-outline"
@@ -137,7 +137,7 @@ export function MainMenuScreen() {
           badge={unreadCount > 0 ? unreadCount : undefined}
           onPress={() => navigation.navigate("Inbox")}
         />
-        <MenuRow icon="settings-outline" label="Settings" onPress={() => navigation.navigate("Settings")} />
+        <MenuRow icon="settings-outline" label="Settings" onPress={() => navigation.navigate("SettingsCategories")} />
         <MenuRow icon="person-add-outline" label="Invite a friend" onPress={onInviteFriend} />
         <MenuRow icon="help-circle-outline" label="Help" onPress={() => navigation.navigate("Help")} />
 

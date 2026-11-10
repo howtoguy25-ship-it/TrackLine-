@@ -10,7 +10,7 @@ import { GoogleSignin, statusCodes } from "@react-native-google-signin/google-si
 import { usePowerState } from "expo-battery";
 import { useIAP } from "react-native-iap";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
@@ -45,6 +45,43 @@ import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIc
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+
+// Real, explicit request (Waze-style redesign Phase 5) -- group this screen's 15 real sections
+// into Waze-style top-level categories instead of one long flat scroll. Deliberately NOT a
+// logic extraction into separate screen files (this screen's state/handlers are all genuinely
+// shared and interdependent -- splitting them into independent files would risk duplicating or
+// dropping a handler somewhere in a ~2000-line screen); instead this same screen renders either
+// every section (no category param -- every existing `navigation.navigate("Settings")` call
+// site keeps working exactly as before) or only the sections belonging to one category, via the
+// new SettingsCategoriesScreen's own list of category cards.
+export type SettingsCategory = "account" | "mapDisplay" | "navigationVoice" | "alertsCommunity" | "vehicleAI" | "developer";
+
+export const SETTINGS_CATEGORY_LABELS: Record<SettingsCategory, string> = {
+  account: "Account",
+  mapDisplay: "Map display",
+  navigationVoice: "Navigation & voice",
+  alertsCommunity: "Alerts & community",
+  vehicleAI: "Vehicle & AI tools",
+  developer: "Developer",
+};
+
+export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, keyof typeof Ionicons.glyphMap> = {
+  account: "person-circle-outline",
+  mapDisplay: "map-outline",
+  navigationVoice: "navigate-outline",
+  alertsCommunity: "notifications-outline",
+  vehicleAI: "car-sport-outline",
+  developer: "code-slash-outline",
+};
+
+const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
+  account: ["Account", "Purchases"],
+  mapDisplay: ["Map appearance", "Navigation card colors", "Your map marker", "Map layers"],
+  navigationVoice: ["Voice guidance", "Speed", "Public transit"],
+  alertsCommunity: ["Live alerts", "Alert icons"],
+  vehicleAI: ["AI Vehicle Detection", "Vehicle REV Checks", "EV Radar (siren detection)"],
+  developer: ["GPS replay (dev only)"],
+};
 
 function sensitivityLabel(value: number): string {
   if (value <= 0.4) return "Low";
@@ -592,6 +629,12 @@ export function SettingsScreen() {
   const batteryLow = batteryPercent !== null && batteryPercent < 50;
   const [batteryInfoOpen, setBatteryInfoOpen] = useState(false);
 
+  // No category param (every pre-existing navigate("Settings") call site) shows every section,
+  // exactly the previous behavior -- only SettingsCategoriesScreen's own category cards pass one.
+  const settingsRoute = useRoute<RouteProp<RootStackParamList, "Settings">>();
+  const category = settingsRoute.params?.category;
+  const shouldShow = (sectionTitle: string) => !category || CATEGORY_SECTIONS[category].includes(sectionTitle);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Real, confirmed request -- black background for this screen. App.tsx's global
@@ -600,7 +643,7 @@ export function SettingsScreen() {
           this screen's own instance overrides it back to light icons while focused, and
           expo-status-bar automatically restores the app-wide one the moment this unmounts. */}
       <StatusBar style="light" />
-      <Section title="Account">
+      <Section title="Account" visible={shouldShow("Account")}>
         {isSignedIn ? (
           <>
             <Text style={styles.rowLabel}>Signed in as {user.email ?? user.displayName ?? "you"}</Text>
@@ -639,7 +682,7 @@ export function SettingsScreen() {
         )}
       </Section>
 
-      <Section title="Purchases">
+      <Section title="Purchases" visible={shouldShow("Purchases")}>
         <Text style={styles.helperText}>
           Restore any in-app purchase tied to your App Store / Google account on this device.
         </Text>
@@ -658,7 +701,7 @@ export function SettingsScreen() {
         {restoreMessage && <Text style={styles.helperText}>{restoreMessage}</Text>}
       </Section>
 
-      <Section title="Live alerts">
+      <Section title="Live alerts" visible={shouldShow("Live alerts")}>
         <Row label="Receive alerts">
           <Switch
             value={settings.alertsEnabled}
@@ -775,7 +818,7 @@ export function SettingsScreen() {
         )}
       </Section>
 
-      <Section title="Map appearance">
+      <Section title="Map appearance" visible={shouldShow("Map appearance")}>
         <Text style={styles.helperText}>
           Recolors the whole map -- land, water, roads, and highways together -- not just a
           tint. Every theme keeps road labels high-contrast against the road surface so street
@@ -883,7 +926,7 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Navigation card colors">
+      <Section title="Navigation card colors" visible={shouldShow("Navigation card colors")}>
         <Text style={styles.helperText}>
           Colors for the turn-by-turn card during navigation only -- the map itself keeps
           whichever theme is picked above.
@@ -917,7 +960,7 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Your map marker">
+      <Section title="Your map marker" visible={shouldShow("Your map marker")}>
         <Text style={styles.helperText}>
           How you appear on the map -- the arrow rotates live to show your direction of travel no
           matter which one you pick.
@@ -966,7 +1009,7 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Alert icons">
+      <Section title="Alert icons" visible={shouldShow("Alert icons")}>
         <Text style={styles.helperText}>
           How police/crash/hazard/camera/traffic-light alerts look on the map -- every pack uses
           real, distinct icons and colors, previewed below with a sample of the alert types.
@@ -1001,7 +1044,7 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Map layers">
+      <Section title="Map layers" visible={shouldShow("Map layers")}>
         <Row
           label="Traffic lights"
           icon={<OsmLayerIcon marker={TRAFFIC_LIGHT_MARKER} enabled={settings.showTrafficLights} />}
@@ -1062,7 +1105,7 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Speed">
+      <Section title="Speed" visible={shouldShow("Speed")}>
         <Row
           label="Speed warning chime"
           icon={<Ionicons name="volume-high" size={18} color={settings.speedWarningChimeEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
@@ -1085,7 +1128,7 @@ export function SettingsScreen() {
           Paste in your own real GPX export (any phone GPS logger, Strava, Google Maps Timeline,
           etc) -- see src/dev/gpsReplay.ts's own header for why nothing is bundled here. */}
       {__DEV__ && (
-        <Section title="GPS replay (dev only)">
+        <Section title="GPS replay (dev only)" visible={shouldShow("GPS replay (dev only)")}>
           <Text style={styles.helperText}>
             Paste a real recorded drive's GPX XML below, then Start -- every screen that reads
             live location (this map, the speedometer, off-route rerouting) will play it back as
@@ -1128,7 +1171,7 @@ export function SettingsScreen() {
         </Section>
       )}
 
-      <Section title="AI Vehicle Detection">
+      <Section title="AI Vehicle Detection" visible={shouldShow("AI Vehicle Detection")}>
         <Pressable
           onPress={() => setBatteryInfoOpen(true)}
           style={({ pressed }) => [
@@ -1189,7 +1232,7 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Vehicle REV Checks">
+      <Section title="Vehicle REV Checks" visible={shouldShow("Vehicle REV Checks")}>
         <Text style={styles.helperText}>
           Look up a vehicle's 5-year registration &amp; odometer history and stolen/written-off/
           money-owing status -- Australia only. Vehicles the AI detector fully identifies (a
@@ -1435,7 +1478,7 @@ export function SettingsScreen() {
         </Pressable>
       </Modal>
 
-      <Section title="Public transit">
+      <Section title="Public transit" visible={shouldShow("Public transit")}>
         <View style={styles.warningBox}>
           <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.warning} />
           <Text style={styles.warningText}>
@@ -1450,7 +1493,7 @@ export function SettingsScreen() {
         </Text>
       </Section>
 
-      <Section title="EV Radar (siren detection)">
+      <Section title="EV Radar (siren detection)" visible={shouldShow("EV Radar (siren detection)")}>
         <Row label="Auto-share detections">
           <Switch
             value={settings.autoShareDetections}
@@ -1486,7 +1529,7 @@ export function SettingsScreen() {
         </Row>
       </Section>
 
-      <Section title="Voice guidance">
+      <Section title="Voice guidance" visible={shouldShow("Voice guidance")}>
         <Row label="Voice guidance on by default">
           <Switch
             value={settings.defaultVoiceEnabled}
@@ -1537,7 +1580,16 @@ export function SettingsScreen() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  visible = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  visible?: boolean;
+}) {
+  if (!visible) return null;
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>

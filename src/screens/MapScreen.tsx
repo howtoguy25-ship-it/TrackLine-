@@ -5444,7 +5444,7 @@ export function MapScreen() {
         onFindParking={onFindParking}
         onOpenSettings={() => {
           toolsSheetRef.current?.close();
-          navigation.navigate("Settings");
+          navigation.navigate("SettingsCategories");
         }}
         onSheetChange={(index) => setToolsSheetOpen(index >= 0)}
       />
