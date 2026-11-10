@@ -90,6 +90,23 @@
   something a style JSON file alone can produce. Tracked as a real asset-creation task, not yet
   done.
 
+- **BLOCKED (explicit, user-confirmed decision): switching the live home/navigation map from
+  `react-native-maps` to `@rnmapbox/maps` is deferred.** Real scope measured directly (not
+  estimated): `MapScreen.tsx` is 6,000+ lines, entirely built on react-native-maps' own API --
+  20 `<Marker>`, 8 `<Polyline>`, 21 `animateCamera` calls, 14 `onRegionChangeComplete` handlers,
+  `PROVIDER_GOOGLE` -- touching chase-cam navigation, 3D buildings, the traffic layer, alert
+  placement, viewport marker clustering, and route fit-bounds, all currently working in
+  production. `@rnmapbox/maps` has a structurally different API for every one of those (camera
+  control via a `Camera` ref instead of `animateCamera`, `ShapeSource`/`LineLayer` instead of
+  `<Polyline>`, `PointAnnotation` instead of `<Marker>`, `onMapIdle`/`onCameraChanged` instead of
+  `onRegionChangeComplete`) -- this is a full rewrite of the single largest file in the app, not
+  a config swap, and isn't verifiable without a real device/simulator, which isn't available in
+  this environment. See `MAPBOX_PLAN.md` for the real per-feature port plan, effort estimate,
+  and risk breakdown this decision is based on. `react-native-maps`/Google Maps remains the live
+  engine; every Waze-style visual feature above (map theme, markers, nav card, bottom bar,
+  turn callouts, auto-zoom) was built directly on it instead of waiting on this switch, since
+  none of it actually depends on which map engine is underneath.
+
 Per the Waze-style redesign build rules: this file lists anything that can't be done
 for real on a given platform or with currently-available data, with an honest in-app
 message shown in its place instead of a fake/placeholder result. Updated as each

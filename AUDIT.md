@@ -119,6 +119,19 @@ but it is only referenced from:
 **Mapbox has not been wired into the live map at all.** This is consistent with what I've told
 you throughout — Mapbox is confirmed *buildable* (real EAS logs), not yet *used*.
 
+**Status: BLOCKED (explicit, user-confirmed decision, not a stall).** Measured scope: 6,042
+lines in `MapScreen.tsx`, 100% react-native-maps-API-shaped (20 `<Marker>`, 8 `<Polyline>`, 21
+`animateCamera` calls, 14 `onRegionChangeComplete`, `PROVIDER_GOOGLE`), touching chase-cam nav,
+3D buildings, traffic layer, alert placement, clustering, and route fit-bounds — all currently
+working in production. `@rnmapbox/maps` has a structurally different API for every one of those.
+This is a full rewrite of the app's single largest file, not a config swap, and can't be
+verified without a real device, which isn't available in this environment. Decision (made with
+the user): keep `react-native-maps` as the live engine, build every Waze-style visual feature
+directly on it (none of them actually depend on the map engine underneath), and revisit Mapbox
+later as its own dedicated branch with device testing alongside it. See `MAPBOX_PLAN.md` for the
+real per-feature port plan, effort estimate, and risk breakdown, and `NOTES.md`'s own matching
+entry.
+
 ---
 
 ## 3. Existing features — confirmed not touched by Phase 1–3
