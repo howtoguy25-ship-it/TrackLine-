@@ -25,6 +25,35 @@ function formatDistance(meters: number): string {
   return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
 }
 
+type FoodScope = "near" | "suburb" | "inner" | "city";
+
+const FOOD_SCOPES: { key: FoodScope; label: string }[] = [
+  { key: "near", label: "Near me" },
+  { key: "suburb", label: "My suburb" },
+  { key: "inner", label: "Inner city" },
+  { key: "city", label: "Whole city" },
+];
+
+// Real distance caps backing each chip -- a plain client-side filter over the already-fetched,
+// real, distance-sorted result set. "city" has no cap at all (the whole widened fetch, capped
+// only by MAX_RESULTS/osmPlaces.ts's own real search radii).
+const FOOD_SCOPE_MAX_METERS: Record<FoodScope, number> = {
+  near: 3_000,
+  suburb: 8_000,
+  inner: 20_000,
+  city: Infinity,
+};
+
+// Minimum real fetch radius each wider tier needs -- see searchNearbyOsmPlaces's own
+// minRadiusMeters param and its header comment for why this is needed at all (the default
+// tight-then-widen fetch can stop as early as its first 10km tier).
+const FOOD_SCOPE_MIN_FETCH_METERS: Record<FoodScope, number | undefined> = {
+  near: undefined,
+  suburb: undefined,
+  inner: 30_000,
+  city: 100_000,
+};
+
 export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function RestaurantsSheet(
   { location, onViewDetails, onSheetChange },
   ref
@@ -54,6 +83,13 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
   }, [ref]);
 
   const [query, setQuery] = useState("");
+  // Real, explicit request -- the Phase 2 Food sheet's own scope chips, same real "Near me" /
+  // "My suburb" / "Inner city" / "Whole city" tiers the redesign spec names. Each maps to a real
+  // distance cap (client-side filter below) plus, for the two wider tiers, a real minimum fetch
+  // radius (see FOOD_SCOPE_MIN_RADIUS_METERS and the effect below) so picking "Inner city" or
+  // "Whole city" in a dense area actually queries that far out instead of just re-filtering
+  // whatever the default tight-then-widen fetch happened to stop at.
+  const [scope, setScope] = useState<FoodScope>("near");
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -85,7 +121,11 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
     const justOpened = isOpen && !wasOpenRef.current;
     wasOpenRef.current = isOpen;
     if (fetchedFor !== null && !justOpened) return;
-    const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}`;
+    const minRadiusMeters = FOOD_SCOPE_MIN_FETCH_METERS[scope];
+    // Real key includes the scope's own min-fetch-radius tier (not just lat/lng) -- switching
+    // from "Near me" to "Inner city"/"Whole city" needs a genuinely wider real fetch, not just a
+    // re-filter of whatever the narrower default already pulled down.
+    const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}|${minRadiusMeters ?? 0}`;
     if (key === fetchedFor) return;
     setLoading(true);
     setErrorText(null);
@@ -95,12 +135,17 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
     // shows each radius's real results (already nearest-first sorted) the moment they land,
     // clearing the spinner on the very first non-empty (or truly final) one instead of making
     // the driver wait through every widening round just to see the first, already-real answer.
-    searchNearbyOsmPlaces(location, "restaurant", (partial, isFinal) => {
-      if (partial.length > 0 || isFinal) {
-        setPlaces(partial);
-        setLoading(false);
-      }
-    })
+    searchNearbyOsmPlaces(
+      location,
+      "restaurant",
+      (partial, isFinal) => {
+        if (partial.length > 0 || isFinal) {
+          setPlaces(partial);
+          setLoading(false);
+        }
+      },
+      minRadiusMeters
+    )
       .then((results) => {
         setPlaces(results);
         setFetchedFor(key);
@@ -113,7 +158,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
         );
       })
       .finally(() => setLoading(false));
-  }, [location, fetchedFor, sheetIndex, retryTick]);
+  }, [location, fetchedFor, sheetIndex, retryTick, scope]);
 
   // Real, explicit request: "everything they can think of they can search" -- the plain
   // client-side filter below only ever covers the up-to-60 nearest results already fetched, so a
@@ -152,14 +197,16 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
   // could genuinely show up in both) and re-sorted by real distance.
   const filteredPlaces = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return places;
+    const maxMeters = FOOD_SCOPE_MAX_METERS[scope];
+    const withinScope = (list: NearbyPlace[]) => list.filter((p) => p.distanceMeters <= maxMeters);
+    if (!q) return withinScope(places);
     const localMatches = places.filter((p) => p.name.toLowerCase().includes(q) || p.vicinity.toLowerCase().includes(q));
-    if (textSearchResults.length === 0) return localMatches;
+    if (textSearchResults.length === 0) return withinScope(localMatches);
     const merged = new Map<string, NearbyPlace>();
     for (const p of localMatches) merged.set(p.placeId, p);
     for (const p of textSearchResults) merged.set(p.placeId, p);
-    return Array.from(merged.values()).sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [places, query, textSearchResults]);
+    return withinScope(Array.from(merged.values())).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  }, [places, query, textSearchResults, scope]);
 
   return (
     <SimpleBottomSheet
@@ -222,6 +269,22 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
               <Ionicons name="close-circle" size={18} color={colors.textFaint} />
             </Pressable>
           )}
+        </View>
+
+        <View style={styles.scopeRow}>
+          {FOOD_SCOPES.map(({ key, label }) => (
+            <Pressable
+              key={key}
+              onPress={() => setScope(key)}
+              style={({ pressed }) => [
+                styles.scopeChip,
+                scope === key && styles.scopeChipActive,
+                pressed && { opacity: pressedOpacity },
+              ]}
+            >
+              <Text style={[styles.scopeChipText, scope === key && styles.scopeChipTextActive]}>{label}</Text>
+            </Pressable>
+          ))}
         </View>
 
         {loading && (
@@ -353,6 +416,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
+  scopeRow: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.sm },
+  scopeChip: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  scopeChipActive: { backgroundColor: colors.accent },
+  scopeChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
+  scopeChipTextActive: { color: "#FFFFFF" },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
   retryButton: {

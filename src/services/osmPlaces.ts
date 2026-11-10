@@ -226,10 +226,23 @@ async function queryWithWidening(
   category: OsmPoiCategory,
   center: LatLng,
   nameFilter?: string,
-  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void
+  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void,
+  // Real, explicit request -- the Food sheet's "My suburb / Inner city / Whole city" scope chips
+  // need an actual, honest fetch out to that real radius, not just a client-side distance filter
+  // over whatever the default tight-then-widen logic happened to stop at early (which can be as
+  // little as the first 10km tier if that alone already cleared MIN_RESULTS_BEFORE_WIDENING).
+  // Forces the loop below to START no narrower than this, so e.g. "Inner city" always queries at
+  // least the 30km tier even in a dense area where 10km alone would've already had 8+ results.
+  minRadiusMeters?: number
 ): Promise<NearbyPlace[]> {
   let results: NearbyPlace[] = [];
-  for (let i = 0; i < SEARCH_RADII_METERS.length; i++) {
+  const startIndex = minRadiusMeters
+    ? (() => {
+        const idx = SEARCH_RADII_METERS.findIndex((r) => r >= minRadiusMeters);
+        return idx === -1 ? SEARCH_RADII_METERS.length - 1 : idx;
+      })()
+    : 0;
+  for (let i = startIndex; i < SEARCH_RADII_METERS.length; i++) {
     const radius = SEARCH_RADII_METERS[i];
     const data = await runOverpassQuery(buildQuery(category, center, radius, nameFilter));
     const seen = new Set<string>();
@@ -260,10 +273,11 @@ async function queryWithWidening(
 export function searchNearbyOsmPlaces(
   location: LatLng,
   category: OsmPoiCategory,
-  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void
+  onRadiusResult?: (results: NearbyPlace[], isFinal: boolean) => void,
+  minRadiusMeters?: number
 ): Promise<NearbyPlace[]> {
   return withTimeout(
-    queryWithWidening(category, location, undefined, onRadiusResult),
+    queryWithWidening(category, location, undefined, onRadiusResult, minRadiusMeters),
     OVERPASS_QUERY_MAX_MS * SEARCH_RADII_METERS.length,
     `nearby ${category} request`
   );

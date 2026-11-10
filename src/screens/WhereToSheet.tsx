@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ThreeSnapBottomSheet, type ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
+import { AddressKeypadAccessory, ADDRESS_KEYPAD_ACCESSORY_ID } from "@/components/AddressKeypadAccessory";
 import {
   searchPlaces,
   getPlaceDetails,
@@ -115,6 +116,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   const [saved, setSaved] = useState<SavedPlaces>({ home: null, work: null, custom: [] });
   const [activeCategory, setActiveCategory] = useState<WhereToCategory | null>(null);
   const [micNote, setMicNote] = useState<string | null>(null);
+  const [addressInputFocused, setAddressInputFocused] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -336,10 +338,13 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
               onChangeText={onChangeText}
               onFocus={() => {
                 if (ref && typeof ref !== "function") ref.current?.expandHalf();
+                setAddressInputFocused(true);
               }}
+              onBlur={() => setAddressInputFocused(false)}
               placeholder={picking ? "Search address…" : "Where to?"}
               placeholderTextColor={colors.textFaint}
               style={styles.input}
+              inputAccessoryViewID={ADDRESS_KEYPAD_ACCESSORY_ID}
             />
             {loading && <ActivityIndicator size="small" color={colors.accent} />}
             {!picking && (
@@ -349,6 +354,10 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
             )}
           </View>
           {!!micNote && <Text style={styles.micNote}>{micNote}</Text>}
+          <AddressKeypadAccessory
+            visible={addressInputFocused}
+            onKeyPress={(char) => onChangeText(query + char)}
+          />
 
           {!picking && (
             <>
