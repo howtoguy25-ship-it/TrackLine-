@@ -1363,6 +1363,59 @@ export function MapScreen() {
       ? "left"
       : "right";
 
+  // Real, explicit request -- Waze/Google-Maps-style auto-zoom that pulls the camera OUT as
+  // real driving speed increases (more road ahead visible at highway speed) and back IN at low
+  // speed (turns/intersections stay legible up close), off the same live currentSpeedKmh value
+  // LiveSpeedometer/exit-zoom/etc. already use. Three real speed bands, applied only to the base
+  // tilted chase pose -- the flat/overview/exit-zoom poses above each already have their own
+  // deliberate fixed framing and are explicitly excluded here so this never fights any of them.
+  // Only re-applies zoom on an actual band CROSSING (appliedSpeedZoomRef), never every GPS tick
+  // -- same "don't fight a manual gesture" reasoning the per-tick center/heading effect above
+  // already follows for pan/tilt: the instant a real pinch starts, onRegionChangeComplete's own
+  // isGesture handling drops followTilt to false (see that handler's comment), which gates this
+  // off immediately too, so a manual pinch is never overridden mid-gesture.
+  const SPEED_ZOOM_BANDS: { maxKmh: number; zoom: number }[] = [
+    { maxKmh: 40, zoom: 18.5 },
+    { maxKmh: 80, zoom: 17.5 },
+    { maxKmh: Infinity, zoom: 16.5 },
+  ];
+  const speedZoom = useMemo(() => {
+    const kmh = currentSpeedKmh ?? 0;
+    return (SPEED_ZOOM_BANDS.find((b) => kmh <= b.maxKmh) ?? SPEED_ZOOM_BANDS[SPEED_ZOOM_BANDS.length - 1]).zoom;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSpeedKmh]);
+  const appliedSpeedZoomRef = useRef<number | null>(null);
+  useEffect(() => {
+    const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
+    if (
+      !route ||
+      !followTilt ||
+      !currentLatLng ||
+      !chaseCamAppliedRef.current ||
+      detectionOpen ||
+      placingAlert ||
+      exitZoomActive ||
+      overviewMode ||
+      isFlatViewStyle
+    ) {
+      appliedSpeedZoomRef.current = null;
+      return;
+    }
+    if (appliedSpeedZoomRef.current === speedZoom) return;
+    appliedSpeedZoomRef.current = speedZoom;
+    mapRef.current?.animateCamera({ zoom: speedZoom }, { duration: 700 });
+  }, [
+    route,
+    followTilt,
+    currentLatLng,
+    detectionOpen,
+    placingAlert,
+    exitZoomActive,
+    overviewMode,
+    settings.defaultMapViewStyle,
+    speedZoom,
+  ]);
+
   const toggleFollowTilt = useCallback(() => {
     setFollowTilt((was) => {
       const next = !was;
