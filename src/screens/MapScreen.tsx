@@ -116,6 +116,7 @@ import {
   hideAlertForUser,
   confirmAlert,
   denyAlert,
+  getInboxLastViewedAt,
 } from "@/services/alerts";
 import { classifyAuRegion } from "@/utils/auStates";
 import { sirenDetection } from "@/services/sirenDetection";
@@ -1574,6 +1575,23 @@ export function MapScreen() {
   const visibleAlerts = useMemo(
     () => nearbyAlerts.filter((alert) => settings.visibleAlertTypes.includes(alert.type)),
     [nearbyAlerts, settings.visibleAlertTypes]
+  );
+
+  // Real, explicit audit fix -- the top-left Menu button's own unread badge (MenuButton.tsx)
+  // used to be permanently hardcoded unreadCount={0} with no real Inbox data model behind it at
+  // all (flagged in AUDIT.md's own Phase 1 table). Now a real count off this same nearbyAlerts
+  // subscription (the exact same real, region-scoped alert list InboxScreen.tsx itself reads --
+  // not type-filtered the way visibleAlerts above is, matching Inbox's own "every alert in your
+  // regions" scope) against the real local last-viewed timestamp. Re-read on every real focus
+  // (isFocused), not just once on mount, since visiting Inbox and coming back doesn't remount
+  // this screen -- without that, the badge would never clear after actually reading the Inbox.
+  const [inboxLastViewedAt, setInboxLastViewedAt] = useState(0);
+  useEffect(() => {
+    if (isFocused) getInboxLastViewedAt().then(setInboxLastViewedAt);
+  }, [isFocused]);
+  const inboxUnreadCount = useMemo(
+    () => nearbyAlerts.filter((a) => a.createdAt > inboxLastViewedAt).length,
+    [nearbyAlerts, inboxLastViewedAt]
   );
 
   // Real, explicit request -- a small, dismissible notification when ANOTHER user reports an
@@ -5000,7 +5018,7 @@ export function MapScreen() {
         <>
           <MenuButton
             onPress={() => navigation.navigate("MainMenu")}
-            unreadCount={0}
+            unreadCount={inboxUnreadCount}
             style={[styles.menuButtonPosition, { top: insets.top + spacing.md }]}
           />
           {settings.showCompass && (
