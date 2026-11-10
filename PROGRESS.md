@@ -88,7 +88,9 @@ out along the way).
 - [x] Phase 5 — settings reorg: new SettingsCategoriesScreen (Waze-style top-level category
       list), SettingsScreen filtered by an optional `category` param instead of a full
       extraction into separate screens -- see NOTES.md's own Phase 5 entry
-- [ ] Phase 6 — polish/QA/version bump
+- [x] Phase 6 — version bumped to 1.3.0, permission strings reviewed, QA pass (tsc/lint/doctor,
+      no device available in this environment), "Show other Trackys" flagged for a privacy/
+      product decision rather than built or silently skipped -- see NOTES.md's own Phase 6 entry
 
 ### New "Phase 1B" / full redesign spec
 - [x] Map engine decision — real Mapbox, `@rnmapbox/maps` installed + wired (plugin, env,

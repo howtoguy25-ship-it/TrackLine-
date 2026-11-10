@@ -308,3 +308,43 @@ All five confirmed fixed via a real `./gradlew :map3d:compileDebugKotlin` → `B
   list: the main menu's "Signed in as..." row now opens straight to Account, and
   `RevCheckScreen`'s "Manage provider keys in Settings" link now opens straight to Vehicle & AI
   tools.
+
+## Phase 6 -- Polish, permissions, QA, version bump
+
+- **Version bumped to 1.3.0** (`app.config.js`, `package.json`) -- same real reason as the 1.2.0
+  bump before it: this phase's new native modules (`expo-contacts`, `expo-calendar`) need a
+  genuinely new native build, and `runtimeVersion`'s `appVersion` policy uses this field to keep
+  OTA updates from ever reaching an older install that has no matching native code compiled in.
+- **Permission strings reviewed for accuracy** against what's actually built this session:
+  `NSContactsUsageDescription`/`NSCalendarsUsageDescription` (iOS) and `READ_CONTACTS`/
+  `READ_CALENDAR` (Android) added alongside their real features, both honestly describing the
+  real, narrow, read-only, opt-in-at-tap-time use (see `app.config.js`'s own Phase 4a commit).
+  Every other existing permission string (location/microphone/camera) was already reviewed and
+  corrected earlier this session (see the Phase 3 entry above) and is unaffected by this phase.
+- **"Show other Trackys" (mood avatars on the map) — deliberately NOT built, flagged for a
+  product decision rather than silently skipped or silently attempted.** This is a real social/
+  multiplayer-presence feature (seeing OTHER signed-in drivers' own live position + mood on the
+  map), which is a materially different and more sensitive thing than anything else this app
+  broadcasts: every existing shared-data feature (alerts, live traffic cameras) is either
+  anonymous or official/public data, never a specific driver's own live, continuously-updating
+  GPS position shared with every other nearby user. Building this needs an explicit privacy/
+  opt-in design decision from the project owner first (who sees it, can it be turned off, does
+  it ever reveal more than an approximate position) -- not something to decide unilaterally while
+  implementing. The original spec itself already gates this on Phase 6, so this isn't a schedule
+  slip, just a real decision point reached.
+- **QA**: `npx tsc --noEmit` clean after every single commit this session (confirmed again at
+  the end of Phase 6). `npx expo-doctor` has 4 pre-existing findings unrelated to this session's
+  work (a missing `expo-camera` peer dependency required by `@tensorflow/tfjs-react-native`,
+  predating this session's changes; a known Hermes V1 memory-regression warning tied to the
+  current Expo SDK patch version; ~25 packages patch-version behind the SDK's latest) -- not
+  fixed here, since bumping ~25 packages at once (`npx expo install --fix`) is a real risk to do
+  without dedicated device testing alongside it, and none of them are caused by anything built
+  this session. `npx expo lint` has a large amount of PRE-EXISTING lint debt from this session's
+  very first run of the project's new, stricter React Compiler ESLint rules (surfaced once, at
+  the very start of this work, never remediated project-wide) -- every new file/change made this
+  session was individually lint-checked and confirmed to introduce zero NEW findings of its own,
+  but the pre-existing debt itself (hundreds of `react-hooks/set-state-in-effect`/`react-hooks/
+  refs` findings across files this session didn't touch) was out of scope to fix wholesale.
+  A real device/simulator was not available in this environment -- every change was verified via
+  `tsc`/lint/direct code reading, not by running the app; see the device test checklist handed
+  over separately for what still needs a real phone.
