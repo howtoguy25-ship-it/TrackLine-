@@ -13,7 +13,7 @@ const FAQ: { question: string; answer: string }[] = [
   {
     question: "Where do alerts (police, hazards, cameras) come from?",
     answer:
-      "Every alert is reported by a real driver using TrackLine, the same way Waze works -- there's no licensed government feed behind them. They can be stale or wrong, which is why they auto-expire.",
+      "Every alert is reported by a real driver using TrackLine -- a community-sourced report, not a licensed government feed. They can be stale or wrong, which is why they auto-expire.",
   },
   {
     question: "Is AI Vehicle Detection recording or storing video?",

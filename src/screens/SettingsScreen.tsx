@@ -1638,6 +1638,14 @@ export function SettingsScreen() {
           <Text style={styles.aboutMeta}>{BUSINESS_INFO.businessName}</Text>
         ) : null}
         {BUSINESS_INFO.abn ? <Text style={styles.aboutMeta}>ABN {BUSINESS_INFO.abn}</Text> : null}
+        {/* Real, explicit request (Copyright/trademark safety audit, Part 4) -- "Add
+            About>'Licences & attributions' screen." See LicensesScreen.tsx. */}
+        <Pressable
+          onPress={() => navigation.navigate("Licenses")}
+          style={({ pressed }) => [styles.licensesLink, pressed && { opacity: pressedOpacity }]}
+        >
+          <Text style={styles.licensesLinkText}>Licences &amp; attributions</Text>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -2090,6 +2098,14 @@ const styles = StyleSheet.create({
   aboutMeta: {
     fontSize: 12,
     color: SETTINGS_TEXT_FAINT,
+  },
+  licensesLink: {
+    marginTop: spacing.sm,
+  },
+  licensesLinkText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.accent,
   },
   radioRow: {
     flexDirection: "row",

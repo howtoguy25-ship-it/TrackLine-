@@ -10,12 +10,15 @@ Both `android/src/main/java/expo/modules/yamnetsiren/YamnetSirenModule.kt` and
 `ios/YamnetSirenModule.swift` run real on-device inference:
 
 - The real, pretrained model (`yamnet.tflite`, downloaded from
-  [TensorFlow Hub's YAMNet page](https://tfhub.dev/google/lite-model/yamnet/tflite/1)) and its
-  real 521-class AudioSet label map (`yamnet_class_map.csv`, from
-  [TensorFlow's own research repo](https://github.com/tensorflow/models/blob/master/research/audioset/yamnet/yamnet_class_map.csv))
-  are bundled directly in this module -- `android/src/main/assets/` and `ios/`, picked up by each
-  platform's own build (Gradle's `assets` source set on Android, the `YamnetSiren.bundle`
-  CocoaPods resource bundle declared in `YamnetSiren.podspec` on iOS).
+  [TensorFlow Hub's YAMNet page](https://tfhub.dev/google/lite-model/yamnet/tflite/1), licensed
+  **Apache License 2.0** per that page's own "License" field) and its real 521-class AudioSet
+  label map (`yamnet_class_map.csv`, from
+  [TensorFlow's own research repo](https://github.com/tensorflow/models/blob/master/research/audioset/yamnet/yamnet_class_map.csv),
+  also Apache-2.0 -- the whole `tensorflow/models` repo is licensed that way) are bundled
+  directly in this module -- `android/src/main/assets/` and `ios/`, picked up by each platform's
+  own build (Gradle's `assets` source set on Android, the `YamnetSiren.bundle` CocoaPods
+  resource bundle declared in `YamnetSiren.podspec` on iOS). See COPYRIGHT_AUDIT.md (repo root)
+  for the rest of this app's bundled third-party assets and their licenses.
 - `loadModel()` loads the real model + real labels and reports true only once both are usable.
 - `classifyFile(uri)` -- the real path `sirenDetection.ts` calls -- reads the actual recorded
   audio file, decodes + resamples it to real 16kHz mono PCM natively (`AVAudioFile` +
