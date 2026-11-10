@@ -28,7 +28,7 @@ import { usePowerState } from "expo-battery";
 import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import BottomSheet from "@gorhom/bottom-sheet";
-import { useNavigation, useIsFocused } from "@react-navigation/native";
+import { useNavigation, useIsFocused, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -276,6 +276,7 @@ export function MapScreen() {
   const { user } = useAuth();
   const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navRoute = useRoute<RouteProp<RootStackParamList, "Map">>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
 
@@ -2511,6 +2512,21 @@ export function MapScreen() {
     },
     [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]
   );
+
+  // Real, explicit request -- the Plan a Drive screen's own "Start" hand-off (see
+  // PlanADriveScreen.tsx and RootNavigator.tsx's own comment on the Map screen's params). That
+  // screen's search-to-destination picking is separate from this one's own internal state, so it
+  // navigates back here with the picked place and this effect feeds it into the exact same real
+  // onDestinationSelected flow a driver searching from the home map's own "Where to?" sheet
+  // would hit -- never a separate/duplicated route-starting path. Cleared via setParams right
+  // after so simply returning to Map normally afterward (closing the route picker, finishing the
+  // trip) never re-triggers the same hand-off again.
+  useEffect(() => {
+    const place = navRoute.params?.planADriveDestination;
+    if (!place) return;
+    onDestinationSelected(place);
+    navigation.setParams({ planADriveDestination: undefined });
+  }, [navRoute.params?.planADriveDestination, onDestinationSelected, navigation]);
 
   // "Find nearest station" quick action -- skips typing a destination entirely and routes
   // straight to whatever real bus/train stop Google's Places data says is genuinely closest to

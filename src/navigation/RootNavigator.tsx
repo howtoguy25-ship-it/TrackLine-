@@ -16,6 +16,8 @@ import { MapboxMapScreen } from "@/screens/MapboxMapScreen";
 import { VoicePickerScreen } from "@/screens/VoicePickerScreen";
 import { RecordVoiceScreen } from "@/screens/RecordVoiceScreen";
 import { navigationIntegration } from "@/services/sentry";
+import { PlanADriveScreen } from "@/screens/PlanADriveScreen";
+import type { PlaceDetails } from "@/services/places";
 
 export type RevCheckParams = {
   // Prefilled plate -- from tapping a saved vehicle history entry, or a "Run REV Check" tap in
@@ -34,12 +36,21 @@ export type RevCheckParams = {
 };
 
 export type RootStackParamList = {
-  Map: undefined;
+  // Real, explicit request -- Plan a Drive's own "Start" hand-off (see PlanADriveScreen.tsx)
+  // needs a way to tell the already-mounted MapScreen which destination/departure time to pick
+  // up with, since all of this screen's own search-to-route state lives inside MapScreen's own
+  // local closures, not passed down via navigation elsewhere in this app. MapScreen reads these
+  // once via useRoute/useFocusEffect and clears them (setParams) so returning to Map normally
+  // afterward never re-triggers the same hand-off.
+  Map: { planADriveDestination?: PlaceDetails } | undefined;
   Settings: undefined;
   MainMenu: undefined;
   // Real feed of currently-visible community alerts, Phase 4's own main-menu Inbox row. See
   // InboxScreen.tsx.
   Inbox: undefined;
+  // Real destination + departure-time planner, Phase 4's own main-menu "Plan a drive" card. See
+  // PlanADriveScreen.tsx.
+  PlanADrive: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
@@ -128,6 +139,7 @@ export function RootNavigator() {
           options={{ presentation: "transparentModal", animation: "slide_from_left" }}
         />
         <Stack.Screen name="Inbox" component={InboxScreen} />
+        <Stack.Screen name="PlanADrive" component={PlanADriveScreen} />
         <Stack.Screen
           name="VehicleHistory"
           component={VehicleHistoryScreen}

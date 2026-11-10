@@ -123,11 +123,14 @@ export interface DirectionsOptions {
   avoidHighways?: boolean;
   avoidTolls?: boolean;
   waypoint?: LatLng;
-  // Requests Google's live traffic-adjusted duration (departure_time=now). Left opt-in
-  // (rather than always-on) because it's the one param that makes the three parallel
-  // route-option requests non-cacheable/time-sensitive -- only the profile that actually
-  // needs a "there's traffic" signal should pay for it.
-  useTraffic?: boolean;
+  // Requests Google's live traffic-adjusted duration. `true` means departure_time=now (the
+  // original behavior -- left opt-in rather than always-on because it's the one param that
+  // makes the three parallel route-option requests non-cacheable/time-sensitive). A number is a
+  // real future departure time (Unix seconds) -- Google's own Directions API genuinely computes
+  // a predictive, traffic-model-based duration for a future departure_time, not just "now"; used
+  // by the Plan a Drive screen's own real "leave in 15/30/60 min" presets, never a guessed/
+  // client-side-adjusted figure.
+  useTraffic?: boolean | number;
 }
 
 function stripHtml(html: string): string {
@@ -236,7 +239,7 @@ function buildDirectionsUrl(
     `&mode=${mode}&key=${env.googleDirectionsApiKey}` +
     (avoid ? `&avoid=${avoid}` : "") +
     (waypoint ? `&waypoints=${waypoint.latitude},${waypoint.longitude}` : "") +
-    (useTraffic ? `&departure_time=now&traffic_model=best_guess` : "") +
+    (useTraffic ? `&departure_time=${typeof useTraffic === "number" ? useTraffic : "now"}&traffic_model=best_guess` : "") +
     (alternatives ? `&alternatives=true` : "")
   );
 }
