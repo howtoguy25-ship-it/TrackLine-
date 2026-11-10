@@ -1,0 +1,84 @@
+name: Deploy Firebase (functions, Firestore rules, Storage rules)
+
+# Real, explicit request -- manual-only deploy (workflow_dispatch), never on push, so a deploy
+# only ever happens when the project owner deliberately runs it from the GitHub app/web UI. This
+# environment has no Firebase CLI / no authenticated gcloud session at all, so this workflow is
+# the actual deploy path for everything server-side this session writes (Cloud Functions,
+# Firestore rules, Storage rules) -- see DEPLOY.md for the one-time service-account setup this
+# needs before it can run.
+#
+# The service account key is read ONLY from the FIREBASE_SERVICE_ACCOUNT secret below, written to a
+# short-lived temp file on the runner for this run alone, and never logged, echoed, or committed
+# anywhere. GitHub itself also redacts a secret's literal value from any step's log output.
+on:
+  workflow_dispatch:
+    inputs:
+      deployFunctions:
+        description: "Deploy Cloud Functions"
+        type: boolean
+        default: true
+      deployFirestoreRules:
+        description: "Deploy Firestore rules"
+        type: boolean
+        default: true
+      deployStorageRules:
+        description: "Deploy Storage rules"
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install functions dependencies
+        working-directory: firebase/functions
+        run: npm ci
+
+      - name: Write service account key to a temp file
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Resolve Firebase project ID from the service account key
+        id: project
+        run: |
+          PROJECT_ID=$(node -e "console.log(require('$RUNNER_TEMP/firebase-service-account.json').project_id)")
+          echo "id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build the --only target list
+        id: targets
+        run: |
+          TARGETS=""
+          if [ "${{ inputs.deployFunctions }}" = "true" ]; then TARGETS="functions"; fi
+          if [ "${{ inputs.deployFirestoreRules }}" = "true" ]; then
+            TARGETS="${TARGETS:+$TARGETS,}firestore:rules"
+          fi
+          if [ "${{ inputs.deployStorageRules }}" = "true" ]; then
+            TARGETS="${TARGETS:+$TARGETS,}storage"
+          fi
+          if [ -z "$TARGETS" ]; then
+            echo "Nothing selected to deploy -- re-run with at least one target enabled." >&2
+            exit 1
+          fi
+          echo "list=$TARGETS" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          npx firebase-tools@latest deploy \
+            --only "${{ steps.targets.outputs.list }}" \
+            --project "${{ steps.project.outputs.id }}" \
+            --non-interactive
+
+      - name: Clean up service account key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-service-account.json"
