@@ -17,6 +17,7 @@ import { VoicePickerScreen } from "@/screens/VoicePickerScreen";
 import { RecordVoiceScreen } from "@/screens/RecordVoiceScreen";
 import { navigationIntegration } from "@/services/sentry";
 import { PlanADriveScreen } from "@/screens/PlanADriveScreen";
+import { HelpScreen } from "@/screens/HelpScreen";
 import type { PlaceDetails } from "@/services/places";
 
 export type RevCheckParams = {
@@ -51,6 +52,8 @@ export type RootStackParamList = {
   // Real destination + departure-time planner, Phase 4's own main-menu "Plan a drive" card. See
   // PlanADriveScreen.tsx.
   PlanADrive: undefined;
+  // Real FAQ + contact row, Phase 4's own main-menu Help row. See HelpScreen.tsx.
+  Help: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
@@ -140,6 +143,7 @@ export function RootNavigator() {
         />
         <Stack.Screen name="Inbox" component={InboxScreen} />
         <Stack.Screen name="PlanADrive" component={PlanADriveScreen} />
+        <Stack.Screen name="Help" component={HelpScreen} />
         <Stack.Screen
           name="VehicleHistory"
           component={VehicleHistoryScreen}
