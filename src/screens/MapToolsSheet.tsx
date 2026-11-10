@@ -18,6 +18,7 @@ interface Props {
   onFindRestaurants: () => void;
   onFindHotels: () => void;
   onFindPetrol: () => void;
+  onFindParking: () => void;
   onOpenSettings: () => void;
   onSheetChange?: (index: number) => void;
 }
@@ -43,6 +44,7 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
     onFindRestaurants,
     onFindHotels,
     onFindPetrol,
+    onFindParking,
     onOpenSettings,
     onSheetChange,
   },
@@ -79,6 +81,7 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
         <OptionRow icon="restaurant-outline" label="Restaurants" onPress={onFindRestaurants} />
         <OptionRow icon="bed-outline" label="Hotels" onPress={onFindHotels} />
         <OptionRow icon="car-outline" label="Petrol stations" onPress={onFindPetrol} />
+        <OptionRow icon="square-outline" label="Parking" onPress={onFindParking} />
 
         <View style={styles.divider} />
 

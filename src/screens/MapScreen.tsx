@@ -67,6 +67,9 @@ import { LiveCameraSheet } from "@/screens/LiveCameraSheet";
 import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
+import { ParkingSheet } from "@/screens/ParkingSheet";
+import { WhereToSheet } from "@/screens/WhereToSheet";
+import type { ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import type { SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
@@ -295,6 +298,8 @@ export function MapScreen() {
   const restaurantsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const hotelsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const fuelStationsSheetRef = useRef<SimpleBottomSheetRef>(null);
+  const parkingSheetRef = useRef<SimpleBottomSheetRef>(null);
+  const whereToSheetRef = useRef<ThreeSnapBottomSheetRef>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
   const toolsSheetRef = useRef<BottomSheet>(null);
@@ -544,6 +549,7 @@ export function MapScreen() {
   const [restaurantsSheetOpen, setRestaurantsSheetOpen] = useState(false);
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
+  const [parkingSheetOpen, setParkingSheetOpen] = useState(false);
   // Real, explicit request -- petrol stations visible ON THE MAP, not just in FuelStationsSheet's
   // own list. Reported up by that sheet (see its own FuelStationPin comment) as ready-to-render
   // pins, own onPress included -- MapScreen just renders whatever it's given (see the Marker
@@ -575,7 +581,8 @@ export function MapScreen() {
     soundSheetOpen ||
     restaurantsSheetOpen ||
     hotelsSheetOpen ||
-    fuelStationsSheetOpen;
+    fuelStationsSheetOpen ||
+    parkingSheetOpen;
   const [alertPlacementLatLng, setAlertPlacementLatLng] = useState<LatLng | null>(null);
   // Real, confirmed cause of alerts appearing twice: confirmAlertPlacement is async
   // (reportAlert is a real Firestore write), and nothing previously stopped a second tap on
@@ -1930,8 +1937,16 @@ export function MapScreen() {
   // available" across a whole city, without the request ballooning to state/country scale.
   const PLACES_LAYER_MAX_DELTA = 0.8;
 
+  // Real, narrower subset of OsmPoiCategory -- only the categories with their own dedicated
+  // viewport pin-overlay state/clustering (see setFuelViewportPlaces et al below). "parking" is
+  // a real, searchable OsmPoiCategory (ParkingSheet's own list), but doesn't have on-map pin
+  // overlay wiring yet -- see NOTES.md's Phase 2 section for why that's honestly deferred rather
+  // than faked. Kept distinct from OsmPoiCategory itself so adding a future search-only category
+  // there never silently requires (or breaks) Record literals here.
+  type ViewportPinCategory = "fuel" | "restaurant" | "hotel";
+
   type PlacesSetter = (places: NearbyPlace[]) => void;
-  const placesCategorySetters = useMemo<Record<OsmPoiCategory, PlacesSetter>>(
+  const placesCategorySetters = useMemo<Record<ViewportPinCategory, PlacesSetter>>(
     () => ({
       fuel: setFuelViewportPlaces,
       restaurant: setRestaurantViewportPlaces,
@@ -1939,8 +1954,8 @@ export function MapScreen() {
     }),
     []
   );
-  const openPlaceCategories = useMemo<OsmPoiCategory[]>(() => {
-    const cats: OsmPoiCategory[] = [];
+  const openPlaceCategories = useMemo<ViewportPinCategory[]>(() => {
+    const cats: ViewportPinCategory[] = [];
     if (fuelStationsSheetOpen) cats.push("fuel");
     if (restaurantsSheetOpen) cats.push("restaurant");
     if (hotelsSheetOpen) cats.push("hotel");
@@ -1948,7 +1963,7 @@ export function MapScreen() {
   }, [fuelStationsSheetOpen, restaurantsSheetOpen, hotelsSheetOpen]);
 
   const fetchViewportPlaces = useCallback(
-    (bounds: { sw: LatLng; ne: LatLng }, categories: OsmPoiCategory[]) => {
+    (bounds: { sw: LatLng; ne: LatLng }, categories: ViewportPinCategory[]) => {
       for (const category of categories) {
         fetchOsmPlacesInBounds(bounds, category)
           .then(placesCategorySetters[category])
@@ -1965,7 +1980,7 @@ export function MapScreen() {
   // fires on an actual region-change event. Tracked per category so opening, say, just the fuel
   // sheet doesn't also mark restaurant/hotel as "already loaded" the moment either of those
   // sheets is opened later.
-  const placesInitialLoadRef = useRef<Record<OsmPoiCategory, boolean>>({
+  const placesInitialLoadRef = useRef<Record<ViewportPinCategory, boolean>>({
     fuel: false,
     restaurant: false,
     hotel: false,
@@ -1977,7 +1992,7 @@ export function MapScreen() {
       placesInitialLoadRef.current[category] = true;
       return true;
     });
-    for (const category of (["fuel", "restaurant", "hotel"] as OsmPoiCategory[])) {
+    for (const category of (["fuel", "restaurant", "hotel"] as ViewportPinCategory[])) {
       if (!openPlaceCategories.includes(category)) placesInitialLoadRef.current[category] = false;
     }
     if (toFetch.length === 0) return;
@@ -2305,6 +2320,44 @@ export function MapScreen() {
     restaurantsSheetRef.current?.close();
     hotelsSheetRef.current?.close();
     fuelStationsSheetRef.current?.close();
+    parkingSheetRef.current?.close();
+  }, []);
+
+  // Real, shared category-chip handlers -- used by both MapToolsSheet's own rows (the "..."
+  // menu) and the new Phase 2 "Where to?" sheet's Fuel/Food/Parking category chips, so there's
+  // one real place each opens from rather than duplicated inline closures that could drift.
+  // toolsSheetRef.current?.close() is a harmless no-op when that sheet isn't the caller.
+  const onFindRestaurants = useCallback(() => {
+    toolsSheetRef.current?.close();
+    whereToSheetRef.current?.collapse();
+    hotelsSheetRef.current?.close();
+    fuelStationsSheetRef.current?.close();
+    parkingSheetRef.current?.close();
+    restaurantsSheetRef.current?.snapToIndex(0);
+  }, []);
+  const onFindHotels = useCallback(() => {
+    toolsSheetRef.current?.close();
+    whereToSheetRef.current?.collapse();
+    restaurantsSheetRef.current?.close();
+    fuelStationsSheetRef.current?.close();
+    parkingSheetRef.current?.close();
+    hotelsSheetRef.current?.snapToIndex(0);
+  }, []);
+  const onFindPetrol = useCallback(() => {
+    toolsSheetRef.current?.close();
+    whereToSheetRef.current?.collapse();
+    restaurantsSheetRef.current?.close();
+    hotelsSheetRef.current?.close();
+    parkingSheetRef.current?.close();
+    fuelStationsSheetRef.current?.snapToIndex(0);
+  }, []);
+  const onFindParking = useCallback(() => {
+    toolsSheetRef.current?.close();
+    whereToSheetRef.current?.collapse();
+    restaurantsSheetRef.current?.close();
+    hotelsSheetRef.current?.close();
+    fuelStationsSheetRef.current?.close();
+    parkingSheetRef.current?.snapToIndex(0);
   }, []);
 
   // Real, permanent belt-and-suspenders on top of every individual call site above (also on
@@ -4319,26 +4372,25 @@ export function MapScreen() {
         />
       )}
 
-      {!route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && !anySheetOpen && (
-        // Real, explicit request -- declutter the map front to just Search + "+". Alerts/
-        // Restaurants/Hotels/Petrol (formerly a persistent MapTopPillRow above this bar) now
-        // live as rows in MapToolsSheet instead, reached via the single Tools FAB -- see that
-        // component for the real handlers these moved to.
-        <DestinationSearchBar
+      {!route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && (
+        // Real, explicit request (Waze-style redesign, Phase 2) -- the old always-floating-at-
+        // the-top DestinationSearchBar is replaced by a real draggable "Where to?" bottom sheet.
+        // Stays mounted (not gated on !anySheetOpen) so it can collapse to its peek height
+        // rather than unmount/remount whenever a category chip opens Restaurants/Hotels/Fuel/
+        // Parking on top of it (see onFindRestaurants/onFindHotels/onFindPetrol/onFindParking's
+        // own whereToSheetRef.collapse() calls above).
+        <WhereToSheet
+          ref={whereToSheetRef}
           biasLocation={routeOriginLatLng ?? undefined}
           onDestinationSelected={onDestinationSelected}
           onFindNearestStation={onFindNearestStation}
           findingNearestStation={findingNearestStation}
           originLabel={routeOriginLabel}
           onPressOrigin={openOriginPicker}
-          // Real, explicit request -- Waze-style redesign: the new top-left Menu + Compass
-          // column (see just above) now occupies the same top-left corner this bar used to
-          // start flush against. Both are the brief's own literal 72pt, stacked with an 8px gap
-          // -- pushed down just far enough to clear that (72 + 8 + 72, rounded up) rather than
-          // overlapping. This bar itself moves into a proper bottom "Where to?" sheet in Phase
-          // 2/3, which removes the need for this offset entirely -- an interim position, not
-          // the final Waze layout.
-          topOffset={156}
+          onFindRestaurants={onFindRestaurants}
+          onFindHotels={onFindHotels}
+          onFindPetrol={onFindPetrol}
+          onFindParking={onFindParking}
         />
       )}
 
@@ -5137,6 +5189,12 @@ export function MapScreen() {
             onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
             onStationsChange={setFuelStationPins}
           />
+          <ParkingSheet
+            ref={parkingSheetRef}
+            location={currentLatLng}
+            onViewDetails={onViewVenueDetails}
+            onSheetChange={(index) => setParkingSheetOpen(index >= 0)}
+          />
         </>
       )}
       <RouteDirectionsSheet
@@ -5183,28 +5241,15 @@ export function MapScreen() {
         detectionBatteryLow={detectionBatteryLow}
         alertsEnabled={settings.alertsEnabled}
         onToggleAlerts={() => updateSettings({ alertsEnabled: !settings.alertsEnabled })}
-        // snapToIndex(0), not expand() -- these three sheets have two snap points
-        // (["50%", "88%"]), and expand() jumps straight to the largest one. Opening at index 0
-        // lands on the shorter default; dragging the handle still reaches 88%. Same real
-        // handlers MapTopPillRow (now deleted) used to call directly.
-        onFindRestaurants={() => {
-          toolsSheetRef.current?.close();
-          hotelsSheetRef.current?.close();
-          fuelStationsSheetRef.current?.close();
-          restaurantsSheetRef.current?.snapToIndex(0);
-        }}
-        onFindHotels={() => {
-          toolsSheetRef.current?.close();
-          restaurantsSheetRef.current?.close();
-          fuelStationsSheetRef.current?.close();
-          hotelsSheetRef.current?.snapToIndex(0);
-        }}
-        onFindPetrol={() => {
-          toolsSheetRef.current?.close();
-          restaurantsSheetRef.current?.close();
-          hotelsSheetRef.current?.close();
-          fuelStationsSheetRef.current?.snapToIndex(0);
-        }}
+        // snapToIndex(0), not expand() -- these sheets have two snap points (["50%", "88%"]),
+        // and expand() jumps straight to the largest one. Opening at index 0 lands on the
+        // shorter default; dragging the handle still reaches 88%. Same real, now-shared
+        // handlers the Phase 2 "Where to?" sheet's own category chips call too -- see their own
+        // definition above.
+        onFindRestaurants={onFindRestaurants}
+        onFindHotels={onFindHotels}
+        onFindPetrol={onFindPetrol}
+        onFindParking={onFindParking}
         onOpenSettings={() => {
           toolsSheetRef.current?.close();
           navigation.navigate("Settings");

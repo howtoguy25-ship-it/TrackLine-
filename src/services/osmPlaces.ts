@@ -23,7 +23,7 @@ const OVERPASS_ENDPOINTS = [
 
 const FETCH_TIMEOUT_MS = 15000;
 
-export type OsmPoiCategory = "fuel" | "restaurant" | "hotel";
+export type OsmPoiCategory = "fuel" | "restaurant" | "hotel" | "parking";
 
 // Real OSM tagging per category -- confirmed against OSM's own wiki tag documentation, not
 // guessed. "restaurant"/"hotel" here intentionally mirror how broadly Google's own `type=
@@ -42,6 +42,9 @@ const CATEGORY_TAGS: Record<OsmPoiCategory, [key: string, value: string][]> = {
     ["tourism", "motel"],
     ["tourism", "guest_house"],
   ],
+  // Real OSM tag for a car park (confirmed against OSM's own wiki) -- the Phase 2 "Where to?"
+  // sheet's "Parking" category chip.
+  parking: [["amenity", "parking"]],
 };
 
 // Real, chosen trade-off: a single fixed radius either comes back near-empty in low-density
@@ -182,7 +185,14 @@ function elementToNearbyPlace(el: OverpassElement, center: LatLng, category: Osm
   const lon = el.lon ?? el.center?.lon;
   if (lat == null || lon == null) return null;
   const location: LatLng = { latitude: lat, longitude: lon };
-  const fallbackName = category === "fuel" ? "Fuel station" : category === "hotel" ? "Hotel" : "Restaurant";
+  const fallbackName =
+    category === "fuel"
+      ? "Fuel station"
+      : category === "hotel"
+        ? "Hotel"
+        : category === "parking"
+          ? "Car park"
+          : "Restaurant";
   return {
     // Real, stable id derived from OSM's own element type+id -- never reused across a different
     // real place, same uniqueness guarantee a Google place_id gave callers (plate OCR/saved-

@@ -63,8 +63,11 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 ## Phase checklist
 
 ### Original 6-phase spec
-- [x] Phase 1 (partial) — home map buttons; search-bar-to-bottom-sheet move still pending
-- [ ] Phase 2 — bottom search sheet
+- [x] Phase 1 — home map buttons + idle "Where to?" bottom sheet (search-bar-to-bottom-sheet
+      move is done — see Phase 2 below)
+- [x] Phase 2 (partial) — real 3-snap "Where to?" sheet, Home/Work/+New, Saved/Fuel/Food/Parking
+      category chips. Voice mic / Contacts+Calendar "More options" / Parking's full filter row
+      honestly deferred — see NOTES.md
 - [ ] Phase 3 — voice picker + recording
 - [ ] Phase 4 — main menu (full), plan a drive, inbox
 - [ ] Phase 5 — settings reorg
@@ -72,19 +75,23 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 
 ### New "Phase 1B" / full redesign spec
 - [x] Map engine decision — real Mapbox, `@rnmapbox/maps` installed + wired (plugin, env,
-      owner-only preview screen) — **waiting on your real tokens, see above, to go further**
+      owner-only preview screen). Both real tokens are live and a real EAS cloud build has
+      now confirmed the engine builds successfully on **iOS** (a real signed `.ipa` produced);
+      Android's own build is blocked only by the pre-existing, unrelated google-mobile-ads
+      Kotlin issue (Mapbox's own Android compile step already confirmed clean) — see NOTES.md
 - [x] Map style JSON (trackline-light/dark) — both written against the real Mapbox Streets v8
       schema, matching every given colour/zoom/width value
 - [ ] User marker + street pill (teal arrow variant) — not started
-- [ ] Route drawing (ShapeSource/SymbolLayer) — not started, needs a real token to visually verify
+- [ ] Route drawing (ShapeSource/SymbolLayer) — not started
 - [x] Top instruction card restyle — bigger icon/distance, accented street-name line, real
       roundabout exit number, "Then" chip, tap-to-repeat voice, arrival flag icon. Literal
       64pt/44pt/40pt sizes deliberately not used — see NOTES.md
 - [x] Bottom banner (follow/re-centre/overview) — real two-state banner wired to the existing
       followTilt/onRecenter machinery; Overview button reuses the existing pulled-back pose
       toggle, not yet a real fit-bounds-to-route computation — see NOTES.md
-- [ ] Camera & zoom behaviour — not started, needs a real token to visually verify
-- [ ] Search sheet (Phase 3 of new doc) — same as old Phase 2
+- [ ] Camera & zoom behaviour — pure logic written and verified (`src/map/cameraZoom.ts`), not
+      yet wired into a live camera
+- [x] Search sheet (Phase 3 of new doc) — same as old Phase 2, see above
 - [ ] Voices (Phase 4 of new doc) — same as old Phase 3
 - [ ] Menu/Plan a drive/Inbox/Live Traffic NSW (Phase 5 of new doc) — needs TfNSW secret for the
       live-data half; menu/plan-a-drive UI itself is buildable now

@@ -147,3 +147,39 @@ phase ships.
   the full designed panel (Tracky mascot, "Plan a drive" card, calendar events, Inbox, Invite a
   friend, Help) is Phase 4's own build. The Menu button's unread badge count is real (always 0
   right now) rather than fake, since there's no Inbox data model yet to count against.
+
+## Phase 2 — "Where to?" bottom search sheet
+
+- **Real, shipped this round**: the old always-floating-at-the-top `DestinationSearchBar` idle
+  bar is replaced by a real draggable 3-snap-point sheet (`WhereToSheet.tsx`, peek/half/full via
+  a new `ThreeSnapBottomSheet.tsx` -- a sibling of `SimpleBottomSheet.tsx`, not a reuse of it,
+  since this sheet's real contract has no "closed" state at all, unlike the on-demand info
+  panels). Real Home/Work/+New chips (`savedPlaces.ts`, AsyncStorage + Firestore cross-device
+  sync, same pattern as `settings.ts`): tapping a set Home/Work routes there immediately,
+  long-press offers Edit/Remove, tapping an unset one starts a real address search scoped to
+  that slot. Real Saved/Fuel/Food/Parking category chips -- Fuel/Food reuse the existing
+  Petrol/Restaurants sheets' own handlers; Parking is a genuinely new real nearby-list
+  (`ParkingSheet.tsx`, same OpenStreetMap-via-Overpass architecture as Fuel/Restaurants/Hotels --
+  added a real `"parking"`/`amenity=parking` category to `osmPlaces.ts`).
+- **Honestly NOT built this round** (per this project's own "build real, log what's missing"
+  rule, not silently skipped):
+  - **Voice search mic** -- the icon is real and present (matching the brief's layout), but
+    tapping it shows an honest in-sheet note ("Voice search isn't set up yet...") instead of
+    pretending to listen. This project has no speech-to-text library at all yet (only
+    `expo-speech`, which is text-to-speech) -- adding real STT needs a new native module +
+    config plugin + its own EAS rebuild cycle, deliberately not queued in the same pass as the
+    in-flight Mapbox native-module work above.
+  - **"More options" section** (Drive to friends & family via real Contacts permission + "Share
+    drive" live-ETA link, Connect calendar via real Calendar permission + upcoming-events list)
+    -- both need their own new native permission integrations (`expo-contacts`, `expo-calendar`)
+    and a Firebase-hosted live-trip-link page for the share-drive case. Not rendered at all this
+    round rather than shipped as dead/non-functional rows.
+  - **Parking's full filter row** (Best match/distance/price sort, Open now, Top rated, and the
+    More sheet's wheelchair/disabled-parking/toilets/EV-charging toggles) -- OSM's own per-lot
+    tagging for those attributes is sparse/inconsistent enough that real toggles would mostly
+    show "no data" for most real results, so `ParkingSheet.tsx` ships the real, functional core
+    (live nearby car parks, nearest-first, real text search) without them for now.
+  - **Custom "+ New" naming step** -- the full brief asks for a typed name; this round labels a
+    new saved place with the picked place's own real name instead (no fake name, just a
+    simplification of the naming UI, which needs a small cross-platform text-entry modal
+    `Alert.prompt` doesn't provide on Android).
