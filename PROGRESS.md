@@ -85,7 +85,9 @@ out along the way).
       destination picker + departure-time presets + real/predictive ETA), real Inbox screen
       (delete + undo, official-alert tag), real Contacts "Drive to friends & family" -- see
       NOTES.md's own Phase 4 entry
-- [ ] Phase 5 — settings reorg
+- [x] Phase 5 — settings reorg: new SettingsCategoriesScreen (Waze-style top-level category
+      list), SettingsScreen filtered by an optional `category` param instead of a full
+      extraction into separate screens -- see NOTES.md's own Phase 5 entry
 - [ ] Phase 6 — polish/QA/version bump
 
 ### New "Phase 1B" / full redesign spec

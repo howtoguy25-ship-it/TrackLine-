@@ -287,3 +287,24 @@ All five confirmed fixed via a real `./gradlew :map3d:compileDebugKotlin` → `B
   - **Inbox's own unread badge** is a local, per-device `AsyncStorage` counter (not synced
     across devices) -- same real scope as this app's other local-only counters (e.g. the voice
     consent-shown counter in `voice.ts`).
+
+## Phase 5 -- Settings reorganisation (Waze-style groups)
+
+- **Real, shipped this round**: a new `SettingsCategoriesScreen.tsx` -- a short top-level list
+  (Account, Map display, Navigation & voice, Alerts & community, Vehicle & AI tools, and
+  Developer in `__DEV__` only) replacing the old single ~2000-line flat scroll as the main
+  menu's own Settings entry point. Tapping a category opens the exact same `SettingsScreen.tsx`,
+  filtered down to that category's own real sections via a new optional `category` route param.
+- **Deliberate architecture choice, not a shortcut**: this is NOT a full extraction into six
+  separate screen files. `SettingsScreen.tsx`'s ~15 sections share a large amount of genuinely
+  interdependent state/handlers (IAP, auth, battery, admin-key forms, etc.) all declared once at
+  the top of one component -- splitting them into separate files would mean either duplicating
+  that shared state across files or risk dropping/misplacing a handler somewhere in a ~2000-line
+  file along the way. Instead, the one existing screen now conditionally renders only the
+  sections belonging to whichever category it was opened with (`shouldShow`/
+  `CATEGORY_SECTIONS`) -- every pre-existing `navigate("Settings")` call site with no category
+  param keeps showing every section exactly as before, so nothing that already worked changed.
+- Two existing deep links were pointed at their real relevant category instead of the generic
+  list: the main menu's "Signed in as..." row now opens straight to Account, and
+  `RevCheckScreen`'s "Manage provider keys in Settings" link now opens straight to Vehicle & AI
+  tools.
