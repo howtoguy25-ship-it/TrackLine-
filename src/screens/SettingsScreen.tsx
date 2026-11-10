@@ -1096,6 +1096,18 @@ export function SettingsScreen() {
       </Section>
 
       <Section title="Map layers" visible={shouldShow("Map layers")}>
+        <Row label="Show Trackys" icon={<Ionicons name="happy-outline" size={18} color={settings.showTrackysOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}>
+          <Switch
+            value={settings.showTrackysOnMap}
+            onValueChange={(value) => updateSettings({ showTrackysOnMap: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          Shows other visible, currently-driving drivers&apos; Trackys on the map. Turning this
+          off only affects what you see -- it doesn&apos;t change your own visibility to others
+          (see Privacy above).
+        </Text>
         <Row
           label="Traffic lights"
           icon={<OsmLayerIcon marker={TRAFFIC_LIGHT_MARKER} enabled={settings.showTrafficLights} />}

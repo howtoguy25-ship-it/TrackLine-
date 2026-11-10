@@ -791,3 +791,70 @@ exports.cleanupExpiredPresence = onSchedule("every 2 minutes", async () => {
 
   console.log(`cleanupExpiredPresence: removed ${deletedTotal} expired presence doc(s)`);
 });
+
+// Real, explicit request -- "[Wave 👋] rate-limited 1/10min/blockable." Server-enforced (a
+// client-only cooldown could just be bypassed by reinstalling or clearing app storage) via a
+// real per-sender-per-target rate-limit doc, and a real check of the TARGET's own block list
+// before ever attempting delivery -- a blocked sender gets the same "success" outcome a
+// delivered wave would (see this function's own comment below for why that's a deliberate
+// privacy choice, not an oversight).
+const WAVE_COOLDOWN_MS = 10 * 60 * 1000;
+
+exports.sendWave = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const selfUid = request.auth.uid;
+  const targetUid = typeof request.data?.targetUid === "string" ? request.data.targetUid : "";
+  if (!targetUid || targetUid === selfUid) {
+    throw new HttpsError("invalid-argument", "targetUid must be a different real uid.");
+  }
+
+  const db = getFirestore();
+
+  const cooldownRef = db.doc(`waves/${selfUid}_${targetUid}`);
+  const cooldownSnap = await cooldownRef.get();
+  const lastSentAt = cooldownSnap.exists ? cooldownSnap.data()?.lastSentAt?.toMillis?.() : null;
+  if (typeof lastSentAt === "number" && Date.now() - lastSentAt < WAVE_COOLDOWN_MS) {
+    return { outcome: "rate_limited" };
+  }
+
+  // The target must still have a live presence doc -- waving at a driver who's since gone
+  // ghost/stopped driving/force-quit the app would otherwise silently reach a push token for
+  // someone no longer actually shown on anyone's map.
+  const presenceSnap = await db.doc(`presence/${targetUid}`).get();
+  if (!presenceSnap.exists) {
+    return { outcome: "target_not_visible" };
+  }
+
+  // Always record the attempt (so the rate limit holds even against a blocked/no-token target
+  // -- otherwise a sender could keep retrying a blocked wave at full speed) before checking the
+  // block list, which is checked last and deliberately never distinguished in the response from
+  // a real delivery, so the sender can never use this call to confirm they've been blocked.
+  await cooldownRef.set({ lastSentAt: FieldValue.serverTimestamp() });
+
+  const blockSnap = await db.doc(`blocks/${targetUid}`).get();
+  const blockedUids = blockSnap.exists ? blockSnap.data()?.blockedUids : null;
+  if (Array.isArray(blockedUids) && blockedUids.includes(selfUid)) {
+    return { outcome: "success" };
+  }
+
+  const deviceSnap = await db.doc(`deviceSessions/${targetUid}`).get();
+  const token = deviceSnap.exists ? deviceSnap.data()?.expoPushToken : null;
+  if (typeof token !== "string" || !token.startsWith("ExponentPushToken")) {
+    return { outcome: "no_token" };
+  }
+
+  try {
+    await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify([{ to: token, title: "👋", body: "A nearby driver waved at you!", sound: "default" }]),
+    });
+  } catch (err) {
+    console.error("sendWave: Expo push request failed", err);
+    return { outcome: "error" };
+  }
+
+  return { outcome: "success" };
+});

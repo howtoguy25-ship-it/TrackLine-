@@ -119,6 +119,11 @@ export interface AppSettings {
   // card, whether their real display name is shown instead of "A Tracky". Off by default --
   // reporting itself never requires giving up anonymity.
   showNameOnReports: boolean;
+  // Real, explicit request -- "Settings > Map shortcuts > 'Show Trackys' toggle." Whether this
+  // device subscribes to and renders OTHER visible+driving drivers' presence markers at all
+  // (see presence.ts/MapScreen.tsx) -- independent of this device's OWN visibility above, which
+  // controls whether it's shown to others, not whether it sees others.
+  showTrackysOnMap: boolean;
 }
 
 export type VisibilityMode = "everyone" | "friendsOnly" | "ghost";
@@ -153,6 +158,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   distanceUnit: "km",
   visibility: "ghost",
   showNameOnReports: false,
+  showTrackysOnMap: true,
 };
 
 const STORAGE_KEY = "@trackline/settings";

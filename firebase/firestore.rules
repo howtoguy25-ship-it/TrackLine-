@@ -137,6 +137,38 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Real, explicit request -- "[Wave 👋] rate-limited 1/10min/blockable." This per-sender-
+    // per-target rate-limit doc is read/written only by sendWave (Admin SDK) -- a client could
+    // otherwise just delete its own cooldown doc to bypass the rate limit entirely.
+    match /waves/{waveId} {
+      allow read, write: if false;
+    }
+
+    // Real, explicit request -- "Block/report from card." A block is the BLOCKING driver's own
+    // list of who THEY'VE blocked -- safe to let them write directly (same self-only-write
+    // reasoning as alerts.ts's own hiddenBy map), and only they can read it back (e.g. a future
+    // "blocked drivers" management list). sendWave/presence reads it server-side via the Admin
+    // SDK regardless of this read restriction.
+    match /blocks/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Real, explicit request -- the other half of "Block/report from card." A report is a
+    // simple, safe, self-attributed create: reportedBy must be the caller's own uid and
+    // reportedUid must be a different real uid, enforced right here rather than needing a
+    // dedicated Cloud Function the way sendWave's rate-limit/block logic does. No client read
+    // or update/delete at all -- only the admin can review reports (same convention as the
+    // `broadcasts` collection), and a report can never be edited or withdrawn once filed.
+    match /userReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.reportedUid is string
+        && request.resource.data.reportedUid != request.auth.uid;
+      allow update, delete: if false;
+    }
+
     // Real, owner-only install/activity tracking for the mobile Owner Dashboard -- one doc per
     // device, written by EVERY session (including the app's default anonymous one, unlike
     // users/{uid} above which only ever gets a doc for a real sign-in). This is what makes
