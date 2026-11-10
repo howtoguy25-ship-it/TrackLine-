@@ -100,7 +100,7 @@ const MAP_VIEW_STYLE_ICONS: Record<AppSettings["defaultMapViewStyle"], keyof typ
   satellite3d: "globe-outline",
 };
 
-const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow", "blue", "light"];
+const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow", "blue", "light", "dark"];
 const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
   normal: ["#14201a", "#34d976"],
   purpleBlue: ["#1a1033", "#8b7cf6"],
@@ -108,6 +108,7 @@ const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
   greenYellow: ["#0f2417", "#facc15"],
   blue: ["#0b1a33", "#3b9bff"],
   light: ["#eef1f6", "#1d4ed8"],
+  dark: ["#1b1f27", "#3b82f6"],
 };
 const ROAD_THICKNESS_ORDER: RoadThicknessKey[] = ["thin", "normal", "bold", "extraBold"];
 // Real relative proportions, not arbitrary -- scaled off the same ROAD_THICKNESS_MULTIPLIERS

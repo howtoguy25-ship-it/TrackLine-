@@ -19,7 +19,7 @@
  * dedicated road-thickness/design picker in Settings, independent of which color theme is
  * active, rather than baking one fixed thickness into each theme.
  */
-export type MapThemeKey = "normal" | "purpleBlue" | "blueGrey" | "greenYellow" | "blue" | "light";
+export type MapThemeKey = "normal" | "purpleBlue" | "blueGrey" | "greenYellow" | "blue" | "light" | "dark";
 export type RoadThicknessKey = "thin" | "normal" | "bold" | "extraBold";
 
 export const MAP_THEME_LABELS: Record<MapThemeKey, string> = {
@@ -29,6 +29,7 @@ export const MAP_THEME_LABELS: Record<MapThemeKey, string> = {
   greenYellow: "Green & Yellow",
   blue: "Blue",
   light: "Light",
+  dark: "Dark",
 };
 
 export const ROAD_THICKNESS_LABELS: Record<RoadThicknessKey, string> = {
@@ -250,20 +251,53 @@ const LIGHT_COLORS: ThemeColors = {
   background: "#eef1f6",
   labelStroke: "#ffffff",
   labelFill: "#334155",
-  localityLabel: "#0f172a",
+  // Real, explicit request -- "blue-grey suburb labels" specifically (was a near-black navy,
+  // #0f172a, legible but not actually blue-grey). Slate-600 reads as genuinely blue-grey while
+  // staying dark enough against the light background to stay legible at a glance.
+  localityLabel: "#475569",
   poiLabel: "#64748b",
   parkGeometry: "#cfe8cf",
   parkLabel: "#3f6b3f",
-  roadLocal: "#a7b2c4",
+  // Real, explicit request -- "grey roads" (was a visibly blue-tinted slate, #a7b2c4). Neutral
+  // grey now, with arterial a step darker for the same local/arterial hierarchy as every other
+  // theme, white casing (roadStroke) unchanged -- that part already matched the request.
+  roadLocal: "#9aa3ad",
   roadStroke: "#ffffff",
   roadLabel: "#334155",
-  roadArterial: "#7c8bab",
+  roadArterial: "#7b8591",
   highway: "#1d4ed8",
   highwayLabel: "#ffffff",
   water: "#bcd4f0",
   waterLabel: "#2f5a8f",
   buildingFill: "#dde3ec",
   buildingStroke: "#c3cbda",
+};
+
+// Real, explicit request -- a genuine Waze-style DARK counterpart to LIGHT_COLORS above, same
+// hue families (grey roads, blue-grey suburb labels, green parks, blue water) just inverted for
+// a dark background, rather than reusing any of this file's existing dark brand themes (normal/
+// purpleBlue/blueGrey/greenYellow/blue), each of which is its own distinct accent color rather
+// than this same light theme's own grey/blue-grey/green/blue palette. Casing (roadStroke) is a
+// dark near-black here rather than white -- white road casing on an already-dark background
+// would read as the brightest thing on screen, the opposite of what a casing/outline is for.
+const DARK_COLORS: ThemeColors = {
+  background: "#1b1f27",
+  labelStroke: "#1b1f27",
+  labelFill: "#c7ccd6",
+  localityLabel: "#9fb0c7",
+  poiLabel: "#7c8699",
+  parkGeometry: "#1f3a28",
+  parkLabel: "#6fae7e",
+  roadLocal: "#454b57",
+  roadStroke: "#11141a",
+  roadLabel: "#c3c9d4",
+  roadArterial: "#5a6272",
+  highway: "#3b82f6",
+  highwayLabel: "#eef4ff",
+  water: "#16324a",
+  waterLabel: "#5ea0d6",
+  buildingFill: "#262b34",
+  buildingStroke: "#15181e",
 };
 
 // Real, explicit request: while picking a route, the actual candidate route line(s) should
@@ -294,6 +328,7 @@ export function getMapStyle(themeKey: MapThemeKey, thicknessKey: RoadThicknessKe
     greenYellow: GREEN_YELLOW_COLORS,
     blue: BLUE_COLORS,
     light: LIGHT_COLORS,
+    dark: DARK_COLORS,
   };
   const base = buildMapStyle(colors[themeKey], thicknessKey);
   return dimRoads ? [...base, ...ROUTE_PICKING_DIM_STYLERS] : base;
