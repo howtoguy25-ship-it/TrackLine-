@@ -19,6 +19,7 @@ import { RecordVoiceScreen } from "@/screens/RecordVoiceScreen";
 import { navigationIntegration } from "@/services/sentry";
 import { PlanADriveScreen } from "@/screens/PlanADriveScreen";
 import { HelpScreen } from "@/screens/HelpScreen";
+import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
 import type { PlaceDetails } from "@/services/places";
 
 export type RevCheckParams = {
@@ -61,6 +62,8 @@ export type RootStackParamList = {
   PlanADrive: undefined;
   // Real FAQ + contact row, Phase 4's own main-menu Help row. See HelpScreen.tsx.
   Help: undefined;
+  // Real Tracky mood grid ("View profile" from the main menu header). See TrackyProfileScreen.tsx.
+  TrackyProfile: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
   RevCheck: RevCheckParams | undefined;
@@ -155,6 +158,7 @@ export function RootNavigator() {
         <Stack.Screen name="Inbox" component={InboxScreen} />
         <Stack.Screen name="PlanADrive" component={PlanADriveScreen} />
         <Stack.Screen name="Help" component={HelpScreen} />
+        <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} />
         <Stack.Screen
           name="VehicleHistory"
           component={VehicleHistoryScreen}

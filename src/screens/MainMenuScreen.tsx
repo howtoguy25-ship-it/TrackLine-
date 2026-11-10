@@ -8,7 +8,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
-import { TrackyMascot } from "@/components/TrackyMascot";
+import { Tracky } from "@/components/trackys/Tracky";
+import { useTrackyMood } from "@/hooks/useTrackyMood";
 import { subscribeVisibleAlerts, getInboxLastViewedAt } from "@/services/alerts";
 import type { AlertDoc } from "@/types/alert";
 import {
@@ -30,6 +31,8 @@ export function MainMenuScreen() {
   const { user } = useAuth();
   const { settings } = useSettings();
   const isSignedIn = !!user && !user.isAnonymous;
+  const { displayMood } = useTrackyMood();
+  const firstName = (user?.displayName ?? "").split(" ")[0];
 
   const [unreadCount, setUnreadCount] = useState(0);
   useEffect(() => {
@@ -107,8 +110,14 @@ export function MainMenuScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.mascotRow}>
-          <TrackyMascot size={64} />
-          <Text style={styles.mascotGreeting}>Hey! Where are we headed today?</Text>
+          <Tracky mood={displayMood} size={96} />
+          <View style={styles.speechBubble}>
+            <View style={styles.speechBubbleTail} />
+            <Text style={styles.mascotGreeting}>{firstName ? `Hey ${firstName}!` : "Hey there!"}</Text>
+            <Pressable onPress={() => navigation.navigate("TrackyProfile")} hitSlop={6}>
+              <Text style={styles.viewProfileLink}>View profile</Text>
+            </Pressable>
+          </View>
         </View>
 
         <Pressable
@@ -247,10 +256,33 @@ const styles = StyleSheet.create({
   mascotRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.lg,
   },
-  mascotGreeting: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.text },
+  speechBubble: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    position: "relative",
+  },
+  speechBubbleTail: {
+    position: "absolute",
+    left: -6,
+    top: "50%",
+    marginTop: -6,
+    width: 0,
+    height: 0,
+    borderTopWidth: 6,
+    borderBottomWidth: 6,
+    borderRightWidth: 8,
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    borderRightColor: colors.surfaceMuted,
+  },
+  mascotGreeting: { fontSize: 15, fontWeight: "800", color: colors.text },
+  viewProfileLink: { fontSize: 12, fontWeight: "700", color: colors.accent, marginTop: 2 },
   planCard: {
     flexDirection: "row",
     alignItems: "center",

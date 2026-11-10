@@ -13,6 +13,7 @@ import { haversineMeters } from "@/services/places";
 import type { AlertDoc, AlertType } from "@/types/alert";
 import { ALERT_LABELS, ALERT_ICONS, ALERT_COLORS } from "@/types/alert";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { Tracky } from "@/components/trackys/Tracky";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- main menu's Inbox row). A live feed of
 // every real community alert currently visible to this driver (same subscribeVisibleAlerts
@@ -111,7 +112,7 @@ export function InboxScreen() {
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl }]}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="mail-open-outline" size={40} color={colors.textFaint} />
+            <Tracky mood="sleepy" size={56} animated={false} reactOnTap={false} />
             <Text style={styles.emptyText}>No alerts right now.</Text>
           </View>
         }
