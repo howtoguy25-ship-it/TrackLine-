@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Alert,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -36,6 +37,12 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import {
+  getContactsPermissionStatus,
+  requestContactsAccess,
+  getContactsWithAddresses,
+  type ContactWithAddress,
+} from "@/services/contactAddresses";
 
 // Real, explicit request (Waze-style redesign, Phase 2 -- "Bottom Search Sheet 'Where to?'").
 // Replaces the old always-floating-at-the-top DestinationSearchBar as the home screen's main
@@ -117,6 +124,15 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   const [activeCategory, setActiveCategory] = useState<WhereToCategory | null>(null);
   const [micNote, setMicNote] = useState<string | null>(null);
   const [addressInputFocused, setAddressInputFocused] = useState(false);
+  // Real, explicit request -- "Drive to friends & family via Contacts" More options row,
+  // previously honestly deferred (no expo-contacts dependency existed yet). Lazily loaded only
+  // when the picker is actually opened, not on every sheet mount.
+  const [contactsPickerOpen, setContactsPickerOpen] = useState(false);
+  const [contactsStatus, setContactsStatus] = useState<"granted" | "denied" | "undetermined" | null>(null);
+  const [contactsWithAddresses, setContactsWithAddresses] = useState<ContactWithAddress[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsQuery, setContactsQuery] = useState("");
+  const [drivingToContactId, setDrivingToContactId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -278,6 +294,54 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     micNoteTimerRef.current = setTimeout(() => setMicNote(null), 3000);
   }, []);
 
+  const onOpenContactsPicker = useCallback(async () => {
+    setContactsPickerOpen(true);
+    const status = await getContactsPermissionStatus();
+    setContactsStatus(status);
+    if (status === "granted") {
+      setContactsLoading(true);
+      getContactsWithAddresses()
+        .then(setContactsWithAddresses)
+        .finally(() => setContactsLoading(false));
+    }
+  }, []);
+
+  const onConnectContacts = useCallback(async () => {
+    const granted = await requestContactsAccess();
+    setContactsStatus(granted ? "granted" : "denied");
+    if (granted) {
+      setContactsLoading(true);
+      getContactsWithAddresses()
+        .then(setContactsWithAddresses)
+        .finally(() => setContactsLoading(false));
+    }
+  }, []);
+
+  const onPickContact = useCallback(
+    async (contact: ContactWithAddress) => {
+      setDrivingToContactId(contact.id);
+      try {
+        const predictions = await searchPlaces(contact.formattedAddress);
+        if (predictions.length === 0) {
+          Alert.alert("Couldn't find that address", `No match found for "${contact.formattedAddress}".`);
+          return;
+        }
+        const place = await getPlaceDetails(predictions[0].placeId);
+        setContactsPickerOpen(false);
+        onDestinationSelected(place);
+      } catch {
+        Alert.alert("Couldn't look up that address", "Check your connection and try again.");
+      } finally {
+        setDrivingToContactId(null);
+      }
+    },
+    [onDestinationSelected]
+  );
+
+  const filteredContacts = contactsQuery.trim()
+    ? contactsWithAddresses.filter((c) => c.name.toLowerCase().includes(contactsQuery.trim().toLowerCase()))
+    : contactsWithAddresses;
+
   const onPressCategory = useCallback(
     (category: WhereToCategory) => {
       if (category === "saved") {
@@ -300,6 +364,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   const showSavedList = activeCategory === "saved" && !picking && !query.trim();
 
   return (
+    <>
     <ThreeSnapBottomSheet ref={ref} snapFractions={snapFractions} topInset={insets.top} onChange={onSheetChange}>
       <View style={styles.content}>
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
@@ -415,6 +480,16 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
                   </Text>
                 </Pressable>
               )}
+
+              {!query.trim() && activeCategory === null && (
+                <Pressable
+                  style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
+                  onPress={onOpenContactsPicker}
+                >
+                  <Ionicons name="people-outline" size={18} color={colors.accent} />
+                  <Text style={styles.quickActionText}>Drive to friends & family</Text>
+                </Pressable>
+              )}
             </>
           )}
 
@@ -528,6 +603,82 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
         )}
       </View>
     </ThreeSnapBottomSheet>
+
+    <Modal
+      visible={contactsPickerOpen}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setContactsPickerOpen(false)}
+    >
+      <View style={[styles.contactsModal, { paddingTop: insets.top + spacing.md }]}>
+        <View style={styles.contactsModalHeader}>
+          <Text style={styles.contactsModalTitle}>Friends & family</Text>
+          <Pressable onPress={() => setContactsPickerOpen(false)} hitSlop={10} accessibilityLabel="Close">
+            <Ionicons name="close" size={22} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {contactsStatus !== "granted" ? (
+          <Pressable style={styles.contactsConnectRow} onPress={onConnectContacts}>
+            <Ionicons name="people-outline" size={20} color={colors.accent} />
+            <Text style={styles.contactsConnectText}>Connect your contacts to drive to a saved address</Text>
+          </Pressable>
+        ) : (
+          <>
+            <View style={styles.contactsSearchRow}>
+              <Ionicons name="search" size={16} color={colors.textMuted} />
+              <TextInput
+                value={contactsQuery}
+                onChangeText={setContactsQuery}
+                placeholder="Search contacts…"
+                placeholderTextColor={colors.textFaint}
+                style={styles.contactsSearchInput}
+              />
+            </View>
+            {contactsLoading ? (
+              <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
+            ) : filteredContacts.length === 0 ? (
+              <Text style={styles.contactsEmptyText}>
+                {contactsWithAddresses.length === 0
+                  ? "None of your contacts have a saved address."
+                  : "No matches for that search."}
+              </Text>
+            ) : (
+              <FlatList
+                data={filteredContacts}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                    onPress={() => onPickContact(item)}
+                    disabled={drivingToContactId === item.id}
+                  >
+                    <View style={[styles.predictionIconWrap, { backgroundColor: colors.accent }]}>
+                      <Ionicons name="person" size={16} color="#FFFFFF" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.primaryText} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.secondaryText} numberOfLines={1}>
+                        {item.formattedAddress}
+                      </Text>
+                    </View>
+                    {drivingToContactId === item.id ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : (
+                      <Ionicons name="navigate-outline" size={18} color={colors.accent} />
+                    )}
+                  </Pressable>
+                )}
+              />
+            )}
+          </>
+        )}
+      </View>
+    </Modal>
+    </>
   );
 });
 
@@ -668,4 +819,28 @@ const styles = StyleSheet.create({
   predictionDistance: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
   primaryText: { flexShrink: 1, fontSize: 15, color: colors.text, fontWeight: "600" },
   secondaryText: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  contactsModal: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
+  contactsModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  contactsModalTitle: { fontSize: 20, fontWeight: "800", color: colors.text },
+  contactsConnectRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  contactsConnectText: { flex: 1, fontSize: 13, color: colors.textMuted },
+  contactsEmptyText: { fontSize: 13, color: colors.textFaint, textAlign: "center", marginTop: spacing.xl },
+  contactsSearchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+    marginBottom: spacing.sm,
+  },
+  contactsSearchInput: { flex: 1, fontSize: 15, color: colors.text },
 });
