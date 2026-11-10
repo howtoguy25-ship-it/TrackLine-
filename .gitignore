@@ -25,6 +25,12 @@ modules/*/ios/build/
 .metro-health-check*
 firebase-debug.log
 firestore-debug.log
+ui-debug.log
+pubsub-debug.log
 .firebase/
 functions/node_modules/
 functions/lib/
+# Real emulator-only test secret for firebase/functions' defineSecret("MAPBOX_SERVER_TOKEN") --
+# never a real credential (see firebase/tests/README.md), but still never committed on principle.
+firebase/functions/.secret.local
+firebase/tests/node_modules/

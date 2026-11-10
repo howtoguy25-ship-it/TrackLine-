@@ -1,0 +1,15 @@
+{
+  "name": "trackline-firebase-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real Firebase Emulator Suite tests -- Firestore/Storage rules + Cloud Functions (presence/ghost-mode system). Run via `npm --prefix firebase/tests test` from inside `firebase emulators:exec`, see TEST_RESULTS.md for how this was actually run and the real results.",
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase": "^12.16.0",
+    "firebase-admin": "^12.1.0",
+    "jest": "^29.7.0"
+  }
+}
