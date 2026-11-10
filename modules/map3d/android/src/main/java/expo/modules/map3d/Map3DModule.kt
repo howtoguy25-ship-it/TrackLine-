@@ -30,11 +30,19 @@ class Map3DModule : Module() {
         view.setRouteCoordinates(points ?: emptyList())
       }
 
-      Function("rotateCamera") { view: ExpoMap3DView, deltaDeg: Double ->
+      // Real, confirmed-via-reproduction Kotlin 2.2 regression (same upgrade as
+      // ExpoMap3DView.kt's own getMap3DViewAsync fix above): the K2 compiler now reports
+      // "cannot be called in this context with an implicit receiver" for this reified
+      // Function(name, body) overload -- it's really a member of the OUTER ModuleDefinition{}
+      // block's own receiver (ModuleDefinitionBuilder, via its ObjectDefinitionBuilder base),
+      // not View{}'s own ViewDefinitionBuilder (confirmed: that type has no Function member at
+      // all, only AsyncFunction). The labelled `this@ModuleDefinition` receiver resolves it
+      // explicitly instead of relying on (now-rejected) implicit cross-scope lookup.
+      this@ModuleDefinition.Function("rotateCamera") { view: ExpoMap3DView, deltaDeg: Double ->
         view.rotateCamera(deltaDeg)
       }
 
-      Function("tiltCamera") { view: ExpoMap3DView, deltaDeg: Double ->
+      this@ModuleDefinition.Function("tiltCamera") { view: ExpoMap3DView, deltaDeg: Double ->
         view.tiltCamera(deltaDeg)
       }
     }

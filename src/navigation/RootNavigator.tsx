@@ -12,6 +12,8 @@ import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
 import { MapboxMapScreen } from "@/screens/MapboxMapScreen";
+import { VoicePickerScreen } from "@/screens/VoicePickerScreen";
+import { RecordVoiceScreen } from "@/screens/RecordVoiceScreen";
 import { navigationIntegration } from "@/services/sentry";
 
 export type RevCheckParams = {
@@ -55,6 +57,12 @@ export type RootStackParamList = {
   // choice, so the now-superseded, already-broken-by-this prototype was deleted rather than the
   // real engine.
   MapboxMapPreview: undefined;
+  // Phase 3 of the Waze-style redesign -- the real "Current voice" picker (search, Recommended/
+  // My recorded voices/All languages sections, consent modal). See VoicePickerScreen.tsx.
+  VoicePicker: undefined;
+  // The picker's own "Record your own voice" entry point -- a real, guided, 6-second-clip
+  // recorder for every turn-by-turn phrase the brief lists. See RecordVoiceScreen.tsx.
+  RecordVoice: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -135,6 +143,16 @@ export function RootNavigator() {
           name="MapboxMapPreview"
           component={MapboxMapScreen}
           options={{ headerShown: true, title: "Mapbox map preview" }}
+        />
+        <Stack.Screen
+          name="VoicePicker"
+          component={VoicePickerScreen}
+          options={{ headerShown: true, title: "Current voice" }}
+        />
+        <Stack.Screen
+          name="RecordVoice"
+          component={RecordVoiceScreen}
+          options={{ headerShown: true, title: "Record your own voice" }}
         />
         <Stack.Screen
           name="VehicleDetection"

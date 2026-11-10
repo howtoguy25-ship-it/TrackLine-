@@ -71,8 +71,11 @@ module.exports = {
           "TrackLine uses your location to show your position on the map and provide turn-by-turn navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
           "TrackLine can track your location in the background to keep navigation and nearby-alert notifications accurate.",
+        // Real, confirmed fix -- see the matching expo-audio plugin option below for why this
+        // no longer says audio "is never recorded or stored" (Phase 3's "Record your own
+        // voice" feature genuinely does, only when the driver explicitly starts a recording).
         NSMicrophoneUsageDescription:
-          "TrackLine listens for emergency vehicle sirens near you. Audio is analyzed on-device in real time and is never recorded or stored.",
+          "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded) and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
         // Updated to honestly disclose the new, opt-in cloud plate-OCR path (Plate Recognizer,
         // see plateRecognizer.ts) -- when that provider is connected, a small cropped image of
         // a detected plate is sent to Plate Recognizer's own servers for reading, unlike the
@@ -154,8 +157,13 @@ module.exports = {
       [
         "expo-audio",
         {
+          // Real, confirmed fix -- this string used to say siren audio "is never recorded or
+          // stored," which became factually false the moment Phase 3's real "Record your own
+          // voice" feature shipped (it genuinely does record and store a clip, locally and in
+          // Firebase Storage, only when the driver explicitly starts a recording). Siren
+          // listening itself is unchanged -- still real-time, on-device only, never saved.
           microphonePermission:
-            "TrackLine listens for emergency vehicle sirens near you. Audio is analyzed on-device only and is never recorded or stored.",
+            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded) and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
         },
       ],
       // Switched from expo-camera to react-native-vision-camera for Live Vehicle Detection --
@@ -190,6 +198,12 @@ module.exports = {
       // actual root cause (a missing `ext.webkitVersion` Gradle property its own build.gradle
       // reads with no fallback).
       "./plugins/withAndroidWebviewGradleFix.js",
+      // Real, confirmed Android build fix for react-native-google-mobile-ads -- see
+      // plugins/withAndroidKotlinGradlePluginVersion.js for the actual root cause (this
+      // project's unversioned root Kotlin Gradle Plugin classpath entry resolves to a compiler
+      // too old to read play-services-ads 25.4.0's own newer Kotlin metadata) and the real,
+      // verified-via-a-local-build fix.
+      "./plugins/withAndroidKotlinGradlePluginVersion.js",
       // Waze-style redesign's map engine -- deliberately CONDITIONAL, included only once a real
       // RNMAPBOX_MAPS_DOWNLOAD_TOKEN actually exists. That token authenticates fetching Mapbox's
       // own native SDK at BUILD time (CocoaPods/Gradle) -- without it, Mapbox's own install step
@@ -288,6 +302,9 @@ module.exports = {
       // here. See src/map/mapboxAvailability.ts for the real, non-fabricated "is Mapbox actually
       // usable right now" check this backs, and NOTES.md for the full story.
       mapboxPublicToken: process.env.MAPBOX_PUBLIC_TOKEN,
+      // Waze-style redesign's Phase 3 voice picker persona voices -- genuinely optional, same
+      // treatment as every other key here. See src/services/personaVoices.ts and NOTES.md.
+      elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
       sentryDsn: process.env.SENTRY_DSN,
       eas: {
         // Not a secret -- EAS project IDs are meant to live directly in config, which is

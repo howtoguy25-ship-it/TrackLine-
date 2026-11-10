@@ -119,30 +119,31 @@ phase ships.
   yet.** Phase 1 added the new top-left Menu/Compass buttons, which needed the existing full-
   width top search bar pushed down (via its own `topOffset` prop) to avoid overlapping rather
   than removed -- the real bottom "Where to?" sheet replacing it entirely is Phase 2's own work.
-- **Android builds with ads are currently broken by a pre-existing Kotlin/Gradle dependency
-  conflict, unrelated to anything built this session.** `react-native-google-mobile-ads`'s own
-  pinned `com.google.android.gms:play-services-ads:25.4.0` ships Kotlin metadata the project's
-  resolved Kotlin compiler can't read ("Module was compiled with an incompatible version of
-  Kotlin. The binary version of its metadata is 2.3.0, expected version is 2.1.0") — confirmed
-  real by reproducing a full `./gradlew :app:assembleDebug` locally against a real Android SDK
-  (the untouched baseline, before any Phase 1 change, hits this too). Tried three real levers to
-  bump the resolved Kotlin version -- a direct `ext.kotlinVersion` assignment in the generated
-  root `build.gradle`, the documented `android.kotlinVersion` Gradle property Expo's own
-  autolinking-settings plugin reads to override its version catalog, and several target versions
-  (2.3.0, 2.4.0, 2.4.21) -- confirmed via `./gradlew :react-native-google-mobile-ads:dependencies
-  --configuration debugCompileClasspath` that NONE of them actually changed the Kotlin stdlib
-  version that module's own classpath resolves to (stayed pinned at 2.1.20 throughout), meaning
-  the real lever is somewhere deeper in Gradle's own plugin-version resolution this pass didn't
-  find. One of the attempts also made `@maplibre/maplibre-react-native`'s latest release (11.5.1,
-  an owner-only internal prototype, not the live map) fail to compile with an internal Kotlin K2
-  compiler crash -- almost certainly a side effect of the same unresolved mismatch, not a
-  maplibre-specific bug, so that attempted exclusion was reverted along with the rest. **Net
-  effect: Android ads builds are blocked exactly as they would have been before this session**
-  -- iOS is completely unaffected (no Gradle/Kotlin involved) and has built/submitted cleanly
-  throughout. Next real avenues, not yet tried: upgrading `react-native-google-mobile-ads` past
-  16.4.0 (current latest is 17.4.0, pins an even newer `play-services-ads` so may not help
-  alone), or finding the actual `pluginManagement`/plugin-resolution pin for Kotlin that
-  `./gradlew :app:buildEnvironment` didn't surface in this pass.
+- **RESOLVED: the Android ads/Kotlin build conflict.** `react-native-google-mobile-ads`'s own
+  pinned `com.google.android.gms:play-services-ads:25.4.0` ships real Kotlin metadata at binary
+  version 2.3.0; a Kotlin compiler can only read metadata up to one minor version ahead of
+  itself, and this project's actually-applied compiler was 2.1.20 (one short) -- confirmed real
+  via `Module was compiled with an incompatible version of Kotlin. The binary version of its
+  metadata is 2.3.0, expected version is 2.1.0.` Earlier attempts this session (the documented
+  `android.kotlinVersion` property, a module-local `ext.kotlinVersion`, hardcoding that module's
+  OWN buildscript classpath, a `pluginManagement.resolutionStrategy.eachPlugin` substitution)
+  all genuinely had zero effect -- confirmed by re-running the exact same failing compile task
+  after each and seeing the identical, unchanged error. The real lever, found by reading
+  `react-native-google-mobile-ads/android/build.gradle`'s own `apply plugin: 'kotlin-android'`
+  (old string syntax, resolved via buildscript classpath, not Gradle's plugin-ID resolution) and
+  this project's generated ROOT `android/build.gradle`, which applies the Kotlin Gradle Plugin
+  with **no version at all** (`classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')`) -- every
+  subproject's plain `apply plugin: 'kotlin-android'` resolves against THAT one unversioned
+  entry project-wide. Pinning a real version there (2.2.20 -- confirmed both by the "+1 minor"
+  metadata rule and by Expo's own `ExpoRootProjectPlugin.kt` KSP-version lookup table only
+  recognising 2.2.20/2.2.10/2.2.0/2.1.21/2.1.20/2.0.21, not 2.3.x) is what actually worked,
+  confirmed via a real local `./gradlew :react-native-google-mobile-ads:compileReleaseKotlin`
+  going from the metadata error to `BUILD SUCCESSFUL`. Shipped as a real Expo config plugin,
+  `plugins/withAndroidKotlinGradlePluginVersion.js` (see its own header for the full
+  investigation), verified end-to-end via a fresh `expo prebuild --clean` + local Gradle build
+  with no manual edits. This bump also surfaced (and this session fixed) a real, previously-
+  masked regression in this project's own `modules/map3d` native module -- see its own entry
+  below.
 - **Main menu panel is a minimal first slice** (Sign in/Account + Settings rows only) --
   the full designed panel (Tracky mascot, "Plan a drive" card, calendar events, Inbox, Invite a
   friend, Help) is Phase 4's own build. The Menu button's unread badge count is real (always 0
@@ -183,3 +184,60 @@ phase ships.
     new saved place with the picked place's own real name instead (no fake name, just a
     simplification of the naming UI, which needs a small cross-platform text-entry modal
     `Alert.prompt` doesn't provide on Android).
+
+## `modules/map3d` -- real regression from the Android Kotlin 2.2.20 bump, fixed
+
+Bumping the project's actually-applied Kotlin compiler (see the resolved ads/Kotlin entry above)
+let the compiler correctly read `play-services-maps3d` 0.2.0's own real Kotlin metadata for the
+first time -- previously-masked-by-lenient-platform-type-fallback issues surfaced as real
+compile errors in `modules/map3d/android/src/main/java/expo/modules/map3d/`, all confirmed via
+decompiling the real SDK's own class files (`javap`) rather than guessed, and all fixed:
+- `getMap3DViewAsync { map -> ... }`'s SAM-converted trailing lambda stopped type-checking
+  under the K2 compiler against `OnMap3DViewReadyCallback` (a real Java interface with one
+  abstract method + one default method) -- replaced with an explicit anonymous `object :
+  OnMap3DViewReadyCallback` implementation, which sidesteps whatever inference path regressed.
+- `Camera.heading`/`.tilt`/`.range` are each individually nullable (`java.lang.Double`, not
+  primitive `double`) on the real API -- `rotateCamera`/`tiltCamera` now fall back to this
+  view's own last-known values (`this@ExpoMap3DView.heading` etc.) instead of doing arithmetic
+  directly on a nullable.
+- `Marker.position` is a read-only (`val`) Kotlin property with a separate, unrelated
+  `setPosition()` method (not a property setter) -- `existing.position = position` is now
+  `existing.setPosition(position)`.
+- `PolylineOptions` (the builder) has no `coordinates` property at all, only `path` (that name
+  only exists on the already-constructed `Polyline` object) -- fixed in `polylineOptions { }`.
+- `Map3DModule.kt`'s `Function("rotateCamera") { ... }`/`Function("tiltCamera") { ... }` calls
+  stopped resolving via implicit cross-scope receiver lookup (a real K2 compiler change for
+  reified inline functions called through an outer implicit receiver from inside a nested
+  `View { }` builder block) -- fixed with the explicit labelled receiver `this@ModuleDefinition
+  .Function(...)`, confirmed correct by checking `ViewDefinitionBuilder`'s own real members (it
+  has no `Function` at all, only `AsyncFunction` -- the real one is inherited from
+  `ModuleDefinitionBuilder`'s `ObjectDefinitionBuilder` base).
+All five confirmed fixed via a real `./gradlew :map3d:compileDebugKotlin` → `BUILD SUCCESSFUL`.
+
+## Phase 3 -- voice picker + "Record your own voice"
+
+- **Real, shipped this round**: a dedicated `VoicePickerScreen.tsx` (search, Recommended/My
+  recorded voices/All languages sections, tap-to-preview-and-select against every real voice
+  actually installed on the device -- not English-only like the old inline Settings pill list
+  this replaces, see `voice.ts`'s new `getAllDeviceVoices()`) with the brief's own "show the
+  consent modal only the first 3 times ever" rule (persisted counter). The four named persona
+  voices (Matilda, Aussie Footy Fan, Sarcastic Co-pilot, Dry Wit) are real, listed entries --
+  honestly shown as "Voice not available yet" (never a silent/fake selection) until a real
+  ElevenLabs API key exists, see `personaVoices.ts`/`.env.example`. A full, real guided recorder
+  (`RecordVoiceScreen.tsx`) covers every clip the brief lists (31 phrases across its 5 real
+  sections) -- real 6-second auto-stop recording via `expo-audio`, a real SVG countdown ring,
+  real playback/re-record/delete, a real "x of N recorded" progress count, stored locally
+  (`expo-file-system`) and uploaded to the signed-in driver's own private Firebase Storage
+  folder (`firebase/storage.rules`, new -- owner-only, same `request.auth.uid` pattern
+  `firestore.rules` already uses; **not yet deployed** -- a real `firebase deploy
+  --only storage` by the project owner is needed before the real upload path can succeed in
+  production, the local-save half works regardless).
+- **Honestly NOT built this round**: the live navigation engine doesn't stitch these recorded
+  clips together during real turn-by-turn guidance yet (the brief's own "navigation engine
+  stitches clips (distance + instruction)") -- recording/storing/previewing clips is real and
+  complete; wiring them into the live `speak()` call path during an active route is a separate,
+  not-yet-started piece of work.
+- Fixed a real, pre-existing honesty bug surfaced while touching this: the `NSMicrophoneUsageDescription`/
+  `expo-audio` `microphonePermission` strings used to claim microphone audio "is never recorded
+  or stored" -- true for siren listening, but now genuinely false for this real recording
+  feature. Both updated to accurately describe both real uses.

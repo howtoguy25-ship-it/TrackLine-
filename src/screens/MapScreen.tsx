@@ -5219,7 +5219,7 @@ export function MapScreen() {
         ref={soundSheetRef}
         onClose={() => soundSheetRef.current?.close()}
         onSheetChange={(index) => setSoundSheetOpen(index >= 0)}
-        onOpenVoiceSettings={() => navigation.navigate("Settings")}
+        onOpenVoiceSettings={() => navigation.navigate("VoicePicker")}
       />
 
       <MapToolsSheet

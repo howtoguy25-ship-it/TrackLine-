@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Real, explicit request (Waze-style redesign, Phase 3 "Record your own voice" -- "Store audio
+// locally + Firebase Storage (user's own folder, private)"). Owner-only read/write, same real
+// request.auth.uid == uid ownership check firestore.rules already uses for /users/{uid}.
+// Every other path is denied by the final catch-all match.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /voiceRecordings/{uid}/{fileName} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

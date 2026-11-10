@@ -21,13 +21,19 @@ honest limitations/missing keys.
 - `MainMenuScreen` — minimal first slice of the slide-in menu (Sign in/Account + Settings rows).
 - `CODEBASE_MAP.md` written per the new spec's "HOW TO WORK" step 1.
 
-**Investigated, reverted (not shipped — see NOTES.md for the full story):** a pre-existing
-Android Gradle/Kotlin version conflict between `react-native-google-mobile-ads`'s pinned
-`play-services-ads` and this project's resolved Kotlin compiler blocks Android ads builds.
-Reproduced locally against the untouched baseline (so **not** caused by this session's work).
-Tried three real fix mechanisms across several target Kotlin versions; none actually changed the
-resolved compiler version for that module (confirmed via `gradlew :module:dependencies`). Reverted
-rather than ship something broken or guessed. iOS is unaffected and has shipped twice since.
+**RESOLVED — the Android ads/Kotlin build conflict.** The pre-existing Android Gradle/Kotlin
+version conflict between `react-native-google-mobile-ads`'s pinned `play-services-ads` and this
+project's resolved Kotlin compiler (reproduced locally against the untouched baseline, so not
+caused by this session's work) is now actually fixed: `plugins/withAndroidKotlinGradlePluginVersion.js`
+pins the real Kotlin Gradle Plugin version (2.2.20) on the one unversioned classpath entry that
+actually governs it project-wide. Confirmed via a real local Gradle build going from the exact
+metadata-incompatibility error to `BUILD SUCCESSFUL`, verified end-to-end from a fresh `expo
+prebuild --clean` with no manual edits. This also surfaced a real, previously-masked regression
+in this project's own `modules/map3d` module (the new compiler could finally read
+play-services-maps3d's own Kotlin metadata, revealing real SAM-conversion/nullable-property
+issues) — found and fixed, confirmed via `./gradlew :map3d:compileDebugKotlin` → `BUILD
+SUCCESSFUL`. See NOTES.md for the full investigation (several real dead-end fix attempts ruled
+out along the way).
 
 ## Hard blockers needing the project owner directly (not fabricatable)
 
@@ -35,7 +41,8 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
    platforms.** `MAPBOX_PUBLIC_TOKEN`/`RNMAPBOX_MAPS_DOWNLOAD_TOKEN` are both real EAS env vars.
    A real EAS cloud build (Android + iOS) against the tokens showed: Android's
    `rnmapbox_maps:compileReleaseKotlin` genuinely succeeded (all 469 tasks ran; the build's only
-   failure was the pre-existing, unrelated google-mobile-ads Kotlin issue below) — but iOS failed
+   failure was the pre-existing, unrelated google-mobile-ads Kotlin issue, now resolved — see
+   above) — but iOS failed
    for a real, new reason: a linker collision (`ld: 5 duplicate symbols`) between `@rnmapbox/maps`
    and the (by-then-superseded) MapLibre prototype, both generating a Codegen native-module spec
    named `NativeMapViewModule`. Fixed by removing the MapLibre prototype entirely (it was already
@@ -68,7 +75,11 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 - [x] Phase 2 (partial) — real 3-snap "Where to?" sheet, Home/Work/+New, Saved/Fuel/Food/Parking
       category chips. Voice mic / Contacts+Calendar "More options" / Parking's full filter row
       honestly deferred — see NOTES.md
-- [ ] Phase 3 — voice picker + recording
+- [x] Phase 3 (partial) — real `VoicePickerScreen` (search, Recommended/My recorded voices/All
+      languages, consent modal, persona voices honestly locked pending a real ElevenLabs key)
+      and a real guided `RecordVoiceScreen` (6s auto-stop, SVG countdown ring, playback/re-
+      record/delete, all 31 real brief phrases, local storage + Firebase Storage upload). Not
+      yet wired into live navigation's own spoken-instruction engine — see NOTES.md
 - [ ] Phase 4 — main menu (full), plan a drive, inbox
 - [ ] Phase 5 — settings reorg
 - [ ] Phase 6 — polish/QA/version bump
@@ -92,7 +103,7 @@ rather than ship something broken or guessed. iOS is unaffected and has shipped 
 - [ ] Camera & zoom behaviour — pure logic written and verified (`src/map/cameraZoom.ts`), not
       yet wired into a live camera
 - [x] Search sheet (Phase 3 of new doc) — same as old Phase 2, see above
-- [ ] Voices (Phase 4 of new doc) — same as old Phase 3
+- [x] Voices (Phase 4 of new doc) — same as old Phase 3, see above
 - [ ] Menu/Plan a drive/Inbox/Live Traffic NSW (Phase 5 of new doc) — needs TfNSW secret for the
       live-data half; menu/plan-a-drive UI itself is buildable now
 - [ ] Settings reorg (Phase 6 of new doc) — same as old Phase 5

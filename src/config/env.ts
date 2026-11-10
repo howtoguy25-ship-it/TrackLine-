@@ -55,4 +55,9 @@ export const env = {
   // itself has to have been fetched at build time too, which needs the separate download token,
   // see app.config.js's own comment on the @rnmapbox/maps plugin entry).
   mapboxPublicToken: extra.mapboxPublicToken ?? "",
+  // Waze-style redesign's Phase 3 voice picker -- the brief's own "Sarcastic Co-pilot"/"Dry Wit"
+  // persona voices ("scripted lines generated once via a TTS provider e.g. ElevenLabs and
+  // bundled/cached, not live"). Genuinely optional, same treatment as every other key above --
+  // src/services/personaVoices.ts is the real, honest check for whether these are usable yet.
+  elevenLabsApiKey: extra.elevenLabsApiKey ?? "",
 };

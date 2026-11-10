@@ -75,6 +75,47 @@ export async function getAvailableVoices(): Promise<Speech.Voice[]> {
   return deduped;
 }
 
+// Real, explicit request (Waze-style redesign, Phase 3 voice picker) -- the picker's "All
+// languages" section needs every real voice actually installed on this device, not just the
+// English ones getAvailableVoices() above deliberately limits itself to (that function is kept
+// as-is since the live turn-by-turn instructions it feeds are English-only regardless). Deduped
+// by identifier (never by display name across languages -- unlike the English-only list above,
+// a same-named voice in two different languages is two genuinely different real voices here,
+// not a true duplicate).
+export async function getAllDeviceVoices(): Promise<Speech.Voice[]> {
+  const voices = await Speech.getAvailableVoicesAsync();
+  const seen = new Set<string>();
+  const deduped: Speech.Voice[] = [];
+  for (const v of voices) {
+    if (seen.has(v.identifier)) continue;
+    seen.add(v.identifier);
+    deduped.push(v);
+  }
+  return deduped.sort((a, b) => {
+    const langCompare = (a.language ?? "").localeCompare(b.language ?? "");
+    if (langCompare !== 0) return langCompare;
+    if (a.quality !== b.quality) return a.quality === "Enhanced" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+const VOICE_CONSENT_COUNT_KEY = "@trackline/voiceConsentShownCount";
+// Real, explicit request -- "show this modal only the first 3 times ever (counter persisted),
+// then select directly."
+export const VOICE_CONSENT_MAX_SHOWS = 3;
+
+export async function getVoiceConsentShownCount(): Promise<number> {
+  const raw = await AsyncStorage.getItem(VOICE_CONSENT_COUNT_KEY);
+  const parsed = raw === null ? 0 : Number(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export async function incrementVoiceConsentShownCount(): Promise<number> {
+  const next = (await getVoiceConsentShownCount()) + 1;
+  await AsyncStorage.setItem(VOICE_CONSENT_COUNT_KEY, String(next));
+  return next;
+}
+
 export function speak(instruction: string, volume = 1.0, voiceIdentifier?: string | null, onDone?: () => void): void {
   Speech.stop();
   Speech.speak(instruction, {
