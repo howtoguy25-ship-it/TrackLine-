@@ -329,9 +329,6 @@ module.exports = {
       // here. See src/map/mapboxAvailability.ts for the real, non-fabricated "is Mapbox actually
       // usable right now" check this backs, and NOTES.md for the full story.
       mapboxPublicToken: process.env.MAPBOX_PUBLIC_TOKEN,
-      // Waze-style redesign's Phase 3 voice picker persona voices -- genuinely optional, same
-      // treatment as every other key here. See src/services/personaVoices.ts and NOTES.md.
-      elevenLabsApiKey: process.env.ELEVENLABS_API_KEY,
       // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
       // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
       // false (never fabricated) when this is unset, so auto-mood just skips that one signal.

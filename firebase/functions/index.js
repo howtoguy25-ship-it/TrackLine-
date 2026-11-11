@@ -1,9 +1,10 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineString } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestore");
+const { getStorage } = require("firebase-admin/storage");
 const Stripe = require("stripe");
 const {
   haversineMeters,
@@ -14,6 +15,7 @@ const {
   timeAlongGeometry,
   downsample,
 } = require("./presencePath");
+const personaCore = require("./personaSpeechCore");
 
 initializeApp();
 
@@ -911,4 +913,112 @@ exports.sendWave = onCall(async (request) => {
   }
 
   return { outcome: "success" };
+});
+
+// ------------------------------------------------------------------------------------------
+// Character voices ("Matilda", "Aussie Footy Fan", "Sarcastic Co-pilot", "Dry Wit").
+//
+// The app sends one navigation sentence and a character; this returns that sentence as audio,
+// synthesized by ElevenLabs. Each sentence is synthesized ONCE and kept in Cloud Storage, shared
+// by every driver -- "turn left onto George Street" costs the first person to hear it and
+// nobody after. The app also keeps its own copy (src/services/personaSpeech.ts).
+//
+// The ElevenLabs key is a Cloud Functions secret and never leaves the server. Until it's set
+// (it may hold the deploy workflow's "unset" placeholder -- see personaCore.secretIsSet) both
+// functions say so plainly and the app keeps these voices locked.
+const ELEVENLABS_API_KEY = defineSecret("ELEVENLABS_API_KEY");
+const ELEVENLABS_MODEL = defineString("ELEVENLABS_MODEL", { default: "eleven_multilingual_v2" });
+// Which ElevenLabs voice each character speaks with. The defaults are ElevenLabs' own stock
+// voices, chosen by ear from their public library -- NOT verified against a live account from
+// this codebase, because no key has ever been available here. If one is wrong ElevenLabs
+// rejects the request, the function reports "failed", and the app falls back to the phone's
+// voice. Override any of them (e.g. with a voice from your own ElevenLabs library) in
+// firebase/functions/.env -- see DEPLOY.md.
+const PERSONA_ELEVENLABS_VOICE = {
+  matilda: defineString("ELEVENLABS_VOICE_MATILDA", { default: "XrExE9yKIg1WjnnlVkGX" }),
+  footy_fan: defineString("ELEVENLABS_VOICE_FOOTY_FAN", { default: "IKne3meq5aSn9XLyUdCD" }),
+  sarcastic_copilot: defineString("ELEVENLABS_VOICE_SARCASTIC_COPILOT", { default: "onwK4e9ZLuTAKqWW03F9" }),
+  dry_wit: defineString("ELEVENLABS_VOICE_DRY_WIT", { default: "JBFqnCBsd6RMkjVDRZzb" }),
+};
+
+exports.personaVoicesStatus = onCall({ secrets: [ELEVENLABS_API_KEY] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  return { available: personaCore.secretIsSet(ELEVENLABS_API_KEY.value()) };
+});
+
+exports.synthesizePersonaSpeech = onCall({ secrets: [ELEVENLABS_API_KEY] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const valid = personaCore.validateRequest(request.data);
+  if (!valid) {
+    throw new HttpsError("invalid-argument", "A known personaId and a short plain-text sentence are required.");
+  }
+  const apiKey = ELEVENLABS_API_KEY.value();
+  if (!personaCore.secretIsSet(apiKey)) {
+    return { status: "not_configured" };
+  }
+
+  const { personaId, text } = valid;
+  const voiceId = PERSONA_ELEVENLABS_VOICE[personaId].value();
+  const modelId = ELEVENLABS_MODEL.value();
+  const path = personaCore.cachePath(personaId, voiceId, modelId, text);
+
+  // Shared cache first. A cache problem must never stop a sentence being spoken, so any error
+  // here just falls through to synthesizing it.
+  let cacheFile = null;
+  try {
+    cacheFile = getStorage().bucket().file(path);
+    const [exists] = await cacheFile.exists();
+    if (exists) {
+      const [bytes] = await cacheFile.download();
+      return { status: "ok", audioBase64: bytes.toString("base64"), cached: true };
+    }
+  } catch (err) {
+    console.warn("[persona] cache read failed", String(err));
+    cacheFile = null;
+  }
+
+  // A new sentence costs money, so it counts against this driver's daily allowance.
+  const db = getFirestore();
+  const usageRef = db.doc(`personaUsage/${request.auth.uid}`);
+  const now = Date.now();
+  const allowed = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(usageRef);
+    const used = personaCore.usageToday(snap.exists ? snap.data() : null, now);
+    if (used >= personaCore.DAILY_NEW_SENTENCE_LIMIT) return false;
+    tx.set(usageRef, { day: personaCore.utcDayKey(now), count: used + 1 });
+    return true;
+  });
+  if (!allowed) {
+    return { status: "limit_reached" };
+  }
+
+  let audio;
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+      method: "POST",
+      headers: { "xi-api-key": apiKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
+      body: JSON.stringify({ text, model_id: modelId }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) {
+      // The status alone -- never the response body or anything derived from the key.
+      console.warn("[persona] ElevenLabs request failed", response.status);
+      return { status: "failed" };
+    }
+    audio = Buffer.from(await response.arrayBuffer());
+  } catch (err) {
+    console.warn("[persona] ElevenLabs request errored", err && err.name);
+    return { status: "failed" };
+  }
+
+  if (cacheFile) {
+    cacheFile
+      .save(audio, { contentType: "audio/mpeg", resumable: false })
+      .catch((err) => console.warn("[persona] cache write failed", String(err)));
+  }
+  return { status: "ok", audioBase64: audio.toString("base64"), cached: false };
 });

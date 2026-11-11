@@ -21,6 +21,12 @@ import {
   deleteRecordedClip,
   getRecordedVoiceName,
   setRecordedVoiceName,
+  getCustomStartPhrases,
+  addCustomStartPhrase,
+  removeCustomStartPhrase,
+  isCustomStartPhraseKey,
+  CUSTOM_START_PHRASE_MAX_LENGTH,
+  CUSTOM_START_PHRASE_MAX_COUNT,
   type VoiceClipDef,
 } from "@/services/recordedVoices";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
@@ -44,6 +50,9 @@ export function RecordVoiceScreen() {
   const [recorded, setRecorded] = useState<Record<string, string>>({});
   const [activeRecordingKey, setActiveRecordingKey] = useState<string | null>(null);
   const [activePlaybackKey, setActivePlaybackKey] = useState<string | null>(null);
+  // Start-of-drive phrases the driver has added themselves, and the one being typed.
+  const [customPhrases, setCustomPhrases] = useState<VoiceClipDef[]>([]);
+  const [newPhrase, setNewPhrase] = useState("");
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
@@ -52,6 +61,7 @@ export function RecordVoiceScreen() {
 
   useEffect(() => {
     getRecordedClipUris().then(setRecorded);
+    getCustomStartPhrases().then(setCustomPhrases);
     getRecordedVoiceName().then((name) => {
       if (name) setVoiceNameState(name);
     });
@@ -131,13 +141,45 @@ export function RecordVoiceScreen() {
     ]);
   }, []);
 
-  const recordedCount = Object.keys(recorded).length;
-  const total = totalClipCount();
+  const onAddPhrase = useCallback(async () => {
+    const next = await addCustomStartPhrase(newPhrase);
+    if (!next) return;
+    setCustomPhrases(next);
+    setNewPhrase("");
+  }, [newPhrase]);
 
+  const onRemovePhrase = useCallback((clip: VoiceClipDef) => {
+    Alert.alert("Remove this phrase?", `"${clip.label}" and its recording will be removed.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          setCustomPhrases(await removeCustomStartPhrase(clip.key));
+          setRecorded((prev) => {
+            const next = { ...prev };
+            delete next[clip.key];
+            return next;
+          });
+        },
+      },
+    ]);
+  }, []);
+
+  const recordedCount = Object.keys(recorded).length;
+  const total = totalClipCount() + customPhrases.length;
+
+  // The driver's own start phrases sit in "Start of drive", right after the two built-in ones.
   const sections = useMemo(
-    () => VOICE_CLIP_SECTIONS.map((s) => ({ title: s.title, data: s.clips })),
-    []
+    () =>
+      VOICE_CLIP_SECTIONS.map((s) => ({
+        title: s.title,
+        data: s.title === "Start of drive" ? [...s.clips, ...customPhrases] : s.clips,
+      })),
+    [customPhrases]
   );
+  const canAddPhrase =
+    newPhrase.trim().length > 0 && customPhrases.length < CUSTOM_START_PHRASE_MAX_COUNT && activeRecordingKey === null;
 
   const renderClip = useCallback(
     (clip: VoiceClipDef) => {
@@ -195,10 +237,15 @@ export function RecordVoiceScreen() {
                       color={colors.accent}
                     />
                   </Pressable>
-                  <Pressable onPress={() => onDelete(clip.key)} hitSlop={8} accessibilityLabel="Delete">
+                  <Pressable onPress={() => onDelete(clip.key)} hitSlop={8} accessibilityLabel="Delete recording">
                     <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
                   </Pressable>
                 </>
+              )}
+              {isCustomStartPhraseKey(clip.key) && (
+                <Pressable onPress={() => onRemovePhrase(clip)} hitSlop={8} accessibilityLabel="Remove this phrase">
+                  <Ionicons name="close-circle-outline" size={20} color={colors.textMuted} />
+                </Pressable>
               )}
               <Pressable
                 onPress={() => startRecording(clip.key)}
@@ -222,6 +269,7 @@ export function RecordVoiceScreen() {
       startRecording,
       onPlay,
       onDelete,
+      onRemovePhrase,
     ]
   );
 
@@ -245,7 +293,41 @@ export function RecordVoiceScreen() {
         keyExtractor={(clip) => clip.key}
         contentContainerStyle={{ paddingBottom: spacing.xxl }}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
+        renderSectionFooter={({ section }) =>
+          section.title === "Start of drive" ? (
+            <View style={styles.addPhraseRow}>
+              <TextInput
+                value={newPhrase}
+                onChangeText={setNewPhrase}
+                placeholder={
+                  customPhrases.length >= CUSTOM_START_PHRASE_MAX_COUNT
+                    ? `That's the most you can add (${CUSTOM_START_PHRASE_MAX_COUNT})`
+                    : "Add your own start phrase…"
+                }
+                placeholderTextColor={colors.textFaint}
+                style={styles.addPhraseInput}
+                maxLength={CUSTOM_START_PHRASE_MAX_LENGTH}
+                editable={customPhrases.length < CUSTOM_START_PHRASE_MAX_COUNT}
+                returnKeyType="done"
+                onSubmitEditing={onAddPhrase}
+              />
+              <Pressable
+                onPress={onAddPhrase}
+                disabled={!canAddPhrase}
+                style={({ pressed }) => [
+                  styles.addPhraseButton,
+                  !canAddPhrase && styles.addPhraseButtonDisabled,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel="Add phrase"
+              >
+                <Ionicons name="add" size={18} color="#FFFFFF" />
+              </Pressable>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => renderClip(item)}
+        keyboardShouldPersistTaps="handled"
       />
     </View>
   );
@@ -295,6 +377,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  addPhraseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  addPhraseInput: { flex: 1, fontSize: 15, color: colors.text, paddingVertical: spacing.xs },
+  addPhraseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addPhraseButtonDisabled: { backgroundColor: colors.border },
   ringButton: { width: RING_SIZE, height: RING_SIZE, alignItems: "center", justifyContent: "center" },
   ringInnerDot: {
     position: "absolute",

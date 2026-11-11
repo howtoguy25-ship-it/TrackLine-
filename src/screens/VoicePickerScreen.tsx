@@ -7,13 +7,19 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   getAllDeviceVoices,
-  speak,
-  stopSpeaking,
   getVoiceConsentShownCount,
   incrementVoiceConsentShownCount,
   VOICE_CONSENT_MAX_SHOWS,
 } from "@/services/voice";
-import { PERSONA_VOICES, isElevenLabsConfigured, type PersonaVoice } from "@/services/personaVoices";
+import { PERSONA_VOICES, type PersonaVoice } from "@/services/personaVoices";
+import { getPersonaVoicesAvailable } from "@/services/personaSpeech";
+import { getRecordedClipUris, getRecordedVoiceName, totalClipCount } from "@/services/recordedVoices";
+import { speakPlan, stopNavSpeech } from "@/services/navSpeech";
+import {
+  RECORDED_VOICE_IDENTIFIER,
+  personaVoiceIdentifier,
+  planStepAnnouncement,
+} from "@/services/navSpeechPlan";
 import { useSettings } from "@/context/SettingsContext";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -27,10 +33,17 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 // own, separately-scoped build (see NOTES.md) -- this screen's "My recorded voices" section is
 // a real, honest empty state plus the entry point into it, not a fake populated list.
 
-const VOICE_PREVIEW_TEXT = "In 300 metres, turn left";
+// The preview is a real guidance call-out, built the same way navigation builds them -- so a
+// recorded voice previews with the driver's own "In 400 metres" and "Turn left" clips (and the
+// phone's voice for whichever of the two isn't recorded yet), exactly as it will sound driving.
+const VOICE_PREVIEW_PLAN = planStepAnnouncement(
+  { step: { instruction: "Turn left", maneuver: "turn-left" }, distanceMeters: 400, kind: "early" },
+  "km"
+);
 
 type Row =
   | { kind: "deviceDefault" }
+  | { kind: "recorded"; name: string; recordedCount: number }
   | { kind: "persona"; persona: PersonaVoice }
   | { kind: "device"; voice: Speech.Voice };
 
@@ -41,6 +54,7 @@ interface Section {
 
 function rowKey(row: Row): string {
   if (row.kind === "deviceDefault") return "device-default";
+  if (row.kind === "recorded") return RECORDED_VOICE_IDENTIFIER;
   if (row.kind === "persona") return `persona:${row.persona.id}`;
   return row.voice.identifier;
 }
@@ -56,22 +70,49 @@ export function VoicePickerScreen() {
   const [previewingKey, setPreviewingKey] = useState<string | null>(null);
   const [pendingSelection, setPendingSelection] = useState<{ identifier: string | null; key: string } | null>(null);
 
+  // Whether the server can actually produce the character voices (its ElevenLabs key is set).
+  // Starts false, so they show locked until the server has said otherwise.
+  const [personasAvailable, setPersonasAvailable] = useState(false);
+  const [recordedVoice, setRecordedVoice] = useState<{ name: string; recordedCount: number } | null>(null);
+
   useEffect(() => {
     getAllDeviceVoices()
       .then(setDeviceVoices)
       .catch(() => {})
       .finally(() => setLoaded(true));
+    getPersonaVoicesAvailable()
+      .then(setPersonasAvailable)
+      .catch(() => {});
   }, []);
 
+  // Re-read every time this screen comes back into view -- the driver may have just recorded
+  // (or deleted) clips on the "Record your own" screen.
   useEffect(() => {
-    return () => stopSpeaking();
+    const load = () => {
+      Promise.all([getRecordedClipUris(), getRecordedVoiceName()])
+        .then(([clips, name]) => {
+          const recordedCount = Object.keys(clips).length;
+          setRecordedVoice(recordedCount > 0 ? { name: name?.trim() || "My voice", recordedCount } : null);
+        })
+        .catch(() => {});
+    };
+    load();
+    return navigation.addListener("focus", load);
+  }, [navigation]);
+
+  useEffect(() => {
+    return () => stopNavSpeech();
   }, []);
 
   const commitSelection = useCallback(
     (identifier: string | null, key: string) => {
       setVoiceIdentifier(identifier);
       setPreviewingKey(key);
-      speak(VOICE_PREVIEW_TEXT, voiceVolume, identifier, () => setPreviewingKey(null));
+      speakPlan(VOICE_PREVIEW_PLAN, {
+        voiceIdentifier: identifier,
+        volume: voiceVolume,
+        onDone: () => setPreviewingKey(null),
+      });
     },
     [setVoiceIdentifier, voiceVolume]
   );
@@ -120,10 +161,10 @@ export function VoicePickerScreen() {
     }
     return [
       { title: "Recommended", data: recommended },
-      { title: "My recorded voices", data: [] },
+      { title: "My recorded voices", data: recordedVoice ? [{ kind: "recorded" as const, ...recordedVoice }] : [] },
       { title: "All languages", data: filteredDeviceVoices.map((voice) => ({ kind: "device" as const, voice })) },
     ];
-  }, [query, recommended, filteredDeviceVoices]);
+  }, [query, recommended, filteredDeviceVoices, recordedVoice]);
 
   const renderRow = useCallback(
     (row: Row) => {
@@ -140,19 +181,32 @@ export function VoicePickerScreen() {
           />
         );
       }
+      if (row.kind === "recorded") {
+        const total = totalClipCount();
+        return (
+          <VoiceRow
+            name={row.name}
+            subtitle={
+              row.recordedCount >= total
+                ? "Your own recordings"
+                : `${row.recordedCount} of ${total} recorded -- your phone's voice fills in the rest`
+            }
+            selected={voiceIdentifier === RECORDED_VOICE_IDENTIFIER}
+            previewing={previewingKey === RECORDED_VOICE_IDENTIFIER}
+            onPress={() => onSelectRow(RECORDED_VOICE_IDENTIFIER, RECORDED_VOICE_IDENTIFIER)}
+          />
+        );
+      }
       if (row.kind === "persona") {
-        const available = isElevenLabsConfigured();
+        const identifier = personaVoiceIdentifier(row.persona.id);
         return (
           <VoiceRow
             name={row.persona.name}
-            subtitle={available ? row.persona.description : "Voice not available yet"}
-            selected={false}
-            previewing={false}
-            locked={!available}
-            onPress={() => {
-              /* Honestly locked -- see personaVoices.ts. Never a silent no-op: the row itself
-                 visibly shows "Voice not available yet" instead of reacting to a tap. */
-            }}
+            subtitle={personasAvailable ? row.persona.description : "Voice not available yet"}
+            selected={personasAvailable && voiceIdentifier === identifier}
+            previewing={previewingKey === identifier}
+            locked={!personasAvailable}
+            onPress={() => onSelectRow(identifier, identifier)}
           />
         );
       }
@@ -170,7 +224,7 @@ export function VoicePickerScreen() {
         />
       );
     },
-    [voiceIdentifier, previewingKey, onSelectRow]
+    [voiceIdentifier, previewingKey, onSelectRow, personasAvailable]
   );
 
   return (
@@ -212,8 +266,8 @@ export function VoicePickerScreen() {
           renderSectionFooter={({ section }) =>
             section.title === "My recorded voices" && section.data.length === 0 ? (
               <Text style={styles.emptySectionText}>
-                No recorded voices yet. Tap &quot;Record your own&quot; above to guide yourself through a
-                real, on-device recording for every turn-by-turn phrase.
+                No recorded voice yet. Tap &quot;Record your own&quot; above and record as many of the
+                turn-by-turn phrases as you like -- your phone&apos;s voice fills in any you skip.
               </Text>
             ) : null
           }

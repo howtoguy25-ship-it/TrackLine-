@@ -302,3 +302,50 @@ describe("sendWave", () => {
     expect(res.data.outcome).toBe("success");
   });
 });
+
+// Character voices. The emulator's ELEVENLABS_API_KEY is the deploy workflow's own "unset"
+// placeholder (firebase/functions/.secret.local), so these exercise exactly the state a real
+// project is in before its owner provides a key: locked, said plainly, nothing synthesized.
+describe("personaVoicesStatus", () => {
+  test("rejects an unauthenticated call", async () => {
+    await auth.signOut();
+    await expect(httpsCallable(functions, "personaVoicesStatus")({})).rejects.toBeTruthy();
+  });
+
+  test("reports NOT available while the key is only the placeholder", async () => {
+    await signInNewAnonymousUser();
+    const result = await httpsCallable(functions, "personaVoicesStatus")({});
+    expect(result.data).toEqual({ available: false });
+  });
+});
+
+describe("synthesizePersonaSpeech", () => {
+  test("rejects an unauthenticated call", async () => {
+    await auth.signOut();
+    const call = httpsCallable(functions, "synthesizePersonaSpeech");
+    await expect(call({ personaId: "matilda", text: "Turn left" })).rejects.toBeTruthy();
+  });
+
+  test("rejects an unknown character", async () => {
+    await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "synthesizePersonaSpeech");
+    await expect(call({ personaId: "not_a_voice", text: "Turn left" })).rejects.toBeTruthy();
+  });
+
+  test("rejects text far longer than any navigation sentence", async () => {
+    await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "synthesizePersonaSpeech");
+    await expect(call({ personaId: "matilda", text: "a".repeat(2000) })).rejects.toBeTruthy();
+  });
+
+  test("returns not_configured -- and charges nothing to the daily allowance -- without a real key", async () => {
+    const uid = await signInNewAnonymousUser();
+    const result = await httpsCallable(functions, "synthesizePersonaSpeech")({
+      personaId: "matilda",
+      text: "Turn left onto George St",
+    });
+    expect(result.data).toEqual({ status: "not_configured" });
+    const usage = await adminDb.doc(`personaUsage/${uid}`).get();
+    expect(usage.exists).toBe(false);
+  });
+});

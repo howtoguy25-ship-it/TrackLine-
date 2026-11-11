@@ -121,8 +121,14 @@ import {
   offsetLatLngByHeading,
 } from "@/utils/geo";
 import type { LatLng } from "@/utils/polyline";
-import { createGuidanceState, evaluateGuidance } from "@/services/navigationGuidance";
-import { speak, stopSpeaking } from "@/services/voice";
+import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
+import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
+import {
+  earlyAnnouncementThresholds,
+  planStepAnnouncement,
+  shouldSpeakStep,
+  type NavPhrase,
+} from "@/services/navSpeechPlan";
 import { formatArrivalClock, formatDurationText, formatDistance } from "@/utils/navFormat";
 import {
   subscribeVisibleAlerts,
@@ -388,6 +394,21 @@ export function MapScreen() {
   // re-run (and re-touch guidanceRef's shared state) just because this changed.
   const voiceIdentifierRef = useRef(voiceIdentifier);
   voiceIdentifierRef.current = voiceIdentifier;
+  // The sound settings the non-turn call-outs need (setting off, re-routing, arriving, a report
+  // nearby). Those are fired from callbacks that are deliberately kept referentially stable, so
+  // they read the live values from here rather than closing over them.
+  const navVoiceRef = useRef({ enabled: voiceEnabled, mode: settings.spokenDirections });
+  useEffect(() => {
+    navVoiceRef.current = { enabled: voiceEnabled, mode: settings.spokenDirections };
+  });
+  const announcePhrase = useCallback((phrase: NavPhrase) => {
+    speakNavPhrase(phrase, {
+      voiceIdentifier: voiceIdentifierRef.current,
+      volume: voiceVolumeRef.current,
+      enabled: navVoiceRef.current.enabled,
+      mode: navVoiceRef.current.mode,
+    }).catch(() => {});
+  }, []);
   // True only while a fresh route is actively being fetched after drifting off the current one
   // -- drives the small "Rerouting..." banner below.
   const [rerouting, setRerouting] = useState(false);
@@ -1832,8 +1853,15 @@ export function MapScreen() {
       newToasts.push({ id: alert.id, type: alert.type, distanceM });
     }
     seenAlertIdsRef.current = freshlySeen;
-    if (newToasts.length > 0) setAlertToastQueue((q) => [...q, ...newToasts]);
-  }, [visibleAlerts, currentLatLng, user?.uid]);
+    if (newToasts.length > 0) {
+      setAlertToastQueue((q) => [...q, ...newToasts]);
+      // Spoken as well as shown ("Police reported"), nearest first if several land at once.
+      // It waits for any turn instruction in progress rather than talking over it, and is the
+      // one kind of speech "Only alerts" mode still allows.
+      const nearest = newToasts.reduce((a, b) => (b.distanceM < a.distanceM ? b : a));
+      announcePhrase({ kind: "report", alertType: nearest.type });
+    }
+  }, [visibleAlerts, currentLatLng, user?.uid, announcePhrase]);
   const dismissAlertToast = useCallback(() => setAlertToastQueue((q) => q.slice(1)), []);
 
   // Automatic proximity "Still here? / Not here" prompt -- picks at most one eligible alert per
@@ -1873,17 +1901,38 @@ export function MapScreen() {
   // Turn-by-turn voice guidance (Phase 2): advance the active step as GPS crosses trigger radius.
   useEffect(() => {
     if (!route || !currentLatLng) return;
-    const { stepToSpeak, activeStepIndex: nextIndex } = evaluateGuidance(
+    // "Spoken directions" (the Sound sheet) decides how much is said: only "Normal" gets the
+    // advance warnings ("in 1 kilometre, ..."), and shouldSpeakStep trims the rest.
+    const spokenMode = settings.spokenDirections;
+    const { announcement, arrived, activeStepIndex: nextIndex } = evaluateGuidance(
       guidanceRef.current,
       route.steps,
       currentLatLng.latitude,
-      currentLatLng.longitude
+      currentLatLng.longitude,
+      spokenMode === "normal" ? earlyAnnouncementThresholds(settings.distanceUnit) : []
     );
     if (nextIndex !== activeStepIndex) setActiveStepIndex(nextIndex);
-    if (stepToSpeak && voiceEnabled) {
-      speak(stepToSpeak.instruction, voiceVolumeRef.current, voiceIdentifierRef.current);
+    if (arrived) {
+      announcePhrase({ kind: "arrived" });
+    } else if (
+      announcement &&
+      voiceEnabled &&
+      shouldSpeakStep(spokenMode, announcement.kind, announcement.step, announcement.isLastStep)
+    ) {
+      speakPlan(planStepAnnouncement(announcement, settings.distanceUnit), {
+        voiceIdentifier: voiceIdentifierRef.current,
+        volume: voiceVolumeRef.current,
+      });
     }
-  }, [currentLatLng, route, voiceEnabled, activeStepIndex]);
+  }, [currentLatLng, route, voiceEnabled, activeStepIndex, settings.spokenDirections, settings.distanceUnit, announcePhrase]);
+
+  // A character voice is synthesized by the server one sentence at a time, which takes a moment
+  // -- so the sentences for the next few turns are fetched as each step begins, and are already
+  // on the phone when they're needed. Does nothing for any other kind of voice.
+  useEffect(() => {
+    if (!route || !voiceEnabled) return;
+    prefetchUpcomingSpeech(route.steps, activeStepIndex, settings.distanceUnit, settings.spokenDirections, voiceIdentifier);
+  }, [route, activeStepIndex, voiceEnabled, voiceIdentifier, settings.distanceUnit, settings.spokenDirections]);
 
   // Real, automatic reroute -- previously guidance (above) only ever advanced *forward* through
   // the existing route's own steps; if a turn/exit was missed entirely, the current step's end
@@ -1990,6 +2039,7 @@ export function MapScreen() {
 
     setRerouting(true);
     setFasterRouteBanner(null);
+    announcePhrase({ kind: "rerouting" });
     const startedAt = Date.now();
     const oldEtaSeconds = route.durationInTrafficSeconds ?? route.durationSeconds;
     Sentry.logger.info("map: off-route detected, rerouting", { distMeters: Math.round(distMeters), reason });
@@ -2062,7 +2112,7 @@ export function MapScreen() {
       .finally(() => {
         if (!controller.signal.aborted) setRerouting(false);
       });
-  }, [currentLatLng, route, destinationLatLng, travelMode, selectedProfile, heading, currentSpeedKmh, activeStepIndex]);
+  }, [currentLatLng, route, destinationLatLng, travelMode, selectedProfile, heading, currentSpeedKmh, activeStepIndex, announcePhrase]);
 
   // EV Radar (Phase 6): start/stop siren detection with the map screen lifecycle -- mount-once
   // (deps: []), NOT re-keyed on location. It used to also depend on currentLatLng/user/
@@ -2932,6 +2982,7 @@ export function MapScreen() {
         const savedSeconds = currentSeconds - altSeconds;
         if (savedSeconds >= MIN_SAVED_SECONDS_TO_SUGGEST) {
           setTrafficSuggestionRoute(sideStreets);
+          announcePhrase({ kind: "heavyTraffic" });
           setTrafficSuggestionSavedSeconds(savedSeconds);
         }
       } catch (err) {
@@ -2941,7 +2992,7 @@ export function MapScreen() {
       }
     }, TRAFFIC_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [route, destinationLatLng]);
+  }, [route, destinationLatLng, announcePhrase]);
 
   // Clears any stale suggestion the moment the underlying route is replaced for any other
   // reason (a real reroute, an add-stop confirm, exiting navigation) -- a suggestion computed
@@ -3129,6 +3180,7 @@ export function MapScreen() {
       guidanceRef.current = createGuidanceState();
       setActiveStepIndex(0);
       setRoute(chosen);
+      announcePhrase({ kind: "start" });
       // Real Tracky auto-mood driving-streak tracker -- the one real "a trip actually started
       // today" signal (see trackyMood.ts's own header). Fire-and-forget: never blocks/affects
       // the real navigation start below.
@@ -3177,7 +3229,7 @@ export function MapScreen() {
       // unrelated destination search once this trip ends.
       setOriginOverride(null);
     },
-    [currentLatLng, heading, settings.defaultMapViewStyle]
+    [currentLatLng, heading, settings.defaultMapViewStyle, announcePhrase]
   );
 
   const confirmRoute = useCallback(() => {
@@ -3426,7 +3478,7 @@ export function MapScreen() {
   }, [pendingDestination, pickingDestinationPoint, originOverride, currentLatLng, openOriginPicker, clearOriginOverride]);
 
   const exitNavigation = useCallback(() => {
-    stopSpeaking();
+    stopNavSpeech();
     setRoute(null);
     setActiveStepIndex(0);
     setFollowTilt(true);
@@ -4863,7 +4915,16 @@ export function MapScreen() {
           nextStep={route.steps[activeStepIndex + 1] ?? null}
           isFinalStep={activeStepIndex === route.steps.length - 1}
           onRepeatInstruction={() => {
-            if (activeStep) speak(activeStep.instruction, voiceVolumeRef.current, voiceIdentifierRef.current);
+            // Tapping the card repeats the instruction on request -- so it's said whatever
+            // "Spoken directions" is set to, in the selected voice, with the real distance left.
+            if (!activeStep) return;
+            const distanceMeters = currentLatLng
+              ? remainingStepMeters(activeStep, currentLatLng.latitude, currentLatLng.longitude)
+              : activeStep.distanceMeters;
+            speakPlan(
+              planStepAnnouncement({ step: activeStep, distanceMeters, kind: "early" }, settings.distanceUnit),
+              { voiceIdentifier: voiceIdentifierRef.current, volume: voiceVolumeRef.current }
+            );
           }}
           distanceUnit={settings.distanceUnit}
         />

@@ -126,6 +126,18 @@ describe("waves/{waveId}", () => {
   });
 });
 
+describe("personaUsage/{uid} (the character-voice daily allowance)", () => {
+  test("a driver can neither read nor reset their own allowance", async () => {
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertFails(setDoc(doc(self, "personaUsage/driver-a"), { day: "2026-11-11", count: 0 }));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "personaUsage/driver-a"), { day: "2026-11-11", count: 400 });
+    });
+    await assertFails(getDoc(doc(self, "personaUsage/driver-a")));
+    await assertFails(setDoc(doc(self, "personaUsage/driver-a"), { day: "2026-11-11", count: 0 }));
+  });
+});
+
 describe("userReports/{reportId}", () => {
   test("a signed-in driver CAN create a report attributed to themselves, about someone else", async () => {
     const self = testEnv.authenticatedContext("driver-a").firestore();

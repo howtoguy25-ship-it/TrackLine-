@@ -24,6 +24,8 @@ it afterward.
      deploy on top of Cloud Run under the hood.
    - **Artifact Registry Administrator** (`roles/artifactregistry.admin`) — 2nd-gen functions
      build a container image during deploy; this lets that image be pushed.
+   - **Secret Manager Admin** (`roles/secretmanager.admin`) — lets the workflow store the API
+     keys the functions use (step 4) so you never need a command line for them.
    These are broader than a perfectly minimal set would be, but they're the real, documented
    combination Firebase's own CI guidance uses — a narrower set is easy to get subtly wrong and
    have deploys fail partway through.
@@ -52,27 +54,50 @@ it afterward.
 That's it for the GitHub Action itself — no other GitHub secret or variable is needed, the
 workflow reads the Firebase project ID directly out of the service account key at run time.
 
-### 4. One-time Firebase setup for the presence feature (Tracky/Ghost mode, Part 3)
+### 4. API keys (from your phone — no command line)
 
-Two things below are **not** part of the GitHub Action above and can't be, since neither is a
-file this repo deploys — they're account-level settings you set once, directly, from a computer
-with the Firebase CLI logged in (`npx firebase-tools login`, then run the commands below from
-this repo's root). Skip both and the presence feature's Cloud Function will still deploy fine
-through the Action, it'll just error at call time until you've done this once.
+The Cloud Functions need a few API keys. Each is added the same way as the service account key
+in step 3: **GitHub → this repo → Settings → Secrets and variables → Actions → New repository
+secret**, using exactly the name below. Then run the deploy workflow with **"Copy API keys"**
+ticked (see "Running a deploy") and it copies them into Firebase for you.
 
-**a. The Mapbox server token** (`updatePresence`'s own Map Matching API calls):
+| GitHub secret name | Needed for | Where to get it |
+|---|---|---|
+| `MAPBOX_SERVER_TOKEN` | **Required.** Snapping other drivers' Trackys to roads. | Your Mapbox account — the same value as `MAPBOX_PUBLIC_TOKEN` works. |
+| `ELEVENLABS_API_KEY` | Optional. Unlocks the four character voices (Matilda, Aussie Footy Fan, Sarcastic Co-pilot, Dry Wit). | elevenlabs.io → your profile → API keys. This is a paid service billed per character of speech; each sentence is generated once and then reused for every driver. |
+| `TFNSW_API_KEY` | Optional. Unlocks live NSW traffic incidents on the map. | opendata.transport.nsw.gov.au → register → create an application → its API key. Free. |
+
+What happens if you skip the optional ones: the deploy still succeeds (the workflow creates a
+harmless placeholder for each), and the app shows those features as not available yet. Add the
+key later, re-run the workflow with "Copy API keys" ticked, and they switch on — no app update.
+
+You only need to tick "Copy API keys" when you've added or changed a key. Leaving it unticked
+keeps whatever is already in Firebase.
+
+**Character voices — which voice is which.** Each character is mapped to one of ElevenLabs'
+stock voices in `firebase/functions/index.js` (`PERSONA_ELEVENLABS_VOICE`). Those mappings were
+chosen from ElevenLabs' public voice list and have **not been tested against a real account** —
+no key has ever been available to this project. If a character stays silent (the app falls back
+to your phone's voice) or you'd simply prefer a different voice, put the voice ID from your
+ElevenLabs voice library in a file named `firebase/functions/.env`, for example:
 
 ```
-npx firebase-tools functions:secrets:set MAPBOX_SERVER_TOKEN --project <your-project-id>
+ELEVENLABS_VOICE_MATILDA=<voice id>
+ELEVENLABS_VOICE_FOOTY_FAN=<voice id>
+ELEVENLABS_VOICE_SARCASTIC_COPILOT=<voice id>
+ELEVENLABS_VOICE_DRY_WIT=<voice id>
 ```
 
-When it prompts for the value, paste a real Mapbox access token (the same value you used for
-`MAPBOX_PUBLIC_TOKEN` works fine — Map Matching only needs a normal public-scope token; this is
-a *separate* secret because EAS/Expo build-time env vars never reach the Cloud Functions
-runtime, not because the token itself needs to be different).
+Voice IDs aren't secret, so that file can be committed.
 
-**b. The Firestore TTL policies on `presence.expireAt` and `presencePending.expireAt`** (so Firestore itself, not just the
-`cleanupExpiredPresence` scheduled function, auto-deletes a stale presence doc):
+### 5. One-time Firestore cleanup policies
+
+This is **not** part of the GitHub Action and can't be — it's an account-level setting, set once
+from a computer with the `gcloud` CLI. Skip it and everything still works; a scheduled function
+does the same cleanup every two minutes.
+
+Firestore's own automatic deletion of stale presence data (`presence.expireAt` and
+`presencePending.expireAt`):
 
 ```
 gcloud firestore fields ttl-policies create expireAt \
@@ -96,7 +121,9 @@ standing policy, not something that re-runs on every deploy.
 1. GitHub app (or github.com) → this repo → **Actions** tab → **Deploy Firebase (functions,
    Firestore rules, Storage rules)** in the left sidebar.
 2. **Run workflow** (top right) → pick the branch (normally your default branch) → tick which
-   of the three targets you want deployed (all three are ticked by default) → **Run workflow**.
+   of the three targets you want deployed (all three are ticked by default). The first time,
+   and any time you've added or changed an API key in step 4, also tick **"Copy API keys"**.
+   Then **Run workflow**.
 3. Tap into the run to watch it — it checks out the repo, installs the functions' dependencies,
    writes the service account key to a file that only exists for this one run, and runs a real
    `firebase deploy`. The key file is deleted at the end of the run either way (success or
@@ -113,6 +140,5 @@ standing policy, not something that re-runs on every deploy.
 - **Firestore rules** (`firebase/firestore.rules`).
 - **Storage rules** (`firebase/storage.rules`).
 
-It does **not** deploy Hosting (the web app), Firestore indexes, Cloud Functions *secrets*
-(`MAPBOX_SERVER_TOKEN`), or the Firestore TTL policy on `presence.expireAt` — those aren't part
-of this workflow; the last two are one-time setup steps, see step 4 above.
+It does **not** deploy Hosting (the web app), Firestore indexes, or the Firestore TTL policies
+(step 5). API keys are only copied when you tick "Copy API keys" (step 4).

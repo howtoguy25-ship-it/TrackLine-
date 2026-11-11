@@ -152,6 +152,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Character voices: how many new sentences each driver has had synthesized today. Written
+    // only by synthesizePersonaSpeech (Admin SDK) -- a client that could write its own count
+    // could simply reset it and spend the ElevenLabs quota without limit.
+    match /personaUsage/{uid} {
+      allow read, write: if false;
+    }
+
     // Real, explicit request -- "Block/report from card." A block is the BLOCKING driver's own
     // list of who THEY'VE blocked -- safe to let them write directly (same self-only-write
     // reasoning as alerts.ts's own hiddenBy map), and only they can read it back (e.g. a future

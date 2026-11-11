@@ -15,7 +15,8 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { syncVisibleRegionsToProfile } from "@/services/userProfile";
-import { setVoiceEnabled, getAllDeviceVoices } from "@/services/voice";
+import { setVoiceEnabled } from "@/services/voice";
+import { getVoiceDisplayName } from "@/services/voiceLabel";
 import {
   signOutUser,
   deleteAccount,
@@ -464,17 +465,10 @@ export function SettingsScreen() {
   const [currentVoiceLabel, setCurrentVoiceLabel] = useState("Device default");
   const [voicesLoaded, setVoicesLoaded] = useState(false);
   useEffect(() => {
-    if (!voiceIdentifier) {
-      setCurrentVoiceLabel("Device default");
-      setVoicesLoaded(true);
-      return;
-    }
     let cancelled = false;
-    getAllDeviceVoices()
-      .then((voices) => {
-        if (cancelled) return;
-        const match = voices.find((v) => v.identifier === voiceIdentifier);
-        setCurrentVoiceLabel(match?.name ?? "Device default");
+    getVoiceDisplayName(voiceIdentifier, "Device default")
+      .then((label) => {
+        if (!cancelled) setCurrentVoiceLabel(label);
       })
       .catch(() => {})
       .finally(() => {

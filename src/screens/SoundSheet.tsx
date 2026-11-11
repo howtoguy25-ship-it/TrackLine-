@@ -4,7 +4,7 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSettings } from "@/context/SettingsContext";
-import { getAvailableVoices } from "@/services/voice";
+import { getVoiceDisplayName } from "@/services/voiceLabel";
 import type { SpokenDirectionsMode } from "@/services/settings";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
@@ -36,16 +36,10 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
 
   const [currentVoiceLabel, setCurrentVoiceLabel] = useState("Default (device)");
   useEffect(() => {
-    if (!voiceIdentifier) {
-      setCurrentVoiceLabel("Default (device)");
-      return;
-    }
     let cancelled = false;
-    getAvailableVoices()
-      .then((voices) => {
-        if (cancelled) return;
-        const match = voices.find((v) => v.identifier === voiceIdentifier);
-        setCurrentVoiceLabel(match?.name ?? "Default (device)");
+    getVoiceDisplayName(voiceIdentifier, "Default (device)")
+      .then((label) => {
+        if (!cancelled) setCurrentVoiceLabel(label);
       })
       .catch(() => {});
     return () => {

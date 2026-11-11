@@ -14,13 +14,91 @@ const STEP_COMPLETE_METERS = 35;
 // cheap, constant-time check every tick instead of scanning the whole remaining route.
 const SKIP_AHEAD_LIMIT = 4;
 
+// A step that follows this closely after the previous one is announced together with it
+// ("turn left, and then turn right") -- the same 150m the instruction card's "Then" chip uses.
+const CHAIN_NEXT_STEP_METERS = 150;
+// An advance warning is only worth giving if there's still a real gap before the final one.
+const EARLY_MIN_GAP_ABOVE_FINAL_METERS = 100;
+// ...and only if the driver has had the step for a little while first: without this margin a
+// step that starts 820m out would say "in 800 metres" the instant the previous turn finishes.
+const EARLY_MIN_LEAD_METERS = 150;
+
 export interface GuidanceState {
   activeStepIndex: number;
   spokenStepIndices: Set<number>;
+  /** How far out each step was when guidance first saw it -- decides which advance warning fits. */
+  stepEntryMeters: Map<number, number>;
+  /** Steps whose advance warning has been given (or deliberately skipped). */
+  earlySpokenStepIndices: Set<number>;
+  /** Set once "you've arrived" has been reported, so it's only ever said once per route. */
+  arrivedAnnounced: boolean;
 }
 
 export function createGuidanceState(): GuidanceState {
-  return { activeStepIndex: 0, spokenStepIndices: new Set() };
+  return {
+    activeStepIndex: 0,
+    spokenStepIndices: new Set(),
+    stepEntryMeters: new Map(),
+    earlySpokenStepIndices: new Set(),
+    arrivedAnnounced: false,
+  };
+}
+
+export interface GuidanceAnnouncement {
+  step: RouteStep;
+  stepIndex: number;
+  kind: "early" | "final";
+  /** Road distance left to the manoeuvre. */
+  distanceMeters: number;
+  /** The following step, when it comes up within CHAIN_NEXT_STEP_METERS of this one. */
+  thenStep: RouteStep | null;
+  isLastStep: boolean;
+}
+
+/**
+ * Distance still to drive along this step's own road geometry -- not the straight line to its
+ * end, which on a curving road or a long ramp can be far shorter than what's actually left.
+ * Used for "in 1 kilometre"-style warnings, where that difference is audible.
+ */
+export function remainingStepMeters(step: RouteStep, userLat: number, userLng: number): number {
+  const line = step.polyline;
+  if (!line || line.length < 2) return distanceToStepEndMeters(step, userLat, userLng);
+
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((userLat * Math.PI) / 180);
+  const px = userLng * metersPerDegLon;
+  const py = userLat * metersPerDegLat;
+
+  // Closest point on the line, and how much of the line lies beyond it.
+  let bestDist = Infinity;
+  let bestRemaining = 0;
+  let remainingAfterSegment = 0;
+  for (let i = line.length - 2; i >= 0; i--) {
+    const ax = line[i].longitude * metersPerDegLon;
+    const ay = line[i].latitude * metersPerDegLat;
+    const bx = line[i + 1].longitude * metersPerDegLon;
+    const by = line[i + 1].latitude * metersPerDegLat;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const lengthSq = abx * abx + aby * aby;
+    const length = Math.sqrt(lengthSq);
+    const t = lengthSq > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSq)) : 0;
+    const dist = Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestRemaining = remainingAfterSegment + (1 - t) * length;
+    }
+    remainingAfterSegment += length;
+  }
+  return bestRemaining;
+}
+
+/** The longest advance-warning distance that suits a step first seen `entryMeters` out. */
+export function earlyThresholdFor(entryMeters: number, thresholds: number[]): number | null {
+  for (const threshold of thresholds) {
+    if (threshold <= entryMeters - EARLY_MIN_LEAD_METERS) return threshold;
+  }
+  return null;
 }
 
 function distanceToStepEndMeters(step: RouteStep, userLat: number, userLng: number): number {
@@ -35,20 +113,63 @@ export function evaluateGuidance(
   state: GuidanceState,
   steps: RouteStep[],
   userLat: number,
-  userLng: number
-): { stepToSpeak: RouteStep | null; activeStepIndex: number } {
+  userLng: number,
+  // Advance-warning distances, longest first (navSpeechPlan's earlyAnnouncementThresholds).
+  // Leaving this out gives exactly the old behaviour: one call-out per step, 200m before it.
+  earlyThresholds: number[] = []
+): {
+  stepToSpeak: RouteStep | null;
+  activeStepIndex: number;
+  announcement: GuidanceAnnouncement | null;
+  /** True on exactly one tick: the one where the driver reaches the end of the route. */
+  arrived: boolean;
+} {
   if (state.activeStepIndex >= steps.length) {
-    return { stepToSpeak: null, activeStepIndex: state.activeStepIndex };
+    return { stepToSpeak: null, activeStepIndex: state.activeStepIndex, announcement: null, arrived: false };
   }
 
-  const currentStep = steps[state.activeStepIndex];
+  const stepIndex = state.activeStepIndex;
+  const currentStep = steps[stepIndex];
   const distMeters = distanceToStepEndMeters(currentStep, userLat, userLng);
+  const isLastStep = stepIndex === steps.length - 1;
+  const followingStep = isLastStep ? null : steps[stepIndex + 1];
+  const thenStep = followingStep && followingStep.distanceMeters < CHAIN_NEXT_STEP_METERS ? followingStep : null;
 
   let stepToSpeak: RouteStep | null = null;
+  let announcement: GuidanceAnnouncement | null = null;
 
-  if (!state.spokenStepIndices.has(state.activeStepIndex) && distMeters <= MANEUVER_TRIGGER_METERS) {
+  if (!state.spokenStepIndices.has(stepIndex) && distMeters <= MANEUVER_TRIGGER_METERS) {
     stepToSpeak = currentStep;
-    state.spokenStepIndices.add(state.activeStepIndex);
+    state.spokenStepIndices.add(stepIndex);
+    // Once the final call-out has gone, a late advance warning would only be confusing.
+    state.earlySpokenStepIndices.add(stepIndex);
+    announcement = {
+      step: currentStep,
+      stepIndex,
+      kind: "final",
+      distanceMeters: Math.min(distMeters, remainingStepMeters(currentStep, userLat, userLng)),
+      thenStep,
+      isLastStep,
+    };
+  } else if (
+    earlyThresholds.length > 0 &&
+    !state.spokenStepIndices.has(stepIndex) &&
+    !state.earlySpokenStepIndices.has(stepIndex)
+  ) {
+    const remaining = remainingStepMeters(currentStep, userLat, userLng);
+    if (!state.stepEntryMeters.has(stepIndex)) state.stepEntryMeters.set(stepIndex, remaining);
+    const threshold = earlyThresholdFor(state.stepEntryMeters.get(stepIndex)!, earlyThresholds);
+    if (threshold === null) {
+      // Too short a step for any advance warning -- the final call-out is all it gets.
+      state.earlySpokenStepIndices.add(stepIndex);
+    } else if (remaining <= threshold) {
+      state.earlySpokenStepIndices.add(stepIndex);
+      // A GPS gap can carry the driver from beyond the threshold to almost on top of the turn
+      // in one fix; announcing "in 800 metres" there would be wrong, so it's skipped instead.
+      if (remaining > MANEUVER_TRIGGER_METERS + EARLY_MIN_GAP_ABOVE_FINAL_METERS) {
+        announcement = { step: currentStep, stepIndex, kind: "early", distanceMeters: remaining, thenStep: null, isLastStep };
+      }
+    }
   }
 
   // Consider the maneuver complete once the user is very close to (or has passed) the
@@ -71,5 +192,45 @@ export function evaluateGuidance(
     }
   }
 
-  return { stepToSpeak, activeStepIndex: state.activeStepIndex };
+  // Arrival: on the last step and within the same distance that counts any step as complete.
+  // Checked against the step that was current when this tick began, so it can't fire on the
+  // tick that merely advances INTO the last step.
+  let arrived = false;
+  if (isLastStep && !state.arrivedAnnounced && distMeters <= STEP_COMPLETE_METERS) {
+    state.arrivedAnnounced = true;
+    arrived = true;
+    // "Your destination is on the left" and "you've arrived" in the same breath would just be
+    // the second cutting off the first -- arriving wins.
+    announcement = null;
+    stepToSpeak = null;
+    state.spokenStepIndices.add(stepIndex);
+  }
+
+  return { stepToSpeak, activeStepIndex: state.activeStepIndex, announcement, arrived };
+}
+
+/**
+ * What guidance is expected to say for one step, worked out ahead of time from the route alone.
+ * Used to fetch a character voice's clips before they're needed -- so it has to apply exactly
+ * the same rules as evaluateGuidance above (which advance warning, whether the next step is
+ * chained on), or the fetched sentences won't be the ones actually spoken.
+ */
+export function expectedAnnouncements(
+  steps: RouteStep[],
+  stepIndex: number,
+  earlyThresholds: number[]
+): GuidanceAnnouncement[] {
+  const step = steps[stepIndex];
+  if (!step) return [];
+  const isLastStep = stepIndex === steps.length - 1;
+  const followingStep = isLastStep ? null : steps[stepIndex + 1];
+  const thenStep = followingStep && followingStep.distanceMeters < CHAIN_NEXT_STEP_METERS ? followingStep : null;
+  const expected: GuidanceAnnouncement[] = [
+    { step, stepIndex, kind: "final", distanceMeters: MANEUVER_TRIGGER_METERS, thenStep, isLastStep },
+  ];
+  const threshold = earlyThresholdFor(step.distanceMeters, earlyThresholds);
+  if (threshold !== null) {
+    expected.push({ step, stepIndex, kind: "early", distanceMeters: threshold, thenStep: null, isLastStep });
+  }
+  return expected;
 }
