@@ -5,6 +5,15 @@ const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestore");
 const Stripe = require("stripe");
+const {
+  haversineMeters,
+  sanitizeLook,
+  isValidLatLng,
+  roundCoord,
+  bearingDegrees,
+  timeAlongGeometry,
+  downsample,
+} = require("./presencePath");
 
 initializeApp();
 
@@ -572,8 +581,9 @@ exports.broadcastNotification = onCall(async (request) => {
 // Presence system (Tracky mood characters + Ghost mode, Part 3) -- real, explicit request: show
 // other visible+driving users on the map via a `presence/{uid}` doc written ONLY through this
 // server, snapped to the road network via a real third-party map-matching call (the user's own
-// explicit choice: Mapbox Map Matching API, not Google Roads), rounded to a coarse ~150m grid,
-// and never containing raw GPS history -- this collection holds exactly one doc per user (the
+// explicit choice: Mapbox Map Matching API, not Google Roads), published only after a
+// server-enforced 60s privacy delay (ADD-ON Part B replaced Part 3's ~150m grid rounding with
+// this -- grid-snapped points can't follow a road), and never containing raw GPS history -- this collection holds exactly one doc per user (the
 // user's own CURRENT state, overwritten every call), never an append-only log, which is what
 // actually makes "no uid-history queries" true: there's no history collection to query in the
 // first place. See firestore.rules' own `match /presence/{uid}` block for the client-facing
@@ -585,35 +595,7 @@ exports.broadcastNotification = onCall(async (request) => {
 // `firebase functions:secrets:set MAPBOX_SERVER_TOKEN` -- see DEPLOY.md's own step for this.
 const MAPBOX_SERVER_TOKEN = defineSecret("MAPBOX_SERVER_TOKEN");
 
-// Same real haversine formula as src/services/places.ts's own haversineMeters -- duplicated
-// (not imported) since this is a separate Node package/runtime from the mobile app's src/, same
-// reasoning as ADMIN_EMAILS' own duplication comment above.
-function haversineMeters(aLat, aLng, bLat, bLng) {
-  const R = 6371000;
-  const dLat = ((bLat - aLat) * Math.PI) / 180;
-  const dLng = ((bLng - aLng) * Math.PI) / 180;
-  const lat1 = (aLat * Math.PI) / 180;
-  const lat2 = (bLat * Math.PI) / 180;
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
-// Real, explicit request -- "rounded ~150m." Snaps to the nearest point on a ~150m x 150m grid,
-// anisotropically correcting the longitude step by latitude (a degree of longitude is shorter
-// than a degree of latitude away from the equator) so the real-world cell stays roughly square
-// everywhere Australian drivers actually are, not just near the equator.
-const PRESENCE_GRID_METERS = 150;
-const METERS_PER_DEGREE_LAT = 111320;
-function roundToPresenceGrid(lat, lng) {
-  const gridLatDeg = PRESENCE_GRID_METERS / METERS_PER_DEGREE_LAT;
-  const gridLngDeg = PRESENCE_GRID_METERS / (METERS_PER_DEGREE_LAT * Math.cos((lat * Math.PI) / 180));
-  return {
-    lat: Math.round(lat / gridLatDeg) * gridLatDeg,
-    lng: Math.round(lng / gridLngDeg) * gridLngDeg,
-  };
-}
-
-// Real, explicit request -- "only visible+driving... speed>15km/h in last 5min."
+// Real, explicit request -- "only visible+driving... speed>15km/h."
 const PRESENCE_MIN_SPEED_KMH = 15;
 // "Never shown within 500m of Home/Work/trip start/destination."
 const PRESENCE_EXCLUSION_RADIUS_METERS = 500;
@@ -623,6 +605,22 @@ const PRESENCE_EXCLUSION_RADIUS_METERS = 500;
 // scheduled function below, same double-coverage convention as cleanupExpiredAlerts already
 // uses for the `alerts` collection.
 const PRESENCE_TTL_MS = 2 * 60 * 1000;
+// Real, explicit request (ADD-ON Part B -- "60s privacy delay"). Enforced HERE, on the server,
+// not left to each viewer's client to honour: a point is held in presencePending/{uid} (which no
+// client can read at all, see firestore.rules) and only copied into the readable presence/{uid}
+// doc once it is at least this old. A modified client reading presence/{uid} directly still
+// can't learn where a driver is right now -- only where they were at least a minute ago. It
+// also means the final minute before a driver stops is never published at all.
+const PRESENCE_PRIVACY_DELAY_MS = 60 * 1000;
+// How much already-published path a presence doc keeps -- enough for a viewer to keep animating
+// smoothly across two consecutive one-minute batches, never a longer history than that.
+const PRESENCE_PATH_KEEP_MS = 4 * 60 * 1000;
+const PRESENCE_MAX_PATH_POINTS = 60;
+const PRESENCE_MAX_POINTS_PER_BATCH = 24;
+// The client samples its own GPS every 15s (see MapScreen.tsx); only used to space out a batch
+// that arrives without per-sample ages.
+const PRESENCE_SAMPLE_SPACING_MS = 15 * 1000;
+const PRESENCE_MAX_SAMPLE_AGE_MS = 5 * 60 * 1000;
 
 // Keep in sync with src/components/trackys/moods.ts's own TRACKY_MOOD_ORDER -- duplicated for
 // the same cross-runtime reason as ADMIN_EMAILS above. Anything outside this whitelist is
@@ -633,15 +631,23 @@ const VALID_MOOD_KEYS = new Set([
 ]);
 
 async function deletePresenceDoc(db, uid) {
-  await db.doc(`presence/${uid}`).delete().catch(() => {});
+  await Promise.all([
+    db.doc(`presence/${uid}`).delete().catch(() => {}),
+    db.doc(`presencePending/${uid}`).delete().catch(() => {}),
+  ]);
 }
 
 // Real, explicit request -- "Position written to Firestore presence/{uid} via Cloud Function
-// ONLY." The client (see Part 3's own client-side work) calls this roughly every 60s while
-// driving and visible, passing a short recent GPS trace (oldest first, current fix last) rather
-// than a single point, because Mapbox's Map Matching API matches a TRACE against the road
-// network, not an isolated coordinate -- this is the real, correct way to use that API for
-// road-snapping, not a single-point "nearest road" lookup (which Map Matching doesn't offer).
+// ONLY", extended by ADD-ON Part B into a short, delayed, road-following PATH rather than one
+// point. The client calls this about once a minute while driving and visible, with the GPS
+// samples it took every 15s since its last call (each with how many ms ago it was taken, so
+// nothing here depends on the phone's clock agreeing with the server's). This function:
+//   1. map-matches the batch (Mapbox Map Matching matches a TRACE against the road network --
+//      it has no single-point "nearest road" lookup) and keeps the matched road shape;
+//   2. drops/withdraws anything near Home/Work/trip start/destination;
+//   3. parks the new points in presencePending/{uid} and publishes only the ones already older
+//      than PRESENCE_PRIVACY_DELAY_MS.
+// One doc per uid, overwritten each call and trimmed to a few minutes -- still no history.
 exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required.");
@@ -649,21 +655,19 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
   const uid = request.auth.uid;
   const db = getFirestore();
   const data = request.data || {};
+  const now = Date.now();
 
-  const trace = Array.isArray(data.trace) ? data.trace : [];
-  const validTrace = trace.filter(
-    (p) =>
-      p &&
-      typeof p.lat === "number" &&
-      typeof p.lng === "number" &&
-      p.lat >= -90 &&
-      p.lat <= 90 &&
-      p.lng >= -180 &&
-      p.lng <= 180
-  );
-  if (validTrace.length < 2) {
-    throw new HttpsError("invalid-argument", "trace needs at least 2 real GPS points.");
+  const rawSamples = (Array.isArray(data.samples) ? data.samples : []).filter((p) => p && isValidLatLng(p.lat, p.lng));
+  if (rawSamples.length < 2) {
+    throw new HttpsError("invalid-argument", "samples needs at least 2 real GPS points.");
   }
+  const samples = rawSamples
+    .map((p, i) => {
+      const fallbackAge = (rawSamples.length - 1 - i) * PRESENCE_SAMPLE_SPACING_MS;
+      const ageMs = typeof p.ageMs === "number" && Number.isFinite(p.ageMs) ? p.ageMs : fallbackAge;
+      return { lat: p.lat, lng: p.lng, t: now - Math.min(Math.max(ageMs, 0), PRESENCE_MAX_SAMPLE_AGE_MS) };
+    })
+    .sort((a, b) => a.t - b.t);
 
   const speedKmh = typeof data.speedKmh === "number" ? data.speedKmh : 0;
   if (speedKmh < PRESENCE_MIN_SPEED_KMH) {
@@ -671,29 +675,6 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
     // rather than leave a last-known position showing a stopped/parked driver as still live.
     await deletePresenceDoc(db, uid);
     return { outcome: "not_driving" };
-  }
-
-  const current = validTrace[validTrace.length - 1];
-  let snapped = { lat: current.lat, lng: current.lng };
-  try {
-    const coordinates = validTrace.map((p) => `${p.lng},${p.lat}`).join(";");
-    const url =
-      `https://api.mapbox.com/matching/v5/mapbox/driving/${coordinates}` +
-      `?geometries=geojson&overview=full&access_token=${MAPBOX_SERVER_TOKEN.value()}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    const matchedCoords = json?.matchings?.[0]?.geometry?.coordinates;
-    if (Array.isArray(matchedCoords) && matchedCoords.length > 0) {
-      const last = matchedCoords[matchedCoords.length - 1];
-      if (Array.isArray(last) && typeof last[0] === "number" && typeof last[1] === "number") {
-        snapped = { lat: last[1], lng: last[0] };
-      }
-    }
-  } catch (err) {
-    // A failed map-match is never a reason to refuse presence outright -- fall back to the raw
-    // (still-rounded-below) current fix, same honest-degradation convention as this app's other
-    // optional third-party calls (e.g. isRainingAt in trackyMood.ts).
-    console.warn("updatePresence: Mapbox Map Matching request failed", err);
   }
 
   // Real, explicit request -- "never within 500m of Home/Work/trip start/destination." Home/
@@ -715,31 +696,103 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
   if (typeof tripContext.destLat === "number" && typeof tripContext.destLng === "number") {
     exclusionPoints.push({ latitude: tripContext.destLat, longitude: tripContext.destLng });
   }
-  const nearSensitiveLocation = exclusionPoints.some(
-    (p) =>
-      typeof p.latitude === "number" &&
-      typeof p.longitude === "number" &&
-      haversineMeters(snapped.lat, snapped.lng, p.latitude, p.longitude) < PRESENCE_EXCLUSION_RADIUS_METERS
-  );
-  if (nearSensitiveLocation) {
+  const isNearSensitiveLocation = (lat, lng) =>
+    exclusionPoints.some(
+      (p) =>
+        typeof p.latitude === "number" &&
+        typeof p.longitude === "number" &&
+        haversineMeters(lat, lng, p.latitude, p.longitude) < PRESENCE_EXCLUSION_RADIUS_METERS
+    );
+
+  // The driver is inside an exclusion zone RIGHT NOW -- withdraw everything, including the
+  // not-yet-published pending points that led here, rather than letting the approach play out.
+  const current = samples[samples.length - 1];
+  if (isNearSensitiveLocation(current.lat, current.lng)) {
     await deletePresenceDoc(db, uid);
     return { outcome: "suppressed_near_sensitive_location" };
   }
 
-  const rounded = roundToPresenceGrid(snapped.lat, snapped.lng);
-  const moodKey = VALID_MOOD_KEYS.has(data.mood) ? data.mood : "happy";
-  const headingDeg = typeof data.headingDeg === "number" && Number.isFinite(data.headingDeg) ? data.headingDeg : null;
+  let batch = samples;
+  try {
+    const coordinates = samples.map((p) => `${p.lng},${p.lat}`).join(";");
+    const url =
+      `https://api.mapbox.com/matching/v5/mapbox/driving/${coordinates}` +
+      `?geometries=geojson&overview=full&access_token=${MAPBOX_SERVER_TOKEN.value()}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    const matchedCoords = json?.matchings?.[0]?.geometry?.coordinates;
+    if (
+      Array.isArray(matchedCoords) &&
+      matchedCoords.length >= 2 &&
+      matchedCoords.every((c) => Array.isArray(c) && isValidLatLng(c[1], c[0]))
+    ) {
+      batch = timeAlongGeometry(matchedCoords, samples[0].t, current.t);
+    }
+  } catch (err) {
+    // A failed map-match is never a reason to refuse presence outright -- fall back to the raw
+    // samples (straight lines between real fixes instead of the road shape), same
+    // honest-degradation convention as this app's other optional third-party calls.
+    console.warn("updatePresence: Mapbox Map Matching request failed", err);
+  }
+
+  const newPoints = downsample(batch, PRESENCE_MAX_POINTS_PER_BATCH)
+    .filter((p) => !isNearSensitiveLocation(p.lat, p.lng))
+    .map((p) => ({ lat: roundCoord(p.lat), lng: roundCoord(p.lng), t: Math.round(p.t) }));
+
+  const pendingRef = db.doc(`presencePending/${uid}`);
+  const presenceRef = db.doc(`presence/${uid}`);
+  const [pendingSnap, presenceSnap] = await Promise.all([pendingRef.get(), presenceRef.get()]);
+
+  const isFreshPoint = (p) => p && isValidLatLng(p.lat, p.lng) && typeof p.t === "number" && p.t >= now - PRESENCE_PATH_KEEP_MS;
+  const previousPending = (pendingSnap.exists && Array.isArray(pendingSnap.data().points) ? pendingSnap.data().points : []).filter(isFreshPoint);
+  const lastPendingT = previousPending.length > 0 ? previousPending[previousPending.length - 1].t : -Infinity;
+  const allPending = [...previousPending, ...newPoints.filter((p) => p.t > lastPendingT)];
+
+  const releaseBefore = now - PRESENCE_PRIVACY_DELAY_MS;
+  const publishable = allPending.filter((p) => p.t <= releaseBefore);
+  const stillPending = allPending.filter((p) => p.t > releaseBefore);
+
+  await pendingRef.set({
+    points: stillPending,
+    expireAt: Timestamp.fromMillis(now + PRESENCE_TTL_MS),
+  });
+
+  const previousPath = (presenceSnap.exists && Array.isArray(presenceSnap.data().path) ? presenceSnap.data().path : []).filter(isFreshPoint);
+  const lastPublishedT = previousPath.length > 0 ? previousPath[previousPath.length - 1].t : -Infinity;
+  const path = [...previousPath, ...publishable.filter((p) => p.t > lastPublishedT)].slice(-PRESENCE_MAX_PATH_POINTS);
+
+  if (path.length === 0) {
+    // Nothing is old enough to show yet (the first minute of a trip) -- a real, expected state.
+    return { outcome: "buffering" };
+  }
+
+  const last = path[path.length - 1];
+  // Heading comes from the PUBLISHED path, never from the phone's live compass -- the live
+  // heading is "right now" information, exactly what the privacy delay exists to withhold.
+  let headingDeg = null;
+  for (let i = path.length - 2; i >= 0; i--) {
+    if (haversineMeters(path[i].lat, path[i].lng, last.lat, last.lng) > 3) {
+      headingDeg = Math.round(bearingDegrees(path[i].lat, path[i].lng, last.lat, last.lng));
+      break;
+    }
+  }
 
   const presenceDoc = {
-    lat: rounded.lat,
-    lng: rounded.lng,
+    lat: last.lat,
+    lng: last.lng,
     headingDeg,
-    mood: moodKey,
+    mood: VALID_MOOD_KEYS.has(data.mood) ? data.mood : "happy",
+    path,
+    // Server clock, ms -- viewers time their playback off this plus their own locally-measured
+    // elapsed time since the doc arrived, so no two devices' clocks ever need to agree.
+    w: now,
     updatedAt: FieldValue.serverTimestamp(),
     // Real Firestore TTL field -- see this section's own header comment for why the policy
     // itself is a one-time manual gcloud step rather than something deployed from this repo.
-    expireAt: Timestamp.fromMillis(Date.now() + PRESENCE_TTL_MS),
+    expireAt: Timestamp.fromMillis(now + PRESENCE_TTL_MS),
   };
+  const look = sanitizeLook(data.look);
+  if (look) presenceDoc.look = look;
   // Only ever included when the driver has explicitly opted in (settings.showNameOnReports) AND
   // a real verified name actually exists on their Firebase Auth token -- omitted entirely
   // (never an empty string) otherwise, so a client reading this doc can't tell the difference
@@ -748,14 +801,14 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
     presenceDoc.displayName = request.auth.token.name.trim();
   }
 
-  await db.doc(`presence/${uid}`).set(presenceDoc);
+  await presenceRef.set(presenceDoc);
   return { outcome: "success" };
 });
 
 // Real, explicit request -- the other half of "auto-deletes... immediately on arrival/ghost
 // mode." Called directly by the client the instant a trip ends or Ghost mode turns on, rather
 // than waiting out the TTL/scheduled cleanup below for what's really an immediate, deliberate
-// withdrawal.
+// withdrawal. Also discards the not-yet-published pending points.
 exports.clearPresence = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Sign in required.");
@@ -765,28 +818,29 @@ exports.clearPresence = onCall(async (request) => {
 });
 
 /**
- * Belt-and-suspenders cleanup alongside the real Firestore TTL policy on presence.expireAt --
- * same batched-delete pattern as cleanupExpiredAlerts above. A driver who force-quits mid-trip
- * (no clearPresence call, no further updatePresence calls either) is exactly the real case this
- * covers: TTL alone would still catch it, but not necessarily within the spec's own "2min"
- * window depending on Firestore's TTL background-sweep latency.
+ * Belt-and-suspenders cleanup alongside the real Firestore TTL policy on expireAt -- same
+ * batched-delete pattern as cleanupExpiredAlerts above, for both the published docs and the
+ * private pending buffer. A driver who force-quits mid-trip (no clearPresence call, no further
+ * updatePresence calls either) is exactly the real case this covers.
  */
 exports.cleanupExpiredPresence = onSchedule("every 2 minutes", async () => {
   const db = getFirestore();
   const now = Timestamp.now();
 
   let deletedTotal = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const snapshot = await db.collection("presence").where("expireAt", "<=", now).limit(BATCH_SIZE).get();
-    if (snapshot.empty) break;
+  for (const collectionName of ["presence", "presencePending"]) {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const snapshot = await db.collection(collectionName).where("expireAt", "<=", now).limit(BATCH_SIZE).get();
+      if (snapshot.empty) break;
 
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
+      const batch = db.batch();
+      snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
 
-    deletedTotal += snapshot.size;
-    if (snapshot.size < BATCH_SIZE) break;
+      deletedTotal += snapshot.size;
+      if (snapshot.size < BATCH_SIZE) break;
+    }
   }
 
   console.log(`cleanupExpiredPresence: removed ${deletedTotal} expired presence doc(s)`);

@@ -112,10 +112,14 @@ export function PresenceCard({ presence, selfUid, onClose, onBlocked }: Props) {
       <Pressable style={styles.overlay} onPress={handleClose}>
         <Pressable style={styles.card} onPress={() => {}}>
           <View style={styles.header}>
-            <Tracky mood={presence.mood} size={56} animated={false} reactOnTap={false} />
+            {presence.look ? (
+              <Tracky customization={presence.look} size={56} animated={false} reactOnTap={false} />
+            ) : (
+              <Tracky mood={presence.mood} size={56} animated={false} reactOnTap={false} />
+            )}
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{presence.displayName ?? "A Tracky"}</Text>
-              <Text style={styles.moodLabel}>{mood.label}</Text>
+              <Text style={styles.moodLabel}>{presence.look ? "Custom Tracky" : mood.label}</Text>
             </View>
             <Pressable onPress={handleClose} hitSlop={12} style={styles.closeButton} accessibilityLabel="Close">
               <Ionicons name="close" size={18} color={colors.textMuted} />

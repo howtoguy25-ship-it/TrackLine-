@@ -18,6 +18,8 @@ import { httpsCallable } from "@firebase/functions";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, functions } from "@/services/firebase";
 import type { TrackyMoodKey } from "@/components/trackys/moods";
+import type { TrackyCustomization } from "@/components/trackys/customization";
+import type { PathPoint } from "@/services/presencePlayback";
 
 // Real, explicit request (Ghost mode + visibility control, Part 3 client) -- the client half of
 // the presence system. The server (firebase/functions/index.js's updatePresence/clearPresence,
@@ -33,6 +35,16 @@ export interface PresenceDoc {
   mood: TrackyMoodKey;
   displayName?: string;
   updatedAt: number;
+  // ADD-ON Part A -- the driver's own "Make your Tracky" design, when they're showing one
+  // instead of a mood. Already whitelisted field-by-field by the server (sanitizeLook).
+  look?: TrackyCustomization;
+  // ADD-ON Part B -- the short, road-following, already-60s-delayed path this driver's Tracky
+  // glides along (see presencePlayback.ts), `w` the server time this version was written, and
+  // `receivedAtLocalMs` THIS device's own clock at the moment this version first arrived --
+  // playback is timed from elapsed local time since then, so no two clocks need to agree.
+  path: PathPoint[];
+  w: number;
+  receivedAtLocalMs: number;
 }
 
 const MAX_PRESENCE_DOCS = 200;
@@ -54,14 +66,24 @@ export function subscribeNearbyPresence(
   onChange: (presences: PresenceDoc[]) => void
 ): Unsubscribe {
   const q = query(collection(db, "presence"), orderBy("updatedAt", "desc"), limit(MAX_PRESENCE_DOCS));
+  // When each driver's CURRENT doc version (its `w`) first reached this device. A snapshot
+  // re-delivers every doc whenever any one of them changes, so this can't just be "now" on
+  // every callback -- that would restart every Tracky's playback each time anyone updated.
+  const firstSeen = new Map<string, { w: number; receivedAtLocalMs: number }>();
   return onSnapshot(
     q,
     (snap) => {
       const presences: PresenceDoc[] = [];
+      const stillPresent = new Set<string>();
       snap.forEach((docSnap) => {
         if (docSnap.id === selfUid) return;
         const data = docSnap.data();
         if (typeof data.lat !== "number" || typeof data.lng !== "number") return;
+        const w = typeof data.w === "number" ? data.w : 0;
+        const seen = firstSeen.get(docSnap.id);
+        const receivedAtLocalMs = seen && seen.w === w ? seen.receivedAtLocalMs : Date.now();
+        firstSeen.set(docSnap.id, { w, receivedAtLocalMs });
+        stillPresent.add(docSnap.id);
         presences.push({
           uid: docSnap.id,
           lat: data.lat,
@@ -70,29 +92,49 @@ export function subscribeNearbyPresence(
           mood: typeof data.mood === "string" ? (data.mood as TrackyMoodKey) : "happy",
           displayName: typeof data.displayName === "string" ? data.displayName : undefined,
           updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : Date.now(),
+          look: data.look && typeof data.look === "object" ? (data.look as TrackyCustomization) : undefined,
+          path: parsePath(data.path),
+          w,
+          receivedAtLocalMs,
         });
       });
+      for (const uid of firstSeen.keys()) {
+        if (!stillPresent.has(uid)) firstSeen.delete(uid);
+      }
       onChange(presences);
     },
     () => onChange([])
   );
 }
 
-export interface PresenceTracePoint {
+function parsePath(raw: unknown): PathPoint[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (p): p is PathPoint => !!p && typeof p.lat === "number" && typeof p.lng === "number" && typeof p.t === "number"
+  );
+}
+
+// One of the driver's own GPS fixes, taken every 15s (see MapScreen.tsx's sampler). `ageMs` is
+// how long ago it was taken as of sending -- a duration, not a timestamp, so the server never
+// depends on this phone's clock being right.
+export interface PresenceSample {
   lat: number;
   lng: number;
+  ageMs: number;
 }
 
 export interface UpdatePresenceResult {
-  outcome: "success" | "not_driving" | "suppressed_near_sensitive_location";
+  // "buffering" is the real, expected first-minute state: the server is holding this driver's
+  // points back behind its 60s privacy delay and has nothing old enough to publish yet.
+  outcome: "success" | "buffering" | "not_driving" | "suppressed_near_sensitive_location";
 }
 
 const updatePresenceCallable = httpsCallable<
   {
-    trace: PresenceTracePoint[];
-    headingDeg: number | null;
+    samples: PresenceSample[];
     speedKmh: number;
     mood: TrackyMoodKey;
+    look?: TrackyCustomization;
     allowName: boolean;
     tripContext?: { sourceLat?: number; sourceLng?: number; destLat?: number; destLng?: number };
   },
@@ -100,10 +142,10 @@ const updatePresenceCallable = httpsCallable<
 >(functions, "updatePresence");
 
 export async function callUpdatePresence(args: {
-  trace: PresenceTracePoint[];
-  headingDeg: number | null;
+  samples: PresenceSample[];
   speedKmh: number;
   mood: TrackyMoodKey;
+  look?: TrackyCustomization;
   allowName: boolean;
   tripContext?: { sourceLat?: number; sourceLng?: number; destLat?: number; destLng?: number };
 }): Promise<UpdatePresenceResult> {

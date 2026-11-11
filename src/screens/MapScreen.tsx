@@ -76,7 +76,8 @@ import { WhereToSheet } from "@/screens/WhereToSheet";
 import type { ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
-import { useTrackyMood } from "@/hooks/useTrackyMood";
+import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
+import { PresenceLayer } from "@/components/PresenceLayer";
 import { PresenceCard } from "@/screens/PresenceCard";
 import {
   subscribeNearbyPresence,
@@ -1616,7 +1617,7 @@ export function MapScreen() {
   // this is a broad, recency-ordered fetch rather than a geo-bounded one.
   const [presenceList, setPresenceList] = useState<PresenceDoc[]>([]);
   useEffect(() => {
-    // No synchronous reset here -- visiblePresenceClusters below already gates on
+    // No synchronous reset here -- visiblePresences below already gates on
     // settings.showTrackysOnMap, so a stale presenceList from before it was toggled off (or
     // before a real sign-in existed) simply never renders anything.
     if (!user || !settings.showTrackysOnMap) return;
@@ -1637,65 +1638,94 @@ export function MapScreen() {
   const [selectedPresence, setSelectedPresence] = useState<PresenceDoc | null>(null);
 
   // Real, explicit request -- "Map shows max 50 Trackys, clustered." Closest-to-driver-first
-  // cap (not an arbitrary slice of whatever subscribeNearbyPresence happened to return), then
-  // the exact same grid clustering this screen's own fuel/restaurant/hotel viewport layers use
-  // (see clusterPoints' own header comment) so a dense area collapses into a "+12" bubble
-  // instead of 50 individual pins fighting for the same few screen pixels.
+  // cap (not an arbitrary slice of whatever subscribeNearbyPresence happened to return). The
+  // clustering itself now happens inside PresenceLayer, on each Tracky's ANIMATED position
+  // rather than its last published one (ADD-ON Part B).
   const MAX_VISIBLE_TRACKYS = 50;
-  const visiblePresenceClusters = useMemo(() => {
+  const visiblePresences = useMemo(() => {
     if (!settings.showTrackysOnMap || presenceList.length === 0 || !currentLatLng) return [];
-    const unblocked = presenceList.filter((p) => !blockedUids.has(p.uid));
-    const sorted = currentLatLng
-      ? [...unblocked].sort(
-          (a, b) =>
-            haversineMeters(currentLatLng, { latitude: a.lat, longitude: a.lng }) -
-            haversineMeters(currentLatLng, { latitude: b.lat, longitude: b.lng })
-        )
-      : unblocked;
-    const capped = sorted.slice(0, MAX_VISIBLE_TRACKYS);
-    const points = capped.map((p) => ({ id: p.uid, lat: p.lat, lng: p.lng, presence: p }));
-    const cellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
-    return clusterPoints(points, cellSizeDegrees);
-  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap, osmZoomDelta]);
+    return presenceList
+      .filter((p) => !blockedUids.has(p.uid))
+      .sort(
+        (a, b) =>
+          haversineMeters(currentLatLng, { latitude: a.lat, longitude: a.lng }) -
+          haversineMeters(currentLatLng, { latitude: b.lat, longitude: b.lng })
+      )
+      .slice(0, MAX_VISIBLE_TRACKYS);
+  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap]);
+  const presenceCellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
 
-  const { displayMood: ownDisplayMood } = useTrackyMood(settings.visibility === "ghost");
+  const ownAppearance = useTrackyAppearance(settings.visibility === "ghost");
 
-  // Real, explicit request -- "Updates every 60s while driving." A short rolling trace (not a
-  // single point) because Mapbox Map Matching matches a TRACE against the road network -- see
-  // updatePresence's own header comment in firebase/functions/index.js. Capped at 5 points so
-  // the call payload stays small; older points fall off the front as new ones arrive.
-  const presenceTraceRef = useRef<{ lat: number; lng: number }[]>([]);
+  // Everything the two timers below need to read AT THE MOMENT THEY FIRE. Real bug this fixes:
+  // the first version of this read speed/heading/mood straight from the effect's own closure,
+  // which is created once when a route starts -- i.e. while the car is still stationary -- so
+  // the 15km/h gate was comparing against a frozen ~0 forever and would never have sent.
+  const presenceInputsRef = useRef({
+    latLng: currentLatLng,
+    speedKmh: 0,
+    mood: ownAppearance.displayMood,
+    look: undefined as typeof ownAppearance.customization | undefined,
+    allowName: settings.showNameOnReports,
+    source: originOverride?.location ?? null,
+    dest: destinationLatLng,
+  });
   useEffect(() => {
-    if (!currentLatLng) return;
-    const next = [...presenceTraceRef.current, { lat: currentLatLng.latitude, lng: currentLatLng.longitude }];
-    presenceTraceRef.current = next.length > 5 ? next.slice(next.length - 5) : next;
-  }, [currentLatLng]);
+    presenceInputsRef.current = {
+      latLng: currentLatLng,
+      speedKmh: liveSpeed.speedKmh ?? currentSpeedKmh ?? 0,
+      mood: ownAppearance.displayMood,
+      look: ownAppearance.mode === "custom" ? ownAppearance.customization : undefined,
+      allowName: settings.showNameOnReports,
+      source: originOverride?.location ?? null,
+      dest: destinationLatLng,
+    };
+  });
 
+  // Real, explicit request (ADD-ON Part B) -- "15s samples", sent "every 60s while driving".
+  // Each sample keeps the local time it was taken so it can be sent as an AGE (see
+  // PresenceSample) -- the server turns that into its own clock's time and holds every point
+  // back behind its 60s privacy delay (updatePresence in firebase/functions/index.js).
   useEffect(() => {
     if (!user || !route) return;
     if (settings.visibility === "ghost") return;
-    const tick = () => {
-      if (settings.visibility === "ghost") return;
-      const speedKmh = liveSpeed.speedKmh ?? currentSpeedKmh ?? 0;
-      if (speedKmh < 15 || presenceTraceRef.current.length < 2) return;
+    let samples: { lat: number; lng: number; at: number }[] = [];
+
+    const takeSample = () => {
+      const latLng = presenceInputsRef.current.latLng;
+      if (latLng) samples.push({ lat: latLng.latitude, lng: latLng.longitude, at: Date.now() });
+      if (samples.length > 12) samples = samples.slice(samples.length - 12);
+    };
+    const send = () => {
+      const inputs = presenceInputsRef.current;
+      if (inputs.speedKmh < 15 || samples.length < 2) return;
+      const sentAt = Date.now();
+      const batch = samples.map((sample) => ({ lat: sample.lat, lng: sample.lng, ageMs: sentAt - sample.at }));
+      // Keep the newest sample as the start of the next batch so consecutive map-matches join
+      // up into one continuous road path instead of leaving a gap between minutes.
+      samples = samples.slice(samples.length - 1);
       callUpdatePresence({
-        trace: presenceTraceRef.current,
-        headingDeg: Number.isFinite(heading) ? heading : null,
-        speedKmh,
-        mood: ownDisplayMood,
-        allowName: settings.showNameOnReports,
+        samples: batch,
+        speedKmh: inputs.speedKmh,
+        mood: inputs.mood,
+        look: inputs.look,
+        allowName: inputs.allowName,
         tripContext: {
-          sourceLat: originOverride?.location.latitude ?? undefined,
-          sourceLng: originOverride?.location.longitude ?? undefined,
-          destLat: destinationLatLng?.latitude ?? undefined,
-          destLng: destinationLatLng?.longitude ?? undefined,
+          sourceLat: inputs.source?.latitude ?? undefined,
+          sourceLng: inputs.source?.longitude ?? undefined,
+          destLat: inputs.dest?.latitude ?? undefined,
+          destLng: inputs.dest?.longitude ?? undefined,
         },
       }).catch((err) => Sentry.logger.warn("map: updatePresence failed", { error: String(err) }));
     };
-    tick();
-    const interval = setInterval(tick, 60000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    takeSample();
+    const sampleInterval = setInterval(takeSample, 15000);
+    const sendInterval = setInterval(send, 60000);
+    return () => {
+      clearInterval(sampleInterval);
+      clearInterval(sendInterval);
+    };
   }, [user, route, settings.visibility]);
 
   // Real, explicit request -- "Auto-deletes... immediately on arrival/ghost mode." Reacts to
@@ -4063,44 +4093,16 @@ export function MapScreen() {
             <Tracky mood="spooky" size={28} animated={false} reactOnTap={false} translucent />
           </Marker>
         )}
-        {/* Real, explicit request (Part 3 client) -- other visible+driving drivers, 32pt per
-            spec, clustered into a "+N" bubble the same way this screen's own fuel/restaurant/
-            hotel viewport layers already are (see visiblePresenceClusters' own comment). Tap an
-            individual Tracky to open the real card (mood/name/road/Wave/Block/Report); tap a
-            cluster bubble to zoom in, same onPlaceClusterPress this screen's other layers use. */}
-        {visiblePresenceClusters.map((c) =>
-          c.count === 1 ? (
-            <Marker
-              key={`presence-${c.points[0].presence.uid}`}
-              coordinate={{ latitude: c.points[0].presence.lat, longitude: c.points[0].presence.lng }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              rotation={c.points[0].presence.headingDeg ?? 0}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                setSelectedPresence(c.points[0].presence);
-              }}
-            >
-              <Tracky mood={c.points[0].presence.mood} size={32} animated={false} reactOnTap={false} />
-            </Marker>
-          ) : (
-            <Marker
-              key={`presence-cluster-${c.key}`}
-              coordinate={{ latitude: c.lat, longitude: c.lng }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                onPlaceClusterPress(c.lat, c.lng);
-              }}
-            >
-              <View style={[styles.placeClusterBadge, { backgroundColor: colors.accent }]}>
-                <Ionicons name="happy" size={14} color="#FFFFFF" />
-                <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
-              </View>
-            </Marker>
-          )
-        )}
+        {/* Real, explicit request (Part 3 client + ADD-ON Part B) -- other visible+driving
+            drivers, 32pt, each gliding along its own published road path, clustered into a
+            "+N" bubble. Its own component so its several-times-a-second animation tick never
+            re-renders this whole screen -- see PresenceLayer.tsx. */}
+        <PresenceLayer
+          presences={visiblePresences}
+          cellSizeDegrees={presenceCellSizeDegrees}
+          onSelect={setSelectedPresence}
+          onClusterPress={onPlaceClusterPress}
+        />
         {/* Preview of whichever route profile is highlighted in the picker below, before
             the user commits to it with Start -- "click a route, see its line" like Apple/
             Google Maps' own route picker. Red and thick (not the same blue as the committed

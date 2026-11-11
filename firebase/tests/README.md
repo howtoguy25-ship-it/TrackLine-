@@ -14,8 +14,8 @@ npm --prefix firebase/tests install
 
 `updatePresence` reads a Cloud Functions secret (`MAPBOX_SERVER_TOKEN`) via `defineSecret`. The
 emulator needs *some* value for it even though these tests never need it to be a real, working
-Mapbox token -- `updatePresence` is deliberately built to fall back gracefully (and still write
-a valid presence doc) if the real Mapbox Map Matching API call fails, which is exactly what
+Mapbox token -- `updatePresence` is deliberately built to fall back gracefully (and still build
+a valid path from the raw samples) if the real Mapbox Map Matching API call fails, which is exactly what
 happens with a fake token, and is itself one of the things these tests verify. Create
 `firebase/functions/.secret.local` (already gitignored) with:
 
@@ -60,18 +60,25 @@ running these locally or in CI behind a proxy, try the same thing.
 ## What's covered
 
 - **`firestore.rules.test.js`** -- `presence/{uid}` (read-any-signed-in/write-never-from-a-
-  client), `blocks/{uid}` (owner read/write only), `waves/{waveId}` (fully denied to every
-  client), `userReports/{reportId}` (self-attributed create only, admin-only read), and a
-  regression check on the pre-existing `users/{uid}` rules.
+  client), `presencePending/{uid}` (the privacy-delay buffer: no client read or write at all),
+  `blocks/{uid}` (owner read/write only), `waves/{waveId}` (fully denied to every client),
+  `userReports/{reportId}` (self-attributed create only, admin-only read), and a regression
+  check on the pre-existing `users/{uid}` rules.
 - **`storage.rules.test.js`** -- the pre-existing `voiceRecordings/{uid}` rules (own-only
-  read/write, catch-all deny everywhere else) -- unaffected by this feature, checked anyway
-  since the user's own testing request covers Storage rules generally.
-- **`functions.test.js`** -- `updatePresence` (auth required, trace-length validation, the
-  speed<15km/h withdrawal path, a real write on a successful call including the Mapbox-failure
-  fallback, mood whitelisting, and the 500m sensitive-location suppression), `clearPresence`
-  (auth required, deletes the caller's own doc), and `sendWave` (rejects self-waves, real
-  target-visibility/token/rate-limit/block checks, and that a block is never revealed to the
-  sender).
+  read/write, catch-all deny everywhere else).
+- **`functions.test.js`** -- `updatePresence` (auth, sample validation, the speed<15km/h
+  withdrawal, the 60s privacy delay actually holding fresh points back, path extension across
+  calls, mood and custom-look whitelisting, exclusion-zone suppression and filtering),
+  `clearPresence`, and `sendWave`.
+- **`presencePath.test.js`** -- pure unit tests (no emulator needed) of
+  `firebase/functions/presencePath.js`: turning Mapbox road geometry into timed points,
+  downsampling, and the custom-look whitelist.
+
+The app-side playback maths has its own check, run separately from the repo root:
+
+```
+npx tsx scripts/test-presence-playback.ts
+```
 
 ## What this does NOT cover
 

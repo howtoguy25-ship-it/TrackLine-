@@ -42,20 +42,38 @@ it won't have this feature yet — rebuild.
 ## 3. Start "driving" on Device A
 
 - From the home map, tap **Plan a drive** (or just **Start** on any route) so a real route is
-  active — `updatePresence` only runs while a route is active.
-- Get Device A's real speed above 15 km/h (drive, be a passenger, or use GPS replay as above).
-- Within about a minute, Device A calls `updatePresence` for the first time.
+  active — presence updates only run while a route is active.
+- Get Device A's real speed above 15 km/h and **keep it there for at least 3 minutes** (drive,
+  be a passenger, or use GPS replay as above). Device A samples its position every 15 seconds
+  and sends them once a minute.
 
-## 4. Verify Device B can see Device A
+## 4. Verify Device B can see Device A — and that it's delayed
 
 - On Device B, make sure **Settings → Map layers → "Show Trackys"** is on (it's on by default).
-- Within a minute of step 3, a small Tracky marker for Device A should appear on Device B's map,
-  roughly where Device A actually is (rounded to ~150m and snapped to the nearest road — it
-  won't be pixel-exact to Device A's real GPS dot, that's by design, see the Privacy Policy's
-  own "Presence" section).
-- Tap that marker. The card should show: Device A's mood, its real display name (if you turned
-  on "Show my name on reports" in step 2) or "A Tracky" if not, and "Driving on <a real nearby
-  road name>".
+- **Nothing should appear for the first ~2 minutes.** That's the privacy delay working, not a
+  bug: the server holds every point back for at least 60 seconds, so Device A's first minute is
+  still private when its first update is sent. Expect Device A's Tracky to appear on Device B
+  roughly 2–3 minutes after Device A started moving.
+- Once it appears, it should **glide smoothly along the road** rather than jumping, lean
+  slightly into its direction of travel, and be showing where Device A was about **two minutes
+  ago** — put the two phones side by side and confirm Device B's Tracky is trailing behind
+  Device A's real position, not on top of it. If it's ever ahead of or level with Device A's
+  real position, that's a real bug — report it.
+- Tap that marker. The card should show: Device A's mood (or "Custom Tracky"), its real display
+  name (if you turned on "Show my name on reports" in step 2) or "A Tracky" if not, and
+  "Driving on <a real nearby road name>".
+
+## 4b. Make your Tracky (the customiser)
+
+- On Device A: Menu → **View profile** → **Make your Tracky**. Pick a preset or build one from
+  the Colour / Eyes / Mouth / Extras / Trail tabs, then **Save**.
+- Device A's menu header and profile should switch to the new design immediately.
+- A locked part (e.g. Party hat before a 7-day driving streak) should show a lock and its
+  unlock hint, and Save should be disabled while the design uses one.
+- Within a couple of minutes of Device A's next update, Device B should see the custom design
+  on the map instead of a mood face — and, if a Trail was chosen, a few small particles
+  following behind it while it moves (only drawn when 12 or fewer Trackys are on screen).
+- Back on Device A's profile, tap any mood: it should switch back to moods.
 
 ## 5. Verify Device A does NOT see Device B
 
@@ -81,8 +99,8 @@ it won't have this feature yet — rebuild.
 Three separate real triggers, each worth checking on its own:
 
 - **Stop driving.** Let Device A's speed drop below 15 km/h (stop the car, or stop the GPS
-  replay) without ending the route. The NEXT `updatePresence` call (within ~1 minute) should
-  withdraw Device A's marker from Device B's map almost immediately.
+  replay) without ending the route. At Device A's next once-a-minute update, its marker should
+  be withdrawn from Device B's map.
 - **Arrive / end navigation.** Tap **Exit** on Device A's active route. Device A's marker should
   disappear from Device B's map right away (not wait out the ~2-minute TTL) — this also
   auto-flips Device A into Ghost mode (check Settings → Privacy on Device A to confirm).

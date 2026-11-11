@@ -126,15 +126,23 @@ service cloud.firestore {
     // bypasses these rules entirely) -- this is what actually enforces "ONLY", not a convention
     // this app merely expects clients to follow. Any signed-in driver can read/list the
     // collection (Part 3's own client needs this to show nearby Trackys), which is safe because
-    // the Cloud Function itself never writes a raw GPS fix, only an already-rounded-to-~150m,
-    // already-road-snapped position -- "reads return only rounded fields" is a property of
-    // what's IN each doc, not something a read-time rule could filter per-field anyway
-    // (Firestore security rules operate per-document, not per-field). One doc per uid,
-    // overwritten every update rather than appended to, is also what makes "no uid-history
-    // queries" true: there's no separate history collection here to query in the first place.
+    // the Cloud Function itself never writes a raw or current GPS fix, only road-snapped points
+    // that are already at least 60s old (see presencePending below). What a reader can learn
+    // is a property of what's IN each doc, not something a read-time rule could filter
+    // per-field anyway (Firestore security rules operate per-document, not per-field). One doc
+    // per uid, overwritten every update and trimmed to a few minutes of path, is also what
+    // makes "no uid-history queries" true: there's no history collection to query.
     match /presence/{uid} {
       allow read: if isSignedIn();
       allow write: if false;
+    }
+
+    // ADD-ON Part B -- the server-side "60s privacy delay" buffer. Holds a driver's most
+    // recent, NOT-yet-old-enough-to-show points; updatePresence (Admin SDK) is the only thing
+    // that ever touches it. No client can read it, including the driver's own -- if any client
+    // could, the delay would only be a convention.
+    match /presencePending/{uid} {
+      allow read, write: if false;
     }
 
     // Real, explicit request -- "[Wave 👋] rate-limited 1/10min/blockable." This per-sender-

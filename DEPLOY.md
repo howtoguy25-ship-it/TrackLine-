@@ -71,14 +71,21 @@ When it prompts for the value, paste a real Mapbox access token (the same value 
 a *separate* secret because EAS/Expo build-time env vars never reach the Cloud Functions
 runtime, not because the token itself needs to be different).
 
-**b. The Firestore TTL policy on `presence.expireAt`** (so Firestore itself, not just the
+**b. The Firestore TTL policies on `presence.expireAt` and `presencePending.expireAt`** (so Firestore itself, not just the
 `cleanupExpiredPresence` scheduled function, auto-deletes a stale presence doc):
 
 ```
 gcloud firestore fields ttl-policies create expireAt \
   --collection-group=presence \
   --project=<your-project-id>
+
+gcloud firestore fields ttl-policies create expireAt \
+  --collection-group=presencePending \
+  --project=<your-project-id>
 ```
+
+(`presencePending` is the private holding area behind the 60-second privacy delay — the second
+command makes Firestore clean that up by itself too.)
 
 This needs the `gcloud` CLI logged in (`gcloud auth login`) with the same Google account that
 has access to the Firebase project. You only ever need to run this once per project — it's a

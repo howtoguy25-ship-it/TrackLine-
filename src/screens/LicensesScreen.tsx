@@ -34,7 +34,7 @@ const ENTRIES: LicenseEntry[] = [
   {
     name: "Mapbox",
     license: "Mapbox Terms of Service",
-    description: "Road-network map matching, used server-side to snap a visible driver's rounded position to the nearest road before showing it to other drivers (see Settings > Privacy).",
+    description: "Road-network map matching, used server-side to snap a visible driver's (delayed) location samples to the road they were on before showing them to other drivers (see Settings > Privacy).",
     url: "https://www.mapbox.com/legal/tos",
   },
   {

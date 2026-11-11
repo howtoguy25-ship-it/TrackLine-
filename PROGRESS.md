@@ -144,6 +144,12 @@ whole-app copyright/trademark audit. See NOTES.md's own dedicated entry for the 
       Functions) — 31/31 passing, real pasted output in `TEST_RESULTS.md`
 - [x] `TEST_ON_PHONE.md` — the real two-account device test plan, since this environment has no
       device to run it on itself
-- [ ] ADD-ON ("Make your Tracky" customizer + Waze-style smooth time-lapse movement on roads) —
-      explicitly deferred to a separate future pass per the user's own sequencing choice
-      ("Part 1-4 first, then the ADD-ON"), not started
+- [x] ADD-ON Part A -- "Make your Tracky" customiser (colour/two-tone/eyes/mouth/accessory/
+      trail, presets, unlocks tied to the same real milestones as moods, Firestore + local
+      storage, shown to other drivers via a server-whitelisted `look`)
+- [x] ADD-ON Part B -- smooth movement on roads (15s samples, Mapbox road geometry, a
+      server-enforced 60s privacy delay via a private pending buffer, interpolated playback with
+      capped dead-reckoning, lean, trail particles, performance scaling). Replaces Part 3's
+      ~150m rounding -- see NOTES.md for that decision and the one disclosed deviation
+      (JS-tick marker movement rather than a Reanimated worklet)
+- [ ] Device test of all of the above -- never run on a phone; see TEST_ON_PHONE.md

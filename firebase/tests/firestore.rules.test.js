@@ -77,6 +77,22 @@ describe("presence/{uid}", () => {
   });
 });
 
+describe("presencePending/{uid} (the server-side privacy-delay buffer)", () => {
+  test("NO client can read it -- not another driver, not even the driver it belongs to", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "presencePending/driver-a"), { points: [{ lat: -33.87, lng: 151.21, t: 1 }] });
+    });
+    await assertFails(getDoc(doc(testEnv.authenticatedContext("driver-a").firestore(), "presencePending/driver-a")));
+    await assertFails(getDoc(doc(testEnv.authenticatedContext("driver-b").firestore(), "presencePending/driver-a")));
+    await assertFails(getDocs(collection(testEnv.authenticatedContext("driver-b").firestore(), "presencePending")));
+  });
+
+  test("no client can write it either", async () => {
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertFails(setDoc(doc(self, "presencePending/driver-a"), { points: [] }));
+  });
+});
+
 describe("blocks/{uid}", () => {
   test("a driver CAN write their own block list", async () => {
     const self = testEnv.authenticatedContext("driver-a").firestore();

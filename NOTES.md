@@ -390,7 +390,7 @@ roads) is confirmed out of scope for this pass, not started, not scaffolded.
 | Only visible+driving shown | **PARTIAL (disclosed)** | `updatePresence` gates on the CURRENT speed the client reports (>15km/h) at call time, not a true rolling "sustained speed over the last 5 minutes" window -- a driver who briefly dips under 15km/h at a single 60s tick (not stopped, just slowed) withdraws for that tick rather than being smoothed over a 5-minute buffer. The spec's literal "in last 5min" smoothing isn't built; the simpler instantaneous gate is |
 | Position via Cloud Function ONLY | DONE | `firestore.rules`' `presence/{uid}`: `allow write: if false` -- only `updatePresence`/`clearPresence`'s Admin SDK writes ever succeed |
 | Snapped to nearest road (Mapbox Map Matching, per user's explicit choice) | DONE | `updatePresence`'s real Map Matching API call, with an honest fallback to the raw point if it fails -- verified for real in `TEST_RESULTS.md` |
-| Rounded ~150m | DONE | `roundToPresenceGrid()` -- a real, latitude-corrected ~150m grid snap |
+| Rounded ~150m | **SUPERSEDED by the ADD-ON** | Was `roundToPresenceGrid()`. Replaced in ADD-ON Part B by a server-enforced 60s delay, because grid-snapped points can't follow a road -- see the ADD-ON section below and the Privacy Policy's own "What changed in this version" note |
 | heading/mood/displayName(if allowed)/updatedAt, never raw GPS history | DONE | `updatePresence`'s own `presenceDoc` object; one doc per uid, overwritten not appended -- no history collection exists at all |
 | Updates every 60s while driving | DONE | `MapScreen.tsx`'s `setInterval(tick, 60000)` effect |
 | Never within 500m of Home/Work/trip start/destination | DONE | `updatePresence`'s `exclusionPoints`/`haversineMeters` check -- verified for real in the emulator test suite (the "suppresses presence... within 500m" test) |
@@ -444,3 +444,83 @@ ran for real (not simulated) -- see `TEST_RESULTS.md`, including a real environm
 proxy quirk hit and documented along the way (`firebase/tests/README.md`). No physical
 device/emulator image was available for the real on-device two-account test; `TEST_ON_PHONE.md`
 hands that off completely.
+
+
+## ADD-ON -- "Make your Tracky" customiser + smooth movement on roads
+
+Built after Parts 1-4, per the user's own sequencing choice.
+
+### Part A -- customiser
+
+- `customization.ts` is the design model: body colour (+ optional two-tone bottom), eyes, mouth,
+  one accessory (with a tint for the three that actually take one), and a trail effect, plus a
+  six-design presets gallery. `TrackyCustomizerScreen.tsx` edits a local draft with a live
+  animated preview and only writes on Save.
+- **Unlocks reuse the real milestones the moods already use** (3-day/7-day driving streak, Ghost
+  mode, birthday) rather than a new invented currency. Colours, eyes and mouths are never locked.
+- Stored as compact JSON at `users/{uid}.trackyCustomization` and locally, same two-tier pattern
+  as moods/settings. `useTrackyAppearance` is the one place that resolves mood-vs-custom.
+- A custom design travels on the driver's presence doc as `look`, **whitelisted field by field on
+  the server** (`sanitizeLook`) since it's rendered on other people's phones. The server does
+  NOT re-check whether an accessory/trail is actually unlocked -- the driving streak behind
+  those only exists on the driver's own device. It's a cosmetic gate, not a security one.
+- **Real bug found and fixed along the way** (from the earlier mood work): every hook instance
+  kept its own copy of the mood state, so picking a mood left the still-mounted menu header
+  showing the old one. Both stores now notify every mounted instance.
+
+### Part B -- smooth movement
+
+How it works, end to end:
+
+1. The driver's phone samples GPS every 15s and sends the batch once a minute, each sample as an
+   AGE (ms ago) rather than a timestamp, so nothing depends on the phone's clock.
+2. `updatePresence` map-matches the batch and keeps Mapbox's matched road geometry, timing each
+   vertex by distance along it (`timeAlongGeometry`).
+3. **The 60s privacy delay is enforced on the server.** New points go into
+   `presencePending/{uid}`, which no client can read (rules-tested, including the owner), and are
+   copied into the readable `presence/{uid}` doc only once they're at least 60s old.
+4. Viewers replay each driver's path 120s behind the moment its update was written (60s delay +
+   60s between updates), so one batch plays out exactly until the next arrives
+   (`presencePlayback.ts`). If an update is late: dead-reckon along the last segment for at most
+   20s at a capped speed, then stop.
+5. `PresenceLayer.tsx` moves the markers, leans each Tracky into its direction of travel, draws
+   trail particles, and scales its own work down as more Trackys are on screen.
+
+Decisions and deviations, stated plainly:
+
+- **The ~150m grid rounding from Part 3 is gone.** It can't coexist with on-road movement. The
+  protection for a moving Tracky is now the delay + road-snapping + the 500m exclusion zones,
+  and the Privacy Policy says so explicitly. Published points are road-accurate (~1m) but never
+  less than a minute old. To go back, restore a rounding step where `roundCoord` is applied in
+  `updatePresence` -- at the cost of Trackys leaving the road.
+- **The displayed lag is ~2 minutes, not 60s.** 60s is the minimum age of any published point;
+  the extra minute is the once-a-minute batching. Sending every 15s would cut that to ~75s at
+  4x the Cloud Function and Mapbox Map Matching calls per driver.
+- **A driver now appears ~2-3 minutes after starting**, not after the first minute -- their
+  first batch is entirely inside the delay window. And the last minute before they stop is
+  never published at all.
+- **Heading is derived from the published path**, not sent from the phone's compass -- the live
+  heading is "right now" information, which is exactly what the delay withholds.
+- **"Reanimated interpolated movement" -- DEVIATION.** The interpolation is real, but it's a JS
+  tick (4/s down to 1/s) moving each native Marker's `coordinate`, isolated in its own component
+  so MapScreen doesn't re-render. Animating a react-native-maps Marker's coordinate from a
+  Reanimated worklet couldn't be verified without a device, and a layer that silently doesn't
+  move is worse than one that moves at 4 updates/second. Worth revisiting on a real phone.
+- **"Rotation/tilt"** is a lean of up to 14 degrees from the east-west part of the heading, not
+  a full rotation -- a Tracky is a face, and a full rotation would turn it upside down heading
+  south. (The Part 3 code did exactly that; fixed here.)
+- **Trail particles** are only drawn with 12 or fewer Trackys on screen, and not at all under
+  Reduce Motion.
+- **Real bug found and fixed** (from Part 3): the once-a-minute update read speed/mood from the
+  closure created when the route started -- while the car was still stationary -- so the 15km/h
+  gate was comparing against a frozen ~0 and would never have sent on a real drive.
+
+### What has and hasn't been verified
+
+- Verified by real runs (`TEST_RESULTS.md`): 59/59 emulator + unit tests, including the privacy
+  delay holding fresh points back and nothing under 60s old being published; 19/19 playback-maths
+  checks. `tsc` clean; lint identical to the 234-problem pre-feature baseline.
+- **Not verified at all:** anything on a device. The customiser screen, the map layer actually
+  moving markers, the lean, the trail particles, and the sampler have never run. No real Mapbox
+  response has ever been received by this code (tests use a fake token). `TEST_ON_PHONE.md`
+  covers what to check.

@@ -33,45 +33,70 @@ afterAll(async () => {
 });
 
 async function signInNewAnonymousUser() {
+  // signInAnonymously returns the SAME user if one is already signed in anonymously -- sign out
+  // first so every test really does get its own driver (the server correctly refuses points
+  // older than ones it has already buffered for a uid, so shared state breaks later tests).
+  await auth.signOut();
   const cred = await signInAnonymously(auth);
   return cred.user.uid;
+}
+
+// Two real fixes ~60m apart, taken `olderAgeMs` and `newerAgeMs` ago -- the shape the mobile
+// client actually sends (see MapScreen.tsx's 15s sampler).
+function samplesAged(olderAgeMs, newerAgeMs, base = { lat: -33.8688, lng: 151.2093 }) {
+  return [
+    { lat: base.lat, lng: base.lng, ageMs: olderAgeMs },
+    { lat: base.lat - 0.0003, lng: base.lng + 0.0006, ageMs: newerAgeMs },
+  ];
 }
 
 describe("updatePresence", () => {
   test("rejects an unauthenticated call", async () => {
     await auth.signOut();
     const call = httpsCallable(functions, "updatePresence");
-    await expect(call({ trace: [{ lat: -33.87, lng: 151.21 }, { lat: -33.871, lng: 151.211 }], speedKmh: 30 })).rejects.toBeTruthy();
+    await expect(call({ samples: samplesAged(90000, 75000), speedKmh: 30 })).rejects.toBeTruthy();
   });
 
-  test("rejects a trace with fewer than 2 points", async () => {
+  test("rejects a batch with fewer than 2 samples", async () => {
     await signInNewAnonymousUser();
     const call = httpsCallable(functions, "updatePresence");
-    await expect(call({ trace: [{ lat: -33.87, lng: 151.21 }], speedKmh: 30 })).rejects.toBeTruthy();
+    await expect(call({ samples: [{ lat: -33.87, lng: 151.21, ageMs: 0 }], speedKmh: 30 })).rejects.toBeTruthy();
   });
 
-  test("withdraws presence and returns not_driving when speed is below 15km/h", async () => {
+  test("withdraws presence AND the pending buffer, and returns not_driving, below 15km/h", async () => {
     const uid = await signInNewAnonymousUser();
     await adminDb.doc(`presence/${uid}`).set({ lat: -33.87, lng: 151.21, headingDeg: 0, mood: "happy", updatedAt: new Date() });
+    await adminDb.doc(`presencePending/${uid}`).set({ points: [{ lat: -33.87, lng: 151.21, t: Date.now() }] });
 
     const call = httpsCallable(functions, "updatePresence");
-    const res = await call({
-      trace: [{ lat: -33.87, lng: 151.21 }, { lat: -33.871, lng: 151.211 }],
-      speedKmh: 5,
-      mood: "happy",
-      allowName: false,
-    });
+    const res = await call({ samples: samplesAged(15000, 0), speedKmh: 5, mood: "happy", allowName: false });
 
     expect(res.data.outcome).toBe("not_driving");
-    const snap = await adminDb.doc(`presence/${uid}`).get();
-    expect(snap.exists).toBe(false);
+    expect((await adminDb.doc(`presence/${uid}`).get()).exists).toBe(false);
+    expect((await adminDb.doc(`presencePending/${uid}`).get()).exists).toBe(false);
   });
 
-  test("writes a rounded, road-snap-attempted presence doc when actually driving", async () => {
-    await signInNewAnonymousUser();
+  test("PRIVACY DELAY: fresh samples are buffered privately and NOT published", async () => {
+    const uid = await signInNewAnonymousUser();
     const call = httpsCallable(functions, "updatePresence");
+    const res = await call({ samples: samplesAged(15000, 0), speedKmh: 42, mood: "happy", allowName: false });
+
+    expect(res.data.outcome).toBe("buffering");
+    // Nothing readable by other drivers exists yet...
+    expect((await adminDb.doc(`presence/${uid}`).get()).exists).toBe(false);
+    // ...but the points are really being held server-side, not dropped.
+    const pending = await adminDb.doc(`presencePending/${uid}`).get();
+    expect(pending.exists).toBe(true);
+    expect(pending.data().points.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("PRIVACY DELAY: only points at least 60s old are ever published", async () => {
+    const uid = await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "updatePresence");
+    const before = Date.now();
+    // One sample 90s old (publishable) and one taken just now (must stay private).
     const res = await call({
-      trace: [{ lat: -33.8688, lng: 151.2093 }, { lat: -33.8691, lng: 151.2099 }],
+      samples: samplesAged(90000, 0),
       headingDeg: 180,
       speedKmh: 42,
       mood: "excited",
@@ -79,44 +104,96 @@ describe("updatePresence", () => {
     });
 
     expect(res.data.outcome).toBe("success");
-    const uid = auth.currentUser.uid;
     const snap = await adminDb.doc(`presence/${uid}`).get();
     expect(snap.exists).toBe(true);
     const data = snap.data();
-    expect(typeof data.lat).toBe("number");
-    expect(typeof data.lng).toBe("number");
+    expect(Array.isArray(data.path)).toBe(true);
+    expect(data.path.length).toBeGreaterThanOrEqual(1);
+    for (const p of data.path) {
+      expect(p.t).toBeLessThanOrEqual(before - 60000 + 2000);
+    }
+    expect(data.lat).toBe(data.path[data.path.length - 1].lat);
     expect(data.mood).toBe("excited");
-    expect(data.headingDeg).toBe(180);
+    expect(typeof data.w).toBe("number");
     // allowName:true but an anonymous sign-in has no `name` claim on its auth token --
     // displayName must be omitted entirely, never written as an empty string.
     expect(data.displayName).toBeUndefined();
     expect(data.expireAt).toBeTruthy();
+
+    // The just-now sample is still held back in the private buffer.
+    const pending = await adminDb.doc(`presencePending/${uid}`).get();
+    expect(pending.data().points.some((p) => p.t > before - 60000)).toBe(true);
   });
 
-  test("falls back to an unknown mood key being replaced with 'happy'", async () => {
-    await signInNewAnonymousUser();
+  test("a second call a moment later extends the published path instead of replacing it", async () => {
+    const uid = await signInNewAnonymousUser();
     const call = httpsCallable(functions, "updatePresence");
+    await call({ samples: samplesAged(150000, 135000), speedKmh: 42, mood: "happy", allowName: false });
+    const first = (await adminDb.doc(`presence/${uid}`).get()).data().path.length;
     await call({
-      trace: [{ lat: -33.8688, lng: 151.2093 }, { lat: -33.8691, lng: 151.2099 }],
+      samples: samplesAged(105000, 90000, { lat: -33.8694, lng: 151.2105 }),
       speedKmh: 42,
-      mood: "not-a-real-mood",
+      mood: "happy",
       allowName: false,
     });
-    const uid = auth.currentUser.uid;
-    const snap = await adminDb.doc(`presence/${uid}`).get();
-    expect(snap.data().mood).toBe("happy");
+    const second = (await adminDb.doc(`presence/${uid}`).get()).data().path;
+    expect(second.length).toBeGreaterThan(first);
+    // Strictly time-ordered -- viewers interpolate along this.
+    for (let i = 1; i < second.length; i++) expect(second[i].t).toBeGreaterThan(second[i - 1].t);
   });
 
-  test("suppresses presence (and withdraws any existing doc) within 500m of the trip destination", async () => {
+  test("an unknown mood key is replaced with 'happy'", async () => {
+    const uid = await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "updatePresence");
+    await call({ samples: samplesAged(90000, 75000), speedKmh: 42, mood: "not-a-real-mood", allowName: false });
+    expect((await adminDb.doc(`presence/${uid}`).get()).data().mood).toBe("happy");
+  });
+
+  test("a custom Tracky look is whitelisted field by field before other drivers can see it", async () => {
+    const uid = await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "updatePresence");
+    await call({
+      samples: samplesAged(90000, 75000),
+      speedKmh: 42,
+      mood: "happy",
+      allowName: false,
+      look: {
+        color: "#2DD4BF",
+        eyeStyle: "heart",
+        mouthStyle: "grin",
+        accessory: "cap",
+        accessoryColor: "javascript:alert(1)",
+        trail: "<script>",
+        somethingElse: "should never be stored",
+      },
+    });
+    const look = (await adminDb.doc(`presence/${uid}`).get()).data().look;
+    expect(look).toEqual({ color: "#2DD4BF", eyeStyle: "heart", mouthStyle: "grin", accessory: "cap", trail: "none" });
+  });
+
+  test("a look with an invalid core field is dropped entirely", async () => {
+    const uid = await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "updatePresence");
+    await call({
+      samples: samplesAged(90000, 75000),
+      speedKmh: 42,
+      mood: "happy",
+      allowName: false,
+      look: { color: "red", eyeStyle: "normal", mouthStyle: "smile", trail: "dots" },
+    });
+    expect((await adminDb.doc(`presence/${uid}`).get()).data().look).toBeUndefined();
+  });
+
+  test("suppresses presence (and withdraws doc + pending buffer) within 500m of the trip destination", async () => {
     const uid = await signInNewAnonymousUser();
     await adminDb.doc(`presence/${uid}`).set({ lat: -33.87, lng: 151.21, headingDeg: 0, mood: "happy", updatedAt: new Date() });
+    await adminDb.doc(`presencePending/${uid}`).set({ points: [{ lat: -33.87, lng: 151.21, t: Date.now() }] });
 
     const call = httpsCallable(functions, "updatePresence");
     const destLat = -33.8688;
     const destLng = 151.2093;
     const res = await call({
-      // A 2-point trace right next to the destination -- well inside the 500m exclusion radius.
-      trace: [{ lat: destLat, lng: destLng }, { lat: destLat + 0.0003, lng: destLng + 0.0003 }],
+      samples: samplesAged(90000, 0, { lat: destLat, lng: destLng }),
       speedKmh: 42,
       mood: "happy",
       allowName: false,
@@ -124,8 +201,32 @@ describe("updatePresence", () => {
     });
 
     expect(res.data.outcome).toBe("suppressed_near_sensitive_location");
-    const snap = await adminDb.doc(`presence/${uid}`).get();
-    expect(snap.exists).toBe(false);
+    expect((await adminDb.doc(`presence/${uid}`).get()).exists).toBe(false);
+    expect((await adminDb.doc(`presencePending/${uid}`).get()).exists).toBe(false);
+  });
+
+  test("points that passed through an exclusion zone earlier in the batch are never published", async () => {
+    const uid = await signInNewAnonymousUser();
+    const call = httpsCallable(functions, "updatePresence");
+    const sourceLat = -33.8688;
+    const sourceLng = 151.2093;
+    // Older sample sits right at the trip start (inside the zone); the newer one is ~1.1km away.
+    const res = await call({
+      samples: [
+        { lat: sourceLat, lng: sourceLng, ageMs: 100000 },
+        { lat: sourceLat - 0.01, lng: sourceLng, ageMs: 90000 },
+      ],
+      speedKmh: 42,
+      mood: "happy",
+      allowName: false,
+      tripContext: { sourceLat, sourceLng },
+    });
+    expect(res.data.outcome).toBe("success");
+    const path = (await adminDb.doc(`presence/${uid}`).get()).data().path;
+    for (const p of path) {
+      const metersFromStart = Math.abs(p.lat - sourceLat) * 111320;
+      expect(metersFromStart).toBeGreaterThan(500);
+    }
   });
 });
 
@@ -136,16 +237,17 @@ describe("clearPresence", () => {
     await expect(call({})).rejects.toBeTruthy();
   });
 
-  test("deletes the caller's own presence doc", async () => {
+  test("deletes the caller's own presence doc and private pending buffer", async () => {
     const uid = await signInNewAnonymousUser();
     await adminDb.doc(`presence/${uid}`).set({ lat: 0, lng: 0, headingDeg: 0, mood: "happy", updatedAt: new Date() });
+    await adminDb.doc(`presencePending/${uid}`).set({ points: [{ lat: 0, lng: 0, t: Date.now() }] });
 
     const call = httpsCallable(functions, "clearPresence");
     const res = await call({});
     expect(res.data.outcome).toBe("success");
 
-    const snap = await adminDb.doc(`presence/${uid}`).get();
-    expect(snap.exists).toBe(false);
+    expect((await adminDb.doc(`presence/${uid}`).get()).exists).toBe(false);
+    expect((await adminDb.doc(`presencePending/${uid}`).get()).exists).toBe(false);
   });
 });
 
