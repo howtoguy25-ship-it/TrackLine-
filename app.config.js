@@ -81,7 +81,7 @@ module.exports = {
         // no longer says audio "is never recorded or stored" (Phase 3's "Record your own
         // voice" feature genuinely does, only when the driver explicitly starts a recording).
         NSMicrophoneUsageDescription:
-          "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded) and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+          "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
         // Updated to honestly disclose the new, opt-in cloud plate-OCR path (Plate Recognizer,
         // see plateRecognizer.ts) -- when that provider is connected, a small cropped image of
         // a detected plate is sent to Plate Recognizer's own servers for reading, unlike the
@@ -180,7 +180,20 @@ module.exports = {
           // Firebase Storage, only when the driver explicitly starts a recording). Siren
           // listening itself is unchanged -- still real-time, on-device only, never saved.
           microphonePermission:
-            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded) and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+        },
+      ],
+      [
+        // Voice search: tapping the microphone in "Where to?" turns what's said into the search
+        // text. Speech recognition is a separate iOS permission from the microphone itself, so
+        // it gets its own prompt and its own explanation. The microphone string is repeated
+        // here, identical to expo-audio's above, so whichever plugin runs last writes the same.
+        "expo-speech-recognition",
+        {
+          microphonePermission:
+            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+          speechRecognitionPermission:
+            "TrackLine turns what you say into a destination search when you tap the microphone. Nothing is listened to until you tap it.",
         },
       ],
       // Switched from expo-camera to react-native-vision-camera for Live Vehicle Detection --

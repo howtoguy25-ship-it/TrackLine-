@@ -37,6 +37,8 @@ import {
 } from "@/services/savedPlaces";
 import { useAuth } from "@/context/AuthContext";
 import { driveShareMessage } from "@/services/driveLink";
+import { useSettings } from "@/context/SettingsContext";
+import { startVoiceSearch, VOICE_SEARCH_MESSAGES, type VoiceSearchSession } from "@/services/voiceSearch";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import {
@@ -51,12 +53,9 @@ import {
 // idle entry point with a real, draggable 3-snap-point sheet (peek/half/full -- see
 // ThreeSnapBottomSheet.tsx). Home/Work/+New chips and the Saved/Fuel/Food/Parking category row
 // are real and functional (search autocomplete, Firestore-synced saved places, live OSM nearby
-// lists via the existing Fuel/Restaurants/Hotels/Parking sheets). NOT built this round, honestly
-// deferred (see NOTES.md): the real speech-to-text mic (no STT library exists in this project
-// yet -- tapping it shows an honest in-sheet note instead of pretending to listen), and the
-// "More options" section (Drive to friends & family via Contacts, Connect calendar) -- both need
-// their own new native permission integrations, tracked as a real fast-follow rather than a
-// half-built, partially-dead UI shipped in the same pass as everything else here.
+// lists via the existing Fuel/Restaurants/Hotels/Parking sheets). The microphone is real voice
+// search (services/voiceSearch.ts): tap it, say a place, and the words fill the search box and
+// run the same search typing would.
 
 function formatPredictionDistance(meters: number): string {
   return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
@@ -127,6 +126,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   const [saved, setSaved] = useState<SavedPlaces>({ home: null, work: null, custom: [] });
   const [activeCategory, setActiveCategory] = useState<WhereToCategory | null>(null);
   const [micNote, setMicNote] = useState<string | null>(null);
+  const { navLanguage } = useSettings();
   const [addressInputFocused, setAddressInputFocused] = useState(false);
   // Real, explicit request -- "Drive to friends & family via Contacts" More options row,
   // previously honestly deferred (no expo-contacts dependency existed yet). Lazily loaded only
@@ -326,10 +326,42 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     [saved, beginPicking, persistSaved]
   );
 
-  const onPressMic = useCallback(() => {
+  // Voice search. Tapping the microphone starts listening; tapping it again stops early. What's
+  // heard goes through onChangeText -- exactly the path typed text takes -- so the results list
+  // fills in as the driver speaks, and they finish by tapping a result, same as typing.
+  const [listening, setListening] = useState(false);
+  const voiceSessionRef = useRef<VoiceSearchSession | null>(null);
+  const showMicNote = useCallback((text: string) => {
     if (micNoteTimerRef.current) clearTimeout(micNoteTimerRef.current);
-    setMicNote("Voice search isn't set up yet -- type your destination instead.");
-    micNoteTimerRef.current = setTimeout(() => setMicNote(null), 3000);
+    setMicNote(text);
+    micNoteTimerRef.current = setTimeout(() => setMicNote(null), 5000);
+  }, []);
+  const onPressMic = useCallback(async () => {
+    if (voiceSessionRef.current) {
+      voiceSessionRef.current.stop();
+      return;
+    }
+    if (listening) return; // still starting up -- a second tap shouldn't start a second session
+    Keyboard.dismiss();
+    setMicNote(null);
+    setListening(true);
+    if (ref && typeof ref !== "function") ref.current?.expandHalf();
+    const session = await startVoiceSearch(navLanguage, {
+      onPartial: onChangeText,
+      onFinal: onChangeText,
+      onError: (failure) => showMicNote(VOICE_SEARCH_MESSAGES[failure]),
+      onEnd: () => {
+        voiceSessionRef.current = null;
+        setListening(false);
+      },
+    });
+    voiceSessionRef.current = session;
+    // Never got as far as listening (no permission, not available): onEnd won't be coming.
+    if (!session) setListening(false);
+  }, [listening, navLanguage, onChangeText, ref, showMicNote]);
+  // Leaving the screen mid-sentence must let go of the microphone.
+  useEffect(() => {
+    return () => voiceSessionRef.current?.stop();
   }, []);
 
   const onOpenContactsPicker = useCallback(async () => {
@@ -460,12 +492,23 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
             />
             {loading && <ActivityIndicator size="small" color={colors.accent} />}
             {!picking && (
-              <Pressable onPress={onPressMic} hitSlop={10} accessibilityLabel="Voice search">
-                <Ionicons name="mic-outline" size={20} color={colors.textMuted} />
+              <Pressable
+                onPress={onPressMic}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={listening ? "Stop listening" : "Search by voice"}
+                accessibilityState={{ selected: listening }}
+              >
+                <Ionicons
+                  name={listening ? "mic" : "mic-outline"}
+                  size={20}
+                  color={listening ? colors.danger : colors.textMuted}
+                />
               </Pressable>
             )}
           </View>
-          {!!micNote && <Text style={styles.micNote}>{micNote}</Text>}
+          {listening && <Text style={[styles.micNote, { color: colors.danger }]}>Listening… say where you want to go</Text>}
+          {!!micNote && !listening && <Text style={styles.micNote}>{micNote}</Text>}
           <AddressKeypadAccessory
             visible={addressInputFocused}
             onKeyPress={(char) => onChangeText(query + char)}

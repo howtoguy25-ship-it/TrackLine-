@@ -14,6 +14,10 @@ class SirenDetectionEngine {
   private listeners = new Set<SirenDetectionListener>();
   private running = false;
   private sensitivity = 0.6;
+  // True while something else needs the microphone to itself for a moment (voice search). The
+  // one-second capture loop keeps ticking but skips its work, so resuming is instant and there's
+  // no start-up cost -- and no window is ever recorded while it's set.
+  private suspended = false;
 
   setSensitivity(threshold: number) {
     this.sensitivity = threshold;
@@ -86,6 +90,33 @@ class SirenDetectionEngine {
     }, WINDOW_MS);
   }
 
+  /** Hands the microphone over: stops any capture in progress and holds off until resume(). */
+  async suspend(): Promise<void> {
+    this.suspended = true;
+    this.consecutiveHits = 0;
+    if (this.recorder) {
+      try {
+        await this.recorder.stop();
+      } catch {
+        // Not recording at that instant -- nothing to stop.
+      }
+    }
+  }
+
+  /** Takes the microphone back. Safe to call when detection was never running. */
+  async resume(): Promise<void> {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (!this.running) return;
+    // Whatever borrowed the microphone may have left the audio session in its own mode; put
+    // back the one this loop was started with.
+    try {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldPlayInBackground: true });
+    } catch {
+      // The next capture window will surface any real problem.
+    }
+  }
+
   async stop(): Promise<void> {
     this.running = false;
     if (this.pollHandle) {
@@ -112,11 +143,13 @@ class SirenDetectionEngine {
     // created once in start() -- see its own comment for why a fresh AudioRecorder every single
     // window was real, confirmed audio-glitch territory.
     const recorder = this.recorder;
-    if (!recorder) return;
+    if (!recorder || this.suspended) return;
     await recorder.prepareToRecordAsync();
     recorder.record();
     await new Promise((resolve) => setTimeout(resolve, WINDOW_MS));
     await recorder.stop();
+    // Suspended part-way through this window: what was captured is discarded unread.
+    if (this.suspended) return;
 
     const uri = recorder.uri;
     if (!uri) return;
