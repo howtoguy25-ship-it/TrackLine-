@@ -14,7 +14,11 @@ import {
   setVoiceVolume as persistVoiceVolume,
   getVoiceIdentifier,
   setVoiceIdentifier as persistVoiceIdentifier,
+  getStoredNavLanguage,
+  setStoredNavLanguage,
 } from "@/services/voice";
+import { setDirectionsLanguage } from "@/services/directions";
+import type { NavLanguage } from "@/services/navLanguage";
 import { useAuth } from "@/context/AuthContext";
 
 interface SettingsContextValue {
@@ -26,7 +30,12 @@ interface SettingsContextValue {
   voiceVolume: number;
   setVoiceVolume: (value: number) => Promise<void>;
   voiceIdentifier: string | null;
-  setVoiceIdentifier: (identifier: string | null) => Promise<void>;
+  // The second argument is the language that voice speaks (services/navLanguage.ts). Left out,
+  // it means English -- right for the phone's default voice, a recorded voice and the
+  // character voices, which are all English.
+  setVoiceIdentifier: (identifier: string | null, language?: NavLanguage) => Promise<void>;
+  /** The language navigation speaks and requests turn instructions in. Follows the voice. */
+  navLanguage: NavLanguage;
 }
 
 const SettingsContext = createContext<SettingsContextValue>({
@@ -39,6 +48,7 @@ const SettingsContext = createContext<SettingsContextValue>({
   setVoiceVolume: async () => {},
   voiceIdentifier: null,
   setVoiceIdentifier: async () => {},
+  navLanguage: "en",
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
@@ -46,6 +56,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(true);
   const [voiceVolume, setVoiceVolumeState] = useState(1);
   const [voiceIdentifier, setVoiceIdentifierState] = useState<string | null>(null);
+  const [navLanguage, setNavLanguageState] = useState<NavLanguage>("en");
   const [loaded, setLoaded] = useState(false);
   const { user } = useAuth();
   // Real sign-in-to-sign-in dedup -- without this, this effect would re-run and re-pull on
@@ -75,6 +86,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setVoiceVolumeState(volume);
       const identifier = await getVoiceIdentifier();
       setVoiceIdentifierState(identifier);
+      const language = await getStoredNavLanguage();
+      setNavLanguageState(language);
+      // Route requests read this directly (see directions.ts) -- set before `loaded` flips so
+      // the very first route of a session is already asked for in the right language.
+      setDirectionsLanguage(language);
       setLoaded(true);
     })();
   }, []);
@@ -131,9 +147,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     await persistVoiceVolume(value);
   }, []);
 
-  const setVoiceIdentifier = useCallback(async (identifier: string | null) => {
+  const setVoiceIdentifier = useCallback(async (identifier: string | null, language: NavLanguage = "en") => {
     setVoiceIdentifierState(identifier);
-    await persistVoiceIdentifier(identifier);
+    setNavLanguageState(language);
+    setDirectionsLanguage(language);
+    await Promise.all([persistVoiceIdentifier(identifier), setStoredNavLanguage(language)]);
   }, []);
 
   // Without this, the object literal below was a brand-new reference on every single render of
@@ -153,6 +171,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setVoiceVolume,
       voiceIdentifier,
       setVoiceIdentifier,
+      navLanguage,
     }),
     [
       settings,
@@ -164,6 +183,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setVoiceVolume,
       voiceIdentifier,
       setVoiceIdentifier,
+      navLanguage,
     ]
   );
 

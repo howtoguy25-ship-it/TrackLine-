@@ -7,6 +7,7 @@ import { allPersonaLines, personaLine } from "@/services/personaVoices";
 import { expectedAnnouncements } from "@/services/navigationGuidance";
 import type { RouteStep } from "@/services/directions";
 import type { SpokenDirectionsMode } from "@/services/settings";
+import type { NavLanguage } from "@/services/navLanguage";
 import {
   earlyAnnouncementThresholds,
   parseVoiceIdentifier,
@@ -221,6 +222,8 @@ export interface NavPhraseOptions extends SpeakOptions {
   enabled: boolean;
   /** The Sound sheet's "Spoken directions" choice. */
   mode: SpokenDirectionsMode;
+  /** The language the selected voice speaks. */
+  language: NavLanguage;
 }
 
 /**
@@ -243,7 +246,7 @@ export async function speakNavPhrase(phrase: NavPhrase, options: NavPhraseOption
       recordedKeys: new Set(Object.keys(clips)),
     });
   } else {
-    plan = planPhrase(phrase);
+    plan = planPhrase(phrase, { language: options.language });
     if (voice.kind === "persona") {
       const line = personaLine(voice.personaId, phrase);
       if (line) plan = { segments: [{ text: line }], fullText: line };
@@ -267,6 +270,7 @@ export function prefetchUpcomingSpeech(
   mode: SpokenDirectionsMode,
   voiceIdentifier: string | null
 ): void {
+  // Character voices are English, so no language is involved in what gets pre-fetched.
   const voice = parseVoiceIdentifier(voiceIdentifier);
   if (voice.kind !== "persona" || mode === "off" || mode === "onlyAlerts") return;
   const thresholds = mode === "normal" ? earlyAnnouncementThresholds(unit) : [];

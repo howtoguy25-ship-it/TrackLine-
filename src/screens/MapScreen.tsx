@@ -298,7 +298,8 @@ function routesAreNearlyIdentical(a: LatLng[], b: LatLng[], routeDistanceKm: num
 export function MapScreen() {
   const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
   const { user } = useAuth();
-  const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier } = useSettings();
+  const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier, navLanguage } =
+    useSettings();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const navRoute = useRoute<RouteProp<RootStackParamList, "Map">>();
   const insets = useSafeAreaInsets();
@@ -398,9 +399,9 @@ export function MapScreen() {
   // The sound settings the non-turn call-outs need (setting off, re-routing, arriving, a report
   // nearby). Those are fired from callbacks that are deliberately kept referentially stable, so
   // they read the live values from here rather than closing over them.
-  const navVoiceRef = useRef({ enabled: voiceEnabled, mode: settings.spokenDirections });
+  const navVoiceRef = useRef({ enabled: voiceEnabled, mode: settings.spokenDirections, language: navLanguage });
   useEffect(() => {
-    navVoiceRef.current = { enabled: voiceEnabled, mode: settings.spokenDirections };
+    navVoiceRef.current = { enabled: voiceEnabled, mode: settings.spokenDirections, language: navLanguage };
   });
   const announcePhrase = useCallback((phrase: NavPhrase) => {
     speakNavPhrase(phrase, {
@@ -408,6 +409,7 @@ export function MapScreen() {
       volume: voiceVolumeRef.current,
       enabled: navVoiceRef.current.enabled,
       mode: navVoiceRef.current.mode,
+      language: navVoiceRef.current.language,
     }).catch(() => {});
   }, []);
   // True only while a fresh route is actively being fetched after drifting off the current one
@@ -1920,12 +1922,21 @@ export function MapScreen() {
       voiceEnabled &&
       shouldSpeakStep(spokenMode, announcement.kind, announcement.step, announcement.isLastStep)
     ) {
-      speakPlan(planStepAnnouncement(announcement, settings.distanceUnit), {
+      speakPlan(planStepAnnouncement(announcement, settings.distanceUnit, navLanguage), {
         voiceIdentifier: voiceIdentifierRef.current,
         volume: voiceVolumeRef.current,
       });
     }
-  }, [currentLatLng, route, voiceEnabled, activeStepIndex, settings.spokenDirections, settings.distanceUnit, announcePhrase]);
+  }, [
+    currentLatLng,
+    route,
+    voiceEnabled,
+    activeStepIndex,
+    settings.spokenDirections,
+    settings.distanceUnit,
+    navLanguage,
+    announcePhrase,
+  ]);
 
   // A character voice is synthesized by the server one sentence at a time, which takes a moment
   // -- so the sentences for the next few turns are fetched as each step begins, and are already
@@ -4970,7 +4981,7 @@ export function MapScreen() {
               ? remainingStepMeters(activeStep, currentLatLng.latitude, currentLatLng.longitude)
               : activeStep.distanceMeters;
             speakPlan(
-              planStepAnnouncement({ step: activeStep, distanceMeters, kind: "early" }, settings.distanceUnit),
+              planStepAnnouncement({ step: activeStep, distanceMeters, kind: "early" }, settings.distanceUnit, navLanguage),
               { voiceIdentifier: voiceIdentifierRef.current, volume: voiceVolumeRef.current }
             );
           }}

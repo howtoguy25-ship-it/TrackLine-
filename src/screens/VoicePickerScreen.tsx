@@ -20,6 +20,14 @@ import {
   personaVoiceIdentifier,
   planStepAnnouncement,
 } from "@/services/navSpeechPlan";
+import {
+  NAMED_LANGUAGE_VOICES,
+  findVoiceForNamedLanguage,
+  navLanguageForVoiceLanguage,
+  sampleInstruction,
+  type NamedLanguageVoice,
+  type NavLanguage,
+} from "@/services/navLanguage";
 import { useSettings } from "@/context/SettingsContext";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -36,15 +44,21 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 // The preview is a real guidance call-out, built the same way navigation builds them -- so a
 // recorded voice previews with the driver's own "In 400 metres" and "Turn left" clips (and the
 // phone's voice for whichever of the two isn't recorded yet), exactly as it will sound driving.
-const VOICE_PREVIEW_PLAN = planStepAnnouncement(
-  { step: { instruction: "Turn left", maneuver: "turn-left" }, distanceMeters: 400, kind: "early" },
-  "km"
-);
+// In another language the sample is in that language too -- a Russian voice previews with a
+// Russian sentence, not by reading an English one aloud.
+function previewPlan(language: NavLanguage) {
+  return planStepAnnouncement(
+    { step: { instruction: sampleInstruction(language), maneuver: "turn-left" }, distanceMeters: 400, kind: "early" },
+    "km",
+    language
+  );
+}
 
 type Row =
   | { kind: "deviceDefault" }
   | { kind: "recorded"; name: string; recordedCount: number }
   | { kind: "persona"; persona: PersonaVoice }
+  | { kind: "language"; entry: NamedLanguageVoice; voice: Speech.Voice | null }
   | { kind: "device"; voice: Speech.Voice };
 
 interface Section {
@@ -55,6 +69,7 @@ interface Section {
 function rowKey(row: Row): string {
   if (row.kind === "deviceDefault") return "device-default";
   if (row.kind === "recorded") return RECORDED_VOICE_IDENTIFIER;
+  if (row.kind === "language") return `language:${row.entry.id}`;
   if (row.kind === "persona") return `persona:${row.persona.id}`;
   return row.voice.identifier;
 }
@@ -68,7 +83,11 @@ export function VoicePickerScreen() {
   const [deviceVoices, setDeviceVoices] = useState<Speech.Voice[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [previewingKey, setPreviewingKey] = useState<string | null>(null);
-  const [pendingSelection, setPendingSelection] = useState<{ identifier: string | null; key: string } | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<{
+    identifier: string | null;
+    key: string;
+    language: NavLanguage;
+  } | null>(null);
 
   // Whether the server can actually produce the character voices (its ElevenLabs key is set).
   // Starts false, so they show locked until the server has said otherwise.
@@ -105,10 +124,11 @@ export function VoicePickerScreen() {
   }, []);
 
   const commitSelection = useCallback(
-    (identifier: string | null, key: string) => {
-      setVoiceIdentifier(identifier);
+    (identifier: string | null, key: string, language: NavLanguage = "en") => {
+      // The language goes with the voice: from here on, turn instructions are requested in it.
+      setVoiceIdentifier(identifier, language);
       setPreviewingKey(key);
-      speakPlan(VOICE_PREVIEW_PLAN, {
+      speakPlan(previewPlan(language), {
         voiceIdentifier: identifier,
         volume: voiceVolume,
         onDone: () => setPreviewingKey(null),
@@ -120,13 +140,13 @@ export function VoicePickerScreen() {
   // Real, explicit request -- "show this modal only the first 3 times ever (counter
   // persisted), then select directly."
   const onSelectRow = useCallback(
-    async (identifier: string | null, key: string) => {
+    async (identifier: string | null, key: string, language: NavLanguage = "en") => {
       const shownCount = await getVoiceConsentShownCount();
       if (shownCount >= VOICE_CONSENT_MAX_SHOWS) {
-        commitSelection(identifier, key);
+        commitSelection(identifier, key, language);
         return;
       }
-      setPendingSelection({ identifier, key });
+      setPendingSelection({ identifier, key, language });
     },
     [commitSelection]
   );
@@ -134,7 +154,7 @@ export function VoicePickerScreen() {
   const confirmPendingSelection = useCallback(async () => {
     if (!pendingSelection) return;
     await incrementVoiceConsentShownCount();
-    commitSelection(pendingSelection.identifier, pendingSelection.key);
+    commitSelection(pendingSelection.identifier, pendingSelection.key, pendingSelection.language);
     setPendingSelection(null);
   }, [pendingSelection, commitSelection]);
 
@@ -162,9 +182,19 @@ export function VoicePickerScreen() {
     return [
       { title: "Recommended", data: recommended },
       { title: "My recorded voices", data: recordedVoice ? [{ kind: "recorded" as const, ...recordedVoice }] : [] },
+      // The named languages, each resolved to a voice that is really installed on this phone
+      // -- or shown as not installed when there isn't one.
+      {
+        title: "Languages",
+        data: NAMED_LANGUAGE_VOICES.map((entry) => ({
+          kind: "language" as const,
+          entry,
+          voice: findVoiceForNamedLanguage(entry, deviceVoices),
+        })),
+      },
       { title: "All languages", data: filteredDeviceVoices.map((voice) => ({ kind: "device" as const, voice })) },
     ];
-  }, [query, recommended, filteredDeviceVoices, recordedVoice]);
+  }, [query, recommended, filteredDeviceVoices, recordedVoice, deviceVoices]);
 
   const renderRow = useCallback(
     (row: Row) => {
@@ -210,6 +240,26 @@ export function VoicePickerScreen() {
           />
         );
       }
+      if (row.kind === "language") {
+        const installed = row.voice;
+        return (
+          <VoiceRow
+            name={row.entry.name}
+            subtitle={
+              installed
+                ? `${installed.name} -- directions are spoken in this language`
+                : "Not installed on this phone -- add it in your phone's text-to-speech settings"
+            }
+            enhanced={installed?.quality === "Enhanced"}
+            selected={!!installed && voiceIdentifier === installed.identifier}
+            previewing={!!installed && previewingKey === installed.identifier}
+            locked={!installed}
+            onPress={() => {
+              if (installed) onSelectRow(installed.identifier, installed.identifier, row.entry.navLanguage);
+            }}
+          />
+        );
+      }
       const voice = row.voice;
       const selected = voiceIdentifier === voice.identifier;
       const previewing = previewingKey === voice.identifier;
@@ -220,7 +270,9 @@ export function VoicePickerScreen() {
           enhanced={voice.quality === "Enhanced"}
           selected={selected}
           previewing={previewing}
-          onPress={() => onSelectRow(voice.identifier, voice.identifier)}
+          // A voice in one of the supported languages brings its language with it, wherever in
+          // this list it's picked from; any other voice reads English directions, as before.
+          onPress={() => onSelectRow(voice.identifier, voice.identifier, navLanguageForVoiceLanguage(voice.language))}
         />
       );
     },

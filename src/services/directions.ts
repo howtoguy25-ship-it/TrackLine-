@@ -223,6 +223,15 @@ function parseRoute(route: any): Route {
   };
 }
 
+// The language turn instructions are requested in. Set from the driver's chosen navigation
+// voice (SettingsContext -> setDirectionsLanguage), so a Russian voice is given Russian
+// sentences to read rather than English ones. Held here, not passed through every call, because
+// a dozen call sites across the app fetch routes and every one of them must agree.
+let directionsLanguage = "en";
+export function setDirectionsLanguage(language: string): void {
+  directionsLanguage = language;
+}
+
 function buildDirectionsUrl(
   origin: LatLng,
   destination: LatLng,
@@ -240,7 +249,10 @@ function buildDirectionsUrl(
     (avoid ? `&avoid=${avoid}` : "") +
     (waypoint ? `&waypoints=${waypoint.latitude},${waypoint.longitude}` : "") +
     (useTraffic ? `&departure_time=${typeof useTraffic === "number" ? useTraffic : "now"}&traffic_model=best_guess` : "") +
-    (alternatives ? `&alternatives=true` : "")
+    (alternatives ? `&alternatives=true` : "") +
+    // English is Google's own default here, so it's only stated for the other languages --
+    // keeping every existing English request byte-for-byte what it was.
+    (directionsLanguage !== "en" ? `&language=${directionsLanguage}` : "")
   );
 }
 
@@ -538,6 +550,7 @@ export async function getHeadingAwareReroute(
     travelMode: "DRIVE",
     routingPreference: "TRAFFIC_AWARE",
     computeAlternativeRoutes: true,
+    ...(directionsLanguage !== "en" ? { languageCode: directionsLanguage } : {}),
     ...(avoidTolls ? { routeModifiers: { avoidTolls: true } } : {}),
   };
 

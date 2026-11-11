@@ -45,9 +45,17 @@ export function formatDistance(meters: number, unit: DistanceUnit = "km"): strin
 // one. Undefined when the instruction genuinely doesn't contain one (never a guessed default).
 export function extractRoundaboutExitNumber(instruction: string): number | undefined {
   const match = instruction.match(/\b(\d+)(?:st|nd|rd|th)\s+exit\b/i);
-  if (!match) return undefined;
-  const n = parseInt(match[1], 10);
-  return Number.isFinite(n) && n >= 1 && n <= 7 ? n : undefined;
+  if (match) {
+    const n = parseInt(match[1], 10);
+    return Number.isFinite(n) && n >= 1 && n <= 7 ? n : undefined;
+  }
+  // Instructions in other languages (services/navLanguage.ts) write the exit as a standalone
+  // ordinal digit -- Spanish "la 2.ª salida", Russian "2-й съезд", Turkish "2. çıkış". Only a
+  // lone digit 1-7 carrying one of those ordinal markers counts, so a road number such as "A2"
+  // or "Ruta 5" is never mistaken for an exit. Languages that spell the ordinal as a word
+  // (Arabic) simply get no badge.
+  const other = instruction.match(/(?:^|[\s(])([1-7])(?:\.[ªº]?|[ªº]|-(?:й|го|му|м))(?=[\s,]|$)/);
+  return other ? parseInt(other[1], 10) : undefined;
 }
 
 export function formatDurationText(seconds: number): string {

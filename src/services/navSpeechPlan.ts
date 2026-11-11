@@ -2,6 +2,13 @@ import type { ManeuverType, RouteStep } from "@/services/directions";
 import type { AlertType } from "@/types/alert";
 import type { SpokenDirectionsMode } from "@/services/settings";
 import { extractRoundaboutExitNumber } from "@/utils/navFormat";
+import {
+  listComma,
+  localizedDistanceCue,
+  localizedPhrase,
+  localizedReport,
+  type NavLanguage,
+} from "@/services/navLanguage";
 
 // What the navigation voice is going to say, worked out separately from HOW it gets said
 // (services/navSpeech.ts). Nothing in here touches audio, storage or the network, so every rule
@@ -170,16 +177,31 @@ export interface SpeechPlan {
   fullText: string;
 }
 
-export function planStepAnnouncement(announcement: StepAnnouncement, unit: DistanceUnit): SpeechPlan {
+export function planStepAnnouncement(
+  announcement: StepAnnouncement,
+  unit: DistanceUnit,
+  // The language Google's instructions were requested in (services/navLanguage.ts). In anything
+  // but English the instruction text is already translated, and the words this adds around it
+  // have to match.
+  language: NavLanguage = "en"
+): SpeechPlan {
   const { step, distanceMeters, kind, thenStep } = announcement;
   const cue = distanceCue(distanceMeters, unit);
   const instruction = withoutFinalStop(step.instruction);
+  const comma = listComma(language);
+  const cueText = cue ? localizedDistanceCue(language, cue.meters) ?? cue.text : null;
+  const andThen = localizedPhrase(language, "andThen") ?? "and then";
 
   // -- Every voice except a recorded one: Google's own full sentence, street names and all.
   // The final call-out stays exactly what it has always been (no distance in front), so only
   // the advance warning and the "and then" are new for those voices.
-  let fullText = kind === "early" && cue ? `${cue.text}, ${lowerFirst(instruction)}` : instruction;
-  if (kind === "final" && thenStep) fullText += `, and then ${lowerFirst(withoutFinalStop(thenStep.instruction))}`;
+  let fullText = kind === "early" && cueText ? `${cueText}${comma}${lowerFirst(instruction)}` : instruction;
+  if (kind === "final" && thenStep) {
+    fullText += `${comma}${andThen} ${lowerFirst(withoutFinalStop(thenStep.instruction))}`;
+  }
+
+  // A recorded voice is English clips only; in any other language everything is simply spoken.
+  if (language !== "en") return { segments: [{ text: fullText }], fullText };
 
   // -- A recorded voice: the distance clip, the manoeuvre clip(s), and the chained manoeuvre.
   const segments: SpeechSegment[] = [];
@@ -231,9 +253,16 @@ export interface PhraseContext {
   recordedKeys?: ReadonlySet<string>;
   /** 0..1, injected so the choice between start phrases is testable. */
   random?: () => number;
+  language?: NavLanguage;
 }
 
 export function planPhrase(phrase: NavPhrase, context: PhraseContext = {}): SpeechPlan {
+  const language = context.language ?? "en";
+  if (language !== "en") {
+    const text =
+      phrase.kind === "report" ? localizedReport(language, phrase.alertType) : localizedPhrase(language, phrase.kind);
+    if (text) return { segments: [{ text }], fullText: text };
+  }
   let segment: SpeechSegment;
   if (phrase.kind === "start") {
     const all = [...DEFAULT_START_PHRASES, ...(context.customStartPhrases ?? [])];

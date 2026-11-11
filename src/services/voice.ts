@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Speech from "expo-speech";
+import { isNavLanguage, type NavLanguage } from "@/services/navLanguage";
 
 const VOICE_ENABLED_KEY = "@trackline/voiceEnabled";
 const VOICE_VOLUME_KEY = "@trackline/voiceVolume";
@@ -46,6 +47,20 @@ export async function getVoiceIdentifier(): Promise<string | null> {
 export async function setVoiceIdentifier(identifier: string | null): Promise<void> {
   if (identifier === null) await AsyncStorage.removeItem(VOICE_IDENTIFIER_KEY);
   else await AsyncStorage.setItem(VOICE_IDENTIFIER_KEY, identifier);
+}
+
+// The language navigation speaks, stored right beside the voice it belongs to -- and, like the
+// voice, per phone rather than synced: a voice installed on one phone may not exist on another,
+// and a language without its voice would be an English voice reading Russian sentences.
+const NAV_LANGUAGE_KEY = "@trackline/navLanguage";
+
+export async function getStoredNavLanguage(): Promise<NavLanguage> {
+  const raw = await AsyncStorage.getItem(NAV_LANGUAGE_KEY);
+  return isNavLanguage(raw) ? raw : "en";
+}
+
+export async function setStoredNavLanguage(language: NavLanguage): Promise<void> {
+  await AsyncStorage.setItem(NAV_LANGUAGE_KEY, language);
 }
 
 // English-only -- turn-by-turn instructions are only ever generated in English (Google
