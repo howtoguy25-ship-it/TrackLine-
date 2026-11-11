@@ -446,6 +446,38 @@ device/emulator image was available for the real on-device two-account test; `TE
 hands that off completely.
 
 
+## Upgrade to SDK 58 after launch
+
+**To do after launch, not before: upgrade from Expo SDK 57 to SDK 58.** Deliberately held on 57
+for launch -- a full SDK upgrade this close to release is a risk with no user-facing benefit.
+
+State of SDK 57 as of this note:
+
+- `expo` is on **57.0.32** (was 57.0.6), with every Expo package brought to the matching SDK-57
+  patch by `npx expo install expo@~57.0.23 --fix`. React Native moved 0.86.0 -> 0.86.3 with it.
+- **EAS builds iOS with Xcode 27.1** (confirmed from a real build log: image
+  `macos-tahoe-26.6-xcode-27.1`). The iOS 27 SDK requires the UIKit scene lifecycle, which on
+  SDK 57 is opt-in: `expo-build-properties` -> `ios.enableSceneSupport: true` in
+  `app.config.js`. Verified by generating the iOS project (`expo prebuild`): the scene manifest
+  is in Info.plist and AppDelegate adopts `ExpoReactNativeFactoryProvider`. **Not yet verified
+  by a real build or on a phone.**
+
+When doing the SDK 58 upgrade, three things here become removable -- check each rather than
+carrying them forward blindly:
+
+1. `ios.enableSceneSupport` (and `expo-build-properties` itself, if nothing else uses it by
+   then) -- SDK 58 adopts scenes by default.
+2. `patches/expo-modules-jsi+57.1.3.patch` -- it removes `-quiet` from a nested `xcodebuild`
+   call, working around an Xcode 27 false "build failed" that is fixed upstream in
+   `expo-modules-jsi@58.0.12`. (Regenerated from the 57.0.3 version of the same patch when the
+   package moved to 57.1.3; the flag was still there.)
+3. `patches/react-native+0.86.3.patch` -- re-check against whatever React Native SDK 58 brings.
+
+`npx expo-doctor` after the update: 19 of 21 checks pass (was 17). The two that remain are
+old and unrelated to the update: `expo-camera` is a declared peer of
+`@tensorflow/tfjs-react-native` and isn't installed, and the local native modules have no
+React Native Directory entry (they aren't published packages).
+
 ## ADD-ON -- "Make your Tracky" customiser + smooth movement on roads
 
 Built after Parts 1-4, per the user's own sequencing choice.

@@ -129,6 +129,14 @@ module.exports = {
       },
     },
     plugins: [
+      [
+        // EAS builds this app with Xcode 27 (confirmed from the build log: the
+        // macos-tahoe-26.6-xcode-27.1 image). The iOS 27 SDK requires apps to adopt the UIKit
+        // scene lifecycle; on Expo SDK 57 that's opt-in through this one property (it needs
+        // expo 57.0.23+). SDK 58 does it by default -- remove this when upgrading.
+        "expo-build-properties",
+        { ios: { enableSceneSupport: true } },
+      ],
       "expo-font",
       "expo-asset",
       "expo-tracking-transparency",
