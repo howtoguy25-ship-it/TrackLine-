@@ -138,6 +138,21 @@ describe("personaUsage/{uid} (the character-voice daily allowance)", () => {
   });
 });
 
+describe("trafficNsw/{docId} (the shared live-traffic snapshot)", () => {
+  test("a signed-in driver CAN read it; an unauthenticated client cannot", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "trafficNsw/current"), { configured: true, incidents: [] });
+    });
+    await assertSucceeds(getDoc(doc(testEnv.authenticatedContext("driver-a").firestore(), "trafficNsw/current")));
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "trafficNsw/current")));
+  });
+
+  test("no client can write or plant incidents in it", async () => {
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertFails(setDoc(doc(self, "trafficNsw/current"), { configured: true, incidents: [{ id: "fake" }] }));
+  });
+});
+
 describe("userReports/{reportId}", () => {
   test("a signed-in driver CAN create a report attributed to themselves, about someone else", async () => {
     const self = testEnv.authenticatedContext("driver-a").firestore();

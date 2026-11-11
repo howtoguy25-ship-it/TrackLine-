@@ -349,3 +349,45 @@ describe("synthesizePersonaSpeech", () => {
     expect(usage.exists).toBe(false);
   });
 });
+
+// Live Traffic NSW. As with the character voices, the emulator's TFNSW_API_KEY is the "unset"
+// placeholder -- the state a project is in before a key is provided.
+describe("refreshNswTrafficNow", () => {
+  const { createUserWithEmailAndPassword, signInWithEmailAndPassword } = require("firebase/auth");
+
+  test("rejects an unauthenticated call", async () => {
+    await auth.signOut();
+    await expect(httpsCallable(functions, "refreshNswTrafficNow")({})).rejects.toBeTruthy();
+  });
+
+  test("rejects an ordinary signed-in driver -- owner only", async () => {
+    await signInNewAnonymousUser();
+    await expect(httpsCallable(functions, "refreshNswTrafficNow")({})).rejects.toBeTruthy();
+  });
+
+  test("without a real key: writes { configured: false } once and fetches nothing", async () => {
+    await auth.signOut();
+    // One of the owner addresses index.js's ADMIN_EMAILS already names; the Auth EMULATOR lets
+    // a test account be created with it. No real account or network is involved.
+    const email = "support@tracklinemaps.com";
+    const password = "emulator-only-password";
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch {
+      await signInWithEmailAndPassword(auth, email, password);
+    }
+    await adminDb.doc("trafficNsw/current").delete();
+
+    const result = await httpsCallable(functions, "refreshNswTrafficNow")({});
+    expect(result.data).toEqual({ configured: false, count: 0, failedKinds: [] });
+
+    const first = await adminDb.doc("trafficNsw/current").get();
+    expect(first.data().configured).toBe(false);
+    expect(first.data().incidents).toEqual([]);
+
+    // A second run must leave the document untouched rather than rewriting it every time.
+    await httpsCallable(functions, "refreshNswTrafficNow")({});
+    const second = await adminDb.doc("trafficNsw/current").get();
+    expect(second.updateTime.isEqual(first.updateTime)).toBe(true);
+  });
+});

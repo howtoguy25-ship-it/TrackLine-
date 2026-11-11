@@ -159,6 +159,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Live Traffic NSW: one shared snapshot of current road incidents, written every few
+    // minutes by refreshNswTraffic (Admin SDK). It's public road information, so any signed-in
+    // driver may read it; nobody can write it from a phone.
+    match /trafficNsw/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Real, explicit request -- "Block/report from card." A block is the BLOCKING driver's own
     // list of who THEY'VE blocked -- safe to let them write directly (same self-only-write
     // reasoning as alerts.ts's own hiddenBy map), and only they can read it back (e.g. a future

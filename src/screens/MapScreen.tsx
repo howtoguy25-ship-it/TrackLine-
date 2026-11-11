@@ -119,10 +119,15 @@ import {
   headingDiffDeg,
   pointAheadOnPolylineMeters,
   offsetLatLngByHeading,
+  distanceToPolylineMeters,
 } from "@/utils/geo";
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
 import { parseDriveLink } from "@/services/driveLink";
+import { subscribeNswTraffic } from "@/services/trafficNsw";
+import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/services/trafficNswModel";
+import { TrafficIncidentLayer } from "@/components/TrafficIncidentLayer";
+import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
   earlyAnnouncementThresholds,
@@ -690,6 +695,25 @@ export function MapScreen() {
       .then(setLiveCameras)
       .catch((err) => console.warn("[map] failed to load live traffic cameras", err));
   }, [settings.showLiveCameras, liveCameras.length]);
+  // Live Traffic NSW (services/trafficNsw.ts): current incidents from the shared snapshot the
+  // server refreshes every five minutes. Only listened to while the layer is switched on.
+  const [trafficIncidents, setTrafficIncidents] = useState<TrafficIncident[]>([]);
+  const [selectedIncident, setSelectedIncident] = useState<NearbyIncident | null>(null);
+  const [selectedIncidentAt, setSelectedIncidentAt] = useState(0);
+  const onSelectIncident = useCallback((incident: NearbyIncident) => {
+    setSelectedIncidentAt(Date.now());
+    setSelectedIncident(incident);
+  }, []);
+  const trafficUid = user?.uid ?? null;
+  useEffect(() => {
+    if (!settings.showLiveTraffic || !trafficUid) return;
+    const unsubscribe = subscribeNswTraffic((snapshot) => setTrafficIncidents(snapshot.incidents));
+    return () => {
+      unsubscribe();
+      setTrafficIncidents([]);
+    };
+  }, [settings.showLiveTraffic, trafficUid]);
+
   const onLiveCameraPress = useCallback((camera: LiveTrafficCamera) => {
     setSelectedLiveCamera(camera);
     liveCameraSheetRef.current?.expand();
@@ -3820,6 +3844,28 @@ export function MapScreen() {
     }
     return [...currentStepPolyline, ...restSteps.flatMap((s) => s.polyline)];
   }, [route, activeStepIndex, currentLatLng?.latitude, currentLatLng?.longitude]);
+  // Which incidents to draw: those around the driver, most important first, capped (see
+  // incidentsNear). The centre is rounded to roughly a kilometre so this list -- and the pins
+  // made from it -- is rebuilt when the driver has actually moved somewhere, not on every GPS
+  // fix.
+  const trafficCenterLat = currentLatLng ? Math.round(currentLatLng.latitude * 100) / 100 : null;
+  const trafficCenterLng = currentLatLng ? Math.round(currentLatLng.longitude * 100) / 100 : null;
+  const nearbyTrafficIncidents = useMemo(
+    () =>
+      trafficCenterLat === null || trafficCenterLng === null
+        ? []
+        : incidentsNear(trafficIncidents, { latitude: trafficCenterLat, longitude: trafficCenterLng }),
+    [trafficIncidents, trafficCenterLat, trafficCenterLng]
+  );
+  // "On your route" on the incident card: within 80m of the road still to be driven.
+  const selectedIncidentOnRoute = useMemo(
+    () =>
+      !!selectedIncident &&
+      remainingPolyline.length > 1 &&
+      distanceToPolylineMeters(selectedIncident.lat, selectedIncident.lng, remainingPolyline) <= 80,
+    [selectedIncident, remainingPolyline]
+  );
+
   // The bottom bar's "Overview": the WHOLE of the route still to drive, fitted on screen from
   // the driver's position to the destination, flat and north-up -- not the merely pulled-back
   // chase-cam this button used to toggle (that pose still lives on the locate button).
@@ -4730,6 +4776,9 @@ export function MapScreen() {
               </Marker>
             )
           )}
+        {settings.showLiveTraffic && nearbyTrafficIncidents.length > 0 && (
+          <TrafficIncidentLayer incidents={nearbyTrafficIncidents} onSelect={onSelectIncident} />
+        )}
         {settings.showLiveCameras &&
           liveCameras.map((camera) => (
             <Marker
@@ -5804,6 +5853,14 @@ export function MapScreen() {
           updateSettings({ visibility: "everyone" });
           dismissGhostExplainer();
         }}
+      />
+
+      <TrafficIncidentCard
+        incident={selectedIncident}
+        onRoute={selectedIncidentOnRoute}
+        distanceText={selectedIncident ? formatDistance(selectedIncident.distanceMeters, settings.distanceUnit) : ""}
+        openedAtMs={selectedIncidentAt}
+        onClose={() => setSelectedIncident(null)}
       />
 
       {user && (

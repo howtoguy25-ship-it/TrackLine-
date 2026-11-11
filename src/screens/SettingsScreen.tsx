@@ -17,6 +17,8 @@ import { useAuth } from "@/context/AuthContext";
 import { syncVisibleRegionsToProfile } from "@/services/userProfile";
 import { setVoiceEnabled } from "@/services/voice";
 import { getVoiceDisplayName } from "@/services/voiceLabel";
+import { subscribeNswTraffic } from "@/services/trafficNsw";
+import { EMPTY_TRAFFIC_SNAPSHOT, type TrafficSnapshot } from "@/services/trafficNswModel";
 import {
   signOutUser,
   deleteAccount,
@@ -405,6 +407,16 @@ export function SettingsScreen() {
     (value: boolean) => updateSettings({ showLiveCameras: value }),
     [updateSettings]
   );
+  // Live Traffic NSW. Whether there's anything to show depends on the server having been given
+  // a Transport for NSW key, so the row says which state it's in rather than offering a switch
+  // that quietly does nothing.
+  const [trafficStatus, setTrafficStatus] = useState<TrafficSnapshot>(EMPTY_TRAFFIC_SNAPSHOT);
+  useEffect(() => subscribeNswTraffic(setTrafficStatus), []);
+  const trafficHelp = !trafficStatus.configured
+    ? "Not set up yet. This needs a free Transport for NSW key added on the server -- nothing is shown until then."
+    : trafficStatus.incidents.length === 0
+      ? "Connected to Transport for NSW. No current incidents reported."
+      : `Crashes, heavy traffic, roadworks, floods and fires reported by Transport for NSW -- ${trafficStatus.incidents.length} current across the state. Tap a pin for details. NSW only.`;
 
   const onSpeedWarningChimeToggle = useCallback(
     (value: boolean) => updateSettings({ speedWarningChimeEnabled: value }),
@@ -1143,6 +1155,19 @@ export function SettingsScreen() {
             separate dataset/feature (a live government camera feed, not the mapped
             traffic-light/speed-camera locations) and blended in with those rows it read as more
             of the same thing. */}
+        <View style={styles.liveCameraBox}>
+          <Row
+            label="Live traffic incidents (NSW)"
+            icon={<Ionicons name="warning-outline" size={18} color={settings.showLiveTraffic ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          >
+            <Switch
+              value={settings.showLiveTraffic}
+              onValueChange={(value) => updateSettings({ showLiveTraffic: value })}
+              trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            />
+          </Row>
+          <Text style={styles.helperText}>{trafficHelp}</Text>
+        </View>
         <View style={styles.liveCameraBox}>
           <Row
             label="Live traffic cameras (NSW)"

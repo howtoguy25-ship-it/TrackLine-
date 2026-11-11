@@ -16,6 +16,7 @@ const {
   downsample,
 } = require("./presencePath");
 const personaCore = require("./personaSpeechCore");
+const trafficCore = require("./trafficNswCore");
 
 initializeApp();
 
@@ -1021,4 +1022,75 @@ exports.synthesizePersonaSpeech = onCall({ secrets: [ELEVENLABS_API_KEY] }, asyn
       .catch((err) => console.warn("[persona] cache write failed", String(err)));
   }
   return { status: "ok", audioBase64: audio.toString("base64"), cached: false };
+});
+
+// ------------------------------------------------------------------------------------------
+// Live Traffic NSW.
+//
+// Every five minutes this fetches Transport for NSW's live hazard feeds (crashes, heavy
+// traffic, breakdowns, roadworks, major events, floods, fires) and writes them as ONE document,
+// trafficNsw/current, which every phone reads. Fetching here rather than on each phone means
+// the API key never ships in the app, and a thousand drivers cost the same handful of TfNSW
+// calls as one.
+//
+// Until the key is set (it may hold the deploy workflow's "unset" placeholder) the document
+// just says { configured: false }, and the app shows the layer as not set up.
+const TFNSW_API_KEY = defineSecret("TFNSW_API_KEY");
+const TRAFFIC_NSW_DOC = "trafficNsw/current";
+
+async function refreshNswTrafficSnapshot() {
+  const db = getFirestore();
+  const ref = db.doc(TRAFFIC_NSW_DOC);
+  const apiKey = TFNSW_API_KEY.value();
+
+  if (!personaCore.secretIsSet(apiKey)) {
+    const existing = await ref.get();
+    // Written once, not every five minutes: nothing changes until a key is added.
+    if (!existing.exists || existing.data().configured !== false) {
+      await ref.set({ configured: false, checkedAt: Date.now(), incidents: [] });
+    }
+    return { configured: false, count: 0, failedKinds: [] };
+  }
+
+  const results = await Promise.all(
+    trafficCore.FEEDS.map(async (feed) => {
+      try {
+        const response = await fetch(trafficCore.feedUrl(feed.path), {
+          headers: { Authorization: `apikey ${apiKey}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(20000),
+        });
+        if (!response.ok) {
+          // The status alone -- never the response body or anything derived from the key.
+          console.warn("[trafficNsw] feed failed", feed.kind, response.status);
+          return { kind: feed.kind, ok: false, incidents: [] };
+        }
+        return { kind: feed.kind, ok: true, incidents: trafficCore.parseFeed(await response.json(), feed.kind) };
+      } catch (err) {
+        console.warn("[trafficNsw] feed errored", feed.kind, err && err.name);
+        return { kind: feed.kind, ok: false, incidents: [] };
+      }
+    })
+  );
+
+  const previousSnap = await ref.get();
+  const snapshot = trafficCore.buildSnapshot(results, previousSnap.exists ? previousSnap.data() : null, Date.now());
+  await ref.set(snapshot);
+  return { configured: true, count: snapshot.incidents.length, failedKinds: snapshot.failedKinds };
+}
+
+exports.refreshNswTraffic = onSchedule(
+  { schedule: "every 5 minutes", secrets: [TFNSW_API_KEY], timeoutSeconds: 60 },
+  async () => {
+    await refreshNswTrafficSnapshot();
+  }
+);
+
+// The same refresh, on demand, for the project owner only -- so that after adding the key
+// there's a way to see it work straight away instead of waiting for the next scheduled run.
+// Returns counts and which feeds failed; never the key or any response body.
+exports.refreshNswTrafficNow = onCall({ secrets: [TFNSW_API_KEY] }, async (request) => {
+  if (!isAdminRequest(request)) {
+    throw new HttpsError("permission-denied", "Owner only.");
+  }
+  return refreshNswTrafficSnapshot();
 });

@@ -52,6 +52,11 @@ export interface AppSettings {
   // off by default since it's a real, distinct, opt-in dataset rather than the always-on OSM
   // infrastructure layer. Mirrors web's useSettings.ts default exactly.
   showLiveCameras: boolean;
+  // Live Traffic NSW: current road incidents (crashes, heavy traffic, roadworks, floods, fires)
+  // from Transport for NSW, as pins on the map. On by default -- unlike the cameras above it's
+  // exactly the kind of thing a driver wants without asking -- but it shows nothing at all until
+  // the project owner has provided a Transport for NSW key (see DEPLOY.md).
+  showLiveTraffic: boolean;
   // How far from the driver's own location that layer is fetched/shown -- independent of
   // visibleRegions above (community alerts), which is region-based rather than a radius.
   osmLayerRadiusKm: number; // 1-200km
@@ -140,6 +145,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showTrafficLights: true,
   showSpeedCameras: true,
   showLiveCameras: false,
+  showLiveTraffic: true,
   osmLayerRadiusKm: 5,
   // Real, confirmed audit fix -- the brief's own Phase 1 spec explicitly asks for a "default
   // Waze-like light vector style." "normal" (the old default) is a dark forest-green theme,
