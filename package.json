@@ -29,6 +29,7 @@
     "@tensorflow/tfjs-backend-cpu": "^4.22.0",
     "@tensorflow/tfjs-backend-webgl": "^4.22.0",
     "@tensorflow/tfjs-react-native": "^1.0.0",
+    "audio-route": "file:./modules/audio-route",
     "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.6",
     "expo-apple-authentication": "~57.0.1",

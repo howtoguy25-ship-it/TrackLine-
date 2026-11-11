@@ -1,14 +1,38 @@
 import React, { forwardRef, useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSettings } from "@/context/SettingsContext";
 import { getVoiceDisplayName } from "@/services/voiceLabel";
+import {
+  describeAudioRoute,
+  getAudioRoute,
+  isAudioRouteAvailable,
+  showAudioRoutePicker,
+  type AudioRoute,
+  type AudioRouteType,
+} from "audio-route";
 import type { SpokenDirectionsMode } from "@/services/settings";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
-const SNAP_POINTS = ["50%"];
+// Taller than it was, to fit the "Listening on" row without clipping the voice row below it.
+const SNAP_POINTS = ["58%"];
+
+const ROUTE_ICONS: Record<AudioRouteType, React.ComponentProps<typeof Ionicons>["name"]> = {
+  speaker: "volume-high-outline",
+  phone: "call-outline",
+  headphones: "headset-outline",
+  bluetooth: "bluetooth-outline",
+  car: "car-outline",
+  airplay: "tv-outline",
+  usb: "hardware-chip-outline",
+  hdmi: "tv-outline",
+  other: "volume-medium-outline",
+};
+// How often the current output is re-read while the sheet is open -- so connecting to the car
+// or pulling out headphones shows up without closing and reopening it.
+const ROUTE_REFRESH_MS = 2000;
 
 const SPOKEN_DIRECTIONS_OPTIONS: { key: SpokenDirectionsMode; label: string; description: string }[] = [
   { key: "normal", label: "Normal", description: "Hear every turn and alert" },
@@ -24,15 +48,35 @@ interface Props {
 }
 
 // Waze-style Sound button's bottom sheet -- opened from the round Sound button mid-right on the
-// home map (see MapScreen.tsx). "Listening on" (the real current audio output route + a native
-// route picker) isn't in this sheet yet -- see NOTES.md, it needs a dedicated native module this
-// project doesn't have, and this app never shows a fake output name in its place.
+// home map (see MapScreen.tsx). "Listening on" shows where the phone is really playing audio
+// right now (modules/audio-route) and opens the system's own output picker; on a build that
+// predates that native module the row is simply left out rather than showing a made-up name.
 export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
   { onClose, onSheetChange, onOpenVoiceSettings },
   ref
 ) {
   const insets = useSafeAreaInsets();
   const { settings, updateSettings, voiceIdentifier } = useSettings();
+
+  // The current audio output, re-read while the sheet is open. Null until the first read lands
+  // (or for good, if the system won't say).
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [audioRoute, setAudioRoute] = useState<AudioRoute | null>(null);
+  useEffect(() => {
+    if (!sheetOpen || !isAudioRouteAvailable) return;
+    let cancelled = false;
+    const read = () => {
+      getAudioRoute().then((route) => {
+        if (!cancelled) setAudioRoute(route);
+      });
+    };
+    read();
+    const timer = setInterval(read, ROUTE_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [sheetOpen]);
 
   const [currentVoiceLabel, setCurrentVoiceLabel] = useState("Default (device)");
   useEffect(() => {
@@ -53,7 +97,10 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
       index={-1}
       snapPoints={SNAP_POINTS}
       enablePanDownToClose
-      onChange={onSheetChange}
+      onChange={(index) => {
+        setSheetOpen(index >= 0);
+        onSheetChange?.(index);
+      }}
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
     >
@@ -92,6 +139,35 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
         })}
 
         <View style={styles.divider} />
+
+        {isAudioRouteAvailable && (
+          <Pressable
+            onPress={() => {
+              showAudioRoutePicker().catch(() => {});
+            }}
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: pressedOpacity }]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              audioRoute
+                ? `Listening on ${describeAudioRoute(audioRoute, Platform.OS)}. Tap to change.`
+                : "Listening on. Tap to choose where sound plays."
+            }
+          >
+            <Ionicons
+              name={ROUTE_ICONS[audioRoute?.type ?? "other"]}
+              size={20}
+              color={colors.accent}
+              style={styles.routeIcon}
+            />
+            <View style={styles.rowTextWrap}>
+              <Text style={styles.radioLabel}>Listening on</Text>
+              <Text style={styles.radioDescription}>
+                {audioRoute ? describeAudioRoute(audioRoute, Platform.OS) : "Tap to choose where sound plays"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+        )}
 
         <Pressable
           onPress={onOpenVoiceSettings}
@@ -195,6 +271,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginVertical: spacing.sm,
   },
+  routeIcon: { width: 24, textAlign: "center" },
   linkRow: {
     flexDirection: "row",
     alignItems: "center",
