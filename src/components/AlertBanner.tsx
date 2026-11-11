@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, Pressable } from "react-native";
+import { Animated, StyleSheet, Pressable } from "react-native";
+import { Text } from "@/components/AppText";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";

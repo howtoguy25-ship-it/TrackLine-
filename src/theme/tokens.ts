@@ -12,18 +12,38 @@
 // light tint for badges/selected states, both derived from the same blue scale, so anything that
 // wants a darker or lighter variant of the brand color has a real token instead of a one-off hex.
 export const colors = {
-  accent: "#1D4ED8",
-  accentDeep: "#1E3A8A",
-  accentSoft: "#DBEAFE",
-  dark: "#111827",
+  // The Waze-style UI pass's palette (pass 2, section 0). Everything visual in the app reads
+  // from this one object, so these values ARE the app's look.
+  //
+  // `accent` is the link blue: it's what text links, icons and selected states use, and it has
+  // to stay legible as text on white. `primary` is the brighter blue reserved for filled
+  // buttons (white text on top).
+  accent: "#0A84E0",
+  accentDeep: "#0669B8",
+  accentSoft: "#E1F1FD",
+  primary: "#0099FF",
+  primaryPressed: "#007ACC",
+  dark: "#1F2125",
   danger: "#DC2626",
   warning: "#F59E0B",
-  surface: "#FFFFFF",
-  surfaceMuted: "#F9FAFB",
-  border: "#E5E7EB",
-  text: "#111827",
-  textMuted: "#6B7280",
-  textFaint: "#9CA3AF",
+  surface: "#FFFFFF", // sheets and cards
+  surfaceMuted: "#F1F3F7", // search fields, chips, action tiles
+  border: "#E6E8EB", // dividers
+  chipBorder: "#DADDE2",
+  text: "#1F2125",
+  textMuted: "#6B7078",
+  textFaint: "#8A8F98",
+  grabber: "#8E9399",
+  // Routes
+  routePurple: "#6A1FD1",
+  routePurpleCasing: "#4A1396",
+  routeAlt: "#C9A8F5",
+  bestTag: "#5212B8",
+  // The grey bar navigation's trip summary sits on
+  banner: "#E9EAEE",
+  // Floating map buttons
+  reportYellow: "#FBDD4A",
+  recenterGrey: "#4A4D52",
 } as const;
 
 export const spacing = {
@@ -72,12 +92,20 @@ export const shadow = {
     shadowOffset: { width: 0, height: 8 },
     elevation: 10,
   },
+  // Floating buttons over the map (menu, compass, sound, report, recenter): 0 4 12, 18% black.
+  floating: {
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
   // New -- a real signature detail for this app's own "unique look" (not present before this
   // upgrade): a soft blue-tinted glow instead of a flat black shadow, used deliberately sparingly
   // on the app's own most central actions (see e.g. RouteOptionsCard's Start button) rather than
   // on every button, which would read as gaudy instead of premium.
   accentGlow: {
-    shadowColor: "#1D4ED8",
+    shadowColor: "#0099FF",
     shadowOpacity: 0.35,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
@@ -88,3 +116,5 @@ export const shadow = {
 // Standard opacity a Pressable dims to while held, for consistent tactile feedback
 // across every button in the app instead of some buttons having it and others not.
 export const pressedOpacity = 0.7;
+
+export { DESIGN_WIDTH, scaleFor } from "@/theme/scale";

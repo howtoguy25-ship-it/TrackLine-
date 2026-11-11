@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, TextInput, Alert, ActivityIndicator } from "react-native";
+import { View, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Alert, ActivityIndicator } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import { StatusBar } from "expo-status-bar";
 import Slider from "@react-native-community/slider";
 import Constants from "expo-constants";

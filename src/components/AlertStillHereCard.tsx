@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ALERT_COLORS, ALERT_LABELS, type AlertDoc } from "@/types/alert";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";

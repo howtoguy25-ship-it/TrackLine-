@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   Pressable,
   ActivityIndicator,
@@ -9,6 +8,7 @@ import {
   useWindowDimensions,
   type LayoutChangeEvent,
 } from "react-native";
+import { Text } from "@/components/AppText";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Route, RouteProfileKey, TravelMode } from "@/services/directions";

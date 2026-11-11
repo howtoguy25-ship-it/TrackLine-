@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
   Pressable,
   StyleSheet,
   ActivityIndicator,
@@ -9,6 +8,7 @@ import {
   useWindowDimensions,
   ActionSheetIOS,
 } from "react-native";
+import { Text } from "@/components/AppText";
 import {
   Camera,
   useCameraDevice,

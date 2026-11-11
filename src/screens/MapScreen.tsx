@@ -1,18 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   Pressable,
   Share,
   ActivityIndicator,
-  TextInput,
   Keyboard,
   AppState,
   ActionSheetIOS,
   useWindowDimensions,
   Linking,
 } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import MapView, {
   PROVIDER_GOOGLE,
   Polyline,

@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
+import { View, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
+import { Text } from "@/components/AppText";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";

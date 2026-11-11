@@ -1,3 +1,5 @@
+import { RUBIK } from "@/theme/typography";
+import { colors } from "@/theme/tokens";
 import React, { useRef } from "react";
 import { NavigationContainer, type NavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -142,7 +144,16 @@ export function RootNavigator() {
       ref={navigationRef}
       onReady={() => navigationIntegration.registerNavigationContainer(navigationRef)}
     >
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          // The native header draws its own title, outside the app's Text wrapper -- so it's
+          // told about the app font here. Applies to every screen that shows a header.
+          headerTitleStyle: { fontFamily: RUBIK.semiBold, color: colors.text },
+          headerBackTitleStyle: { fontFamily: RUBIK.regular },
+          headerTintColor: colors.accent,
+        }}
+      >
         <Stack.Screen name="Map" component={MapScreen} />
         <Stack.Screen
           name="Settings"

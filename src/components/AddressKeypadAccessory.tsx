@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Keyboard, InputAccessoryView } from "react-native";
+import { View, Pressable, StyleSheet, Platform, Keyboard, InputAccessoryView } from "react-native";
+import { Text } from "@/components/AppText";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
 // Real, explicit request (Waze-style redesign, Phase 2 "Where to?" sheet) -- a quick-access row

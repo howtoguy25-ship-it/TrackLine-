@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Text } from "@/components/AppText";
 import { Marker } from "react-native-maps";
 import { ALERT_COLORS, type AlertDoc } from "@/types/alert";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";

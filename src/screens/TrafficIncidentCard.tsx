@@ -1,5 +1,6 @@
 import React from "react";
-import { Modal, View, Text, Pressable, StyleSheet } from "react-native";
+import { Modal, View, Pressable, StyleSheet } from "react-native";
+import { Text } from "@/components/AppText";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatIncidentAge, incidentStyle, type NearbyIncident } from "@/services/trafficNswModel";

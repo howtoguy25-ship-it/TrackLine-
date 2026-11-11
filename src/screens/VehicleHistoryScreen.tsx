@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, FlatList, Alert, Image } from "react-native";
+import { View, Pressable, StyleSheet, FlatList, Alert, Image } from "react-native";
+import { Text } from "@/components/AppText";
 import { Swipeable } from "react-native-gesture-handler";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";

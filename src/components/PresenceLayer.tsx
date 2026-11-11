@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Text } from "@/components/AppText";
 import { Marker } from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import { Tracky } from "@/components/trackys/Tracky";

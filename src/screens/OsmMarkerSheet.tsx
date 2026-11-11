@@ -1,5 +1,6 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator } from "react-native";
+import { View, Pressable, StyleSheet, Image, ActivityIndicator } from "react-native";
+import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";

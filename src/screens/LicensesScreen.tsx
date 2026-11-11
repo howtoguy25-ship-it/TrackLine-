@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
+import { View, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
+import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -19,6 +20,13 @@ interface LicenseEntry {
 }
 
 const ENTRIES: LicenseEntry[] = [
+  {
+    name: "Rubik (the app's typeface)",
+    license: "SIL Open Font License 1.1 -- © The Rubik Project Authors",
+    description:
+      "The font used throughout the app, in Regular, Medium, SemiBold and Bold. Bundled unmodified via the @expo-google-fonts/rubik package.",
+    url: "https://openfontlicense.org",
+  },
   {
     name: "OpenStreetMap",
     license: "Open Database License (ODbL) -- © OpenStreetMap contributors",

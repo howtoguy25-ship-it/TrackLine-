@@ -1,5 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Linking, Image, Animated } from "react-native";
+import { View, Pressable, StyleSheet, ScrollView, Linking, Image, Animated } from "react-native";
+import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";

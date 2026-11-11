@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Animated, type LayoutChangeEvent } from "react-native";
+import { View, StyleSheet, Pressable, Animated, type LayoutChangeEvent } from "react-native";
+import { Text } from "@/components/AppText";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RouteStep } from "@/services/directions";

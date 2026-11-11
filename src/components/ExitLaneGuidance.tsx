@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, View } from "react-native";
+import { Text } from "@/components/AppText";
 import { Ionicons } from "@expo/vector-icons";
 import { radius, shadow, spacing } from "@/theme/tokens";
 

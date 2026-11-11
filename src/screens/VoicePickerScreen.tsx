@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, SectionList, ActivityIndicator, Modal } from "react-native";
+import { View, Pressable, StyleSheet, SectionList, ActivityIndicator, Modal } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Speech from "expo-speech";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

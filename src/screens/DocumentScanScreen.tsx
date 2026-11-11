@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { View, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import { Camera, useCameraDevice, useCameraPermission, type PhotoFile } from "react-native-vision-camera";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

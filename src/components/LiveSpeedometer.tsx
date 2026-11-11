@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Text, StyleSheet, Animated } from "react-native";
+import { StyleSheet, Animated } from "react-native";
+import { Text } from "@/components/AppText";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";

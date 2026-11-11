@@ -1,14 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
-  Text,
-  TextInput,
   Pressable,
   StyleSheet,
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
 } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 import { GoogleSignin, GoogleSigninButton, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";

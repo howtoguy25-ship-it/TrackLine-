@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, Modal } from "react-native";
+import { View, Pressable, StyleSheet, Modal } from "react-native";
+import { Text } from "@/components/AppText";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Tracky } from "@/components/trackys/Tracky";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";

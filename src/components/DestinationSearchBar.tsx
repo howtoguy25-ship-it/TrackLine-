@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { View, TextInput, FlatList, Text, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { View, FlatList, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { TextInput, Text } from "@/components/AppText";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {

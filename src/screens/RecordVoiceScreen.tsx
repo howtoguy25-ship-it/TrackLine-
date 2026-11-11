@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, SectionList, Alert } from "react-native";
+import { View, Pressable, StyleSheet, SectionList, Alert } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import Svg, { Circle } from "react-native-svg";
 import { Ionicons } from "@expo/vector-icons";
 import {

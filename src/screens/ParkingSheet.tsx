@@ -1,8 +1,6 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
-  Text,
-  TextInput,
   Pressable,
   StyleSheet,
   ActivityIndicator,
@@ -12,6 +10,7 @@ import {
   ScrollView,
   Switch,
 } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";

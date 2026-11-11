@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Modal, Alert, ActivityIndicator } from "react-native";
+import { View, Pressable, StyleSheet, Modal, Alert, ActivityIndicator } from "react-native";
+import { Text } from "@/components/AppText";
 import { Ionicons } from "@expo/vector-icons";
 import { Tracky } from "@/components/trackys/Tracky";
 import { TRACKY_MOODS } from "@/components/trackys/moods";

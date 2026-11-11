@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import * as ScreenOrientation from "expo-screen-orientation";
@@ -13,6 +13,13 @@ import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { installCrashReporter } from "@/services/crashReporter";
 import { initSentry, Sentry } from "@/services/sentry";
 import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
+import { useFonts } from "expo-font";
+import { Rubik_400Regular } from "@expo-google-fonts/rubik/400Regular";
+import { Rubik_500Medium } from "@expo-google-fonts/rubik/500Medium";
+import { Rubik_600SemiBold } from "@expo-google-fonts/rubik/600SemiBold";
+import { Rubik_700Bold } from "@expo-google-fonts/rubik/700Bold";
+import { setRubikReady } from "@/theme/typography";
+import * as SplashScreen from "expo-splash-screen";
 
 // Installed at module scope so it's active as early as this file is ever imported/evaluated
 // -- before any provider or component below even mounts. See crashReporter.ts for why this
@@ -23,6 +30,10 @@ import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
 // initSentry() must run second -- see sentry.ts for why the order matters.
 installCrashReporter();
 initSentry();
+
+// Keep the splash screen up until the app's font has loaded (see the useFonts call in App),
+// instead of letting it drop to a blank frame for that moment.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // DIAGNOSTIC: AppOpenAdManager fully removed for this build. Sentry's native layer was
 // already ruled out (build 23, fully disabled, still crashed with the identical signature).
@@ -46,6 +57,24 @@ function App() {
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
+
+  // Rubik, the app's typeface (theme/typography.ts). The four files are bundled with the app,
+  // so this resolves from disk in a moment; the splash screen stays up until it does, so no
+  // screen is ever drawn once in the system font and then again in Rubik. If loading fails the
+  // app carries on in the system font rather than refusing to start.
+  const [fontsLoaded, fontError] = useFonts({ Rubik_400Regular, Rubik_500Medium, Rubik_600SemiBold, Rubik_700Bold });
+  // A font that hasn't reported back within three seconds isn't going to; the app must never
+  // sit on its splash screen waiting for one.
+  const [fontWaitExpired, setFontWaitExpired] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setFontWaitExpired(true), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+  const fontsSettled = fontsLoaded || !!fontError || fontWaitExpired;
+  setRubikReady(fontsLoaded);
+  useEffect(() => {
+    if (fontsSettled) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsSettled]);
 
   // Real, explicit request: AI vehicle detection should start the instant that screen opens,
   // not after a visible load delay. loadBoxedTFLiteModel() caches its result in a module-level
@@ -81,6 +110,8 @@ function App() {
         });
       });
   }, []);
+
+  if (!fontsSettled) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
