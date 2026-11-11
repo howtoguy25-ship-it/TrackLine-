@@ -526,6 +526,15 @@ Nothing here could be run on a device, so the last pass was a line-by-line re-re
 - **An ordinary trip's start was never excluded.** See the 500m row in the table above.
 - **A red light could withdraw a driver for ~2 minutes.** See the "Only visible+driving" row.
 
+### The failed Android development build (EAS `33d26c26`) -- corrected diagnosis
+
+First put down to the old google-mobile-ads Kotlin conflict. That was wrong, and the build log
+says so: `Gradle build daemon disappeared unexpectedly` in the middle of compiling native C++
+for all four Android chip types at once -- the build machine ran out of memory. (The Kotlin
+conflict really is fixed; production Android builds have finished since.) The development
+profile in `eas.json` now builds `arm64-v8a` only. **That fix has not been proven by a build**
+-- no development build has been run since; the production profile is untouched.
+
 ### What has and hasn't been verified
 
 - Verified by real runs (`TEST_RESULTS.md`): 59/59 emulator + unit tests, including the privacy

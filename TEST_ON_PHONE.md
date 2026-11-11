@@ -21,15 +21,28 @@ phone + one tablet/second device — anything that can run the dev build and get
   presence system's speed gate reacts to it exactly like a real drive. There's no bundled sample
   GPX (a fake one would defeat the point) — export a short real drive from your own phone first.
 
-## 1. Install the development build on both devices
+## 1. Install a build on both devices
 
-```
-eas build --profile development --platform all
-```
+Either kind of build works for this test:
 
-Install the resulting build on each device the normal EAS way (QR code from the build page, or
-`eas build:run`). If you already have a recent dev build installed from earlier in this project,
-it won't have this feature yet — rebuild.
+- **A production build** (TestFlight on iPhone, the `.aab`/Play internal track on Android) --
+  the simplest route, and the only one that has actually been built successfully for both
+  platforms so far. It runs on its own with no computer attached. The one thing it lacks is the
+  **GPS replay** tool mentioned above, which only exists in development builds -- so with a
+  production build you need to really be moving.
+- **A development build** (`eas build --profile development --platform android`) -- has GPS
+  replay, but needs a computer running `npx expo start` on the same network for the app to load.
+  The Android development profile builds for 64-bit ARM phones only (every current Android
+  phone; not x86 emulators) -- building all four chip types at once ran the EAS build machine
+  out of memory. An iPhone development build can't be made from an automated session: it needs
+  your devices registered and its provisioning set up interactively (`eas device:create`, then
+  `eas build --profile development --platform ios` from your own terminal).
+
+Any build from before this feature was added won't have it -- install a new one.
+
+**Before any of this will work**, the server side has to be deployed: run the "Deploy Firebase (functions, Firestore rules, Storage rules)"
+GitHub Action once (see `DEPLOY.md`). Until then the app builds and runs normally, but no
+Tracky will ever appear on another phone, because the Cloud Functions it calls don't exist yet.
 
 ## 2. Sign in differently on each device
 
