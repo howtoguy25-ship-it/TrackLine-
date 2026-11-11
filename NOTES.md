@@ -387,13 +387,13 @@ roads) is confirmed out of scope for this pass, not started, not scaffolded.
 | Auto-ghost after >30min background or on arrival | DONE | `useAutoGhostMode.ts` (AppState timer) + `autoGhostOnArrival` inside `MapScreen.tsx`'s `exitNavigation` |
 | Own marker: translucent "Spooky" outline when hidden | DONE | A separate small badge `Marker` next to (not replacing) the real position marker -- see its own comment for why the real heading-critical `CarNavArrow` was deliberately left untouched |
 | Still see others + report, anonymous unless "Show my name on reports" | DONE | `settings.showNameOnReports`, read server-side in `updatePresence` |
-| Only visible+driving shown | **PARTIAL (disclosed)** | `updatePresence` gates on the CURRENT speed the client reports (>15km/h) at call time, not a true rolling "sustained speed over the last 5 minutes" window -- a driver who briefly dips under 15km/h at a single 60s tick (not stopped, just slowed) withdraws for that tick rather than being smoothed over a 5-minute buffer. The spec's literal "in last 5min" smoothing isn't built; the simpler instantaneous gate is |
+| Only visible+driving shown | DONE (client-side window) | The app records its speed alongside every 15s sample and reports the FASTEST it has gone in the last 5 minutes, so `updatePresence`'s >15km/h gate now means "has driven above 15km/h in the last 5 minutes" -- a red light at the once-a-minute tick no longer withdraws the driver. The window lives on the client (`MapScreen.tsx`'s sampler); the server still trusts the reported speed, exactly as it did before, so this is not a tamper-proof check -- it never was, and a client that lies about speed only affects whether its OWN Tracky is shown |
 | Position via Cloud Function ONLY | DONE | `firestore.rules`' `presence/{uid}`: `allow write: if false` -- only `updatePresence`/`clearPresence`'s Admin SDK writes ever succeed |
 | Snapped to nearest road (Mapbox Map Matching, per user's explicit choice) | DONE | `updatePresence`'s real Map Matching API call, with an honest fallback to the raw point if it fails -- verified for real in `TEST_RESULTS.md` |
 | Rounded ~150m | **SUPERSEDED by the ADD-ON** | Was `roundToPresenceGrid()`. Replaced in ADD-ON Part B by a server-enforced 60s delay, because grid-snapped points can't follow a road -- see the ADD-ON section below and the Privacy Policy's own "What changed in this version" note |
 | heading/mood/displayName(if allowed)/updatedAt, never raw GPS history | DONE | `updatePresence`'s own `presenceDoc` object; one doc per uid, overwritten not appended -- no history collection exists at all |
 | Updates every 60s while driving | DONE | `MapScreen.tsx`'s `setInterval(tick, 60000)` effect |
-| Never within 500m of Home/Work/trip start/destination | DONE | `updatePresence`'s `exclusionPoints`/`haversineMeters` check -- verified for real in the emulator test suite (the "suppresses presence... within 500m" test) |
+| Never within 500m of Home/Work/trip start/destination | DONE | `updatePresence`'s `exclusionPoints`/`haversineMeters` check -- verified for real in the emulator test suite (the "suppresses presence... within 500m" test). Trip START was a real gap found in the final QA re-read: the app only sent a start point when a custom starting point had been picked, so an ordinary trip's start was never excluded. The sampler now captures the driver's own position when the trip begins and sends that -- client change only, typechecked and linted, not run on a device |
 | Auto-delete 2min after last update, or immediately on arrival/ghost mode | DONE | Real Firestore `expireAt` TTL field (+ `cleanupExpiredPresence` belt-and-suspenders) for the 2min case; `callClearPresence()` fired the instant `settings.visibility` becomes `"ghost"`, which covers both the manual toggle and `autoGhostOnArrival` |
 | Rules: own-write-only via function, rounded-read-only, no uid-history queries | DONE | See `firestore.rules`' own `presence/{uid}` comment -- verified for real in the emulator rules-test suite |
 | Map shows max 50, clustered "+12" bubble | DONE | `MAX_VISIBLE_TRACKYS = 50`, closest-first cap, then the same `clusterPoints` this screen's other viewport layers already use |
@@ -411,7 +411,7 @@ roads) is confirmed out of scope for this pass, not started, not scaffolded.
 | AUDIT-style table for this feature | DONE | This table |
 | `COPYRIGHT_AUDIT.md` | DONE | Written, see above |
 | Commit + update PROGRESS.md/NOTES.md + list files changed | DONE | This entry + `PROGRESS.md`'s own new section; full file list below |
-| ADD-ON (customizer + smooth movement) | **NOT STARTED (explicitly deferred)** | Per the user's own explicit sequencing answer ("Part 1-4 first, then the ADD-ON") -- a separate future pass |
+| ADD-ON (customizer + smooth movement) | DONE (never run on a device) | Built after Parts 1-4 as sequenced -- see the ADD-ON section below |
 
 ### Files changed (full list, this feature only)
 
@@ -514,6 +514,17 @@ Decisions and deviations, stated plainly:
 - **Real bug found and fixed** (from Part 3): the once-a-minute update read speed/mood from the
   closure created when the route started -- while the car was still stationary -- so the 15km/h
   gate was comparing against a frozen ~0 and would never have sent on a real drive.
+
+### Final QA re-read (three real fixes, all in the sampler in `MapScreen.tsx`)
+
+Nothing here could be run on a device, so the last pass was a line-by-line re-read. It found:
+
+- **The timers restarted on every reroute.** The sampler effect depended on the `route` and
+  `user` objects, and a reroute replaces the route object -- each one threw away the buffered
+  samples and reset the once-a-minute send clock. A trip that rerouted more often than once a
+  minute would never have sent an update. Now keyed on "is a route active" and the uid.
+- **An ordinary trip's start was never excluded.** See the 500m row in the table above.
+- **A red light could withdraw a driver for ~2 minutes.** See the "Only visible+driving" row.
 
 ### What has and hasn't been verified
 

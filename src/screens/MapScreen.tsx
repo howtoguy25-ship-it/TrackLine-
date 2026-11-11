@@ -1686,33 +1686,62 @@ export function MapScreen() {
   // Each sample keeps the local time it was taken so it can be sent as an AGE (see
   // PresenceSample) -- the server turns that into its own clock's time and holds every point
   // back behind its 60s privacy delay (updatePresence in firebase/functions/index.js).
+  //
+  // Keyed on plain booleans/ids, not the `route`/`user` OBJECTS: a reroute replaces the route
+  // object, and restarting these timers every time that happened would keep resetting the
+  // once-a-minute send clock -- on a trip with frequent reroutes an update might never go out.
+  const presenceUid = user?.uid ?? null;
+  const presenceRouteActive = !!route;
   useEffect(() => {
-    if (!user || !route) return;
+    if (!presenceUid || !presenceRouteActive) return;
     if (settings.visibility === "ghost") return;
     let samples: { lat: number; lng: number; at: number }[] = [];
+    // "Never within 500m of... trip start" -- for an ordinary trip (no custom starting point
+    // picked) the start is simply wherever the driver was when this began, which nothing else
+    // would otherwise tell the server.
+    let tripStart: LatLng | null = null;
+    // Real, explicit request -- "driving (speed>15km/h in last 5min)". The gate is "has been
+    // above 15km/h at some point in the last five minutes", not "is above 15km/h at the exact
+    // second the once-a-minute update fires" -- otherwise a red light at the wrong moment
+    // withdraws a driver's Tracky, and behind the privacy delay it takes ~2 minutes to return.
+    const DRIVING_WINDOW_MS = 5 * 60 * 1000;
+    let recentSpeeds: { at: number; kmh: number }[] = [];
 
     const takeSample = () => {
-      const latLng = presenceInputsRef.current.latLng;
-      if (latLng) samples.push({ lat: latLng.latitude, lng: latLng.longitude, at: Date.now() });
+      const now = Date.now();
+      const inputs = presenceInputsRef.current;
+      if (inputs.latLng) {
+        if (!tripStart) tripStart = inputs.latLng;
+        samples.push({ lat: inputs.latLng.latitude, lng: inputs.latLng.longitude, at: now });
+      }
       if (samples.length > 12) samples = samples.slice(samples.length - 12);
+      recentSpeeds.push({ at: now, kmh: inputs.speedKmh });
+      recentSpeeds = recentSpeeds.filter((entry) => now - entry.at <= DRIVING_WINDOW_MS);
     };
     const send = () => {
+      if (samples.length < 2) return;
       const inputs = presenceInputsRef.current;
-      if (inputs.speedKmh < 15 || samples.length < 2) return;
       const sentAt = Date.now();
+      // The fastest this driver has gone in the window. If that's under 15km/h they've been
+      // stopped for five minutes: still sent, so the server withdraws them right away rather
+      // than leaving their last position to linger until it expires.
+      const recentMaxKmh = recentSpeeds
+        .filter((entry) => sentAt - entry.at <= DRIVING_WINDOW_MS)
+        .reduce((max, entry) => Math.max(max, entry.kmh), inputs.speedKmh);
       const batch = samples.map((sample) => ({ lat: sample.lat, lng: sample.lng, ageMs: sentAt - sample.at }));
       // Keep the newest sample as the start of the next batch so consecutive map-matches join
       // up into one continuous road path instead of leaving a gap between minutes.
       samples = samples.slice(samples.length - 1);
+      const source = inputs.source ?? tripStart;
       callUpdatePresence({
         samples: batch,
-        speedKmh: inputs.speedKmh,
+        speedKmh: recentMaxKmh,
         mood: inputs.mood,
         look: inputs.look,
         allowName: inputs.allowName,
         tripContext: {
-          sourceLat: inputs.source?.latitude ?? undefined,
-          sourceLng: inputs.source?.longitude ?? undefined,
+          sourceLat: source?.latitude ?? undefined,
+          sourceLng: source?.longitude ?? undefined,
           destLat: inputs.dest?.latitude ?? undefined,
           destLng: inputs.dest?.longitude ?? undefined,
         },
@@ -1726,7 +1755,7 @@ export function MapScreen() {
       clearInterval(sampleInterval);
       clearInterval(sendInterval);
     };
-  }, [user, route, settings.visibility]);
+  }, [presenceUid, presenceRouteActive, settings.visibility]);
 
   // Real, explicit request -- "Auto-deletes... immediately on arrival/ghost mode." Reacts to
   // EVERY transition into ghost mode, whichever of the several real triggers caused it (a
