@@ -209,6 +209,7 @@ function elementToNearbyPlace(el: OverpassElement, center: LatLng, category: Osm
     openNow: undefined,
     photoUrl: null,
     distanceMeters: haversineMeters(center, location),
+    osmTags: el.tags,
   };
 }
 

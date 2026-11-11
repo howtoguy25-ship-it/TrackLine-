@@ -122,6 +122,7 @@ import {
 } from "@/utils/geo";
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
+import { parseDriveLink } from "@/services/driveLink";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
   earlyAnnouncementThresholds,
@@ -2803,6 +2804,32 @@ export function MapScreen() {
     navigation.setParams({ planADriveDestination: undefined });
   }, [navRoute.params?.planADriveDestination, onDestinationSelected, navigation]);
 
+  // "Share drive" links (services/driveLink.ts): someone taps a shared link to a destination and
+  // the app opens on it. Handled both when the link launches the app and when it arrives while
+  // the app is already open. It goes through the very same hand-off as Plan a drive above --
+  // navigate to this screen with the place as a param -- so it lands on the ordinary route
+  // preview from wherever in the app the driver happened to be, and nothing starts by itself:
+  // the driver still chooses a route and taps Start.
+  useEffect(() => {
+    const open = (url: string | null) => {
+      const target = parseDriveLink(url);
+      if (!target) return;
+      navigation.navigate("Map", {
+        planADriveDestination: {
+          placeId: `shared:${target.latitude.toFixed(6)},${target.longitude.toFixed(6)}`,
+          name: target.name,
+          address: target.address,
+          location: { latitude: target.latitude, longitude: target.longitude },
+        },
+      });
+    };
+    Linking.getInitialURL()
+      .then(open)
+      .catch(() => {});
+    const subscription = Linking.addEventListener("url", (event) => open(event.url));
+    return () => subscription.remove();
+  }, [navigation]);
+
   // "Find nearest station" quick action -- skips typing a destination entirely and routes
   // straight to whatever real bus/train stop Google's Places data says is genuinely closest to
   // the current route origin (a custom "From" if one's picked, otherwise live GPS -- see
@@ -3782,6 +3809,27 @@ export function MapScreen() {
     }
     return [...currentStepPolyline, ...restSteps.flatMap((s) => s.polyline)];
   }, [route, activeStepIndex, currentLatLng?.latitude, currentLatLng?.longitude]);
+  // The bottom bar's "Overview": the WHOLE of the route still to drive, fitted on screen from
+  // the driver's position to the destination, flat and north-up -- not the merely pulled-back
+  // chase-cam this button used to toggle (that pose still lives on the locate button).
+  //
+  // It drops out of camera-follow first, for the same reason a manual pan does: otherwise the
+  // very next GPS fix would snap the camera straight back onto the car. From there the bar's
+  // existing Re-centre state takes over -- tap it to go back, or it goes back by itself after
+  // ten seconds, so a driver is never left looking at the overview by accident.
+  const showRouteOverview = useCallback(() => {
+    if (remainingPolyline.length < 2) return;
+    setFollowTilt(false);
+    mapRef.current?.fitToCoordinates(remainingPolyline, {
+      edgePadding: {
+        top: instructionCardHeight + insets.top + spacing.xl,
+        right: 56,
+        bottom: bottomBarHeight + insets.bottom + spacing.xl,
+        left: 56,
+      },
+      animated: true,
+    });
+  }, [remainingPolyline, instructionCardHeight, bottomBarHeight, insets.top, insets.bottom]);
   const remainingDistanceMeters = useMemo(
     () => (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.distanceMeters, 0) : 0),
     [route, activeStepIndex]
@@ -4948,7 +4996,7 @@ export function MapScreen() {
           onHeightChange={setBottomBarHeight}
           isFollowing={followTilt}
           onRecenter={onRecenter}
-          onOverview={() => applyOverviewPose(!overviewMode)}
+          onOverview={showRouteOverview}
         />
       )}
 

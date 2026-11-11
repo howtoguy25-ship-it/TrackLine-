@@ -10,6 +10,7 @@ import {
   Keyboard,
   Alert,
   Modal,
+  Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,6 +36,7 @@ import {
   type SavedPlaceSlot,
 } from "@/services/savedPlaces";
 import { useAuth } from "@/context/AuthContext";
+import { driveShareMessage } from "@/services/driveLink";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import {
@@ -92,7 +94,9 @@ interface Props {
 // What the main search input is currently FOR -- "route" (the default: picking a destination to
 // drive to) or assigning one of the real saved-place slots. Picking a result branches on this
 // instead of the search UI itself ever duplicating.
-type PickTarget = "route" | SavedPlaceSlot | "custom";
+// "share" is the More options row "Share drive": pick a place, and instead of routing there
+// the phone's share sheet opens with a link to it (services/driveLink.ts).
+type PickTarget = "route" | SavedPlaceSlot | "custom" | "share";
 
 export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function WhereToSheet(
   {
@@ -128,6 +132,10 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   // previously honestly deferred (no expo-contacts dependency existed yet). Lazily loaded only
   // when the picker is actually opened, not on every sheet mount.
   const [contactsPickerOpen, setContactsPickerOpen] = useState(false);
+  // "+ New": the place that's been picked and is waiting for the driver to name it ("Mum's",
+  // "Gym"), plus the name as typed so far. Null whenever that little dialog is closed.
+  const [namingPlace, setNamingPlace] = useState<PlaceDetails | null>(null);
+  const [placeName, setPlaceName] = useState("");
   const [contactsStatus, setContactsStatus] = useState<"granted" | "denied" | "undetermined" | null>(null);
   const [contactsWithAddresses, setContactsWithAddresses] = useState<ContactWithAddress[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
@@ -218,15 +226,45 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
         resetSearch();
         return;
       }
-      // "custom" -- real "+ New" saved place. Labelled with the place's own real name (the full
-      // brief's separate "type a name" step is a deferred fast-follow -- see this file's own
-      // header).
-      const next = await addCustomPlace(place);
-      persistSaved(next);
-      resetSearch();
+      if (pickTarget === "share") {
+        resetSearch();
+        // Share.share rejects only if the share sheet itself couldn't be shown; dismissing it
+        // without sending is a normal outcome, not an error.
+        Share.share({
+          message: driveShareMessage({
+            latitude: place.location.latitude,
+            longitude: place.location.longitude,
+            name: place.name,
+            address: place.address,
+          }),
+        }).catch(() => setErrorText("Couldn't open the share sheet"));
+        return;
+      }
+      // "custom" -- a "+ New" saved place. The address is chosen; now ask what to call it,
+      // starting from the place's own name so accepting that is a single tap.
+      Keyboard.dismiss();
+      setPlaceName(place.name);
+      setNamingPlace(place);
     },
     [pickTarget, onDestinationSelected, persistSaved, resetSearch]
   );
+
+  const confirmNamedPlace = useCallback(async () => {
+    if (!namingPlace) return;
+    const typed = placeName.replace(/\s+/g, " ").trim();
+    // Left blank, or left as the place's own name: stored without a separate label, exactly as
+    // before, so the list keeps showing the place's real name.
+    const label = typed && typed !== namingPlace.name ? typed : undefined;
+    const next = await addCustomPlace(namingPlace, label);
+    persistSaved(next);
+    setNamingPlace(null);
+    resetSearch();
+  }, [namingPlace, placeName, persistSaved, resetSearch]);
+
+  const cancelNamingPlace = useCallback(() => {
+    // Nothing is saved; the search stays as it was so a different address can be picked.
+    setNamingPlace(null);
+  }, []);
 
   const onSelectPrediction = useCallback(
     async (prediction: PlacePrediction) => {
@@ -358,7 +396,16 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   );
 
   const picking = pickTarget !== "route";
-  const pickingLabel = pickTarget === "home" ? "Set Home address" : pickTarget === "work" ? "Set Work address" : pickTarget === "custom" ? "Add a saved place" : null;
+  const pickingLabel =
+    pickTarget === "home"
+      ? "Set Home address"
+      : pickTarget === "work"
+        ? "Set Work address"
+        : pickTarget === "custom"
+          ? "Add a saved place"
+          : pickTarget === "share"
+            ? "Share a drive to…"
+            : null;
   const showPredictions = predictions.length > 0;
   const showHistory = !picking && !query.trim() && predictions.length === 0 && history.length > 0 && activeCategory === null;
   const showSavedList = activeCategory === "saved" && !picking && !query.trim();
@@ -490,6 +537,19 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
                   <Text style={styles.quickActionText}>Drive to friends & family</Text>
                 </Pressable>
               )}
+
+              {!query.trim() && activeCategory === null && (
+                <Pressable
+                  style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
+                  onPress={() => {
+                    setPickTarget("share");
+                    if (ref && typeof ref !== "function") ref.current?.expandHalf();
+                  }}
+                >
+                  <Ionicons name="share-outline" size={18} color={colors.accent} />
+                  <Text style={styles.quickActionText}>Share drive</Text>
+                </Pressable>
+              )}
             </>
           )}
 
@@ -603,6 +663,49 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
         )}
       </View>
     </ThreeSnapBottomSheet>
+
+    <Modal visible={!!namingPlace} transparent animationType="fade" onRequestClose={cancelNamingPlace}>
+      <View style={styles.nameModalOverlay}>
+        <View style={styles.nameModalCard}>
+          <Text style={styles.nameModalTitle}>Name this place</Text>
+          {!!namingPlace?.address && (
+            <Text style={styles.nameModalAddress} numberOfLines={2}>
+              {namingPlace.address}
+            </Text>
+          )}
+          <TextInput
+            value={placeName}
+            onChangeText={setPlaceName}
+            placeholder="e.g. Mum's, Gym, School"
+            placeholderTextColor={colors.textFaint}
+            style={styles.nameModalInput}
+            maxLength={40}
+            autoFocus
+            selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={confirmNamedPlace}
+          />
+          <View style={styles.nameModalActions}>
+            <Pressable
+              style={({ pressed }) => [styles.nameModalButton, pressed && { opacity: pressedOpacity }]}
+              onPress={cancelNamingPlace}
+            >
+              <Text style={styles.nameModalButtonTextMuted}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.nameModalButton,
+                styles.nameModalButtonPrimary,
+                pressed && { opacity: pressedOpacity },
+              ]}
+              onPress={confirmNamedPlace}
+            >
+              <Text style={styles.nameModalButtonTextPrimary}>Save</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
 
     <Modal
       visible={contactsPickerOpen}
@@ -819,6 +922,30 @@ const styles = StyleSheet.create({
   predictionDistance: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
   primaryText: { flexShrink: 1, fontSize: 15, color: colors.text, fontWeight: "600" },
   secondaryText: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  nameModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+  },
+  nameModalCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
+  nameModalTitle: { fontSize: 18, fontWeight: "800", color: colors.text },
+  nameModalAddress: { fontSize: 13, color: colors.textMuted },
+  nameModalInput: {
+    fontSize: 16,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  nameModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm, marginTop: spacing.sm },
+  nameModalButton: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.md },
+  nameModalButtonPrimary: { backgroundColor: colors.accent },
+  nameModalButtonTextMuted: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
+  nameModalButtonTextPrimary: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   contactsModal: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   contactsModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   contactsModalTitle: { fontSize: 20, fontWeight: "800", color: colors.text },

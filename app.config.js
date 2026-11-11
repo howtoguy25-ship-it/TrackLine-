@@ -16,6 +16,9 @@ module.exports = {
   expo: {
     name: "TrackLine",
     slug: "trackline",
+    // Lets a shared "drive to this place" link open the app straight onto that destination
+    // (trackline://drive?... -- see src/services/driveLink.ts). Takes effect in the next build.
+    scheme: "trackline",
     // The user-facing marketing version (CFBundleShortVersionString) -- separate from the
     // internal build number, which EAS auto-increments remotely on every submit
     // (eas.json's appVersionSource: "remote" + production.autoIncrement) and never lives here.

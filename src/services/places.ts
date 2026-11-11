@@ -317,6 +317,10 @@ export interface NearbyPlace {
   // embedded), or null when Google has no photo for this place -- never a placeholder image.
   photoUrl: string | null;
   distanceMeters: number;
+  // The place's own raw OpenStreetMap tags, when it came from OSM (fuel/food/hotel/parking
+  // lists). Lets a list read real per-place details the fixed fields above have no slot for --
+  // e.g. the parking sheet's free/covered/accessible filters (services/parkingFilters.ts).
+  osmTags?: Record<string, string>;
 }
 
 function nearbyPlacePhotoUrl(photoReference: string | undefined): string | null {
