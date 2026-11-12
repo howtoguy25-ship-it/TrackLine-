@@ -784,3 +784,40 @@ $ npx expo export --platform ios  iOS Bundled (2753 modules), exit 0
   format as Mapbox Directions minus banner/voice instructions, recorded because this environment
   has no Mapbox token. Settings › Developer has "M4 Silverwater exit (taken)" and "(missed)".
 - After a reroute the camera stays in the follow view (it no longer zooms out to the whole route).
+
+
+## School zones and speed limits -- data sources (branch `school-zones`)
+
+Rule: real data only. Where nothing official (or mapped) says there is a school zone, there is no
+school-zone alert and the normal posted limit is shown. Checked 2026-11-12.
+
+### Australia
+
+| State | Road school zones (locations + hours) | Licence | School terms / holidays | Status |
+|---|---|---|---|---|
+| NSW | **Transport for NSW "Speed Zones" dataset, School Zones data** (3,302 zones: polygon, speed 40/30 km/h, AM/PM hours per zone, direction, school name, operating calendar = 2026 term dates; regenerated weekly, last 2026-11-06). The older "School Zone Timetables" dataset is frozen (2021) -- not used. | CC BY 4.0 | Term dates are inside the zone data (`OP_CAL`; late-opening schools start a week later). Public holidays: TfNSW "School and public holidays" dataset (NSW Public Holiday Guide 2024-2026, from industrialrelations.nsw.gov.au). TfNSW: zones apply on all days that are not a weekend, a public holiday or a notified government-school holiday, "even if the associated school does not". | **Official -- implemented** |
+| QLD | TMR "Installed Flashing School Zone Signs" (sign locations only, no zone extent or hours) | CC BY 4.0 | not found as open data | Partial: sign points only; zone hours need a verified TMR rule row (TMR site blocks automated access -- not yet verified) |
+| VIC | None found as road speed zones. The "Victorian Government School Zones 20xx" datasets are school ENROLMENT catchments, not road zones -- must not be used. | -- | -- | OSM only (`maxspeed:conditional`) |
+| SA | None. "School Zones for SA Government Schools" are enrolment catchments, not road zones. | -- | -- | OSM only |
+| WA, TAS, ACT, NT | None found in data.gov.au or the state portals. | -- | -- | OSM only |
+
+### Other countries (to research next; nothing assumed)
+
+NZ (NZTA National Speed Limit Register -- includes school-zone variable limits), UK (20 mph
+zones are permanent limits, not timed school zones; local "school streets" are council orders),
+US states (each state DOT; many rely on flashing beacons "when flashing"), Canada (provincial),
+EU countries (mostly permanent 30 km/h). Until an official source or OSM data covers a zone,
+it is not shown.
+
+### Fallback rule table (`src/data/schoolZoneRules.json`)
+
+Only rows verified against an official source: currently **NSW only**. QLD, VIC, WA, SA, TAS, ACT,
+NT, NZ rows are deliberately absent until each is checked against the official road authority
+(their pages block this environment's automated fetches -- to verify by hand or via the
+web-fetch tool).
+
+### Calendars
+
+NSW 2026 calendar: from the official data above. 2027 terms appear in the TfNSW data when it is
+regenerated (weekly); if a region's calendar is missing for today, a zone follows its posted
+hours on weekdays and is marked "calendar unknown" here -- never silently treated as a holiday.
