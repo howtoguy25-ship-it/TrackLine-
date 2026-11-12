@@ -9,6 +9,7 @@ import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/se
 import { routeToReplayPoints } from "@/dev/simulateDrive";
 import {
   APPROACH_CAMERA,
+  APPROACH_GIVE_UP_MS,
   CHIP_MS,
   INITIAL_APPROACH,
   RESTORE_FAST_MS,
@@ -16,6 +17,7 @@ import {
   distanceToLineMeters,
   kindOfStep,
   manoeuvreHighlight,
+  metersPastSplit,
   reduceApproach,
   type ApproachEffect,
   type ApproachState,
@@ -53,7 +55,7 @@ describe("trigger distances", () => {
 });
 
 describe("the state machine never gets stuck zoomed in", () => {
-  const approaching: ApproachState = { ...INITIAL_APPROACH, phase: "approach", stepIndex: 3, enteredAtMs: 0 };
+  const approaching: ApproachState = { ...INITIAL_APPROACH, phase: "approach", zoomed: true, stepIndex: 3, enteredAtMs: 0 };
   for (const type of ["panned", "rerouted", "rerouteFailed", "arrived", "routeChanged"] as const) {
     it(`${type} -> normal, with the camera restored`, () => {
       const { state, effects } = reduceApproach(approaching, { type });
@@ -64,6 +66,32 @@ describe("the state machine never gets stuck zoomed in", () => {
   it("in normal, outside events do nothing", () => {
     expect(reduceApproach(INITIAL_APPROACH, { type: "panned" }).effects).toEqual([]);
   });
+  it("gives the camera back after 3 minutes with nothing resolved (parked at the exit)", () => {
+    const nav = parseMapboxResponse(taken)[0];
+    const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
+    const at = nav.steps[i].polyline[0];
+    const tick = (nowMs: number) =>
+      reduceApproach(
+        { ...approaching, stepIndex: i },
+        { type: "tick", nowMs, position: at, speedKmh: 0, activeStepIndex: i, steps: nav.steps, metersToManoeuvre: nav.steps[i].distanceMeters, offRouteMeters: 0 }
+      );
+    expect(tick(APPROACH_GIVE_UP_MS - 1000).state.phase).toBe("approach");
+    const { state, effects } = tick(APPROACH_GIVE_UP_MS + 1000);
+    expect(state.phase).toBe("normal");
+    expect(effects).toEqual([{ kind: "restore", durationMs: RESTORE_MS }]);
+  });
+});
+
+describe("past the split is measured along the route", () => {
+  const nav = parseMapboxResponse(taken)[0];
+  const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
+  it("negative before the split, about zero at it, positive after", () => {
+    const before = nav.steps[i].polyline[Math.floor(nav.steps[i].polyline.length / 2)];
+    expect(metersPastSplit(before, nav.steps, i)).toBeLessThan(-20);
+    expect(Math.abs(metersPastSplit(nav.steps[i].endLocation, nav.steps, i))).toBeLessThan(2);
+    const after = nav.steps[i + 1].polyline[nav.steps[i + 1].polyline.length - 1];
+    expect(metersPastSplit(after, nav.steps, i)).toBeGreaterThan(20);
+  });
 });
 
 /** Drives a recorded track while navigating `nav`, feeding the machine once a second. */
@@ -71,7 +99,7 @@ function drive(nav: Route, track: Route, speedKmh: number) {
   const points = routeToReplayPoints(track.polyline, speedKmh, 1000);
   const guidance = createGuidanceState();
   let state: ApproachState = INITIAL_APPROACH;
-  const log: { t: number; phase: string; effect: ApproachEffect }[] = [];
+  const log: { t: number; phase: string; stepIndex: number | null; effect: ApproachEffect }[] = [];
   for (const p of points) {
     const position = { latitude: p.latitude, longitude: p.longitude };
     const g = evaluateGuidance(guidance, nav.steps, position.latitude, position.longitude, []);
@@ -87,16 +115,16 @@ function drive(nav: Route, track: Route, speedKmh: number) {
       offRouteMeters: distanceToLineMeters(position, nav.polyline),
     });
     state = out.state;
-    for (const effect of out.effects) log.push({ t: p.elapsedMs, phase: state.phase, effect });
+    for (const effect of out.effects) log.push({ t: p.elapsedMs, phase: state.phase, stepIndex: state.stepIndex, effect });
     if (out.effects.some((e) => e.kind === "missed")) {
       // MapScreen would reroute now; the new route arriving ends the episode.
       const r = reduceApproach(state, { type: "rerouted" });
       state = r.state;
-      for (const effect of r.effects) log.push({ t: p.elapsedMs, phase: state.phase, effect });
+      for (const effect of r.effects) log.push({ t: p.elapsedMs, phase: state.phase, stepIndex: state.stepIndex, effect });
       break;
     }
   }
-  return log;
+  return Object.assign(log, { finalPhase: state.phase });
 }
 
 describe("real drive: M4 eastbound, Silverwater Road exit", () => {
@@ -110,11 +138,13 @@ describe("real drive: M4 eastbound, Silverwater Road exit", () => {
     const zoom = exitEvents.find((l) => l.effect.kind === "zoomIn" && l.effect.stepIndex === exitIndex);
     expect(zoom).toBeTruthy();
     const confirmed = exitEvents.find((l) => l.t > zoom!.t && l.effect.kind === "confirmed");
-    expect(confirmed?.effect).toEqual({ kind: "confirmed", text: "Exit taken ✓" });
+    expect(confirmed?.effect).toEqual({ kind: "confirmed", stepIndex: exitIndex, text: "Exit taken ✓" });
     const restore = exitEvents.find((l) => l.t > confirmed!.t && l.effect.kind === "restore");
     expect(restore?.effect).toEqual({ kind: "restore", durationMs: RESTORE_MS });
-    // The chip shows for 2 s before the camera eases back.
-    expect(restore!.t - confirmed!.t).toBeGreaterThanOrEqual(CHIP_MS);
+    // The camera eases back after the 2 s chip -- or earlier only because the next turn (the
+    // right onto Old Hill Link, just after the ramp) is already being followed.
+    const nextFollowed = exitEvents.some((l) => l.t === restore!.t && l.stepIndex !== null && l.stepIndex > exitIndex);
+    expect(restore!.t - confirmed!.t >= CHIP_MS || nextFollowed).toBe(true);
     // Zoomed in no later than 400 m (100 km/h covers ~28 m a second).
     expect(log.some((l) => l.effect.kind === "missed")).toBe(false);
   });
@@ -133,7 +163,7 @@ describe("real drive: M4 eastbound, Silverwater Road exit", () => {
     expect(missedAt).toBeGreaterThan(zoomAt);
     expect(log[missedAt - 1].effect).toEqual({ kind: "restore", durationMs: RESTORE_FAST_MS });
     expect(kinds.slice(zoomAt, missedAt)).not.toContain("confirmed");
-    expect(log[log.length - 1].phase).toBe("normal");
+    expect(log.finalPhase).toBe("normal");
   });
 
   it("the approach view is z18 (Mapbox), 60° pitch, 1.2 s", () => {

@@ -1320,7 +1320,7 @@ export function MapScreen() {
     // follow-tilt is first entered (toggleFollowTilt/enterOverviewMode below) -- after that, only
     // center/heading keep tracking live position/direction of travel.
     // During the approach view the camera sits a little ahead, so the split and the lanes show.
-    const approaching = approachRef.current.phase === "approach" && approachRef.current.stepIndex !== null;
+    const approaching = approachRef.current.phase === "approach" && approachRef.current.zoomed && approachRef.current.stepIndex !== null;
     const split = approaching ? route.steps[approachRef.current.stepIndex!]?.endLocation : null;
     mapRef.current?.animateCamera({ center: split ? approachCenter(currentLatLng, split) : currentLatLng, heading }, { duration: 600 });
   }, [route, followTilt, currentLatLng, heading, detectionOpen, placingAlert]);
@@ -1414,7 +1414,7 @@ export function MapScreen() {
       const before = approachRef.current;
       const { state, effects } = reduceApproach(before, event);
       approachRef.current = state;
-      if (state.phase !== before.phase || state.stepIndex !== before.stepIndex) setApproach(state);
+      if (state.phase !== before.phase || state.stepIndex !== before.stepIndex || state.zoomed !== before.zoomed) setApproach(state);
       const cam = approachCameraRef.current;
       for (const effect of effects) {
         if (effect.kind === "zoomIn") {
@@ -1493,10 +1493,11 @@ export function MapScreen() {
     []
   );
 
-  const approachStep = approach.phase === "approach" && approach.stepIndex !== null ? route?.steps[approach.stepIndex] ?? null : null;
+  const approachStep =
+    approach.phase === "approach" && approach.zoomed && approach.stepIndex !== null ? route?.steps[approach.stepIndex] ?? null : null;
   const approachKind = approachStep ? kindOfStep(approachStep) : undefined;
   // The green "keep left / right" exit banner stays for exits with no lane data.
-  const exitZoomActive = approach.phase === "approach";
+  const exitZoomActive = approach.phase === "approach" && approach.zoomed;
   const exitZoomDirection: "left" | "right" | null =
     approachStep && (approachKind === "exit" || approachKind === "fork")
       ? approachStep.maneuverSide ?? ((approachStep.maneuver ?? "").includes("left") ? "left" : "right")
@@ -1504,7 +1505,7 @@ export function MapScreen() {
   // On the map during the approach: the road through the split, the road taken, the label.
   // Non-essential pins (venues, other drivers) are hidden meanwhile; reports stay.
   const approachDrawing = useMemo(() => {
-    if (!route || approach.phase !== "approach" || approach.stepIndex === null) return null;
+    if (!route || approach.phase !== "approach" || !approach.zoomed || approach.stepIndex === null) return null;
     const highlight = manoeuvreHighlight(route.steps, approach.stepIndex);
     if (!highlight) return null;
     const step = route.steps[approach.stepIndex];

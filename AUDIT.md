@@ -559,3 +559,30 @@ the real `MapScreen`). On-device confirmation is the `TEST_ON_PHONE.md` checklis
 | Missed: ease back, "Rerouting…", Mapbox reroute (traffic, Avoid, no U-turn), "Rerouting" + new instruction, ~2 s, duplicates cancelled | YES | approach "missing the exit…"; `mapboxReroute` (2.5 s timeout), `pickReroute`, reroute abort; routing "a new reroute cancels…" |
 | Never stuck zoomed in | YES | approach "never gets stuck" tests (pan, reroute, failure, arrival, new route) |
 | Two recorded Sydney test drives (taken / missed) | YES | `src/dev/testRoutes/*.json`, `src/dev/testDrives.ts`, Settings › Developer |
+
+
+### 14a. Every turn and exit tracked, taken vs missed, on five real routes
+
+Every manoeuvre the driver can get wrong -- exits, on-ramps, merges, forks, roundabouts, lane
+changes, complex turns AND plain turns -- is followed through to "taken" (green chip + chime) or
+"missed" (camera back, "Rerouting…", Mapbox reroute). Only the first group also zooms in.
+Proof: `__tests__/nav/allManoeuvres.test.ts`, five real Sydney routes recorded from OSRM /
+OpenStreetMap (`scripts/record-osrm-test-routes.mjs`), each driven at its recorded speeds:
+
+| Route | Driven as planned: taken | Real straight-on road: missed | Leaving the route at the split: missed |
+|---|---|---|---|
+| M4 Silverwater | 10/10 | 4/4 | 7/7 |
+| M5 Marsh St (tunnel, exits, roundabouts) | 18/18 | 4/4 | 10/10 |
+| CBD Central → Circular Quay | 14/14 | 3/3 | 9/9 |
+| Parramatta local | 8/8 | 2/2 | 7/7 |
+| Castle Hill roundabouts | 10/10 | 7/7 | 7/7 |
+
+No manoeuvre is ever "taken" on a drive that missed it, and none is "missed" on a drive that took
+it. Not every manoeuvre has a missable alternative: at a merge the lanes join, a roundabout's
+straight-ahead exit IS the route, and some OSRM straight-on roads rejoin the route; those are
+counted separately in the test output, not faked.
+
+Fixed on the way (each a real bug found by these drives): guidance moves to the next step ~35 m
+before each split, so "past the split" is now measured along the route, not by step index; a run
+of 20-30 m steps no longer skips or wrongly confirms a turn; slow roundabouts (15-20 km/h) are no
+longer abandoned by a 45 s timer (now 3 min, for parked/jammed only).

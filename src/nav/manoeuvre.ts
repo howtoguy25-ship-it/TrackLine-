@@ -28,6 +28,16 @@ export const ZOOM_KINDS: ReadonlySet<ManoeuvreKind> = new Set<ManoeuvreKind>([
   "complex",
 ]);
 
+/**
+ * Every manoeuvre the driver can get right or wrong -- each one is followed through to "taken"
+ * (chip) or "missed" (reroute). Only ZOOM_KINDS also get the close-up approach view.
+ */
+export const TRACK_KINDS: ReadonlySet<ManoeuvreKind> = new Set<ManoeuvreKind>([...ZOOM_KINDS, "turn"]);
+
+export function shouldTrack(kind: ManoeuvreKind | undefined): boolean {
+  return !!kind && TRACK_KINDS.has(kind);
+}
+
 /** Mapbox / OSRM maneuver type + modifier -> the app's ManeuverType code. */
 export function maneuverTypeFor(type: string, modifier: string | undefined, drivingSide: "left" | "right" = "left"): ManeuverType {
   const m = modifier ?? "";

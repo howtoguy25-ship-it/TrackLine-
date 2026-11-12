@@ -212,6 +212,9 @@ Needs the Mapbox token in the build. Do these as a passenger, or note what you s
 - [ ] Real drive: miss an exit on purpose where safe. Rerouting starts within a few seconds and the new route arrives in about 2 s.
 - [ ] Pan the map during an approach: the zoom stops and doesn't come back until the next manoeuvre.
 - [ ] Turn instructions now name the turn that's coming (not the one you've just done), with the right distance.
+- [ ] Every ordinary turn is followed too (no zoom for plain turns): make a city turn as told and a green "Turn complete ✓" shows; at a roundabout, "Roundabout done ✓".
+- [ ] Miss an ordinary city turn on purpose (go straight where it says turn): "Rerouting…" within a few seconds, then the new route. It must never say "Turn complete ✓" for a turn you didn't make.
+- [ ] Slow traffic through a run of roundabouts: each one still gets its chip (the approach waits up to 3 min, not 45 s).
 
 ## If something doesn't match this
 
