@@ -39,6 +39,7 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 import { ALL_ALERT_TYPES, type AppSettings, type VisibilityMode } from "@/services/settings";
 import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
 import { TouchDebuggerRow } from "@/debug/TouchDebuggerRow";
+import { getBuildStamp } from "@/config/getBuildStamp";
 import { CATEGORY_SECTIONS } from "@/screens/settingsCategories";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
@@ -1249,6 +1250,9 @@ export function SettingsScreen() {
           etc) -- see src/dev/gpsReplay.ts's own header for why nothing is bundled here. */}
       {__DEV__ && (
         <Section title="Touch debugger (dev only)" visible={shouldShow("Touch debugger (dev only)")}>
+          <Text style={styles.helperText} selectable>
+            Running: {getBuildStamp()}
+          </Text>
           <TouchDebuggerRow />
         </Section>
       )}
@@ -1677,6 +1681,11 @@ export function SettingsScreen() {
         <Text style={styles.aboutVersion}>
           Version {Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "1.0.0"}
           {Application.nativeBuildVersion ? ` (build ${Application.nativeBuildVersion})` : ""}
+        </Text>
+        {/* Exactly which code is running: version, git commit, build date (and where the
+            JavaScript came from). See config/buildStamp.ts. */}
+        <Text style={styles.aboutMeta} selectable testID="build-stamp">
+          Build {getBuildStamp()}
         </Text>
         {BUSINESS_INFO.businessName ? (
           <Text style={styles.aboutMeta}>{BUSINESS_INFO.businessName}</Text>

@@ -10,3 +10,6 @@ jest.mock("react-native-google-mobile-ads", () => ({
   BannerAd: () => null,
   BannerAdSize: { BANNER: "BANNER" },
 }));
+jest.mock("@react-native-async-storage/async-storage", () =>
+  require("@react-native-async-storage/async-storage/jest/async-storage-mock")
+);

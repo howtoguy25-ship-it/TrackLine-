@@ -58,7 +58,7 @@ import { AlertStillHereCard } from "@/components/AlertStillHereCard";
 import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
 import { AlertBanner } from "@/components/AlertBanner";
 import { NearbyAlertToast, type NearbyAlertNotification } from "@/components/NearbyAlertToast";
-import { BannerAdBar, BANNER_HEIGHT } from "@/components/BannerAdBar";
+import { BannerAdBar, BANNER_HEIGHT, shouldShowBanner } from "@/components/BannerAdBar";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { AlertReportSheet } from "@/screens/AlertReportSheet";
 import { AlertDetailSheet } from "@/screens/AlertDetailSheet";
@@ -1088,7 +1088,7 @@ export function MapScreen() {
   // the bottom safe area -- so the map view is that much shorter than the screen.
   // Hidden on the route-selection screen and during navigation (as asked), and on the place
   // page, whose own sheet and "View routes" button take the whole bottom of the screen.
-  const bannerShown = !route && !pendingDestination && !placePage;
+  const bannerShown = shouldShowBanner({ navigating: !!route, choosingRoute: !!pendingDestination, placePageOpen: !!placePage });
   const bannerAreaHeight = bannerShown ? BANNER_HEIGHT + insets.bottom : 0;
   const mapAreaHeight = windowHeight - bannerAreaHeight;
   const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, WHERE_TO_SNAP_FRACTIONS);
@@ -5248,7 +5248,7 @@ export function MapScreen() {
           !route is true until navigation starts) -- this was never actually excluded by the
           build 24 AppOpenAdManager-only test, so that test wasn't a clean isolation of ads as
           a whole. Disabling this too for a real one. */}
-      {!route && !pendingDestination && (
+      {bannerShown && (
         <AdsErrorBoundary>
           <BannerAdBar />
         </AdsErrorBoundary>

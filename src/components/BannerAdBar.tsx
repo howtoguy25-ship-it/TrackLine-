@@ -19,13 +19,24 @@ import { Sentry } from "@/services/sentry";
 // map. (This used to be a "large anchored adaptive" banner, which grew to 90pt+ on wide phones.)
 export const BANNER_HEIGHT = 50;
 
+/**
+ * Whether the ad banner shows: on the plain home map only -- not during navigation, not on route
+ * selection, not on the place page (whose own sheet and "View routes" button fill the bottom).
+ * The map screen uses this one rule both to draw the banner and to size the map above it.
+ */
+export function shouldShowBanner(state: { navigating: boolean; choosingRoute: boolean; placePageOpen: boolean }): boolean {
+  return !state.navigating && !state.choosingRoute && !state.placePageOpen;
+}
+
 export function BannerAdBar() {
   const insets = useSafeAreaInsets();
   return (
     // White, and padded by the bottom safe area, so the banner sits inside it with the sheet's
     // own white running straight down to the screen edge -- no dark strip under the ad, and
     // nothing behind the home indicator but white.
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    // Sits directly on the bottom safe-area edge: the only space under the 50pt banner is the
+    // safe-area inset itself, filled white like the sheet above it (no dark strip).
+    <View testID="ad-bar" style={[styles.container, { paddingBottom: insets.bottom }]}>
       <View style={styles.slot}>
         <BannerAd
           unitId={env.ads.bannerUnitId}

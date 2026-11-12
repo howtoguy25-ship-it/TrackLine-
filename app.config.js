@@ -12,6 +12,19 @@ const googleSigninPlugins = process.env.GOOGLE_IOS_URL_SCHEME
   : [];
 
 /** @type {import('@expo/config-types').ExpoConfig} */
+// Which code this build (or this dev-server session) is running, shown in Settings > About so
+// it can be checked on the phone. EAS sets EAS_BUILD_GIT_COMMIT_HASH on its build machines;
+// anywhere else (a computer running `npx expo start`) it's read from git directly.
+function gitShortHash() {
+  if (process.env.EAS_BUILD_GIT_COMMIT_HASH) return process.env.EAS_BUILD_GIT_COMMIT_HASH.slice(0, 7);
+  try {
+    return require("child_process").execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
+const BUILD_STAMP = { commit: gitShortHash(), builtAt: new Date().toISOString() };
+
 module.exports = {
   expo: {
     name: "TrackLine",
@@ -355,6 +368,7 @@ module.exports = {
       // Read at runtime by the Mapbox map (src/map-v2/mapbox.ts). EXPO_PUBLIC_MAPBOX_TOKEN first;
       // MAPBOX_PUBLIC_TOKEN is the name already stored in EAS.
       mapboxPublicToken: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN,
+      buildStamp: BUILD_STAMP,
       // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
       // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
       // false (never fabricated) when this is unset, so auto-mood just skips that one signal.
