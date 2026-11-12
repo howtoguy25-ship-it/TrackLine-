@@ -6,6 +6,8 @@
 import React from "react";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { act, render, screen } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
+import { SURFACES } from "@/theme/colors";
 
 
 const mockSafeArea = { top: 47, bottom: 34, left: 0, right: 0 };
@@ -199,6 +201,47 @@ describe("home screen (the real MapScreen)", () => {
     // And only once: a later choice of satellite is left alone.
     const chosenLater = migrateStoredSettings({ ...migrated, defaultMapViewStyle: "satellite3d" }, SETTINGS_VERSION);
     expect(chosenLater.defaultMapViewStyle).toBe("satellite3d");
+  });
+});
+
+describe("dark map theme", () => {
+  beforeEach(() => {
+    mockSettingsRef.current = { ...DEFAULT_SETTINGS, mapTheme: "dark" };
+    mockMapProps.current = null;
+  });
+
+  type Node = { type: unknown; props: Record<string, unknown>; parent: Node | null; children: (Node | string)[] };
+  const flat = (n: Node) => (StyleSheet.flatten(n.props.style as never) ?? {}) as Record<string, unknown>;
+
+  it("the Where to? sheet goes dark with the map: no light surfaces or dark-on-light text left in it", async () => {
+    await renderHome();
+    // Climb from the "Home" chip to the sheet itself (the view painted the dark sheet colour).
+    let sheet = screen.getByText("Home") as unknown as Node | null;
+    while (sheet && flat(sheet).backgroundColor !== SURFACES.dark.sheet) sheet = sheet.parent;
+    expect(sheet).not.toBeNull();
+
+    const backgrounds = new Set<string>();
+    const texts = new Set<string>();
+    const walk = (n: Node | string) => {
+      if (typeof n === "string") return;
+      const st = flat(n);
+      if (typeof st.backgroundColor === "string") backgrounds.add(st.backgroundColor.toUpperCase());
+      if (typeof n.type === "string" && n.type === "Text" && typeof st.color === "string") texts.add(st.color.toUpperCase());
+      n.children.forEach(walk);
+    };
+    walk(sheet as Node);
+
+    const lightSurfaces = ["#FFFFFF", "#F1F3F7", "#F4F5F8", "#E6E8EB"];
+    expect([...backgrounds].filter((c) => lightSurfaces.includes(c))).toEqual([]);
+    const lightOnlyText = ["#1F2125", "#6B7078", "#6F747C", "#0062B8"];
+    expect([...texts].filter((c) => lightOnlyText.includes(c))).toEqual([]);
+    expect(texts.has("#FFFFFF")).toBe(true);
+  });
+
+  it("the floating map buttons turn dark grey with white icons", async () => {
+    await renderHome();
+    const menu = screen.getByLabelText("Menu") as unknown as Node;
+    expect(flat(menu).backgroundColor).toBe("#2A2C30");
   });
 });
 

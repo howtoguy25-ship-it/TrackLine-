@@ -1,4 +1,5 @@
 import { useReduceMotion } from "@/hooks/useReduceMotion";
+import { MapSurface } from "@/components/ui/Surface";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip, FloatingButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -4702,25 +4703,29 @@ export function MapScreen() {
           picker (openOriginPicker); the (X) on that view switches to this search fallback, per
           explicit request. */}
       {!route && !placingAlert && pickingOrigin && originPickerView === "search" && (
-        <DestinationSearchBar
-          biasLocation={currentLatLng ?? undefined}
-          onDestinationSelected={onOriginSearchPickedForPin}
-          placeholder="Choose starting point"
-          onCancel={cancelOriginPicker}
-          showMyLocation
-          myLocationAddress={liveAddress ?? undefined}
-        />
+        <MapSurface>
+          <DestinationSearchBar
+            biasLocation={currentLatLng ?? undefined}
+            onDestinationSelected={onOriginSearchPickedForPin}
+            placeholder="Choose starting point"
+            onCancel={cancelOriginPicker}
+            showMyLocation
+            myLocationAddress={liveAddress ?? undefined}
+          />
+        </MapSurface>
       )}
 
       {/* Same picker, the destination step that automatically follows once a start point is
           confirmed with no destination chosen yet (see confirmOriginPin). */}
       {!route && !placingAlert && pickingDestinationPoint && destinationPickerView === "search" && (
-        <DestinationSearchBar
-          biasLocation={originPinLatLng ?? currentLatLng ?? undefined}
-          onDestinationSelected={onDestinationSearchPickedForPin}
-          placeholder="Choose destination"
-          onCancel={cancelDestinationPicker}
-        />
+        <MapSurface>
+          <DestinationSearchBar
+            biasLocation={originPinLatLng ?? currentLatLng ?? undefined}
+            onDestinationSelected={onDestinationSearchPickedForPin}
+            placeholder="Choose destination"
+            onCancel={cancelDestinationPicker}
+          />
+        </MapSurface>
       )}
 
       {!route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && (
@@ -4730,107 +4735,121 @@ export function MapScreen() {
         // rather than unmount/remount whenever a category chip opens Restaurants/Hotels/Fuel/
         // Parking on top of it (see onFindRestaurants/onFindHotels/onFindPetrol/onFindParking's
         // own whereToSheetRef.collapse() calls above).
-        <WhereToSheet
-          ref={whereToSheetRef}
-          biasLocation={routeOriginLatLng ?? undefined}
-          onDestinationSelected={onDestinationSelected}
-          onFindNearestStation={onFindNearestStation}
-          findingNearestStation={findingNearestStation}
-          onFindRestaurants={onFindRestaurants}
-          onFindHotels={onFindHotels}
-          onFindPetrol={onFindPetrol}
-          onFindParking={onFindParking}
-          bottomInset={bannerAreaHeight}
-          visibleHeight={sheetVisibleHeight}
-          onSheetChange={setWhereToSheetIndex}
-          onPlaceChosen={onPlaceChosen}
-        />
+        <MapSurface>
+          <WhereToSheet
+            ref={whereToSheetRef}
+            biasLocation={routeOriginLatLng ?? undefined}
+            onDestinationSelected={onDestinationSelected}
+            onFindNearestStation={onFindNearestStation}
+            findingNearestStation={findingNearestStation}
+            onFindRestaurants={onFindRestaurants}
+            onFindHotels={onFindHotels}
+            onFindPetrol={onFindPetrol}
+            onFindParking={onFindParking}
+            bottomInset={bannerAreaHeight}
+            visibleHeight={sheetVisibleHeight}
+            onSheetChange={setWhereToSheetIndex}
+            onPlaceChosen={onPlaceChosen}
+          />
+        </MapSurface>
       )}
 
       {placePage && !route && !pendingDestination && (
-        <PlacePage
-          place={placePage}
-          origin={currentLatLng}
-          onBack={() => {
-            closePlacePage();
-            whereToSheetRef.current?.openSearch();
-          }}
-          onClose={closePlacePage}
-          onViewRoutes={(place) => {
-            setPlacePage(null);
-            onDestinationSelected(place);
-          }}
-          onSeeMoreParking={(place) => {
-            setParkingCenter(place.location);
-            onFindParking();
-          }}
-          onPlanDrive={(place) => {
-            closePlacePage();
-            navigation.navigate("PlanADrive", { initialDestination: place });
-          }}
-        />
+        <MapSurface>
+          <PlacePage
+            place={placePage}
+            origin={currentLatLng}
+            onBack={() => {
+              closePlacePage();
+              whereToSheetRef.current?.openSearch();
+            }}
+            onClose={closePlacePage}
+            onViewRoutes={(place) => {
+              setPlacePage(null);
+              onDestinationSelected(place);
+            }}
+            onSeeMoreParking={(place) => {
+              setParkingCenter(place.location);
+              onFindParking();
+            }}
+            onPlanDrive={(place) => {
+              closePlacePage();
+              navigation.navigate("PlanADrive", { initialDestination: place });
+            }}
+          />
+        </MapSurface>
       )}
 
       {!route && pendingDestination && pickingStop && !pickingOrigin && (
-        <DestinationSearchBar
-          biasLocation={currentLatLng ?? undefined}
-          onDestinationSelected={onStopSelected}
-          placeholder="Add a stop on the way"
-          onCancel={() => setPickingStop(false)}
-        />
+        <MapSurface>
+          <DestinationSearchBar
+            biasLocation={currentLatLng ?? undefined}
+            onDestinationSelected={onStopSelected}
+            placeholder="Add a stop on the way"
+            onCancel={() => setPickingStop(false)}
+          />
+        </MapSurface>
       )}
 
       {inRouteSelection && pendingDestination && (
         <>
-          <RouteSelectionTopCard
-            originLabel={routeOriginLabel}
-            destinationLabel={pendingDestination.name}
-            onBack={cancelRouteOptions}
-            onEditOrigin={openOriginPicker}
-            onEditDestination={editDestinationFromRouteSelection}
-            onSwap={onSwapOriginDestination}
-            avoidLabel={avoidPillLabel(settings.routeAvoid)}
-            avoidActive={avoidCount(settings.routeAvoid) > 0}
-            onOpenAvoid={() => setAvoidSheetOpen(true)}
-            travelMode={travelMode}
-            onOpenMode={() => setModeSheetOpen(true)}
-            onHeightChange={setRouteTopCardBottom}
-          />
-          <RouteSelectionSheet
-            rows={selectionRows}
-            selectedIndex={selectionIndex}
-            onSelect={onSelectRouteRow}
-            loading={loadingRouteOptions}
-            errorText={routeOptionsError}
-            loadingText={
-              travelMode === "driving"
-                ? "Finding the best routes…"
-                : `Finding a ${TRAVEL_MODE_LABELS[travelMode].toLowerCase()} route…`
-            }
-            onLeaveLater={travelMode === "driving" ? leaveLaterFromRouteSelection : undefined}
-            onGoNow={goNowFromRouteSelection}
-            countdownRunning={autoGoRunning && travelMode === "driving" && !reduceMotion}
-            onCountdownDone={goNowFromRouteSelection}
-            onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
-            hasStop={!!stopLocation}
-            onCollapsedHeightChange={setRouteSheetHeight}
-          />
-          <AvoidSheet
-            visible={avoidSheetOpen}
-            prefs={settings.routeAvoid}
-            onToggle={onToggleAvoid}
-            onClose={() => setAvoidSheetOpen(false)}
-            note={routeAvoidNote}
-          />
-          <TravelModeSheet
-            visible={modeSheetOpen}
-            mode={travelMode}
-            onSelect={(mode) => {
-              setModeSheetOpen(false);
-              onSelectTravelMode(mode);
-            }}
-            onClose={() => setModeSheetOpen(false)}
-          />
+          <MapSurface>
+            <RouteSelectionTopCard
+              originLabel={routeOriginLabel}
+              destinationLabel={pendingDestination.name}
+              onBack={cancelRouteOptions}
+              onEditOrigin={openOriginPicker}
+              onEditDestination={editDestinationFromRouteSelection}
+              onSwap={onSwapOriginDestination}
+              avoidLabel={avoidPillLabel(settings.routeAvoid)}
+              avoidActive={avoidCount(settings.routeAvoid) > 0}
+              onOpenAvoid={() => setAvoidSheetOpen(true)}
+              travelMode={travelMode}
+              onOpenMode={() => setModeSheetOpen(true)}
+              onHeightChange={setRouteTopCardBottom}
+            />
+          </MapSurface>
+          <MapSurface>
+            <RouteSelectionSheet
+              rows={selectionRows}
+              selectedIndex={selectionIndex}
+              onSelect={onSelectRouteRow}
+              loading={loadingRouteOptions}
+              errorText={routeOptionsError}
+              loadingText={
+                travelMode === "driving"
+                  ? "Finding the best routes…"
+                  : `Finding a ${TRAVEL_MODE_LABELS[travelMode].toLowerCase()} route…`
+              }
+              onLeaveLater={travelMode === "driving" ? leaveLaterFromRouteSelection : undefined}
+              onGoNow={goNowFromRouteSelection}
+              countdownRunning={autoGoRunning && travelMode === "driving" && !reduceMotion}
+              onCountdownDone={goNowFromRouteSelection}
+              onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
+              hasStop={!!stopLocation}
+              onCollapsedHeightChange={setRouteSheetHeight}
+            />
+          </MapSurface>
+          <MapSurface>
+            <AvoidSheet
+              visible={avoidSheetOpen}
+              prefs={settings.routeAvoid}
+              onToggle={onToggleAvoid}
+              onClose={() => setAvoidSheetOpen(false)}
+              note={routeAvoidNote}
+            />
+          </MapSurface>
+          <MapSurface>
+            <TravelModeSheet
+              visible={modeSheetOpen}
+              mode={travelMode}
+              onSelect={(mode) => {
+                setModeSheetOpen(false);
+                onSelectTravelMode(mode);
+              }}
+              onClose={() => setModeSheetOpen(false)}
+            />
+          </MapSurface>
         </>
       )}
 
@@ -4920,13 +4939,15 @@ export function MapScreen() {
           Shown only while the map is actually following the driver -- once they pan away the
           arrow is no longer above it, so a pill there would be labelling empty road. */}
       {isHomeIdle && !anySheetOpen && !pannedAwayIdle && (
-        <StreetPill
-          streetName={currentRoadName}
-          reportsAround={reportsAround}
-          stationary={stationary}
-          top={homeArrowY + 30 * uiScale}
-          scale={uiScale}
-        />
+        <MapSurface>
+          <StreetPill
+            streetName={currentRoadName}
+            reportsAround={reportsAround}
+            stationary={stationary}
+            top={homeArrowY + 30 * uiScale}
+            scale={uiScale}
+          />
+        </MapSurface>
       )}
 
       {/* Real, explicit request: a dedicated exit-lane guidance bar, shown only during the
@@ -4950,12 +4971,14 @@ export function MapScreen() {
           route line, puck, and live GPS tracking underneath keep running the whole time this is
           open instead of the screen dropping back to a bare map with no navigation context. */}
       {route && addingStopDuringNav && (
-        <DestinationSearchBar
-          biasLocation={currentLatLng ?? undefined}
-          onDestinationSelected={onStopSelectedDuringNav}
-          placeholder="Add a stop on the way"
-          onCancel={() => setAddingStopDuringNav(false)}
-        />
+        <MapSurface>
+          <DestinationSearchBar
+            biasLocation={currentLatLng ?? undefined}
+            onDestinationSelected={onStopSelectedDuringNav}
+            placeholder="Add a stop on the way"
+            onCancel={() => setAddingStopDuringNav(false)}
+          />
+        </MapSurface>
       )}
 
       {/* Confirm/back bar for the green add-stop preview above -- Back discards it and returns

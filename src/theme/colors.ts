@@ -36,8 +36,8 @@ export const RED = "#E5484D";
 /** Red for text on white or on the pale red fill (6.3:1 / 5.5:1; 4.8:1 on that fill pressed). */
 export const RED_TEXT = "#B8262B";
 export const RED_SOFT = "#FDECEC";
-/** Red text on dark surfaces (5.3:1 on #26282C). */
-export const RED_TEXT_DARK = "#FF6B6F";
+/** Red text on dark surfaces (5.9:1 on #26282C, 4.9:1 on #33363B). */
+export const RED_TEXT_DARK = "#FF7A7D";
 export const RED_SOFT_DARK = "#3A2427";
 export const GREEN = "#12A150";
 /** Green for text on white (5.4:1). */

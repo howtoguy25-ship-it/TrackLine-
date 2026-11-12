@@ -25,7 +25,7 @@ import { ACTIONS, PRESS_DARKEN, allowedColours, type Scheme } from "@/theme/colo
 import { shadow } from "@/theme/tokens";
 
 const mockScheme: { current: Scheme } = { current: "light" };
-jest.mock("@/components/ui/uiScheme", () => ({ useUiScheme: () => mockScheme.current }));
+jest.mock("@/components/ui/uiScheme", () => ({ useUiScheme: () => mockScheme.current, useMapScheme: () => mockScheme.current }));
 
 const VARIANTS = Object.keys(VARIANT_GROUP) as ButtonVariant[];
 const TONES = Object.keys(TONE_GROUP) as FloatingTone[];

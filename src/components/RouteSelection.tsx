@@ -6,7 +6,8 @@
 import React, { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button, Chip } from "@/components/ui/Button";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, View, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
+import { Pressable, View } from "@/components/ui/Surface";
 import Animated, {
   Easing,
   cancelAnimation,

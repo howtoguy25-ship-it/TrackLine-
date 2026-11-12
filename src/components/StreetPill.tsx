@@ -1,5 +1,6 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
+import { View } from "@/components/ui/Surface";
 import Animated from "react-native-reanimated";
 import { appearAnimations } from "@/components/ui/Appear";
 import { useReduceMotion } from "@/hooks/useReduceMotion";

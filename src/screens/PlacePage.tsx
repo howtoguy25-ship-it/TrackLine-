@@ -1,16 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  ScrollView,
-  Image,
-  Alert,
-  Linking,
-  Share,
-  useWindowDimensions,
-} from "react-native";
+import { StyleSheet, ScrollView, Image, Alert, Linking, Share, useWindowDimensions } from "react-native";
+import { Pressable, View } from "@/components/ui/Surface";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";

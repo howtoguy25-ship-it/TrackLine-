@@ -26,6 +26,7 @@ import {
   type Scheme,
 } from "@/theme/colors";
 import { ALERT_PIN } from "@/types/alert";
+import { DARK_SURFACE, DARK_TEXT } from "@/components/ui/surfaceScheme";
 import { incidentStyle } from "@/services/trafficNswModel";
 
 const SCHEMES: Scheme[] = ["light", "dark"];
@@ -169,5 +170,24 @@ describe("WCAG AA, every pair", () => {
       slowOnRoute: r(TRAFFIC.slow, PURPLE),
       heavyOnRoute: r(TRAFFIC.heavy, PURPLE),
     }).toEqual({ slowOnRoad: 2.03, heavyOnRoad: 4.96, standstillOnRoad: 8.97, slowOnRoute: 3.8, heavyOnRoute: 1.55 });
+  });
+});
+
+describe("dark sheets over the map", () => {
+  it("every dark text colour reads on every dark surface (AA 4.5:1)", () => {
+    const surfaces = [...new Set(Object.values(DARK_SURFACE))].filter((c) => c !== "#3A3D42");
+    const failures: string[] = [];
+    for (const fg of new Set(Object.values(DARK_TEXT))) {
+      for (const bg of surfaces) {
+        const r = contrastRatio(fg, bg);
+        if (r < AA_TEXT) failures.push(`${fg} on ${bg}: ${r.toFixed(2)}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("the dark sheet and card colours are the brief's", () => {
+    expect(DARK_SURFACE["#FFFFFF"]).toBe("#1C1D20");
+    expect(DARK_SURFACE["#F4F5F8"]).toBe("#26282C");
   });
 });

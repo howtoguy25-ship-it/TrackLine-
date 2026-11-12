@@ -1,6 +1,7 @@
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
+import { SurfaceSchemeContext, darkText } from "@/components/ui/surfaceScheme";
 import AmbulanceIcon from "lucide-react-native/icons/ambulance";
 import ArrowLeftIcon from "lucide-react-native/icons/arrow-left";
 import ArrowUpIcon from "lucide-react-native/icons/arrow-up";
@@ -306,13 +307,16 @@ interface Props {
 }
 
 export function Icon({ name, size = ICON_SIZE, color = "#1F2125", filled = false, strokeWidth = ICON_STROKE, style, testID }: Props) {
+  // Inside a dark SurfaceScheme a light-theme icon colour becomes its dark-theme one.
+  const dark = React.useContext(SurfaceSchemeContext) === "dark";
+  const tint = dark ? (darkText(color) as string) : color;
   // The glyph is looked up from a fixed table (never created here), so createElement with it is
   // the same as writing <XIcon .../> for that icon.
   return React.createElement(iconComponent(name), {
     size,
-    color,
+    color: tint,
     strokeWidth,
-    fill: filled ? color : "none",
+    fill: filled ? tint : "none",
     style,
     testID,
     accessible: false,

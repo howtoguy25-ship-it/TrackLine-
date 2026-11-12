@@ -736,9 +736,13 @@ $ npx expo export --platform ios  iOS Bundled (2753 modules), exit 0
   white road is 2.0:1 and heavy red over the purple route 1.6:1. Traffic is never shown by colour
   alone — every route also says "Light / Typical / Heavy traffic" — so the lines are supplementary;
   the test records the ratios so a change is deliberate.
-- **Dark mode is partial.** The whole button family (floating buttons, chips, buttons) and the
-  traffic words switch to the dark palette when the map's Dark theme is on. The sheets and full
-  screens are still light: their styles are static and converting every screen is its own job.
+- **Dark mode covers everything on the map.** With the map's Dark theme on, the Where to? sheet
+  and search, route selection, the place page, the street pill and every button switch to
+  #1C1D20 / #26282C with light text. It works by wrapping those surfaces in `MapSurface`: inside
+  it, Text, TextInput, Icon and the surface View/Pressable swap each light colour for its dark one
+  (`components/ui/surfaceScheme.ts`). A colour not in those tables is left alone, so a new light
+  colour added to one of these screens needs adding there too (the render tests catch it). Full
+  screens (Menu, Settings, Inbox…) keep their own design; Settings was already dark.
 - **Re-centre stays 58pt** (the home-screen brief) while other floating buttons are 56pt.
 - **Map artwork keeps its own drawings**: the user-chosen alert icon themes, OSM marker glyphs and
   map pins still use their icon packs. Every UI icon is a Lucide line icon (ISC licence).

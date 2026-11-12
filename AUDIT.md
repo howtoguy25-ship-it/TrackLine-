@@ -531,7 +531,7 @@ the real `MapScreen`). On-device confirmation is the `TEST_ON_PHONE.md` checklis
 | Meaning colours never hand-written outside the theme | YES | appWide "no screen or component writes a meaning colour by hand" |
 | Report colours (police/crash/hazard/jam/cameras/roadwork diamond/chat) + Live Traffic NSW "i" badge | YES | `colors.ts:157`; `MapIcons.tsx:97`; `trafficNswModel.ts` incidentStyle; colours "Live Traffic NSW incidents…" |
 | Traffic: slow / heavy / standstill on the map; "Light / Typical / Heavy traffic" text in green / grey / red; selected route time blue | YES | `colors.ts:190,199`; `TrackLineMap.tsx:259`; `RouteSelection.tsx:282,452` |
-| Dark mode: surfaces #1C1D20/#26282C, map controls #2A2C30 + white icons, hues unchanged | PARTIAL | the whole button family and the traffic text switch with the map's Dark theme (`ui/uiScheme.ts`); sheet and screen backgrounds are still light (see NOTES) |
+| Dark mode: surfaces #1C1D20/#26282C, map controls #2A2C30 + white icons, hues unchanged | YES for everything on the map | With the map's Dark theme the Where to? sheet and search, route selection, the place page, the street pill and every button go dark (`ui/Surface.tsx` MapSurface + `ui/surfaceScheme.ts`); homeScreen "dark map theme", routeSelection/placePage "Dark theme" render tests; colours "dark sheets" contrast. Full screens keep their own design (Settings is already dark) |
 | WCAG AA for every pair | YES (map traffic lines recorded, see NOTES) | `__tests__/design/colours.test.ts` (33 tests, including pressed states) |
 | 44×44 minimum tap targets | YES | buttons "tap targets" tests |
 | Shapes: floating round 56, menu radius 16, chips 18, pill primaries, cards 20 | YES | buttons "primaries are pills…"; `tokens.ts` radius.card 20 |

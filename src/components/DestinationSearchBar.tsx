@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { View, FlatList, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { FlatList, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
+import { Pressable, View } from "@/components/ui/Surface";
 import { TextInput, Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {

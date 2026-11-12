@@ -11,7 +11,7 @@ honest limitations/missing keys.
 - [x] Root cause of the old home screen on the phone: old builds / dev server JS (AUDIT §12); build stamp in Settings › About — `2a9bc36`, dev build `7d8f1253`
 - [x] One Button family, Lucide line icons, one shadow, press/appear motion, colour meaning groups, WCAG AA tests (AUDIT §13)
 - [ ] Device check: `TEST_ON_PHONE.md` §12
-- [ ] Dark sheets/screens (only the button family and traffic text go dark today)
+- [x] Dark sheets over the map (Where to?, search, route selection, place page, street pill)
 
 ## Mapbox map + button fix
 

@@ -35,6 +35,8 @@ jest.mock("@/services/placeContributions", () => ({
 }));
 
 import { PlacePage } from "@/screens/PlacePage";
+import { SurfaceScheme } from "@/components/ui/surfaceScheme";
+import { paints } from "../support/darkScan";
 import * as savedPlaces from "@/services/savedPlaces";
 import * as Clipboard from "expo-clipboard";
 
@@ -113,5 +115,27 @@ describe("Place page buttons", () => {
     expect(h.onBack).toHaveBeenCalled();
     await fireEvent.press(screen.getByLabelText("Close"));
     expect(h.onClose).toHaveBeenCalled();
+  });
+});
+
+describe("Place page with the map in its Dark theme", () => {
+  it("has no light surfaces or dark-on-light text left", async () => {
+    const r = await render(
+      <SurfaceScheme value="dark">
+        <PlacePage
+          place={place}
+          origin={{ latitude: -33.8, longitude: 151.0 }}
+          onBack={jest.fn()}
+          onClose={jest.fn()}
+          onViewRoutes={jest.fn()}
+          onSeeMoreParking={jest.fn()}
+          onPlanDrive={jest.fn()}
+        />
+      </SurfaceScheme>
+    );
+    await act(async () => {});
+    const p = paints(r.toJSON() as never);
+    expect(p.lightSurfacesLeft).toEqual([]);
+    expect(p.lightTextLeft).toEqual([]);
   });
 });

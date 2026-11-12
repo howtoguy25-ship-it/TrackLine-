@@ -1,5 +1,8 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from "react";
-import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { useUiScheme } from "@/components/ui/uiScheme";
+import { SURFACES } from "@/theme/colors";
+import { StyleSheet, useWindowDimensions } from "react-native";
+import { View } from "@/components/ui/Surface";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -185,6 +188,9 @@ export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(f
   // Same real "FlatList viewport must match the sheet's actual visible height" fix as
   // SimpleBottomSheet's own contentAnimatedStyle -- see that component's header for the full
   // account of the bug this prevents.
+  // Dark with the map's Dark theme (inside a MapSurface).
+  const sheetColour = useUiScheme() === "dark" ? SURFACES.dark.sheet : colors.surface;
+
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     height: Math.max(0, fullHeight - translateY.value - HANDLE_HEIGHT),
   }));
@@ -192,7 +198,7 @@ export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(f
   return (
     <Animated.View
       pointerEvents="box-none"
-      style={[styles.sheet, { height: fullHeight }, animatedStyle]}
+      style={[styles.sheet, { height: fullHeight, backgroundColor: sheetColour }, animatedStyle]}
     >
       <GestureDetector gesture={panGesture}>
         <View style={styles.handleWrap}>

@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } f
 import { Text } from "@/components/AppText";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { useUiScheme } from "@/components/ui/uiScheme";
+import { useMapScheme, useUiScheme } from "@/components/ui/uiScheme";
 import { ACTIONS, SELECTED_TINT, SURFACES, type ActionGroup, type Scheme } from "@/theme/colors";
 import { radius, shadow } from "@/theme/tokens";
 
@@ -203,7 +203,11 @@ export function FloatingButton({
   disabled,
   ...rest
 }: FloatingButtonProps) {
-  const scheme = useUiScheme();
+  // Floating buttons sit on the map, so they follow the map's theme (or a dark surface
+  // they're drawn on).
+  const mapScheme = useMapScheme();
+  const surfaceScheme = useUiScheme();
+  const scheme = surfaceScheme === "dark" ? "dark" : mapScheme;
   const c = floatingColours(tone, scheme);
   return (
     <PressableScale

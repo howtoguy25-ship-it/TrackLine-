@@ -16,6 +16,8 @@ import {
   type RouteChoiceRow,
 } from "@/components/RouteSelection";
 import { DEFAULT_ROUTE_AVOID } from "@/map/routeChoices";
+import { SurfaceScheme } from "@/components/ui/surfaceScheme";
+import { paints } from "../support/darkScan";
 
 const rows: RouteChoiceRow[] = [
   { key: "a", timeText: "10 min", distanceText: "5.2 km", title: "Via M2", subtitle: "Best route, Typical traffic · Toll" },
@@ -139,5 +141,18 @@ describe("Route screen bottom sheet", () => {
       jest.advanceTimersByTime(10_500);
     });
     expect(p.onCountdownDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("with the map in its Dark theme", () => {
+  it("the top card and the bottom sheet have no light surfaces or dark-on-light text left", async () => {
+    for (const el of [<RouteSelectionTopCard key="t" {...topCard()} />, <RouteSelectionSheet key="s" {...sheet()} />]) {
+      const r = await render(<SurfaceScheme value="dark">{el}</SurfaceScheme>);
+      const p = paints(r.toJSON() as never);
+      expect(p.lightSurfacesLeft).toEqual([]);
+      expect(p.lightTextLeft).toEqual([]);
+      expect(p.texts.has("#FFFFFF")).toBe(true);
+      r.unmount();
+    }
   });
 });

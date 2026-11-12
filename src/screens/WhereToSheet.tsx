@@ -4,18 +4,8 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import type { SharedValue } from "react-native-reanimated";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import * as Crypto from "expo-crypto";
-import {
-  View,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  ActivityIndicator,
-  Keyboard,
-  Alert,
-  Modal,
-  Share,
-  ScrollView,
-} from "react-native";
+import { FlatList, StyleSheet, ActivityIndicator, Keyboard, Alert, Modal, Share, ScrollView } from "react-native";
+import { Pressable, View } from "@/components/ui/Surface";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Rect } from "react-native-svg";
