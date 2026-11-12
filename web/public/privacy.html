@@ -21,7 +21,7 @@
         <span>TrackLine</span>
       </div>
       <h1>Privacy Policy</h1>
-      <div class="updated">Effective November 10, 2026</div>
+      <div class="updated">Effective November 12, 2026</div>
 
       <p>
         TrackLine is a live navigation, driving-safety, and community hazard/emergency-vehicle
@@ -143,6 +143,48 @@
         community alert if you've explicitly turned on "auto-share" in Settings (off by default).
       </p>
 
+      <h3>Microphone — voice search and your own recorded voice (mobile app)</h3>
+      <p>
+        <strong>Voice search.</strong> When you tap the microphone in "Where to?", your phone's own
+        speech service (Apple Speech on iPhone, Google's speech recognizer on Android) turns what you
+        say into text for the search box. TrackLine receives only the text; the audio is handled by
+        your phone's operating system under Apple's or Google's own privacy terms, and TrackLine never
+        stores or sends it. EV Radar pauses while a search is listening.
+      </p>
+      <p>
+        <strong>Recording your own voice.</strong> If you choose "Record your own voice" for
+        directions, each clip you record is saved only on your device and played back during
+        navigation. Clips are never uploaded. Deleting a clip, or deleting the app, removes it.
+      </p>
+
+      <h3>Navigation voices</h3>
+      <p>
+        The standard navigation voice is your phone's built-in text-to-speech and runs on the device.
+        If you pick a <strong>character voice</strong>, the sentence to be spoken (for example
+        "In 400 metres, turn left onto George Street") is sent to our server, which has it spoken by
+        ElevenLabs and keeps the resulting audio in Cloud Storage so the same sentence isn't made
+        twice. Only the sentence is sent — never your location, account or anything else about you.
+      </p>
+
+      <h3>Routes, turn-by-turn guidance and rerouting</h3>
+      <p>
+        To plan a drive and to reroute you if you leave the route, your starting point, destination,
+        current direction of travel and chosen "Avoid" options (tolls, motorways, ferries, unpaved
+        roads) are sent to Mapbox (Directions API) and, as a fallback and for search and
+        place details, to Google (Directions, Routes and Places APIs). Your position during the drive
+        is matched to the route on your device; it is not sent to us for guidance.
+      </p>
+
+      <h3>Contacts and calendar (optional)</h3>
+      <p>
+        Only if you allow it: "Where to?" can show addresses from your contacts, and "Plan a drive"
+        can show upcoming calendar events that have a location. Both lists are read on your device.
+        When you pick one, only that contact's address or that event's location text is sent to
+        Google Places to find the place on the map — not the contact's name, phone number or the
+        event's details. Contacts and calendar entries are never uploaded to or stored by TrackLine.
+        You can withdraw access at any time in your phone's settings.
+      </p>
+
       <h3>Account &amp; sign-in information</h3>
       <p>
         Every session starts anonymously — you can use the map, navigation, and alerts without
@@ -247,17 +289,28 @@
       <h2>Data Stored Only On Your Device</h2>
       <p>
         Your app preferences — alert radius, region-wide toggle, fixed-zone toggle, map theme,
-        road thickness, and similar settings — are stored locally on your device and are never
-        sent to any server.
+        road thickness, voice and sound settings, and similar settings — are stored locally on your
+        device and are never sent to any server. So are your recorded voice clips (see "Microphone"
+        above) and the contacts and calendar entries the app reads with your permission.
       </p>
 
       <h2>Third-Party Services We Use</h2>
       <ul>
         <li><strong>Firebase (Google)</strong> — authentication, the alerts database, and REV Check/fuel-price server functions.</li>
-        <li><strong>Google Maps, Places, and Directions</strong> — the map, search, and routing.</li>
-        <li><strong>Mapbox (Map Matching API)</strong> — snaps a visible, driving account's
-          location samples to the road they were on before anything is shown to other drivers (see
-          "Presence" above); only used while you've opted in to being visible.</li>
+        <li><strong>Mapbox</strong> — the map itself (map tiles and styles), driving routes and
+          reroutes (Directions API: start, destination, direction of travel and Avoid options), and
+          (Map Matching API) snapping a visible, driving account's location samples to the road they
+          were on before anything is shown to other drivers (see "Presence" above; only while you've
+          opted in to being visible).</li>
+        <li><strong>Google Maps Platform</strong> — place search and details (Places API), routing
+          fallback and travel times (Directions and Routes APIs), and Street View images of a place
+          you open (Street View Static API).</li>
+        <li><strong>ElevenLabs</strong> — speaks navigation sentences in a character voice, only if
+          you choose one (see "Navigation voices" above). Only the sentence text is sent.</li>
+        <li><strong>Transport for NSW (Live Traffic NSW)</strong> — live incidents, roadworks and
+          congestion in NSW. Our server fetches the public feed; nothing about you is sent to it.</li>
+        <li><strong>Apple / Google speech recognition</strong> — your phone's own speech service for
+          voice search (see "Microphone" above).</li>
         <li><strong>OpenStreetMap (Overpass API)</strong> — community-mapped traffic-light and speed-camera locations.</li>
         <li><strong>NSW Government FuelCheck</strong> — live fuel prices, when you use that feature.</li>
         <li><strong>BusinessAPI.com.au (PPSR Searches API)</strong> — vehicle history/spec data for REV Check.</li>

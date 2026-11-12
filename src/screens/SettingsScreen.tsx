@@ -31,6 +31,7 @@ import {
   reauthenticateWithGoogleCredential,
 } from "@/services/firebase";
 import { env } from "@/config/env";
+import { Linking } from "react-native";
 import { Sentry } from "@/services/sentry";
 import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
@@ -1674,6 +1675,18 @@ export function SettingsScreen() {
         >
           <Text style={styles.licensesLinkText}>Licences &amp; attributions</Text>
         </Pressable>
+        {/* The same privacy policy that's on the website (web/public/privacy.html, Firebase
+            Hosting), so what the app says it does and what it does stay in one place. */}
+        {env.firebase.projectId ? (
+          <Pressable
+            onPress={() => Linking.openURL(`https://${env.firebase.projectId}.web.app/privacy.html`).catch(() => {})}
+            style={({ pressed }) => [styles.licensesLink, pressed && { opacity: pressedOpacity }]}
+            accessibilityRole="link"
+            testID="privacy-policy-link"
+          >
+            <Text style={styles.licensesLinkText}>Privacy policy</Text>
+          </Pressable>
+        ) : null}
       </View>
     </ScrollView>
   );

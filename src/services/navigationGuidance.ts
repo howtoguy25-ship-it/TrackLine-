@@ -116,7 +116,12 @@ export function evaluateGuidance(
   userLng: number,
   // Advance-warning distances, longest first (navSpeechPlan's earlyAnnouncementThresholds).
   // Leaving this out gives exactly the old behaviour: one call-out per step, 200m before it.
-  earlyThresholds: number[] = []
+  earlyThresholds: number[] = [],
+  // From the route matcher (nav/routeMatcher.ts): which step's road the car is on and how far
+  // along the road its manoeuvre still is. With it, a step is done when the car has actually
+  // driven past its manoeuvre -- not when it's within 35 m of it in a straight line, which on a
+  // U-shaped car-park exit, a roundabout or a cloverleaf is true from the wrong side too.
+  match?: { stepIndex: number; metersToStepEnd: number } | null
 ): {
   stepToSpeak: RouteStep | null;
   activeStepIndex: number;
@@ -128,9 +133,15 @@ export function evaluateGuidance(
     return { stepToSpeak: null, activeStepIndex: state.activeStepIndex, announcement: null, arrived: false };
   }
 
+  if (match && match.stepIndex > state.activeStepIndex) {
+    // Driven past one or more manoeuvres since the last fix: nothing left to say about those.
+    for (let i = state.activeStepIndex; i < match.stepIndex; i++) state.spokenStepIndices.add(i);
+    state.activeStepIndex = Math.min(match.stepIndex, steps.length - 1);
+  }
   const stepIndex = state.activeStepIndex;
   const currentStep = steps[stepIndex];
-  const distMeters = distanceToStepEndMeters(currentStep, userLat, userLng);
+  const matched = match && match.stepIndex === stepIndex;
+  const distMeters = matched ? match.metersToStepEnd : distanceToStepEndMeters(currentStep, userLat, userLng);
   const isLastStep = stepIndex === steps.length - 1;
   const followingStep = isLastStep ? null : steps[stepIndex + 1];
   const thenStep = followingStep && followingStep.distanceMeters < CHAIN_NEXT_STEP_METERS ? followingStep : null;
@@ -147,7 +158,7 @@ export function evaluateGuidance(
       step: currentStep,
       stepIndex,
       kind: "final",
-      distanceMeters: Math.min(distMeters, remainingStepMeters(currentStep, userLat, userLng)),
+      distanceMeters: matched ? distMeters : Math.min(distMeters, remainingStepMeters(currentStep, userLat, userLng)),
       thenStep,
       isLastStep,
     };
@@ -156,7 +167,7 @@ export function evaluateGuidance(
     !state.spokenStepIndices.has(stepIndex) &&
     !state.earlySpokenStepIndices.has(stepIndex)
   ) {
-    const remaining = remainingStepMeters(currentStep, userLat, userLng);
+    const remaining = matched ? distMeters : remainingStepMeters(currentStep, userLat, userLng);
     if (!state.stepEntryMeters.has(stepIndex)) state.stepEntryMeters.set(stepIndex, remaining);
     const threshold = earlyThresholdFor(state.stepEntryMeters.get(stepIndex)!, earlyThresholds);
     if (threshold === null) {
@@ -173,8 +184,11 @@ export function evaluateGuidance(
   }
 
   // Consider the maneuver complete once the user is very close to (or has passed) the
-  // step's end point, then advance to the next step.
-  if (distMeters <= STEP_COMPLETE_METERS) {
+  // step's end point, then advance to the next step. With the route matcher, the step moves on
+  // only once the car has actually driven past it (the match at the top of the next fix).
+  if (matched) {
+    // nothing: progress decides
+  } else if (distMeters <= STEP_COMPLETE_METERS) {
     if (state.activeStepIndex < steps.length - 1) state.activeStepIndex += 1;
   } else {
     // GPS-jump case: this fix isn't close to the *current* step's end, but check whether it

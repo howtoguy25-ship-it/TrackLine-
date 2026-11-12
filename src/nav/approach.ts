@@ -31,8 +31,14 @@ export interface ApproachState {
   confirmUntilMs: number | null;
   /** The last manoeuvre already resolved (taken), so each one is followed once, in order. */
   resolvedUpTo: number;
-  /** Furthest the car got past the split along the route while still ON it (metres). */
-  onRoutePastMax: number;
+  /** Progress along the route when the "taken" evidence began (for the 50 m rule). */
+  evidenceAlong: number | null;
+  /** Fixes in a row WITHOUT the evidence (one noisy fix doesn't reset it; two do). */
+  evidenceMisses: number;
+  /** Fixes in a row well off the route (a single wild fix never counts as a miss). */
+  offRouteFixes: number;
+  /** When the close-up camera went in (it never stays in longer than ZOOM_MAX_MS). */
+  zoomedAtMs: number | null;
 }
 
 export const INITIAL_APPROACH: ApproachState = {
@@ -44,7 +50,10 @@ export const INITIAL_APPROACH: ApproachState = {
   offRouteSinceMs: null,
   confirmUntilMs: null,
   resolvedUpTo: -1,
-  onRoutePastMax: 0,
+  evidenceAlong: null,
+  evidenceMisses: 0,
+  offRouteFixes: 0,
+  zoomedAtMs: null,
 };
 
 /** Within this of the next road counts as on it. */
@@ -68,12 +77,14 @@ export const TIGHT_ON_ROAD_METERS = 8;
 export const ON_ROUTE_METERS = 15;
 /** Past the split by this much before "on the next road" can mean anything. */
 export const PAST_SPLIT_METERS = 15;
-/** Furthest a car moves along the route between two fixes (~1 s at 200 km/h, with margin). */
-export const MAX_PROGRESS_PER_FIX_METERS = 60;
 export const CONFIRM_HOLD_MS = 3000;
 export const CONFIRM_DISTANCE_METERS = 50;
 export const MISSED_OFF_ROUTE_METERS = 30;
 export const MISSED_HOLD_MS = 3000;
+/** ...and at least this many fixes: one wild fix, or two, is never a miss. */
+export const MISSED_MIN_FIXES = 3;
+/** The close-up camera gives way after this long, whatever is happening (tracking carries on). */
+export const ZOOM_MAX_MS = 20_000;
 export const CHIP_MS = 2000;
 /**
  * If nothing resolves in 3 min (parked by the road, stuck in a jam at the exit), give the camera
@@ -105,10 +116,15 @@ export interface TickInput {
   speedKmh: number | null;
   activeStepIndex: number;
   steps: RouteStep[];
-  /** Metres along the road to the end of the active step. */
-  metersToManoeuvre: number;
-  /** How far the driver is from the route line. */
-  offRouteMeters: number;
+  /** Progress along the route (metres), from the route matcher -- continuous, never backwards. */
+  alongMeters: number;
+  /** Distance along the route at the end of each step (the matcher's RouteGeometry.stepEnds). */
+  stepEndsAlong: number[];
+  /**
+   * How far the driver is from the road the route takes here (heading-aware, from the matcher);
+   * null when it can't be trusted (GPS accuracy worse than 30 m, no fix, dead reckoning).
+   */
+  offRouteMeters: number | null;
 }
 
 export type ApproachEvent =
@@ -116,8 +132,10 @@ export type ApproachEvent =
   | { type: "panned" }
   | { type: "rerouted" }
   | { type: "rerouteFailed" }
-  | { type: "arrived" }
-  | { type: "routeChanged" };
+  | { type: "arrived"; steps?: RouteStep[] }
+  | { type: "routeChanged" }
+  /** The app came back to the foreground. */
+  | { type: "resumed" };
 
 /** The manoeuvre kind of a step: Mapbox says; Google routes are read from the manoeuvre code. */
 export function kindOfStep(step: Pick<RouteStep, "maneuverKind" | "maneuver" | "lanes">): ManoeuvreKind | undefined {
@@ -210,12 +228,9 @@ export function nextManoeuvre(steps: RouteStep[], after: number): number | null 
   return null;
 }
 
-/** Road distance from the car to the split at the end of step j. */
+/** Road distance from the car to the split at the end of step j (negative once past it). */
 function metersToSplit(event: TickInput, j: number): number {
-  if (j < event.activeStepIndex) return 0; // guidance has already reached it
-  let m = event.metersToManoeuvre;
-  for (let i = event.activeStepIndex + 1; i <= j; i++) m += event.steps[i]?.distanceMeters ?? 0;
-  return m;
+  return (event.stepEndsAlong[j] ?? Infinity) - event.alongMeters;
 }
 
 /** The route just after the split at the end of step j (up to `meters`), across short steps. */
@@ -232,53 +247,15 @@ export function roadAfterSplit(steps: RouteStep[], j: number, meters = 400): Lat
   return out;
 }
 
-/** The nearest point on a line, and how far along the line it is (metres). */
-function projectOnto(p: LatLng, line: LatLng[]): { distance: number; along: number } {
-  let best = { distance: Infinity, along: 0 };
-  let acc = 0;
-  for (let i = 0; i < line.length - 1; i++) {
-    const seg = metersBetween(line[i], line[i + 1]);
-    const d = distanceToLineMeters(p, [line[i], line[i + 1]]);
-    if (d < best.distance) {
-      // Pythagoras: distance from the segment start to the foot of the perpendicular.
-      const foot = Math.sqrt(Math.max(0, metersBetween(line[i], p) ** 2 - d * d));
-      best = { distance: d, along: acc + Math.min(seg, foot) };
-    }
-    acc += seg;
-  }
-  return best;
-}
-
-/**
- * How far past the split at the end of step j the car is, measured ALONG the route (negative =
- * still before it). Guidance moves to the next step a little before each split, and short city
- * steps come in runs, so the active step alone can't say which side of a split the car is on.
- */
-export function metersPastSplit(position: LatLng, steps: RouteStep[], j: number): number {
-  const before = steps[j]?.polyline ?? [];
-  const after = roadAfterSplit(steps, j, 600);
-  const b = before.length >= 2 ? projectOnto(position, before) : { distance: Infinity, along: 0 };
-  const a = after.length >= 2 ? projectOnto(position, after) : { distance: Infinity, along: 0 };
-  if (a.distance <= b.distance) return a.along;
-  let length = 0;
-  for (let i = 0; i < before.length - 1; i++) length += metersBetween(before[i], before[i + 1]);
-  return b.along - length;
-}
-
 /**
  * Start following the next unresolved manoeuvre if it's close enough. Manoeuvres the car is
- * already well past (navigation started mid-route, a GPS gap) are skipped quietly.
+ * already well past along the route (navigation started mid-route, a GPS gap) are skipped.
  */
 function startTracking(state: ApproachState, event: { type: "tick" } & TickInput): { state: ApproachState; effects: ApproachEffect[] } | null {
   const { steps, nowMs } = event;
   let resolvedUpTo = state.resolvedUpTo;
   let j = nextManoeuvre(steps, resolvedUpTo);
-  // Guidance can run a step or two ahead through very short steps, so "behind" needs the car to
-  // really be past that split (or nowhere near it).
-  const behind = (k: number) =>
-    k < event.activeStepIndex - 1 &&
-    (metersPastSplit(event.position, steps, k) > PAST_SPLIT_METERS * 2 || metersBetween(event.position, steps[k].endLocation) > 300);
-  while (j !== null && behind(j)) {
+  while (j !== null && metersToSplit(event, j) < -PAST_SPLIT_METERS * 2) {
     resolvedUpTo = j;
     j = nextManoeuvre(steps, resolvedUpTo);
   }
@@ -290,7 +267,7 @@ function startTracking(state: ApproachState, event: { type: "tick" } & TickInput
   const step = steps[j];
   const zoom = shouldZoomFor(kindOfStep(step));
   return {
-    state: { ...INITIAL_APPROACH, phase: "approach", zoomed: zoom, stepIndex: j, enteredAtMs: nowMs, resolvedUpTo },
+    state: { ...INITIAL_APPROACH, phase: "approach", zoomed: zoom, zoomedAtMs: zoom ? nowMs : null, stepIndex: j, enteredAtMs: nowMs, resolvedUpTo },
     effects: zoom
       ? [
           {
@@ -304,7 +281,51 @@ function startTracking(state: ApproachState, event: { type: "tick" } & TickInput
   };
 }
 
+/**
+ * Taken: `index` and any later manoeuvres the car has already driven through on the route
+ * (a run of short city steps resolves together). Then the next one is followed at once.
+ */
+function confirmTaken(state: ApproachState, event: { type: "tick" } & TickInput, index: number): { state: ApproachState; effects: ApproachEffect[] } {
+  const { steps, nowMs } = event;
+  const effects: ApproachEffect[] = [{ kind: "confirmed", stepIndex: index, text: confirmationText(kindOfStep(steps[index])) }];
+  let resolvedUpTo = index;
+  // Later ones only with the same weight of evidence: 50 m past their split, still on the route.
+  const onRoute = event.offRouteMeters !== null && event.offRouteMeters <= ON_ROAD_METERS;
+  for (let k = nextManoeuvre(steps, index); onRoute && k !== null && metersToSplit(event, k) <= -CONFIRM_DISTANCE_METERS; k = nextManoeuvre(steps, k)) {
+    effects.push({ kind: "confirmed", stepIndex: k, text: confirmationText(kindOfStep(steps[k])) });
+    resolvedUpTo = k;
+  }
+  const confirmed: ApproachState = {
+    ...INITIAL_APPROACH,
+    phase: "confirm",
+    zoomed: state.zoomed,
+    zoomedAtMs: state.zoomedAtMs,
+    stepIndex: resolvedUpTo,
+    enteredAtMs: nowMs,
+    confirmUntilMs: nowMs + CHIP_MS,
+    resolvedUpTo,
+  };
+  const handover = startTracking(confirmed, event);
+  if (handover && handover.state.phase === "approach") {
+    const backOut = confirmed.zoomed && !handover.state.zoomed ? restoreIf(true, RESTORE_MS) : [];
+    return { state: handover.state, effects: [...effects, ...backOut, ...handover.effects] };
+  }
+  return { state: confirmed, effects };
+}
+
 export function reduceApproach(state: ApproachState, event: ApproachEvent): { state: ApproachState; effects: ApproachEffect[] } {
+  if (event.type === "resumed") {
+    // Back in the app: the camera starts from the normal view; following carries on.
+    return state.zoomed ? { state: { ...state, zoomed: false, zoomedAtMs: null }, effects: restoreIf(true, RESTORE_FAST_MS) } : { state, effects: [] };
+  }
+  if (event.type === "arrived" && state.phase === "approach" && state.stepIndex !== null && state.onNextSinceMs !== null) {
+    // The last turn before the destination: arriving is the rest of the evidence.
+    const index = state.stepIndex;
+    return {
+      state: INITIAL_APPROACH,
+      effects: [{ kind: "confirmed", stepIndex: index, text: confirmationText(event.steps?.[index] ? kindOfStep(event.steps[index]) : undefined) }, ...restoreIf(state.zoomed, RESTORE_MS)],
+    };
+  }
   if (event.type !== "tick") {
     if (state.phase === "normal" && state.resolvedUpTo < 0) return { state, effects: [] };
     if (state.phase === "normal") return { state: INITIAL_APPROACH, effects: [] };
@@ -314,6 +335,12 @@ export function reduceApproach(state: ApproachState, event: ApproachEvent): { st
   }
 
   const { nowMs, steps } = event;
+
+  // The close-up never lasts more than 20 s: the camera goes back, the following carries on.
+  if (state.zoomed && state.zoomedAtMs !== null && nowMs - state.zoomedAtMs >= ZOOM_MAX_MS) {
+    const out = reduceApproach({ ...state, zoomed: false, zoomedAtMs: null }, event);
+    return { state: out.state, effects: [{ kind: "restore", durationMs: RESTORE_MS }, ...out.effects.filter((e) => e.kind !== "restore")] };
+  }
 
   if (state.phase === "normal" || state.phase === "confirm") {
     // The next manoeuvre can come right after the last one (city turns): follow it at once.
@@ -343,91 +370,72 @@ export function reduceApproach(state: ApproachState, event: ApproachEvent): { st
     return { state: { ...INITIAL_APPROACH, resolvedUpTo: index }, effects: restoreIf(state.zoomed, RESTORE_MS) };
   }
 
-  // "Past" means along the route, not just distance: 70 m before a turn is as far from the split
-  // as 70 m after it.
-  const pastSplit = Math.max(0, metersPastSplit(event.position, steps, index));
-  // Only progress driven continuously along the route counts: cutting across a bend onto a later
-  // part of it is a jump, not progress.
-  const continuous = pastSplit - state.onRoutePastMax <= MAX_PROGRESS_PER_FIX_METERS;
-  const onRoutePastMax =
-    event.offRouteMeters <= ON_ROUTE_METERS && continuous ? Math.max(state.onRoutePastMax, pastSplit) : state.onRoutePastMax;
+  // Progress past the split, along the route (from the matcher, so it can't jump across a bend).
+  const pastSplit = Math.max(0, -metersToSplit(event, index));
 
-  // Missed: well off the route for a few seconds.
+  // Missed: well off the road the route takes, for 3 s and at least 3 fixes in a row. Fixes the
+  // GPS itself isn't sure of (accuracy worse than 30 m) neither count nor reset it.
   let offRouteSinceMs = state.offRouteSinceMs;
-  if (event.offRouteMeters > MISSED_OFF_ROUTE_METERS) {
-    offRouteSinceMs ??= nowMs;
-    if (nowMs - offRouteSinceMs >= MISSED_HOLD_MS) {
-      // Which manoeuvre was missed: where the car left the route. A run of short steps (a slip
-      // lane 20 m after a turn) can be driven straight through on the route and left at the
-      // second split -- that's a miss of the second, not the first.
-      const missedIndex = manoeuvreLeftAt(steps, index, onRoutePastMax);
-      return {
-        state: { ...INITIAL_APPROACH, phase: "missed", stepIndex: missedIndex, enteredAtMs: nowMs, resolvedUpTo: state.resolvedUpTo },
-        effects: [...restoreIf(state.zoomed, RESTORE_FAST_MS), { kind: "missed", stepIndex: missedIndex }],
-      };
+  let offRouteFixes = state.offRouteFixes;
+  if (event.offRouteMeters !== null) {
+    if (event.offRouteMeters > MISSED_OFF_ROUTE_METERS) {
+      offRouteSinceMs ??= nowMs;
+      offRouteFixes += 1;
+      if (nowMs - offRouteSinceMs >= MISSED_HOLD_MS && offRouteFixes >= MISSED_MIN_FIXES) {
+        // Which manoeuvre was missed: where the car left the route (progress stops there). A
+        // run of short steps can be driven through on the route and left at a later split.
+        const missedIndex = manoeuvreLeftAt(steps, index, event.alongMeters, event.stepEndsAlong);
+        return {
+          state: { ...INITIAL_APPROACH, phase: "missed", stepIndex: missedIndex, enteredAtMs: nowMs, resolvedUpTo: state.resolvedUpTo },
+          effects: [...restoreIf(state.zoomed, RESTORE_FAST_MS), { kind: "missed", stepIndex: missedIndex }],
+        };
+      }
+    } else {
+      offRouteSinceMs = null;
+      offRouteFixes = 0;
     }
-  } else {
-    offRouteSinceMs = null;
   }
 
   // Taken: past the split, on the road after it and clearly not on the road carrying straight
-  // on, for 3 s or 50 m.
+  // on -- held for 3 s or 50 m of progress (one fix never decides it).
   const toNext = distanceToLineMeters(event.position, roadAfterSplit(steps, index));
   const toStraightOn = distanceToLineMeters(event.position, continuationOf(step.polyline));
+  // Untrusted fixes (poor accuracy, dead reckoning in a tunnel) neither add evidence nor take it
+  // away: nothing is decided on a guess.
+  const trusted = event.offRouteMeters !== null;
+  const onRoad = trusted && event.offRouteMeters! <= ON_ROAD_METERS;
   // On the road after the split and clearly apart from the straight-on road...
-  const apart = pastSplit >= PAST_SPLIT_METERS && toNext + SEPARATION_MARGIN_METERS < toStraightOn;
-  const separated = apart && toNext <= ON_ROAD_METERS;
-  // ...or far enough past it that any other road would have parted, still tightly on the route...
-  const unambiguous = pastSplit >= UNAMBIGUOUS_PAST_METERS && toNext <= TIGHT_ON_ROAD_METERS;
-  // ...and with the next manoeuvre already close (short city steps in a row), the same evidence
-  // without waiting out the hold, so the next one isn't followed late.
-  const wellPast =
-    event.activeStepIndex >= index + 2 && event.offRouteMeters <= ON_ROUTE_METERS && apart && toNext <= TIGHT_ON_ROAD_METERS;
-  const onNext = separated || unambiguous;
+  const separated =
+    onRoad && pastSplit >= PAST_SPLIT_METERS && toNext <= ON_ROAD_METERS && toNext + SEPARATION_MARGIN_METERS < toStraightOn;
+  // ...or far enough past it that any other road would have parted, still tightly on the route.
+  const unambiguous = onRoad && pastSplit >= UNAMBIGUOUS_PAST_METERS && toNext <= TIGHT_ON_ROAD_METERS;
   let onNextSinceMs = state.onNextSinceMs;
-  if (onNext || wellPast) {
+  let evidenceAlong = state.evidenceAlong;
+  let evidenceMisses = state.evidenceMisses;
+  if (separated || unambiguous) {
     onNextSinceMs ??= nowMs;
-    // The last turn before the destination may leave only a few metres to drive: the evidence
-    // alone settles it there.
-    const intoArrival = index + 1 >= steps.length - 1;
-    if (wellPast || intoArrival || nowMs - onNextSinceMs >= CONFIRM_HOLD_MS || pastSplit >= CONFIRM_DISTANCE_METERS) {
-      const confirmed: ApproachState = {
-        ...INITIAL_APPROACH,
-        phase: "confirm",
-        zoomed: state.zoomed,
-        stepIndex: index,
-        enteredAtMs: nowMs,
-        confirmUntilMs: nowMs + CHIP_MS,
-        resolvedUpTo: index,
-      };
-      const effects: ApproachEffect[] = [{ kind: "confirmed", stepIndex: index, text: confirmationText(kindOfStep(step)) }];
-      // A manoeuvre straight after this one is followed from this same tick.
-      const handover = startTracking(confirmed, event);
-      if (handover && handover.state.phase === "approach") {
-        const backOut = confirmed.zoomed && !handover.state.zoomed ? restoreIf(true, RESTORE_MS) : [];
-        return { state: handover.state, effects: [...effects, ...backOut, ...handover.effects] };
-      }
-      return { state: confirmed, effects };
+    evidenceAlong ??= event.alongMeters;
+    evidenceMisses = 0;
+    if (nowMs - onNextSinceMs >= CONFIRM_HOLD_MS || event.alongMeters - evidenceAlong >= CONFIRM_DISTANCE_METERS) {
+      return confirmTaken(state, event, index);
     }
-  } else {
+  } else if (trusted && onNextSinceMs !== null && ++evidenceMisses >= 2) {
     onNextSinceMs = null;
+    evidenceAlong = null;
+    evidenceMisses = 0;
   }
 
-  return { state: { ...state, onNextSinceMs, offRouteSinceMs, onRoutePastMax }, effects: [] };
+  return { state: { ...state, onNextSinceMs, offRouteSinceMs, offRouteFixes, evidenceAlong, evidenceMisses }, effects: [] };
 }
 
 /**
- * The manoeuvre the car left the route at, given how far past the split of step `index` it
- * stayed on the route: `index` itself, or a later tracked one whose split it had already
- * driven through on the route.
+ * The manoeuvre the car left the route at, given its progress along the route when it left:
+ * `index` itself, or a later tracked one whose split it had already driven through.
  */
-export function manoeuvreLeftAt(steps: RouteStep[], index: number, onRoutePastMeters: number): number {
+export function manoeuvreLeftAt(steps: RouteStep[], index: number, alongMeters: number, stepEndsAlong: number[]): number {
   let missed = index;
-  let splitAt = 0;
-  for (let k = index + 1; k < steps.length - 1; k++) {
-    splitAt += steps[k].distanceMeters;
-    if (onRoutePastMeters < splitAt + PAST_SPLIT_METERS) break;
-    if (shouldTrack(kindOfStep(steps[k]))) missed = k;
+  for (let k = nextManoeuvre(steps, index); k !== null && (stepEndsAlong[k] ?? Infinity) + PAST_SPLIT_METERS <= alongMeters; k = nextManoeuvre(steps, k)) {
+    missed = k;
   }
   return missed;
 }

@@ -612,3 +612,46 @@ longer abandoned by a 45 s timer (now 3 min, for parked/jammed only).
 - Also fixed: the last turn before the destination now gets its chip (a few metres of road isn't
   enough for the 3 s hold); a miss on a run of short steps is put on the turn where the car
   actually left the route.
+
+### 14c. Robust navigation: route matching, real-world GPS, no weakened tests
+
+**Root cause (plain words).** Guidance and the taken/missed logic worked out "where am I on the
+route" by looking for the nearest bit of route line, and moved to the next step when the car was
+within 35 m of the step's end *as the crow flies*. Wherever a route comes back close to itself --
+the dogleg out of a car park at the start of the M4 route, a roundabout, a cloverleaf, a ramp
+beside the motorway -- the nearest bit of line can be the wrong part of the route. So a car going
+straight on past the car-park turn was matched to the far leg of the dogleg and judged as having
+made the turn: the "M4 step 0" failure. Earlier I changed the test's rules to dodge it; that's
+reverted and the cause is fixed.
+
+**Fix.** `src/nav/routeMatcher.ts`: progress along the route, matched by distance-along-route AND
+direction of travel (60 deg), with a transition cost (prefer the match that agrees with how far
+the car moved) and a path rule (progress may not cross road pointing where the car never went).
+Forward-only; a fix may advance progress at most speed x time x 1.5 + 30 m, bigger jumps held
+until 3 consistent fixes; never backwards unless the GPS course is against the route for 5 s;
+poor fixes (accuracy > 30 m) never count as off-route; tunnels dead-reckon at the last speed for
+up to 30 s. Below 11 km/h direction comes from the car's own trail, over twice the GPS error.
+Guidance (`evaluateGuidance`), the approach machine and rerouting (`src/nav/rerouteTrigger.ts`)
+all run on it, through one pipeline the app and the tests share (`src/nav/navPipeline.ts`).
+Every taken/missed/reroute decision needs 3 s or 50 m of consistent evidence over 3+ fixes.
+The close-up camera is capped at 20 s; app resume restores it. Reroutes retry once on a network
+failure, keep the old route on screen meanwhile, and say "No connection -- keep following the
+current road" when offline. Location: 1 fix/s in the foreground, every 3 s / 10 m in the
+background. Lane strip and junction view are memoised and draw nothing without data.
+
+**Tests changed, and why (one line each):**
+- `allManoeuvres`: the "cuts back across the route" exclusion I'd added is REMOVED -- the original M4 step 0 expectation (missed, never taken) is restored and passes.
+- `allManoeuvres`: a recorded "straight on" road that leaves the route before the turn now must trigger a reroute instead of being counted as that turn's miss (real behaviour: it's an off-route, not a missed turn).
+- `allManoeuvres`/`approach`: the harness now drives through the app's own pipeline (`__tests__/support/navDrive.ts`) instead of a copy of it.
+- `approach` "missing the exit": the camera may already be back from the new 20 s close-up cap before the miss (400 m at 100 km/h is ~14 s), so either restore counts.
+- `approach` "3 minutes": tracking still gives up at 3 min, but the camera now returns at 20 s (own test), so this one checks tracking only.
+- `approach` "past the split": was hopping vertex to vertex once a second (a straight-line jump the matcher now rightly rejects); it now drives along the road.
+
+**New tests** (`robustness.test.ts`, `routeMatcher` via approach, `missingData.test.tsx`): U/dogleg
+car-park start, Étoile full loop, motorway beside its exit ramp, the Frankfurter Kreuz self-crossing
+(overpass/underpass), 70 m jump sideways and ahead, tunnel loss of 3/5/25/45 s in the M5 East
+Tunnel, correct exit, missed exit, late lane change, and all 10 real routes x 3 seeds with
+realistic GPS noise (drifting 12 m error, 2% wild fixes, signal-loss spells): no false miss, no
+reroute, progress forward only. Missing lanes / exit number / road name / junction view render
+without crashing.
+

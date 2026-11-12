@@ -216,6 +216,11 @@ Needs the Mapbox token in the build. Do these as a passenger, or note what you s
 - [ ] Miss an ordinary city turn on purpose (go straight where it says turn): "Rerouting…" within a few seconds, then the new route. It must never say "Turn complete ✓" for a turn you didn't make.
 - [ ] Slow traffic through a run of roundabouts: each one still gets its chip (the approach waits up to 3 min, not 45 s).
 - [ ] iPhone with the ring/silent switch ON silent, and EV Radar off: start a drive. The voice, recorded clips and the "Exit taken ✓" chime are all heard. Lock the screen: the voice carries on. Music from another app keeps playing underneath.
+- [ ] Leave a car park whose exit doglegs (turn, short bit, turn back): the instructions follow you round in order; going straight instead gives "Rerouting…", never "Turn complete ✓".
+- [ ] A tunnel (M5 East, Eastern Distributor, Lane Cove Tunnel): the arrow keeps moving along the road while there's no GPS, nothing reroutes, and the exit after the tunnel still gets its chip.
+- [ ] Phone in airplane mode mid-drive, then miss a turn: "No connection — keep following the current road"; the old route stays drawn.
+- [ ] Zoomed approach on a slow exit: the camera goes back after at most 20 s; switching apps and back during an approach returns to the normal view.
+- [ ] Lane strip and zoom feel smooth (no stutter) on an iPhone 11 or older; battery drain over a 30-min drive with the screen off is reasonable.
 - [ ] Outside Australia (or in a right-hand-traffic country on a trip): an exit or motorway split zooms in the same way; a U-turn lane arrow swings left there (right in the UK, Japan, Australia...); roundabout arrows go the local way round.
 
 ## If something doesn't match this

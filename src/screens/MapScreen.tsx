@@ -18,6 +18,9 @@ import { ManoeuvreChip, type ChipTone } from "@/components/nav/ManoeuvreChip";
 import { JunctionViewCard } from "@/components/nav/JunctionViewCard";
 import { mapboxReroute, mapboxRouteForChoice, mapboxRoutingAvailable } from "@/services/navRouting";
 import { prepareNavigationAudio } from "@/services/audioSession";
+import { buildRouteGeometry, createMatchState, deadReckon, matchFix, type MatchResult } from "@/nav/routeMatcher";
+import { approachTick } from "@/nav/navPipeline";
+import { INITIAL_REROUTE_TRIGGER, rerouteTrigger } from "@/nav/rerouteTrigger";
 import { useAudioPlayer } from "expo-audio";
 import { env } from "@/config/env";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1462,6 +1465,44 @@ export function MapScreen() {
     dispatchApproachRef.current = dispatchApproach;
   }, [dispatchApproach]);
 
+  // ---- Where on the route the car is (nav/routeMatcher.ts) ----
+  // Progress along the route, matched by distance-along-route AND direction of travel, so a
+  // U-shaped car-park exit, a roundabout, a cloverleaf or a parallel road can't snap to the wrong
+  // part of the route; one bad fix can't jump it ahead; poor-accuracy fixes don't count as
+  // off-route; in a tunnel it carries on at the last speed for up to 30 s.
+  const navGeo = useMemo(() => (route ? buildRouteGeometry(route.steps, route.polyline) : null), [route]);
+  const matchStateRef = useRef(createMatchState());
+  const [navMatch, setNavMatch] = useState<MatchResult | null>(null);
+  useEffect(() => {
+    matchStateRef.current = createMatchState();
+    setNavMatch(null);
+  }, [navGeo]);
+  useEffect(() => {
+    if (!navGeo || !location) return;
+    const c = location.coords;
+    const { state, result } = matchFix(navGeo, matchStateRef.current, {
+      latitude: c.latitude,
+      longitude: c.longitude,
+      timeMs: location.timestamp || Date.now(),
+      speedMps: c.speed != null && c.speed >= 0 ? c.speed : null,
+      headingDeg: c.heading != null && c.heading >= 0 ? c.heading : null,
+      accuracyM: c.accuracy ?? null,
+    });
+    matchStateRef.current = state;
+    setNavMatch(result);
+  }, [location, navGeo]);
+  useEffect(() => {
+    if (!navGeo) return;
+    const id = setInterval(() => {
+      const dr = deadReckon(navGeo, matchStateRef.current, Date.now());
+      if (dr) {
+        matchStateRef.current = dr.state;
+        setNavMatch(dr.result);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [navGeo]);
+
   // A new route (or none) ends any approach in progress.
   useEffect(() => {
     dispatchApproachRef.current({ type: "routeChanged" });
@@ -1476,21 +1517,20 @@ export function MapScreen() {
     if (!followTilt || detectionOpen || placingAlert) dispatchApproachRef.current({ type: "panned" });
   }, [followTilt, detectionOpen, placingAlert]);
 
+  // Coming back to the app: the camera starts from the normal view (following carries on).
   useEffect(() => {
-    if (!route || !followTilt || detectionOpen || placingAlert || !currentLatLng || travelMode !== "driving") return;
-    const step = route.steps[activeStepIndex];
-    if (!step) return;
-    dispatchApproach({
-      type: "tick",
-      nowMs: Date.now(),
-      position: currentLatLng,
-      speedKmh: currentSpeedKmh,
-      activeStepIndex,
-      steps: route.steps,
-      metersToManoeuvre: remainingStepMeters(step, currentLatLng.latitude, currentLatLng.longitude),
-      offRouteMeters: distanceToLineMeters(currentLatLng, route.polyline),
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") dispatchApproachRef.current({ type: "resumed" });
     });
-  }, [route, followTilt, detectionOpen, placingAlert, currentLatLng, travelMode, activeStepIndex, currentSpeedKmh, dispatchApproach]);
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!route || !navGeo || !navMatch || !followTilt || detectionOpen || placingAlert || !currentLatLng || travelMode !== "driving") return;
+    dispatchApproach(approachTick(route, navGeo, navMatch, activeStepIndex, Date.now(), currentSpeedKmh, currentLatLng));
+    // Ticks on each matched fix (and each dead-reckoned second), not on every re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navMatch]);
 
   useEffect(
     () => () => {
@@ -2031,11 +2071,13 @@ export function MapScreen() {
       route.steps,
       currentLatLng.latitude,
       currentLatLng.longitude,
-      spokenMode === "normal" ? earlyAnnouncementThresholds(settings.distanceUnit) : []
+      spokenMode === "normal" ? earlyAnnouncementThresholds(settings.distanceUnit) : [],
+      // Progress along the route from the route matcher (heading-aware, continuous).
+      navMatch
     );
     if (nextIndex !== activeStepIndex) setActiveStepIndex(nextIndex);
     if (arrived) {
-      dispatchApproachRef.current({ type: "arrived" });
+      dispatchApproachRef.current({ type: "arrived", steps: route.steps });
       announcePhrase({ kind: "arrived" });
     } else if (
       announcement &&
@@ -2048,7 +2090,7 @@ export function MapScreen() {
       });
     }
   }, [
-    currentLatLng,
+    navMatch,
     route,
     voiceEnabled,
     activeStepIndex,
@@ -2099,8 +2141,10 @@ export function MapScreen() {
   // shows the "Faster route found" banner) if it's genuinely at least this much quicker, not
   // just noise between two very similar real options.
   const FASTER_ALTERNATE_THRESHOLD_SECONDS = 30;
-  const offRouteStreakRef = useRef(0);
-  const headingDivergeSinceRef = useRef<number | null>(null);
+  // Off-route detection lives in nav/rerouteTrigger.ts (unit- and drive-tested): 3 s / 50 m of
+  // consistent evidence over 3+ fixes, poor-accuracy fixes ignored, wrong-way for 5 s, a missed
+  // turn from the approach machine; debounced.
+  const rerouteTriggerRef = useRef(INITIAL_REROUTE_TRIGGER);
   const lastRerouteAtRef = useRef(0);
   // Cancels a still-in-flight reroute request the instant a newer one fires -- per explicit
   // spec, so two off-route triggers close together (e.g. a missed turn immediately followed by
@@ -2108,66 +2152,23 @@ export function MapScreen() {
   // the newer, more-correct one.
   const rerouteAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
-    if (!route || !currentLatLng || !destinationLatLng) {
-      offRouteStreakRef.current = 0;
-      headingDivergeSinceRef.current = null;
+    if (!route || !navMatch || !currentLatLng || !destinationLatLng) {
+      rerouteTriggerRef.current = { ...INITIAL_REROUTE_TRIGGER, lastRerouteMs: rerouteTriggerRef.current.lastRerouteMs };
       return;
     }
-
-    const { distanceMeters: distMeters, routeBearingDeg } = routeDeviationInfo(
-      currentLatLng.latitude,
-      currentLatLng.longitude,
-      route.polyline
-    );
-
-    let reason: "distance" | "heading" | "missed-turn" | null = null;
-
-    if (distMeters > OFF_ROUTE_METERS) {
-      offRouteStreakRef.current += 1;
-      if (offRouteStreakRef.current >= OFF_ROUTE_CONFIRM_TICKS) reason = "distance";
-    } else {
-      offRouteStreakRef.current = 0;
-    }
-
-    if (!reason && routeBearingDeg != null && currentSpeedKmh != null && currentSpeedKmh >= HEADING_DIVERGE_MIN_SPEED_KMH) {
-      if (headingDiffDeg(heading, routeBearingDeg) > HEADING_DIVERGE_DEG) {
-        if (headingDivergeSinceRef.current == null) headingDivergeSinceRef.current = Date.now();
-        if (Date.now() - headingDivergeSinceRef.current >= HEADING_DIVERGE_HOLD_MS) reason = "heading";
-      } else {
-        headingDivergeSinceRef.current = null;
-      }
-    } else if (!reason) {
-      headingDivergeSinceRef.current = null;
-    }
-
-    if (!reason) {
-      const upcoming = route.steps[activeStepIndex]?.endLocation;
-      if (upcoming) {
-        const distToManeuverM = distanceKm(currentLatLng.latitude, currentLatLng.longitude, upcoming.latitude, upcoming.longitude) * 1000;
-        if (distToManeuverM > MISSED_TURN_METERS) {
-          const bearingToManeuver = bearingDegrees(
-            currentLatLng.latitude,
-            currentLatLng.longitude,
-            upcoming.latitude,
-            upcoming.longitude
-          );
-          // The upcoming maneuver point is "behind" the driver (its bearing from here differs
-          // from the driver's own heading by more than a right angle) -- it's been passed, not
-          // just not-yet-reached.
-          if (headingDiffDeg(heading, bearingToManeuver) > 90) reason = "missed-turn";
-        }
-      }
-    }
-
-    // A missed exit/merge (the approach machine saw it) reroutes at once, cooldown or not.
     const missedManoeuvre = missedManoeuvreRef.current;
-    if (missedManoeuvre) reason = "missed-turn";
+    const t = rerouteTrigger(rerouteTriggerRef.current, {
+      nowMs: Date.now(),
+      match: navMatch,
+      position: currentLatLng,
+      missedManoeuvre,
+      judging: approachRef.current.phase === "approach",
+    });
+    rerouteTriggerRef.current = t.state;
+    const reason = t.reason;
     if (!reason) return;
-    if (!missedManoeuvre && Date.now() - lastRerouteAtRef.current < REROUTE_COOLDOWN_MS) return;
     missedManoeuvreRef.current = false;
-
-    offRouteStreakRef.current = 0;
-    headingDivergeSinceRef.current = null;
+    const distMeters = navMatch.offRouteMeters ?? 0;
     lastRerouteAtRef.current = Date.now();
     rerouteAbortRef.current?.abort();
     const controller = new AbortController();
@@ -2210,7 +2211,7 @@ export function MapScreen() {
           });
     // Driving reroutes come from Mapbox (live traffic, Avoid settings, no U-turn where possible,
     // given up after ~2.5 s), with Google as the fallback.
-    const reroutePromise: Promise<Route> =
+    const fetchReroute = (): Promise<Route> =>
       travelMode !== "driving"
         ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode)
         : mapboxRoutingAvailable()
@@ -2220,6 +2221,15 @@ export function MapScreen() {
               return googleReroute();
             })
           : googleReroute();
+    // A dropped connection gets one more try a second later; the old route stays on screen and
+    // keeps guiding meanwhile (it's only replaced when a new one arrives).
+    const reroutePromise: Promise<Route> = fetchReroute().catch(
+      (err) =>
+        new Promise<Route>((resolve, reject) => {
+          if (controller.signal.aborted) return reject(err);
+          setTimeout(() => (controller.signal.aborted ? reject(err) : fetchReroute().then(resolve, reject)), 1000);
+        })
+    );
 
     reroutePromise
       .then((fresh) => {
@@ -2263,14 +2273,19 @@ export function MapScreen() {
       .catch((err) => {
         if (controller.signal.aborted) return;
         dispatchApproachRef.current({ type: "rerouteFailed" });
-        setManoeuvreChip(null);
+        // No connection (both tries failed to reach a server): say so, and keep the current route.
+        const offline = /network|internet|offline|failed to fetch|timed? ?out|abort/i.test(String(err));
+        if (offline) showManoeuvreChip("No connection — keep following the current road", "neutral", 6000);
+        else setManoeuvreChip(null);
         console.warn("[map] reroute failed", err);
         Sentry.logger.error("map: reroute failed", { error: String(err) });
       })
       .finally(() => {
         if (!controller.signal.aborted) setRerouting(false);
       });
-  }, [currentLatLng, route, destinationLatLng, travelMode, heading, currentSpeedKmh, activeStepIndex, announcePhrase, settings.routeAvoid, settings.distanceUnit]);
+    // Runs on each matched fix; the trigger itself decides (and debounces).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navMatch]);
 
   // EV Radar (Phase 6): start/stop siren detection with the map screen lifecycle -- mount-once
   // (deps: []), NOT re-keyed on location. It used to also depend on currentLatLng/user/
@@ -4980,7 +4995,7 @@ export function MapScreen() {
         <Chip
           icon={simulatingDrive ? "stop" : "car-sport"}
           label={simulatingDrive ? "Stop simulation" : "Simulate drive"}
-          onPress={() => (simulatingDrive ? stopSimulatedDrive() : startSimulatedDrive(remainingPolyline.length > 1 ? remainingPolyline : detailedRoutePolyline(route)))}
+          onPress={() => (simulatingDrive ? stopSimulatedDrive() : startSimulatedDrive(remainingPolyline.length > 1 ? remainingPolyline : detailedRoutePolyline(route), route.steps))}
           accessibilityLabel={simulatingDrive ? "Stop simulated drive" : "Simulate drive"}
           onMap style={[styles.simulateDriveSpot, { bottom: insets.bottom + bottomBarHeight + spacing.xl * 3 }]}
         />

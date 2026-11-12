@@ -9,15 +9,18 @@ import { BLUE, WHITE } from "@/theme/colors";
 
 export const LANE_TILE = { valid: { fill: BLUE, arrow: WHITE }, other: { fill: "#2A2C30", arrow: "#9AA0A8" } } as const;
 
-export function LaneStrip({
+// Memoised: it only redraws when the lanes change, not on every GPS fix that re-renders the card.
+export const LaneStrip = React.memo(function LaneStrip({
   lanes,
   scale = 1,
   drivingSide = "right",
 }: {
-  lanes: Lane[];
+  lanes: Lane[] | null | undefined;
   scale?: number;
   drivingSide?: "left" | "right";
 }) {
+  // No lane data for this manoeuvre: no strip (the plain instruction says it all).
+  if (!lanes || lanes.length === 0) return null;
   const base = 34 * scale;
   return (
     <View
@@ -48,7 +51,7 @@ export function LaneStrip({
       })}
     </View>
   );
-}
+});
 
 /** "Lanes: 1 and 2 of 4" for screen readers. */
 export function laneAccessibilityLabel(lanes: Lane[]): string {

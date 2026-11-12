@@ -11,9 +11,10 @@ export function junctionImageUri(url: string, token: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
 }
 
-export function JunctionViewCard({ url, token, top }: { url: string; token: string; top: number }) {
+export const JunctionViewCard = React.memo(function JunctionViewCard({ url, token, top }: { url?: string | null; token: string; top: number }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return null;
+  // No picture for this junction (most have none), or it failed to load: nothing shown.
+  if (failed || !url) return null;
   return (
     <View pointerEvents="none" style={[styles.card, { top }]} testID="junction-view">
       <Image
@@ -25,7 +26,7 @@ export function JunctionViewCard({ url, token, top }: { url: string; token: stri
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

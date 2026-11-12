@@ -5,8 +5,9 @@ import { describe, expect, it } from "@jest/globals";
 import taken from "@/dev/testRoutes/m4-silverwater-taken.json";
 import missed from "@/dev/testRoutes/m4-silverwater-missed.json";
 import { parseMapboxResponse } from "@/services/mapboxDirections";
-import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
-import { routeToReplayPoints } from "@/dev/simulateDrive";
+import { buildRouteGeometry, createMatchState, matchFix } from "@/nav/routeMatcher";
+import { driveNav } from "../support/navDrive";
+import { driveTrack } from "@/dev/simulateDrive";
 import {
   APPROACH_CAMERA,
   APPROACH_GIVE_UP_MS,
@@ -14,10 +15,9 @@ import {
   INITIAL_APPROACH,
   RESTORE_FAST_MS,
   RESTORE_MS,
-  distanceToLineMeters,
+  ZOOM_MAX_MS,
   kindOfStep,
   manoeuvreHighlight,
-  metersPastSplit,
   reduceApproach,
   type ApproachEffect,
   type ApproachState,
@@ -70,61 +70,74 @@ describe("the state machine never gets stuck zoomed in", () => {
     const nav = parseMapboxResponse(taken)[0];
     const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
     const at = nav.steps[i].polyline[0];
+    const geo = buildRouteGeometry(nav.steps);
     const tick = (nowMs: number) =>
       reduceApproach(
-        { ...approaching, stepIndex: i },
-        { type: "tick", nowMs, position: at, speedKmh: 0, activeStepIndex: i, steps: nav.steps, metersToManoeuvre: nav.steps[i].distanceMeters, offRouteMeters: 0 }
+        { ...approaching, stepIndex: i, zoomed: false, zoomedAtMs: null },
+        { type: "tick", nowMs, position: at, speedKmh: 0, activeStepIndex: i, steps: nav.steps, alongMeters: geo.stepEnds[i] - nav.steps[i].distanceMeters, stepEndsAlong: geo.stepEnds, offRouteMeters: 0 }
       );
     expect(tick(APPROACH_GIVE_UP_MS - 1000).state.phase).toBe("approach");
     const { state, effects } = tick(APPROACH_GIVE_UP_MS + 1000);
     expect(state.phase).toBe("normal");
+    expect(effects).toEqual([]);
+  });
+  it("the close-up never lasts more than 20 s: the camera goes back, the following carries on", () => {
+    const nav = parseMapboxResponse(taken)[0];
+    const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
+    const geo = buildRouteGeometry(nav.steps);
+    const zoomed: ApproachState = { ...approaching, stepIndex: i, zoomedAtMs: 0 };
+    const tick = (nowMs: number) =>
+      reduceApproach(zoomed, { type: "tick", nowMs, position: nav.steps[i].polyline[0], speedKmh: 0, activeStepIndex: i, steps: nav.steps, alongMeters: geo.stepEnds[i] - 100, stepEndsAlong: geo.stepEnds, offRouteMeters: 0 });
+    expect(tick(ZOOM_MAX_MS - 1000).effects).toEqual([]);
+    const { state, effects } = tick(ZOOM_MAX_MS);
     expect(effects).toEqual([{ kind: "restore", durationMs: RESTORE_MS }]);
+    expect(state).toMatchObject({ phase: "approach", zoomed: false, stepIndex: i });
+  });
+  it("coming back to the app restores the camera without dropping the manoeuvre", () => {
+    const { state, effects } = reduceApproach(approaching, { type: "resumed" });
+    expect(effects).toEqual([{ kind: "restore", durationMs: RESTORE_FAST_MS }]);
+    expect(state).toMatchObject({ phase: "approach", zoomed: false, stepIndex: 3 });
   });
 });
 
-describe("past the split is measured along the route", () => {
+describe("past the split is measured along the route (route matcher)", () => {
   const nav = parseMapboxResponse(taken)[0];
   const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
-  it("negative before the split, about zero at it, positive after", () => {
-    const before = nav.steps[i].polyline[Math.floor(nav.steps[i].polyline.length / 2)];
-    expect(metersPastSplit(before, nav.steps, i)).toBeLessThan(-20);
-    expect(Math.abs(metersPastSplit(nav.steps[i].endLocation, nav.steps, i))).toBeLessThan(2);
-    const after = nav.steps[i + 1].polyline[nav.steps[i + 1].polyline.length - 1];
-    expect(metersPastSplit(after, nav.steps, i)).toBeGreaterThan(20);
+  it("before the split, at it, and after it, by progress along the road", () => {
+    const geo = buildRouteGeometry(nav.steps);
+    let st = createMatchState();
+    // Driven along the road (one fix a second at 100 km/h), not hopped vertex to vertex.
+    const seconds = driveTrack(geo.points, () => 100);
+    const past: number[] = [];
+    for (const sec of seconds) {
+      const r = matchFix(geo, st, sec.fix!);
+      st = r.state;
+      past.push(r.result.along - geo.stepEnds[i]);
+    }
+    const crossing = past.findIndex((x) => x >= 0);
+    expect(crossing).toBeGreaterThan(0);
+    expect(past[crossing - 1]).toBeLessThan(0);
+    expect(past[crossing]).toBeLessThan(100 / 3.6 + 2);
+    expect(past[crossing + 3]).toBeGreaterThan(20);
   });
 });
 
-/** Drives a recorded track while navigating `nav`, feeding the machine once a second. */
+/** Drives a recorded track while navigating `nav`, through the app's own pipeline. */
 function drive(nav: Route, track: Route, speedKmh: number) {
-  const points = routeToReplayPoints(track.polyline, speedKmh, 1000);
-  const guidance = createGuidanceState();
-  let state: ApproachState = INITIAL_APPROACH;
-  const log: { t: number; phase: string; stepIndex: number | null; effect: ApproachEffect }[] = [];
-  for (const p of points) {
-    const position = { latitude: p.latitude, longitude: p.longitude };
-    const g = evaluateGuidance(guidance, nav.steps, position.latitude, position.longitude, []);
-    const step = nav.steps[g.activeStepIndex];
-    const out = reduceApproach(state, {
-      type: "tick",
-      nowMs: p.elapsedMs,
-      position,
-      speedKmh,
-      activeStepIndex: g.activeStepIndex,
-      steps: nav.steps,
-      metersToManoeuvre: remainingStepMeters(step, position.latitude, position.longitude),
-      offRouteMeters: distanceToLineMeters(position, nav.polyline),
-    });
-    state = out.state;
-    for (const effect of out.effects) log.push({ t: p.elapsedMs, phase: state.phase, stepIndex: state.stepIndex, effect });
-    if (out.effects.some((e) => e.kind === "missed")) {
-      // MapScreen would reroute now; the new route arriving ends the episode.
-      const r = reduceApproach(state, { type: "rerouted" });
-      state = r.state;
-      for (const effect of r.effects) log.push({ t: p.elapsedMs, phase: state.phase, stepIndex: state.stepIndex, effect });
-      break;
-    }
+  const o = driveNav(nav, track.polyline, { speedKmh, stopAtMiss: true });
+  const log: { t: number; phase: string; stepIndex: number | null; effect: ApproachEffect }[] = o.effects.map((e) => ({
+    t: e.t,
+    phase: "",
+    stepIndex: "stepIndex" in e.effect ? e.effect.stepIndex : null,
+    effect: e.effect,
+  }));
+  let finalPhase = "normal";
+  if (o.missed.size) {
+    // MapScreen would reroute now; the new route arriving ends the episode.
+    const r = reduceApproach({ ...INITIAL_APPROACH, phase: "missed" }, { type: "rerouted" });
+    finalPhase = r.state.phase;
   }
-  return Object.assign(log, { finalPhase: state.phase });
+  return Object.assign(log, { finalPhase });
 }
 
 describe("real drive: M4 eastbound, Silverwater Road exit", () => {
@@ -143,7 +156,7 @@ describe("real drive: M4 eastbound, Silverwater Road exit", () => {
     expect(restore?.effect).toEqual({ kind: "restore", durationMs: RESTORE_MS });
     // The camera eases back after the 2 s chip -- or earlier only because the next turn (the
     // right onto Old Hill Link, just after the ramp) is already being followed.
-    const nextFollowed = exitEvents.some((l) => l.t === restore!.t && l.stepIndex !== null && l.stepIndex > exitIndex);
+    const nextFollowed = exitEvents.some((l) => l.t === restore!.t && l.effect.kind === "zoomIn" && l.stepIndex !== null && l.stepIndex > exitIndex);
     expect(restore!.t - confirmed!.t >= CHIP_MS || nextFollowed).toBe(true);
     // Zoomed in no later than 400 m (100 km/h covers ~28 m a second).
     expect(log.some((l) => l.effect.kind === "missed")).toBe(false);
@@ -161,7 +174,11 @@ describe("real drive: M4 eastbound, Silverwater Road exit", () => {
     expect(zoomAt).toBeGreaterThanOrEqual(0);
     const missedAt = kinds.indexOf("missed", zoomAt);
     expect(missedAt).toBeGreaterThan(zoomAt);
-    expect(log[missedAt - 1].effect).toEqual({ kind: "restore", durationMs: RESTORE_FAST_MS });
+    // The camera is back to normal by the time the miss is announced: restored fast on the miss
+    // itself, or already by the 20 s cap on the close-up (400 m at 100 km/h is ~14 s to the split).
+    const restoreBefore = log.slice(zoomAt, missedAt).filter((l) => l.effect.kind === "restore");
+    expect(restoreBefore.length).toBe(1);
+    expect([RESTORE_FAST_MS, RESTORE_MS]).toContain((restoreBefore[0].effect as { durationMs: number }).durationMs);
     expect(kinds.slice(zoomAt, missedAt)).not.toContain("confirmed");
     expect(log.finalPhase).toBe("normal");
   });

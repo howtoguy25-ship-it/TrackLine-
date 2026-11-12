@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { AppState } from "react-native";
 import * as Location from "expo-location";
 import { isGpsReplayActive, subscribeGpsReplay, subscribeGpsReplayActiveChange, type ReplayFix } from "@/dev/gpsReplay";
 
@@ -56,6 +57,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   // the app launches normally first) actually switches the live GPS source, not just on the
   // next app restart. __DEV__-gated: this subscription is simply never created in production.
   const [replayActive, setReplayActive] = useState(__DEV__ && isGpsReplayActive());
+  // Battery: a fix a second while the app is in front (navigation matches every second); with the
+  // screen off / app in the background, every 3 s or 10 m -- still enough for the voice to call
+  // the next turn, at a fraction of the drain.
+  const [foreground, setForeground] = useState(AppState.currentState === "active");
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => setForeground(next === "active"));
+    return () => sub.remove();
+  }, []);
   useEffect(() => {
     if (!__DEV__) return;
     return subscribeGpsReplayActiveChange(setReplayActive);
@@ -88,11 +97,9 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       setErrorMsg(null);
 
       subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 2000,
-          distanceInterval: 5,
-        },
+        foreground
+          ? { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 3 }
+          : { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 10 },
         (loc) => setLocation(loc)
       );
     })();
@@ -101,7 +108,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       subscription?.remove();
     };
-  }, [replayActive, retryTick]);
+  }, [replayActive, retryTick, foreground]);
 
   return (
     <LocationContext.Provider
