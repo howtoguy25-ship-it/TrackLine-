@@ -1,5 +1,6 @@
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { MapSurface } from "@/components/ui/Surface";
+import { showLaneStrip } from "@/nav/lanes";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip, FloatingButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -3960,6 +3961,14 @@ export function MapScreen() {
   }, []);
 
   const activeStep = route?.steps[activeStepIndex] ?? null;
+  // Metres along the road to the coming manoeuvre (the end of the active step).
+  const metersToManoeuvre = useMemo(
+    () => (activeStep && currentLatLng ? remainingStepMeters(activeStep, currentLatLng.latitude, currentLatLng.longitude) : null),
+    [activeStep, currentLatLng]
+  );
+  // The lane strip: only for a manoeuvre with real lane data, from 1 km out.
+  const laneStripLanes =
+    activeStep?.lanes && metersToManoeuvre !== null && showLaneStrip(activeStep.lanes, metersToManoeuvre) ? activeStep.lanes : null;
   // The road shown on the trip bar and the live street chip. While navigating it's read off the
   // route itself -- the street the previous step turned onto -- which is exact and costs no
   // lookup; the looked-up name fills in on the first step or where the route names no street.
@@ -4886,6 +4895,7 @@ export function MapScreen() {
             );
           }}
           distanceUnit={settings.distanceUnit}
+          lanes={laneStripLanes}
         />
       )}
 

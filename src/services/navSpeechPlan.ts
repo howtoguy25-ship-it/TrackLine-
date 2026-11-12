@@ -2,6 +2,7 @@ import type { ManeuverType, RouteStep } from "@/services/directions";
 import type { AlertType } from "@/types/alert";
 import type { SpokenDirectionsMode } from "@/services/settings";
 import { extractRoundaboutExitNumber } from "@/utils/navFormat";
+import { laneSentence } from "@/nav/lanes";
 import {
   listComma,
   localizedDistanceCue,
@@ -131,7 +132,39 @@ const MANEUVER_CLIPS: Partial<Record<NonNullable<ManeuverType>, SpeechSegment>> 
   straight: { clipKey: "instr_straight", text: "Go straight on" },
 };
 
-type SpokenStep = Pick<RouteStep, "instruction" | "maneuver">;
+type SpokenStep = Pick<RouteStep, "instruction" | "maneuver"> &
+  Partial<Pick<RouteStep, "lanes" | "maneuverKind" | "maneuverSide" | "exitNumber" | "targetStreetName">>;
+
+/**
+ * The lane part of an instruction, from the route's own lane data (Mapbox). For an exit or a
+ * motorway split it replaces the instruction ("keep left, use the two left lanes to take exit
+ * 3B"); for anything else it's added after it ("..., use the right lane"). Null without lane data.
+ */
+export function laneLine(step: SpokenStep): { replaces: boolean; text: string } | null {
+  const kind =
+    step.maneuverKind === "exit"
+      ? "exit"
+      : step.maneuverKind === "fork"
+        ? "fork"
+        : step.maneuverKind === "merge" || step.maneuverKind === "onramp"
+          ? "merge"
+          : step.maneuverKind === "roundabout"
+            ? "roundabout"
+            : "turn";
+  const text = laneSentence({
+    lanes: step.lanes,
+    kind,
+    side: step.maneuverSide,
+    exitNumber: step.exitNumber,
+    toward: step.targetStreetName,
+  });
+  return text ? { replaces: kind === "exit" || kind === "fork", text } : null;
+}
+
+const KEEP_CLIPS: Record<"left" | "right", SpeechSegment> = {
+  left: { clipKey: "instr_keep_left", text: "Keep left" },
+  right: { clipKey: "instr_keep_right", text: "Keep right" },
+};
 
 /**
  * A step as recordable clips, or null when it can't be said that way -- "Head north on George
@@ -187,7 +220,14 @@ export function planStepAnnouncement(
 ): SpeechPlan {
   const { step, distanceMeters, kind, thenStep } = announcement;
   const cue = distanceCue(distanceMeters, unit);
-  const instruction = withoutFinalStop(step.instruction);
+  // Lane guidance is English only (the words are built here, not by the router).
+  const lanes = language === "en" ? laneLine(step) : null;
+  const baseInstruction = withoutFinalStop(step.instruction);
+  const instruction = !lanes
+    ? baseInstruction
+    : lanes.replaces
+      ? lanes.text[0].toUpperCase() + lanes.text.slice(1)
+      : `${baseInstruction}, ${lanes.text}`;
   const comma = listComma(language);
   const cueText = cue ? localizedDistanceCue(language, cue.meters) ?? cue.text : null;
   const andThen = localizedPhrase(language, "andThen") ?? "and then";
@@ -208,8 +248,15 @@ export function planStepAnnouncement(
   const maneuver = maneuverSegments(step);
   if (cue?.clipKey) segments.push({ clipKey: cue.clipKey, text: cue.text });
   else if (cue && kind === "early") segments.push({ text: cue.text });
-  if (maneuver) segments.push(...maneuver);
-  else segments.push({ text: instruction });
+  if (lanes?.replaces) {
+    // "Keep left" from the driver's own clip where there is one, the lanes in the phone's voice.
+    const keepPrefix = step.maneuverSide ? `keep ${step.maneuverSide}, ` : "";
+    if (step.maneuverSide) segments.push(KEEP_CLIPS[step.maneuverSide]);
+    segments.push({ text: lanes.text.startsWith(keepPrefix) ? lanes.text.slice(keepPrefix.length) : lanes.text });
+  } else if (maneuver) {
+    segments.push(...maneuver);
+    if (lanes) segments.push({ text: lanes.text });
+  } else segments.push({ text: instruction });
 
   if (kind === "final" && thenStep) {
     const thenManeuver = maneuverSegments(thenStep);

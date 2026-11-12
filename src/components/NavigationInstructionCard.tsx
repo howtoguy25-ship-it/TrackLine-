@@ -1,3 +1,5 @@
+import { LaneStrip } from "@/components/nav/LaneStrip";
+import type { Lane } from "@/nav/lanes";
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -70,6 +72,8 @@ interface Props {
   // unchanged, so this is an additional, separate target, not a replacement for it).
   onRepeatInstruction?: () => void;
   distanceUnit?: DistanceUnit;
+  /** Lanes for the coming manoeuvre, shown as a strip under the instruction (from 1 km out). */
+  lanes?: Lane[] | null;
 }
 
 export function NavigationInstructionCard({
@@ -83,6 +87,7 @@ export function NavigationInstructionCard({
   isFinalStep,
   onRepeatInstruction,
   distanceUnit = "km",
+  lanes,
 }: Props) {
   const insets = useSafeAreaInsets();
   const theme = NAV_CARD_THEMES[themeKey];
@@ -328,6 +333,9 @@ export function NavigationInstructionCard({
           </Text>
         </View>
       )}
+
+      {/* Lanes for the coming manoeuvre, straight from the route data (never guessed). */}
+      {!collapsed && lanes && lanes.length > 0 && <LaneStrip lanes={lanes} />}
 
       {/* Real, explicit request -- a small "Then" chip when the step right after this one
           follows almost immediately (<150m past this maneuver), so the driver knows another

@@ -18,7 +18,6 @@ import { maneuverTypeFor, manoeuvreKindFor, sideOf } from "@/nav/manoeuvre";
 
 const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export interface MapboxRequest {
   origin: LatLng;
