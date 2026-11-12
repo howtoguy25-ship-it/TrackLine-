@@ -9,6 +9,26 @@ import { SearchSession, matchQuality, rankPredictions } from "../src/services/se
 import { formatDistance } from "../src/utils/navFormat";
 import { isLookupablePlaceId, summarizeParking, todaysHours } from "../src/services/placePageLogic";
 import {
+  DEFAULT_ROUTE_AVOID,
+  avoidCount,
+  avoidPillLabel,
+  avoidRouteOptions,
+  bubbleAnchors,
+  distanceToPolylineMeters,
+  distinctRoutes,
+  formatRouteDuration,
+  normalizeRouteAvoid,
+  roadFromInstruction,
+  routeSummaryLine,
+  routeTags,
+  sharedPathFraction,
+  trafficLevel,
+  trafficStretches,
+  viaRoadLabel,
+  withoutUturns,
+  type ChoiceRoute,
+} from "../src/map/routeChoices";
+import {
   ALERT_PIN_MAX,
   ALERT_PIN_MIN,
   HOME_ARROW_SCREEN_FRACTION,
@@ -32,6 +52,12 @@ const assert = {
   },
   equal(actual: unknown, expected: unknown): void {
     if (actual !== expected) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  },
+  // Same JSON shape (objects compared by their values, in key order).
+  deepEqual(actual: unknown, expected: unknown): void {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`expected ${e}, got ${a}`);
   },
 };
 let passed = 0;
@@ -334,6 +360,129 @@ check("a place from a shared link isn't looked up (it isn't a Google place)", ()
   assert.equal(isLookupablePlaceId("shared:-33.85,151.21"), false);
   assert.equal(isLookupablePlaceId("ChIJ3S-JXmauEmsRUcIaWtf4MzE"), true);
   assert.equal(isLookupablePlaceId("osm:node:123"), true);
+});
+
+console.log("§5 route selection");
+// A straight line of points heading east from (lat, lng), one every ~100 m.
+const eastLine = (lat: number, lng: number, n: number) =>
+  Array.from({ length: n }, (_, i) => ({ latitude: lat, longitude: lng + i * 0.001 }));
+const SYD = -33.87;
+const routeOf = (polyline: ReturnType<typeof eastLine>, minutes: number, km: number, extra: Partial<ChoiceRoute> = {}): ChoiceRoute => ({
+  polyline,
+  distanceMeters: km * 1000,
+  durationSeconds: minutes * 60,
+  durationInTrafficSeconds: minutes * 60,
+  ...extra,
+});
+check("a route on the same road shares ~100% of its path; one 1 km away shares none", () => {
+  const main = eastLine(SYD, 151.2, 50);
+  assert.ok(sharedPathFraction(main, main) > 0.99);
+  assert.equal(sharedPathFraction(main, eastLine(SYD + 0.009, 151.2, 50)), 0);
+});
+check("de-duplication drops an alternative that's >85% the same road as the best route", () => {
+  const best = routeOf(eastLine(SYD, 151.2, 50), 10, 5);
+  // Same road for 45 of 50 points, then a short detour: 90% shared.
+  const nearCopy = eastLine(SYD, 151.2, 50).map((p, i) => (i >= 45 ? { ...p, latitude: p.latitude + 0.003 } : p));
+  const different = routeOf(eastLine(SYD + 0.01, 151.2, 50), 12, 6);
+  const kept = distinctRoutes([best, routeOf(nearCopy, 11, 5.4), different]);
+  assert.equal(kept.length, 2);
+  assert.ok(kept[0] === best && kept[1] === different);
+});
+check("de-duplication drops a route with identical time and distance even if re-encoded", () => {
+  const best = routeOf(eastLine(SYD, 151.2, 50), 10, 5);
+  const same = routeOf(eastLine(SYD + 0.02, 151.2, 50), 10, 5); // different points, same numbers
+  assert.equal(distinctRoutes([best, same]).length, 1);
+});
+check("de-duplication keeps at most 3 routes, and always Google's first", () => {
+  const routes = [0, 1, 2, 3, 4].map((i) => routeOf(eastLine(SYD + i * 0.01, 151.2, 30), 10 + i, 5 + i));
+  const kept = distinctRoutes(routes);
+  assert.equal(kept.length, 3);
+  assert.ok(kept[0] === routes[0]);
+});
+check("traffic label thresholds: <=5% slower light, <=25% typical, beyond heavy", () => {
+  const withTraffic = (free: number, live: number) => routeOf([], 0, 1, { durationSeconds: free, durationInTrafficSeconds: live });
+  assert.equal(trafficLevel(withTraffic(600, 600)), "light");
+  assert.equal(trafficLevel(withTraffic(600, 630)), "light"); // exactly 5%
+  assert.equal(trafficLevel(withTraffic(600, 631)), "typical");
+  assert.equal(trafficLevel(withTraffic(600, 750)), "typical"); // exactly 25%
+  assert.equal(trafficLevel(withTraffic(600, 751)), "heavy");
+  assert.equal(trafficLevel({ polyline: [], distanceMeters: 1, durationSeconds: 600 }), null); // no live data
+});
+check("route tags: first is Best, a minute-quicker one is Fastest, a toll-free one is No tolls", () => {
+  const tolled = { hasToll: true };
+  const free = { hasToll: false };
+  const tags = routeTags([
+    routeOf([], 20, 10, { tollEstimate: tolled }),
+    routeOf([], 18, 12, { tollEstimate: tolled }),
+    routeOf([], 24, 9, { tollEstimate: free }),
+  ]);
+  assert.deepEqual(tags, ["Best", "Fastest", "No tolls"]);
+  // 30 seconds quicker isn't enough to be called Fastest.
+  assert.deepEqual(routeTags([routeOf([], 20, 10), { ...routeOf([], 20, 10), durationInTrafficSeconds: 1170 }]), ["Best", null]);
+});
+check("the grey line reads 'Best route, Typical traffic · Toll'", () => {
+  assert.equal(routeSummaryLine("Best", "typical", true), "Best route, Typical traffic · Toll");
+  assert.equal(routeSummaryLine(null, "light", false), "Alternative route, Light traffic");
+  assert.equal(routeSummaryLine("No tolls", null, false), "No tolls");
+});
+check("'Via' comes from Google's own description, never made up", () => {
+  assert.equal(viaRoadLabel("M2"), "Via M2");
+  assert.equal(viaRoadLabel("via Pacific Hwy"), "Via Pacific Hwy");
+  assert.equal(viaRoadLabel(""), null);
+  assert.equal(viaRoadLabel(undefined), null);
+});
+check("route times read '10 min', '1 h 5 min', '2 h'", () => {
+  assert.equal(formatRouteDuration(600), "10 min");
+  assert.equal(formatRouteDuration(20), "1 min");
+  assert.equal(formatRouteDuration(3900), "1 h 5 min");
+  assert.equal(formatRouteDuration(7200), "2 h");
+});
+check("the road a Routes API step turns onto is read from its English sentence only", () => {
+  assert.equal(roadFromInstruction("Turn left onto George St", "en"), "George St");
+  assert.equal(roadFromInstruction("Head north on Pitt St toward Market St", "en"), "Pitt St");
+  assert.equal(roadFromInstruction("Keep left to continue on M1, follow signs for Sydney", "en"), "M1");
+  assert.equal(roadFromInstruction("Turn right\nPass by the petrol station", "en"), undefined);
+  assert.equal(roadFromInstruction("Gire a la izquierda en Calle Mayor", "es"), undefined);
+});
+check("U-turn avoidance drops routes with a U-turn, but never leaves no route", () => {
+  const withU = routeOf([], 10, 5, { steps: [{ maneuver: "turn-left" }, { maneuver: "uturn-right" }] });
+  const clean = routeOf([], 12, 6, { steps: [{ maneuver: "turn-left" }] });
+  assert.deepEqual(withoutUturns([withU, clean]), { routes: [clean], allHaveUturns: false });
+  assert.deepEqual(withoutUturns([withU]), { routes: [withU], allHaveUturns: true });
+});
+check("Avoid pill counts what's switched on; unsupported options can't be switched on", () => {
+  assert.equal(avoidPillLabel(DEFAULT_ROUTE_AVOID), "Avoid");
+  const two = { ...DEFAULT_ROUTE_AVOID, tolls: true, ferries: true };
+  assert.equal(avoidCount(two), 2);
+  assert.equal(avoidPillLabel(two), "Avoid · 2");
+  const stored = normalizeRouteAvoid({ tolls: true, unpaved: true, motorways: "yes" });
+  assert.deepEqual(stored, { ...DEFAULT_ROUTE_AVOID, tolls: true }); // unpaved unsupported, junk ignored
+  assert.deepEqual(normalizeRouteAvoid(null), DEFAULT_ROUTE_AVOID);
+  assert.deepEqual(avoidRouteOptions({ ...two, motorways: true }), { avoidTolls: true, avoidHighways: true, avoidFerries: true });
+});
+check("only slow and jammed stretches are drawn over the selected route", () => {
+  const line = eastLine(SYD, 151.2, 10);
+  const stretches = trafficStretches(line, [
+    { startIndex: 0, endIndex: 3, speed: "NORMAL" },
+    { startIndex: 3, endIndex: 6, speed: "SLOW" },
+    { startIndex: 6, endIndex: 9, speed: "TRAFFIC_JAM" },
+  ]);
+  assert.equal(stretches.length, 2);
+  assert.equal(stretches[0].coordinates.length, 4);
+  assert.equal(stretches[1].speed, "TRAFFIC_JAM");
+  assert.deepEqual(trafficStretches(line, undefined), []);
+});
+check("time bubbles sit where routes separate, far apart from each other", () => {
+  // Two routes that share their first and last points but run 1 km apart in the middle.
+  const a = eastLine(SYD, 151.2, 41);
+  const b = a.map((p, i) => (i > 5 && i < 35 ? { ...p, latitude: p.latitude + 0.009 } : p));
+  const [ba, bb] = bubbleAnchors([a, b], 0);
+  assert.ok(ba && bb);
+  assert.ok(distanceToPolylineMeters(ba!, b) > 500, "bubble A is clear of route B");
+  assert.ok(distanceToPolylineMeters(bb!, a) > 500, "bubble B is clear of route A");
+  // A lone route's bubble goes at its middle.
+  const [only] = bubbleAnchors([a], 0);
+  assert.ok(Math.abs(only!.longitude - a[20].longitude) < 0.0002);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -51,7 +51,17 @@ import { GhostModeExplainerModal, hasSeenGhostModeExplainer, markGhostModeExplai
 import { useAutoGhostMode, autoGhostOnArrival } from "@/hooks/useAutoGhostMode";
 import { Tracky } from "@/components/trackys/Tracky";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
-import { RouteOptionsCard } from "@/components/RouteOptionsCard";
+import {
+  AvoidSheet,
+  CheckeredFlagPin,
+  RouteSelectionSheet,
+  RouteSelectionTopCard,
+  RouteTimeBubble,
+  StartDot,
+  TravelModeSheet,
+  transitRouteTitle,
+  type RouteChoiceRow,
+} from "@/components/RouteSelection";
 import { AlertMarker } from "@/components/AlertMarker";
 import { AlertStillHereCard } from "@/components/AlertStillHereCard";
 import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
@@ -87,16 +97,34 @@ import type { SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 import {
   getDirections,
-  getRouteOptions,
+  getRouteChoices,
   getDirectionsForMode,
   getModeRouteOptions,
   getHeadingAwareReroute,
   detailedRoutePolyline,
   DirectionsApiError,
+  TRAVEL_MODE_LABELS,
   type Route,
-  type RouteProfileKey,
   type TravelMode,
 } from "@/services/directions";
+import {
+  avoidPillLabel,
+  avoidCount,
+  avoidRouteOptions,
+  bubbleAnchors,
+  distinctRoutes,
+  formatRouteDuration,
+  routeSeconds,
+  routeSummaryLine,
+  routeTags,
+  routesBounds,
+  trafficLevel,
+  trafficStretches,
+  viaRoadLabel,
+  withoutUturns,
+  type RouteAvoidKey,
+  type RouteAvoidPrefs,
+} from "@/map/routeChoices";
 import {
   findNearestTransitStation,
   getPlaceInfo,
@@ -218,52 +246,12 @@ const STILL_HERE_RADIUS_METERS = 300;
 const STILL_HERE_MIN_SPEED_KMH = 5;
 const STILL_HERE_HEADING_TOLERANCE_DEG = 70;
 
-// Driving's 3-way route picker order -- same order/keys RouteOptionsCard.tsx's own local
-// PROFILE_ORDER uses for its list rows, kept here too (not shared/exported) since this is the
-// only other place that needs it and duplicating one small array beats a wider shared-module
-// refactor for it.
-// Real, explicit request for 2 more real, distinct route options (With Tolls/No Tolls) -- see
-// getRouteOptions in directions.ts for the real logic behind them. Appended at the end so the
-// original three keep their existing display order.
-const ROUTE_PROFILE_ORDER: RouteProfileKey[] = ["normal", "fastest", "safest", "tolls", "noTolls"];
-// Real, explicit request: one consistent orange for every route profile (replacing the earlier
-// per-profile yellow/green/purple scheme) -- selected vs. not is carried entirely by opacity/
-// weight now (see the picker's own render below), not by which hue a route happens to be.
-const ROUTE_ORANGE = "#F97316";
-const ROUTE_PROFILE_COLORS: Record<RouteProfileKey, string> = {
-  normal: ROUTE_ORANGE,
-  fastest: ROUTE_ORANGE,
-  safest: ROUTE_ORANGE,
-  tolls: ROUTE_ORANGE,
-  noTolls: ROUTE_ORANGE,
-};
-// Translucent version of the same orange above, for the NOT-currently-selected routes' "ghost
-// preview" lines/pills -- per explicit request (Apple Maps-style: every alternative stays
-// visible, just visually secondary to whichever one is actually selected). Real, genuinely
-// different routes that happen to coincide with another profile's exact path (common for
-// tolls/noTolls on a trip with no real toll road at all) are deduped before ever reaching the
-// map -- see routesAreNearlyIdentical below -- so adding 2 more profiles here doesn't add visual
-// clutter beyond what's actually a new, distinct line to show.
-const ROUTE_ORANGE_GHOST = "rgba(249, 115, 22, 0.55)";
-const ROUTE_PROFILE_COLORS_GHOST: Record<RouteProfileKey, string> = {
-  normal: ROUTE_ORANGE_GHOST,
-  fastest: ROUTE_ORANGE_GHOST,
-  safest: ROUTE_ORANGE_GHOST,
-  tolls: ROUTE_ORANGE_GHOST,
-  noTolls: ROUTE_ORANGE_GHOST,
-};
-// Where along each route's own polyline its floating ETA pill lands -- staggered per profile
-// (not all at the literal midpoint) so three pills sitting on largely overlapping road sections
-// don't all render in exactly the same spot. Index-matched to ROUTE_PROFILE_ORDER. Widened
-// (0.35/0.5/0.65 -> 0.2/0.5/0.8) per explicit request/real screenshot evidence -- alternative
-// routes commonly share the same initial stretch of road (leaving from the same point), so a
-// narrow spread clustered near the middle still left pills crowded/overlapping right where
-// they diverge; placing them earlier and later along each route's own line gives them a much
-// better real chance of landing somewhere the routes have already visually separated. Extended
-// to 5 entries (was 3) for the new tolls/noTolls profiles, keeping the same even-spread
-// reasoning -- duplicate-geometry routes (routesAreNearlyIdentical) never reach a second pill
-// regardless, so this only ever matters for genuinely distinct real paths.
-const ROUTE_ETA_PILL_FRACTIONS = [0.15, 0.3, 0.5, 0.7, 0.85];
+// Slow and jammed stretches drawn over the selected route on the route-selection screen.
+const TRAFFIC_SLOW_ORANGE = "#FF8A00";
+const TRAFFIC_JAM_RED = "#E5222B";
+// At most this many route lines on the route-selection map (transit can offer many more
+// itineraries in the list; the selected one is always drawn).
+const MAX_DRAWN_ROUTES = 3;
 
 // Index-based (not distance-based) point along a polyline -- good enough for placing a small
 // floating label roughly along a route's own path without needing real cumulative-distance
@@ -272,45 +260,6 @@ function pointAtPolylineFraction(polyline: LatLng[], fraction: number): LatLng |
   if (polyline.length === 0) return null;
   const idx = Math.min(polyline.length - 1, Math.max(0, Math.floor(polyline.length * fraction)));
   return polyline[idx];
-}
-
-// Real, confirmed bug (screenshot evidence: two "1 min" ETA pills sitting right on top of each
-// other): the fraction-based spread above genuinely does separate pills along a route's own
-// path in real terms, but for a short trip (this app's own new pin-drop "choose starting point"/
-// "choose destination" picker makes trips this short newly common, e.g. two nearby pins) two or
-// three route profiles can resolve to the literal SAME road with the same real distance apart --
-// meters of real separation that a map zoomed out to fit the whole short route renders as only a
-// handful of screen pixels, well inside the pill's own width. Rather than fragile screen-space
-// math, this checks real geometric similarity directly: if a route's start/quarter/mid/three-
-// quarter/end points are all within GEOMETRY_MATCH_TOLERANCE_KM of another already-pilled
-// route's corresponding points, it's genuinely the same road -- a second pill for it would add
-// no real information (its own line is already covered by the zIndex-highlighted route's casing
-// too, see the "3 routes crumbled" fix above), so it's skipped rather than forced to overlap.
-const GEOMETRY_MATCH_TOLERANCE_KM = 0.03;
-const GEOMETRY_MATCH_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
-// Real, confirmed gap in the fixed 30m tolerance above: it was tuned against SHORT trips (a
-// couple of nearby pin-drop points), where even a real few-hundred-meter divergence between two
-// profiles is a meaningfully different road. For a long trip (tens/hundreds of km) that merges
-// onto the same road for the overwhelming majority of its length but genuinely diverges by a few
-// hundred meters near one end (a different side-street choice right at the start/finish), a
-// fixed 30m bar correctly calls that "not identical" -- but at the zoom level a long trip like
-// that is actually VIEWED at, a few hundred meters of divergence out of 100km+ is completely
-// invisible, so two routes that read as one crumbled line on screen still got two separate,
-// overlapping ETA pills (real screenshot evidence: a 104km trip's "Recommended" and "Fastest"
-// pills landing directly on top of each other). Scaling the tolerance with the route's own real
-// length keeps the original short-trip behavior exactly as tight (the 30m floor still applies),
-// while treating a long trip's own proportionally small divergence as the same visual road it
-// actually reads as on screen.
-const GEOMETRY_MATCH_TOLERANCE_FRACTION_OF_ROUTE = 0.01;
-function routesAreNearlyIdentical(a: LatLng[], b: LatLng[], routeDistanceKm: number): boolean {
-  if (a.length === 0 || b.length === 0) return false;
-  const toleranceKm = Math.max(GEOMETRY_MATCH_TOLERANCE_KM, routeDistanceKm * GEOMETRY_MATCH_TOLERANCE_FRACTION_OF_ROUTE);
-  return GEOMETRY_MATCH_FRACTIONS.every((f) => {
-    const pa = pointAtPolylineFraction(a, f);
-    const pb = pointAtPolylineFraction(b, f);
-    if (!pa || !pb) return false;
-    return distanceKm(pa.latitude, pa.longitude, pb.latitude, pb.longitude) < toleranceKm;
-  });
 }
 
 export function MapScreen() {
@@ -380,26 +329,6 @@ export function MapScreen() {
   // it never ends up partly hidden behind a taller-than-expected card. 96 is just the
   // reasonable single-line fallback for the one frame before the first real measurement lands.
   const [instructionCardHeight, setInstructionCardHeight] = useState(96);
-  // Same pattern as instructionCardHeight above, for RouteOptionsCard (see its onHeightChange)
-  // -- the route-preview polyline's fitToCoordinates bottom padding uses this real number
-  // instead of a fixed guess, so the previewed route never ends up partly hidden behind the
-  // card.
-  //
-  // Real, confirmed bug (screenshot evidence: route/destination sitting behind the card on the
-  // very first "Choose a route" of a session): a flat 320px default was a genuine underestimate,
-  // not just "close enough for one frame" -- RouteOptionsCard's own ScrollView is explicitly
-  // allowed to grow up to windowHeight*0.5 (see its own maxHeight style) PLUS its header/origin
-  // row/padding/safe-area-bottom chrome on top of that, routinely landing well over 500px on a
-  // typical phone -- and the very first fitToCoordinates call for a session's first route search
-  // fires in the SAME tick the card first mounts, before its own onLayout has had a chance to
-  // measure and report back via onHeightChange (a real native layout pass, never synchronous
-  // with the state update that renders the card at all). So the stale 320 default was actually
-  // being read on every session's very first route search, not just accidentally on some rare
-  // fast path -- leaving real bottom padding roughly 200px short of the card's true height, and
-  // the destination/route pin sitting behind it. Seeded here from the card's own real layout
-  // formula instead of a guessed constant, so even that first-ever call already assumes
-  // something close to the card's true footprint.
-  const [routeCardHeight, setRouteCardHeight] = useState(windowHeight * 0.5 + 140);
   // Same measured-height pattern again, for the new bottom trip bar (NavBottomBar) -- the FAB
   // column's bottom offset (see its render call site) adds this so the two never overlap. 76
   // is a reasonable fallback for the one frame before the first real measurement lands.
@@ -542,11 +471,22 @@ export function MapScreen() {
   const [destinationPinLatLng, setDestinationPinLatLng] = useState<LatLng | null>(null);
   const [destinationPinAddress, setDestinationPinAddress] = useState<string | null>(null);
   const [destinationPinAddressLoading, setDestinationPinAddressLoading] = useState(false);
-  const [routeOptions, setRouteOptions] = useState<Record<RouteProfileKey, Route> | null>(null);
-  // Driving gets the 3-way Normal/Fastest/Safest picker above; every other travel mode gets a
-  // single real route here instead -- Google has exactly one meaningful route per mode in the
-  // overwhelming majority of cases (transit in particular is governed by real timetables, not
-  // alternative road choices), so a 3-way picker wouldn't mean anything for them.
+  // Driving: up to three genuinely different routes, best first (see map/routeChoices.ts's
+  // distinctRoutes). Every other travel mode uses modeRoute/modeRouteOptions below.
+  const [routeChoices, setRouteChoices] = useState<Route[] | null>(null);
+  const [selectedChoiceIndex, setSelectedChoiceIndex] = useState(0);
+  // "Every route here has a U-turn" -- set when the U-turns avoid option couldn't be honoured.
+  const [routeAvoidNote, setRouteAvoidNote] = useState<string | null>(null);
+  const [avoidSheetOpen, setAvoidSheetOpen] = useState(false);
+  const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  // Measured edges of the route-selection top card and bottom sheet, so the routes are fitted
+  // into the map between them. Seeded with typical sizes until the first layout.
+  const [routeTopCardBottom, setRouteTopCardBottom] = useState(insets.top + 180);
+  const [routeSheetHeight, setRouteSheetHeight] = useState(insets.bottom + 220);
+  // Go now's ten-second fill. Starts once per destination when its driving routes arrive; any
+  // touch on the screen stops it for good (see the container's onTouchStart).
+  const [autoGoRunning, setAutoGoRunning] = useState(false);
+  const autoGoArmedRef = useRef(false);
   const [modeRoute, setModeRoute] = useState<Route | null>(null);
   // Every real alternative Google returned for the current walking/bicycling/transit trip --
   // `modeRoute` above always mirrors whichever one of these is currently selected/previewed,
@@ -557,7 +497,6 @@ export function MapScreen() {
   const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [loadingRouteOptions, setLoadingRouteOptions] = useState(false);
   const [routeOptionsError, setRouteOptionsError] = useState<string | null>(null);
-  const [selectedProfile, setSelectedProfile] = useState<RouteProfileKey>("normal");
 
   const [nearbyAlerts, setNearbyAlerts] = useState<AlertDoc[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<AlertDoc | null>(null);
@@ -1147,6 +1086,8 @@ export function MapScreen() {
   // sheet, the floating buttons and the street pill all belong to.
   const isHomeIdle =
     !route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && !placePage;
+  // The route-selection screen: a destination picked, routes on show, nothing else in front.
+  const inRouteSelection = !route && !!pendingDestination && !pickingStop && !pickingOrigin;
   // The ad banner is laid out UNDER the map (not over it) whenever it's showing, together with
   // the bottom safe area -- so the map view is that much shorter than the screen.
   // Hidden on the route-selection screen and during navigation (as asked), and on the place
@@ -1164,9 +1105,11 @@ export function MapScreen() {
     : placePage
       ? // The place sits in the middle of the 40% above the place page's sheet.
         { top: insets.top, right: 0, bottom: windowHeight * PLACE_PAGE_SHEET_FRACTION, left: 0 }
-      : isHomeIdle
-        ? homePadding
-        : { top: 0, right: 0, bottom: 0, left: 0 };
+      : inRouteSelection
+        ? { top: routeTopCardBottom, right: 0, bottom: routeSheetHeight, left: 0 }
+        : isHomeIdle
+          ? homePadding
+          : { top: 0, right: 0, bottom: 0, left: 0 };
 
   // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
   // coords.speed is m/s, converted here once rather than in the display component so every
@@ -2175,12 +2118,11 @@ export function MapScreen() {
     // getHeadingAwareReroute's own header for exactly what Google's heading field does and
     // doesn't guarantee). Only the driving mode gets this treatment; walking/transit/bicycling
     // have no U-turn-legality concern worth the Routes API's extra cost, same as before.
-    const avoidTolls = selectedProfile === "noTolls" || selectedProfile === "safest";
     const reroutePromise: Promise<Route> =
       travelMode !== "driving"
         ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode)
         : getHeadingAwareReroute(currentLatLng, destinationLatLng, heading, {
-            avoidTolls,
+            ...avoidRouteOptions(settings.routeAvoid),
             signal: controller.signal,
           }).then(({ route: primary, alternates }) => {
             // Real, explicit request -- pick the genuinely lowest-ETA real alternative Google
@@ -2238,7 +2180,7 @@ export function MapScreen() {
       .finally(() => {
         if (!controller.signal.aborted) setRerouting(false);
       });
-  }, [currentLatLng, route, destinationLatLng, travelMode, selectedProfile, heading, currentSpeedKmh, activeStepIndex, announcePhrase]);
+  }, [currentLatLng, route, destinationLatLng, travelMode, heading, currentSpeedKmh, activeStepIndex, announcePhrase, settings.routeAvoid]);
 
   // EV Radar (Phase 6): start/stop siren detection with the map screen lifecycle -- mount-once
   // (deps: []), NOT re-keyed on location. It used to also depend on currentLatLng/user/
@@ -2293,8 +2235,34 @@ export function MapScreen() {
   // `origin` is likewise always passed explicitly (routeOriginLatLng at the call site) rather
   // than read off currentLatLng here directly -- real support for a custom "From" place per the
   // explicit request, instead of every route always starting from the driver's own live position.
+  // Fits every shown route into the map between the route-selection card and its sheet (the
+  // map's padding is set to exactly that space while route selection is up), over 600ms.
+  const fitRoutesOnScreen = useCallback((lines: LatLng[][]) => {
+    const bounds = routesBounds(lines);
+    if (!bounds) return;
+    const latSpan = Math.max(bounds.north - bounds.south, 0.002);
+    const lngSpan = Math.max(bounds.east - bounds.west, 0.002);
+    mapRef.current?.animateToRegion(
+      {
+        latitude: (bounds.north + bounds.south) / 2,
+        longitude: (bounds.east + bounds.west) / 2,
+        latitudeDelta: latSpan * 1.3,
+        longitudeDelta: lngSpan * 1.3,
+      },
+      600
+    );
+  }, []);
+
   const fetchRouteOptions = useCallback(
-    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, mode: TravelMode) => {
+    // `avoidOverride`: an Avoid switch just flipped, so use the new choices without waiting for
+    // the settings update to come back round. Otherwise the driver's saved Avoid choices.
+    async (
+      origin: LatLng,
+      destination: LatLng,
+      waypoint: LatLng | undefined,
+      mode: TravelMode,
+      avoidOverride?: RouteAvoidPrefs
+    ) => {
       // Belt-and-suspenders on top of DestinationSearchBar's own Keyboard.dismiss() in
       // selectPlace -- real, confirmed screenshot evidence of the "Choose a route" card coming
       // up with the keyboard still visible behind it. Every real caller of fetchRouteOptions is
@@ -2306,15 +2274,20 @@ export function MapScreen() {
       setRouteOptionsError(null);
       try {
         if (mode === "driving") {
-          const options = await getRouteOptions(origin, destination, waypoint);
-          setRouteOptions(options);
+          const avoid = avoidOverride ?? settings.routeAvoid;
+          const all = await getRouteChoices(origin, destination, { ...avoidRouteOptions(avoid), waypoint });
+          const { routes: usable, allHaveUturns } = avoid.uturns ? withoutUturns(all) : { routes: all, allHaveUturns: false };
+          const choices = distinctRoutes(usable);
+          setRouteChoices(choices);
+          setSelectedChoiceIndex(0);
+          setRouteAvoidNote(allHaveUturns ? "Every route here has a U-turn, so they're shown anyway." : null);
           setModeRoute(null);
           setModeRouteOptions([]);
-          setSelectedProfile("normal");
-          mapRef.current?.fitToCoordinates(options.normal.polyline, {
-            edgePadding: { top: 120, right: 60, bottom: routeCardHeight + spacing.md, left: 60 },
-            animated: true,
-          });
+          fitRoutesOnScreen(choices.map(detailedRoutePolyline));
+          if (!autoGoArmedRef.current) {
+            autoGoArmedRef.current = true;
+            setAutoGoRunning(true);
+          }
         } else {
           // Walking/bicycling/transit: every real alternative Google offers for that mode, not
           // a driving-route estimate scaled by some guessed speed factor -- genuine distance and
@@ -2326,11 +2299,9 @@ export function MapScreen() {
           setModeRouteOptions(results);
           setSelectedModeRouteIndex(0);
           setModeRoute(results[0]);
-          setRouteOptions(null);
-          mapRef.current?.fitToCoordinates(results[0].polyline, {
-            edgePadding: { top: 120, right: 60, bottom: routeCardHeight + spacing.md, left: 60 },
-            animated: true,
-          });
+          setRouteChoices(null);
+          setRouteAvoidNote(null);
+          fitRoutesOnScreen(results.slice(0, 3).map(detailedRoutePolyline));
         }
       } catch (err) {
         Sentry.logger.error("map: failed to fetch route options", { error: String(err), mode });
@@ -2349,7 +2320,7 @@ export function MapScreen() {
         setLoadingRouteOptions(false);
       }
     },
-    [routeCardHeight]
+    [fitRoutesOnScreen, settings.routeAvoid]
   );
 
   // Rough degrees-of-latitude span for a given real km distance (111km per degree of
@@ -3069,7 +3040,12 @@ export function MapScreen() {
       try {
         const preview =
           travelMode === "driving"
-            ? (await getRouteOptions(currentLatLng, destinationLatLng, place.location))[selectedProfile]
+            ? (
+                await getRouteChoices(currentLatLng, destinationLatLng, {
+                  ...avoidRouteOptions(settings.routeAvoid),
+                  waypoint: place.location,
+                })
+              )[0]
             : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode, place.location);
         setStopPreviewPlace(place);
         setStopPreviewRoute(preview);
@@ -3084,7 +3060,7 @@ export function MapScreen() {
         setRerouting(false);
       }
     },
-    [currentLatLng, destinationLatLng, travelMode, selectedProfile]
+    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid]
   );
 
   const confirmStopPreview = useCallback(() => {
@@ -3208,13 +3184,9 @@ export function MapScreen() {
     setLiveEtaSeconds(null);
     if (!route || !destinationLatLng || travelMode !== "driving") return;
 
-    // Best-effort match to the ACTUAL path being driven, not a guess -- "safest" has one real,
-    // fixed flag (avoidTolls, see SAFEST_OPTIONS in directions.ts) that's cheap to mirror here.
-    // "fastest" has no single fixed flag (getRouteOptions picks it dynamically from several
-    // candidates each trip), so re-running that full multi-candidate search every refresh isn't
-    // worth 4x the API cost just for a duration number -- a plain traffic-aware A->B request
-    // (same as "normal") is a reasonable proxy for regional conditions along a similar path.
-    const profileOptions = selectedProfile === "safest" ? { avoidTolls: true } : {};
+    // Best-effort match to the path being driven: the same avoid options the route was chosen
+    // with. A plain traffic-aware A->B request is a reasonable proxy for conditions along it.
+    const profileOptions = avoidRouteOptions(settings.routeAvoid);
 
     let cancelled = false;
     const refresh = async () => {
@@ -3237,7 +3209,7 @@ export function MapScreen() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [route, destinationLatLng, travelMode, selectedProfile]);
+  }, [route, destinationLatLng, travelMode, settings.routeAvoid]);
 
   // "Displays for 10 seconds" per explicit request -- an unattended banner auto-dismisses
   // itself (same cooldown as a manual No/X) instead of sitting over the map indefinitely.
@@ -3293,7 +3265,7 @@ export function MapScreen() {
     try {
       const fresh =
         travelMode === "driving"
-          ? (await getRouteOptions(currentLatLng, destinationLatLng))[selectedProfile]
+          ? (await getRouteChoices(currentLatLng, destinationLatLng, avoidRouteOptions(settings.routeAvoid)))[0]
           : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode);
       guidanceRef.current = createGuidanceState();
       setActiveStepIndex(0);
@@ -3309,7 +3281,7 @@ export function MapScreen() {
     } finally {
       setRerouting(false);
     }
-  }, [currentLatLng, destinationLatLng, travelMode, selectedProfile]);
+  }, [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid]);
 
   const onSelectTravelMode = useCallback(
     (mode: TravelMode) => {
@@ -3321,28 +3293,17 @@ export function MapScreen() {
     [pendingDestination, stopLocation, routeOriginLatLng, fetchRouteOptions]
   );
 
-  const onSelectProfile = useCallback(
-    (key: RouteProfileKey) => {
-      // Switching to a *different* route just swaps which polyline is drawn, at whatever
-      // zoom/position the driver is already looking at -- previously this re-fit the camera to
-      // the newly-picked route's own bounds every time, which yanked a manually zoomed-in view
-      // back out on every tap. Re-picking the route that's ALREADY selected is the deliberate
-      // "reset the view" gesture instead: that one still re-fits to the full route overview.
-      const reselectingSame = key === selectedProfile;
-      setSelectedProfile(key);
-      if (!reselectingSame) return;
-      const previewRoute = routeOptions?.[key];
-      if (previewRoute) {
-        mapRef.current?.fitToCoordinates(previewRoute.polyline, {
-          edgePadding: { top: 120, right: 60, bottom: routeCardHeight + spacing.md, left: 60 },
-          animated: true,
-        });
-      }
+  // Tapping a route (its line, its bubble, or its row) selects it; tapping the selected one
+  // again fits every route back on screen.
+  const onSelectChoice = useCallback(
+    (index: number) => {
+      if (index === selectedChoiceIndex && routeChoices) fitRoutesOnScreen(routeChoices.map(detailedRoutePolyline));
+      setSelectedChoiceIndex(index);
     },
-    [routeOptions, routeCardHeight, selectedProfile]
+    [routeChoices, selectedChoiceIndex, fitRoutesOnScreen]
   );
 
-  // Same "reselecting the highlighted one re-fits the camera" gesture as onSelectProfile above,
+  // Same "reselecting the highlighted one re-fits the camera" gesture as onSelectChoice above,
   // applied to the real Google alternatives list for walking/bicycling/transit.
   const onSelectModeRoute = useCallback(
     (index: number) => {
@@ -3351,12 +3312,9 @@ export function MapScreen() {
       const picked = modeRouteOptions[index];
       if (picked) setModeRoute(picked);
       if (!reselectingSame || !picked) return;
-      mapRef.current?.fitToCoordinates(picked.polyline, {
-        edgePadding: { top: 120, right: 60, bottom: routeCardHeight + spacing.md, left: 60 },
-        animated: true,
-      });
+      fitRoutesOnScreen(modeRouteOptions.slice(0, 3).map(detailedRoutePolyline));
     },
-    [modeRouteOptions, routeCardHeight, selectedModeRouteIndex]
+    [modeRouteOptions, selectedModeRouteIndex, fitRoutesOnScreen]
   );
 
   // Real, shared commit logic -- extracted from confirmRoute (the RouteOptionsCard "Start"
@@ -3410,7 +3368,9 @@ export function MapScreen() {
           { duration: 600 }
         );
       }
-      setRouteOptions(null);
+      setRouteChoices(null);
+      setAutoGoRunning(false);
+      autoGoArmedRef.current = false;
       setModeRoute(null);
       setModeRouteOptions([]);
       setPendingDestination(null);
@@ -3423,10 +3383,10 @@ export function MapScreen() {
   );
 
   const confirmRoute = useCallback(() => {
-    const chosen = travelMode === "driving" ? routeOptions?.[selectedProfile] : modeRoute;
+    const chosen = travelMode === "driving" ? routeChoices?.[selectedChoiceIndex] : modeRoute;
     if (!chosen || !pendingDestination) return;
     startRoute(chosen, pendingDestination);
-  }, [routeOptions, modeRoute, travelMode, selectedProfile, pendingDestination, startRoute]);
+  }, [routeChoices, modeRoute, travelMode, selectedChoiceIndex, pendingDestination, startRoute]);
 
   // Real, explicit request -- a one-tap "Start" quick action directly on the place card
   // (PlaceInfoSheet), matching Apple/Google Maps' own place-card "Start" button: fetches the
@@ -3440,8 +3400,11 @@ export function MapScreen() {
       if (!origin) return;
       placeInfoSheetRef.current?.close();
       try {
-        const options = await getRouteOptions(origin, place.location, stopLocation ?? undefined);
-        startRoute(options.normal, place);
+        const choices = await getRouteChoices(origin, place.location, {
+          ...avoidRouteOptions(settings.routeAvoid),
+          waypoint: stopLocation ?? undefined,
+        });
+        startRoute(choices[0], place);
       } catch (err) {
         console.warn("[map] quick-start route fetch failed", err);
         Sentry.logger.error("map: quick-start route fetch failed", { error: String(err) });
@@ -3449,11 +3412,16 @@ export function MapScreen() {
         setBannerVisible(true);
       }
     },
-    [routeOriginLatLng, stopLocation, startRoute]
+    [routeOriginLatLng, stopLocation, startRoute, settings.routeAvoid]
   );
 
   const cancelRouteOptions = useCallback(() => {
-    setRouteOptions(null);
+    setRouteChoices(null);
+    setRouteAvoidNote(null);
+    setAutoGoRunning(false);
+    autoGoArmedRef.current = false;
+    setAvoidSheetOpen(false);
+    setModeSheetOpen(false);
     setModeRoute(null);
     setModeRouteOptions([]);
     setPendingDestination(null);
@@ -3463,6 +3431,106 @@ export function MapScreen() {
     setTravelMode("driving");
     setOriginOverride(null);
   }, []);
+
+  // ---- Route selection: what the list, the map lines and the time bubbles show ----
+  const selectionRoutes = useMemo<Route[]>(
+    () => (travelMode === "driving" ? routeChoices ?? [] : modeRouteOptions),
+    [travelMode, routeChoices, modeRouteOptions]
+  );
+  const selectionIndex = travelMode === "driving" ? selectedChoiceIndex : selectedModeRouteIndex;
+  const selectionTags = useMemo<(string | null)[]>(
+    () => (travelMode === "driving" ? routeTags(selectionRoutes) : selectionRoutes.map((_, i) => (i === 0 ? "Best" : null))),
+    [travelMode, selectionRoutes]
+  );
+  const selectionRows = useMemo<RouteChoiceRow[]>(
+    () =>
+      selectionRoutes.map((r, i) => {
+        const tag = selectionTags[i] ?? null;
+        let subtitle: string;
+        if (travelMode === "driving") {
+          const hasToll = r.tollEstimate?.hasToll === true;
+          const price = hasToll ? r.tollEstimate?.priceText : null;
+          subtitle =
+            routeSummaryLine(tag as Parameters<typeof routeSummaryLine>[0], trafficLevel(r), hasToll) +
+            (price ? ` ${price}` : "");
+        } else if (travelMode === "transit") {
+          const firstLeg = r.transitSummary?.legs[0];
+          const transfers = r.transitSummary?.transfers ?? 0;
+          subtitle =
+            (firstLeg?.departureText ? `Departs ${firstLeg.departureText}` : "Timetabled") +
+            (transfers > 0 ? ` · ${transfers} transfer${transfers > 1 ? "s" : ""}` : "");
+        } else {
+          subtitle = i === 0 ? "Best route" : "Alternative route";
+        }
+        return {
+          key: `${travelMode}-${i}-${r.distanceMeters}-${Math.round(routeSeconds(r))}`,
+          timeText: formatRouteDuration(routeSeconds(r)),
+          distanceText: formatDistance(r.distanceMeters, settings.distanceUnit),
+          title: travelMode === "transit" ? transitRouteTitle(r) : viaRoadLabel(r.summary),
+          subtitle,
+        };
+      }),
+    [selectionRoutes, selectionTags, travelMode, settings.distanceUnit]
+  );
+  // The lines drawn: the first few routes plus the selected one, each with its index in the list.
+  const drawnSelection = useMemo(() => {
+    const indices = selectionRoutes.map((_, i) => i).filter((i) => i < MAX_DRAWN_ROUTES || i === selectionIndex);
+    return indices.map((index) => ({ index, line: detailedRoutePolyline(selectionRoutes[index]) }));
+  }, [selectionRoutes, selectionIndex]);
+  const selectionBubbleAnchors = useMemo(
+    () =>
+      bubbleAnchors(
+        drawnSelection.map((d) => d.line),
+        Math.max(0, drawnSelection.findIndex((d) => d.index === selectionIndex))
+      ),
+    [drawnSelection, selectionIndex]
+  );
+  const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
+  const selectedTrafficStretches = useMemo(() => {
+    const r = selectionRoutes[selectionIndex];
+    return r ? trafficStretches(r.polyline, r.speedIntervals) : [];
+  }, [selectionRoutes, selectionIndex]);
+
+  const onSelectRouteRow = useCallback(
+    (index: number) => {
+      if (travelMode === "driving") onSelectChoice(index);
+      else onSelectModeRoute(index);
+    },
+    [travelMode, onSelectChoice, onSelectModeRoute]
+  );
+
+  const stopAutoGo = useCallback(() => setAutoGoRunning(false), []);
+
+  const goNowFromRouteSelection = useCallback(() => {
+    setAutoGoRunning(false);
+    confirmRoute();
+  }, [confirmRoute]);
+
+  // Leave later: Plan a drive, with this destination already filled in.
+  const leaveLaterFromRouteSelection = useCallback(() => {
+    if (!pendingDestination) return;
+    setAutoGoRunning(false);
+    navigation.navigate("PlanADrive", { initialDestination: pendingDestination });
+  }, [pendingDestination, navigation]);
+
+  // The destination row goes back to the full search. The search lives in the "Where to?"
+  // sheet, which mounts again once route selection closes -- so it's opened just after.
+  const editDestinationFromRouteSelection = useCallback(() => {
+    cancelRouteOptions();
+    setTimeout(() => whereToSheetRef.current?.openSearch(), 250);
+  }, [cancelRouteOptions]);
+
+  // An Avoid switch: remembered, and the routes are asked for again straight away.
+  const onToggleAvoid = useCallback(
+    (key: RouteAvoidKey, value: boolean) => {
+      const next = { ...settings.routeAvoid, [key]: value };
+      updateSettings({ routeAvoid: next });
+      if (travelMode === "driving" && pendingDestination && routeOriginLatLng) {
+        fetchRouteOptions(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, "driving", next);
+      }
+    },
+    [settings.routeAvoid, updateSettings, travelMode, pendingDestination, routeOriginLatLng, stopLocation, fetchRouteOptions]
+  );
 
   // "From" row tap on the initial search panel -- opens a second DestinationSearchBar configured
   // for picking a custom origin (with the "My Location" quick row as the reset-to-live-GPS path,
@@ -4185,7 +4253,7 @@ export function MapScreen() {
   }, [route, heading, arrivalClockText, remainingDurationSeconds]);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onTouchStart={autoGoRunning ? stopAutoGo : undefined}>
       {/* Everything map-related lives in its own flex:1 area so the banner ad below gets a
           real reserved row of its own instead of floating over the map -- it can never
           overlap the route, turn instructions, or FAB buttons this way. */}
@@ -4437,7 +4505,7 @@ export function MapScreen() {
             position doesn't have the same "facing direction" a moving vehicle does, so this
             just tracks live position with a pulsing halo, the same convention Waze/Google Maps
             use for a plain "you are here" marker versus their own directional vehicle pucks. */}
-        {!route && currentLatLng && (
+        {!route && !inRouteSelection && currentLatLng && (
           <Marker coordinate={currentLatLng} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
             <PersonLocationDot />
           </Marker>
@@ -4461,164 +4529,90 @@ export function MapScreen() {
           onSelect={setSelectedPresence}
           onClusterPress={onPlaceClusterPress}
         />
-        {/* Preview of whichever route profile is highlighted in the picker below, before
-            the user commits to it with Start -- "click a route, see its line" like Apple/
-            Google Maps' own route picker. Red and thick (not the same blue as the committed
-            route below, or the destination halo) so it stays visible against every map theme --
-            the old blue preview was the exact same shade as several themes' own road color
-            (e.g. Blue & Grey), making it functionally invisible on top of a same-colored
-            street. Dashed on top of that so it's still visually distinct from the solid
-            committed-route line (the two are mutually exclusive: `route` is only ever set once
-            routeOptions has been cleared by confirmRoute). */}
-        {/* All three route options drawn at once, per explicit request (like Apple/Google
-            Maps' own route picker) instead of only ever showing the currently-selected one --
-            the selected route highlighted (thicker, on top so it's never covered by the other
-            two -- see zIndex), the other two a translucent "ghost preview" of that SAME route's
-            own color (not a shared grey) so a color always means the same profile whether it's
-            the highlighted pick or one of the two previews. Tapping any of the three (line or
-            ETA pill below) selects it, same as tapping its row in the RouteOptionsCard sheet. */}
-        {routeOptions &&
-          // Real, explicit request -- tolls/noTolls are now a compact toggle in RouteOptionsCard,
-          // not a pick-able card with its own line on the map (see MAIN_PROFILE_ORDER there) --
-          // drawing an unselected ghost line/pill for either one here with no corresponding
-          // visible card to explain it was confusing clutter, not a real choice being offered.
-          // Still renders tolls/noTolls's own highlighted line if the driver actually picked it
-          // via that toggle (selectedProfile), same as any other selected profile.
-          ROUTE_PROFILE_ORDER.filter(
-            (key) => key === selectedProfile || (key !== "tolls" && key !== "noTolls")
-          ).map((key) => {
-            const isSelected = key === selectedProfile;
+        {/* Route selection: the alternatives in lavender (tappable), the selected route in
+            purple with a darker casing on top of them, its slow and jammed stretches over it
+            in orange and red, and a time bubble per route placed where its line stands apart. */}
+        {inRouteSelection &&
+          drawnSelection.map(({ index, line }) => {
+            if (index === selectionIndex) return null;
             return (
-              <React.Fragment key={key}>
-                {/* Same white-casing treatment as the committed route above, only for the
-                    currently-selected preview -- keeps the unselected two clearly secondary
-                    (thin, translucent, no casing) while the highlighted one reads as the same
-                    bold, polished band the app now uses everywhere else a route is drawn. */}
-                {isSelected && (
-                  <Polyline
-                    coordinates={detailedRoutePolyline(routeOptions[key])}
-                    strokeWidth={12}
-                    strokeColor="#FFFFFF"
-                    zIndex={2}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                )}
-                {/* Real, confirmed request -- solid line, not dashed (read as "train tracks"
-                    on the map). A real, attractive color band is enough to mark the selected
-                    route without a dash pattern breaking it up. zIndex strictly above BOTH the
-                    unselected ghosts (1) and the selected route's own white casing (2) -- real,
-                    confirmed cause of the "3 routes crumbled together" complaint: when two or
-                    three profiles resolve to nearly the same physical road (a short trip with
-                    little real choice of path), their polylines sit almost exactly on top of
-                    each other, and same-or-lower zIndex on the ghosts meant one could render
-                    OVER the selected route's own casing, muddying its clean highlighted look
-                    instead of it always reading clearly on top. */}
-                <Polyline
-                  coordinates={detailedRoutePolyline(routeOptions[key])}
-                  strokeWidth={isSelected ? 8 : 5}
-                  strokeColor={isSelected ? ROUTE_PROFILE_COLORS[key] : ROUTE_PROFILE_COLORS_GHOST[key]}
-                  tappable
-                  onPress={() => setSelectedProfile(key)}
-                  zIndex={isSelected ? 3 : 1}
-                  lineCap="round"
-                  lineJoin="round"
-                />
-              </React.Fragment>
+              <Polyline
+                key={`alt-${selectionRows[index]?.key ?? index}`}
+                coordinates={line}
+                strokeWidth={6}
+                strokeColor={colors.routeAlt}
+                tappable
+                onPress={() => onSelectRouteRow(index)}
+                zIndex={1}
+                lineCap="round"
+                lineJoin="round"
+              />
             );
           })}
-        {/* Small floating ETA pill per route, per explicit request -- "clear enough to see,
-            not overlaying the map." Positioned at a different fraction along each route's own
-            polyline (not all at the literal midpoint) so three pills sitting on largely
-            overlapping road sections don't all land in exactly the same spot. Never a static
-            label -- etaInTrafficText/etaText are the same real, live Google Directions figures
-            RouteOptionsCard's own rows already show.
-
-            Processes the SELECTED profile first (always gets its own pill) then the rest in
-            display order, skipping any route whose real geometry is nearly identical to one
-            already given a pill (see routesAreNearlyIdentical -- the fraction-based spread above
-            only separates pills when the routes actually diverge; when they're genuinely the
-            same road, staggering along it doesn't create any real separation). */}
-        {routeOptions &&
-          (() => {
-            const orderedKeys = [
-              selectedProfile,
-              // Same real reason as the line-rendering filter above -- no ETA pill for an
-              // unselected tolls/noTolls either, since there's no corresponding ghost line or
-              // sheet card for it to label.
-              ...ROUTE_PROFILE_ORDER.filter(
-                (k) => k !== selectedProfile && k !== "tolls" && k !== "noTolls"
-              ),
-            ];
-            const pilledPolylines: LatLng[][] = [];
-            return orderedKeys.map((key) => {
-              const i = ROUTE_PROFILE_ORDER.indexOf(key);
-              const r = routeOptions[key];
-              const isDuplicateGeometry = pilledPolylines.some((p) =>
-                routesAreNearlyIdentical(p, r.polyline, r.distanceMeters / 1000)
-              );
-              if (isDuplicateGeometry) return null;
-              pilledPolylines.push(r.polyline);
-              const labelPoint = pointAtPolylineFraction(r.polyline, ROUTE_ETA_PILL_FRACTIONS[i]);
-              if (!labelPoint) return null;
-              const isSelected = key === selectedProfile;
-              return (
-              <Marker
-                key={`${key}-eta`}
-                coordinate={labelPoint}
-                anchor={{ x: 0.5, y: 0.5 }}
-                onPress={() => setSelectedProfile(key)}
-                tracksViewChanges={false}
-                zIndex={isSelected ? 4 : 3}
-              >
-                <View
-                  style={[
-                    styles.routeEtaPill,
-                    isSelected
-                      ? { backgroundColor: ROUTE_PROFILE_COLORS[key], borderColor: ROUTE_PROFILE_COLORS[key] }
-                      : { borderColor: ROUTE_PROFILE_COLORS[key] },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.routeEtaPillText,
-                      isSelected ? styles.routeEtaPillTextSelected : { color: ROUTE_PROFILE_COLORS[key] },
-                    ]}
-                  >
-                    {r.etaInTrafficText ?? r.etaText}
-                  </Text>
-                </View>
-              </Marker>
-              );
-            });
-          })()}
-        {/* Same preview treatment for walking/bicycling/transit -- these modes only ever have
-            one `modeRoute` (see RouteOptionsCard) instead of the 3-way `routeOptions` picker
-            above, but that meant this preview line's condition never matched for them at all,
-            so picking Bike/Walk/Transit showed just the bare map with no line until Start was
-            actually pressed. */}
-        {modeRoute && !routeOptions && (
+        {inRouteSelection && selectedSelectionLine && (
           <>
             <Polyline
-              coordinates={detailedRoutePolyline(modeRoute)}
+              coordinates={selectedSelectionLine}
               strokeWidth={12}
-              strokeColor="#FFFFFF"
-              zIndex={1}
-              lineCap="round"
-              lineJoin="round"
-            />
-            {/* Solid, not dashed (see the 3-way driving preview's own comment above for why) --
-                blue to match the app's own accent color instead of red, which this screen
-                otherwise reserves for the emergency/lightbar-confirmed AI detection state. */}
-            <Polyline
-              coordinates={detailedRoutePolyline(modeRoute)}
-              strokeWidth={8}
-              strokeColor="#1D4ED8"
+              strokeColor={colors.routePurpleCasing}
               zIndex={2}
               lineCap="round"
               lineJoin="round"
             />
+            <Polyline
+              coordinates={selectedSelectionLine}
+              strokeWidth={8}
+              strokeColor={colors.routePurple}
+              zIndex={3}
+              lineCap="round"
+              lineJoin="round"
+            />
+            {selectedTrafficStretches.map((stretch, i) => (
+              <Polyline
+                key={`traffic-${i}`}
+                coordinates={stretch.coordinates}
+                strokeWidth={8}
+                strokeColor={stretch.speed === "TRAFFIC_JAM" ? TRAFFIC_JAM_RED : TRAFFIC_SLOW_ORANGE}
+                zIndex={4}
+                lineCap="round"
+                lineJoin="round"
+              />
+            ))}
           </>
+        )}
+        {inRouteSelection &&
+          drawnSelection.map(({ index }, pos) => {
+            const anchor = selectionBubbleAnchors[pos];
+            const row = selectionRows[index];
+            if (!anchor || !row) return null;
+            const isSelected = index === selectionIndex;
+            return (
+              <Marker
+                key={`bubble-${row.key}-${isSelected ? "on" : "off"}`}
+                coordinate={anchor}
+                anchor={{ x: 0.5, y: 1 }}
+                onPress={() => onSelectRouteRow(index)}
+                tracksViewChanges={false}
+                zIndex={isSelected ? 31 : 30}
+              >
+                <RouteTimeBubble timeText={row.timeText} tag={selectionTags[index] ?? null} selected={isSelected} />
+              </Marker>
+            );
+          })}
+        {inRouteSelection && routeOriginLatLng && (
+          <Marker coordinate={routeOriginLatLng} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={25}>
+            <StartDot />
+          </Marker>
+        )}
+        {inRouteSelection && pendingDestination && (
+          <Marker
+            coordinate={pendingDestination.location}
+            anchor={{ x: 0.5, y: 1 }}
+            tracksViewChanges={false}
+            zIndex={26}
+          >
+            <CheckeredFlagPin />
+          </Marker>
         )}
         {/* Highlighted arrival spot -- the exact picked destination (not wherever the
             polyline decoder's last point happens to land), so it's obvious exactly which
@@ -4636,7 +4630,7 @@ export function MapScreen() {
             once real navigation -- route -- has taken over and destinationLatLng exists instead,
             avoiding two overlapping halos at the same spot). */}
         {(() => {
-          const arrivalLatLng = destinationLatLng ?? (pendingDestination && !route ? pendingDestination.location : null);
+          const arrivalLatLng = destinationLatLng ?? (pendingDestination && !route && !inRouteSelection ? pendingDestination.location : null);
           if (!arrivalLatLng) return null;
           return (
             <>
@@ -4671,7 +4665,7 @@ export function MapScreen() {
             Continue to choose destination/Exit). Blue to match the picker's own pin color.
             Hidden while pickingOrigin itself is open since the fixed center-pin overlay already
             represents this exact same point while it's actively being edited. */}
-        {originOverride && !route && !pickingOrigin && (
+        {originOverride && !route && !pickingOrigin && !inRouteSelection && (
           <Marker
             coordinate={originOverride.location}
             anchor={{ x: 0.5, y: 1 }}
@@ -5231,29 +5225,58 @@ export function MapScreen() {
         />
       )}
 
-      {!route && pendingDestination && !pickingStop && !pickingOrigin && (
-        <RouteOptionsCard
-          options={routeOptions}
-          modeRoute={modeRoute}
-          modeRouteOptions={modeRouteOptions}
-          selectedModeRouteIndex={selectedModeRouteIndex}
-          onSelectModeRoute={onSelectModeRoute}
-          travelMode={travelMode}
-          onSelectTravelMode={onSelectTravelMode}
-          loading={loadingRouteOptions}
-          errorText={routeOptionsError}
-          selected={selectedProfile}
-          onSelect={onSelectProfile}
-          onStart={confirmRoute}
-          onCancel={cancelRouteOptions}
-          onAddStop={() => setPickingStop(true)}
-          hasStop={!!stopLocation}
-          onHeightChange={setRouteCardHeight}
-          originLabel={routeOriginLabel}
-          onChangeOrigin={openOriginPicker}
-          destinationLabel={pendingDestination.name}
-          onSwapOriginDestination={onSwapOriginDestination}
-        />
+      {inRouteSelection && pendingDestination && (
+        <>
+          <RouteSelectionTopCard
+            originLabel={routeOriginLabel}
+            destinationLabel={pendingDestination.name}
+            onBack={cancelRouteOptions}
+            onEditOrigin={openOriginPicker}
+            onEditDestination={editDestinationFromRouteSelection}
+            onSwap={onSwapOriginDestination}
+            avoidLabel={avoidPillLabel(settings.routeAvoid)}
+            avoidActive={avoidCount(settings.routeAvoid) > 0}
+            onOpenAvoid={() => setAvoidSheetOpen(true)}
+            travelMode={travelMode}
+            onOpenMode={() => setModeSheetOpen(true)}
+            onHeightChange={setRouteTopCardBottom}
+          />
+          <RouteSelectionSheet
+            rows={selectionRows}
+            selectedIndex={selectionIndex}
+            onSelect={onSelectRouteRow}
+            loading={loadingRouteOptions}
+            errorText={routeOptionsError}
+            loadingText={
+              travelMode === "driving"
+                ? "Finding the best routes…"
+                : `Finding a ${TRAVEL_MODE_LABELS[travelMode].toLowerCase()} route…`
+            }
+            onLeaveLater={travelMode === "driving" ? leaveLaterFromRouteSelection : undefined}
+            onGoNow={goNowFromRouteSelection}
+            countdownRunning={autoGoRunning && travelMode === "driving"}
+            onCountdownDone={goNowFromRouteSelection}
+            onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
+            hasStop={!!stopLocation}
+            onCollapsedHeightChange={setRouteSheetHeight}
+          />
+          <AvoidSheet
+            visible={avoidSheetOpen}
+            prefs={settings.routeAvoid}
+            onToggle={onToggleAvoid}
+            onClose={() => setAvoidSheetOpen(false)}
+            note={routeAvoidNote}
+          />
+          <TravelModeSheet
+            visible={modeSheetOpen}
+            mode={travelMode}
+            onSelect={(mode) => {
+              setModeSheetOpen(false);
+              onSelectTravelMode(mode);
+            }}
+            onClose={() => setModeSheetOpen(false)}
+          />
+        </>
       )}
 
       {route && (

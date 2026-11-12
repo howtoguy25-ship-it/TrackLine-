@@ -8,6 +8,7 @@ import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import type { AuRegionCode } from "@/utils/auStates";
 import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { DEFAULT_ROUTE_AVOID, normalizeRouteAvoid, type RouteAvoidPrefs } from "@/map/routeChoices";
 
 export { SETTINGS_VERSION, migrateStoredSettings };
 
@@ -114,6 +115,9 @@ export interface AppSettings {
   // Settings > Map display > 3D buildings. (Was a row in the old Map tools panel, kept only in
   // memory; it's a setting now, so it's remembered.)
   show3DBuildings: boolean;
+  // Route selection > Avoid: what every driving route request steers around (tolls, motorways,
+  // ferries, U-turns). Remembered, so it applies to the next trip too.
+  routeAvoid: RouteAvoidPrefs;
   // Real, explicit request -- how chatty spoken turn-by-turn guidance is: "normal" speaks every
   // manoeuvre, "lessChatty" trims routine ones, "onlyAlerts" speaks only hazard/police/camera
   // call-outs (no turn-by-turn speech at all), "off" is fully silent. Distinct from (and takes
@@ -175,6 +179,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showAudioPlayer: false,
   settingsVersion: SETTINGS_VERSION,
   show3DBuildings: false,
+  routeAvoid: DEFAULT_ROUTE_AVOID,
   spokenDirections: "normal",
   distanceUnit: "km",
   visibility: "ghost",
@@ -200,7 +205,10 @@ export async function loadSettings(): Promise<AppSettings> {
     if (RETIRED_NAV_CARD_THEME_KEYS.has(parsed.navCardTheme)) {
       delete parsed.navCardTheme;
     }
-    const migrated = migrateStoredSettings({ ...DEFAULT_SETTINGS, ...parsed }, parsed.settingsVersion);
+    const migrated = migrateStoredSettings(
+      { ...DEFAULT_SETTINGS, ...parsed, routeAvoid: normalizeRouteAvoid(parsed.routeAvoid) },
+      parsed.settingsVersion
+    );
     // Saved straight away when an adjustment was applied -- otherwise the stored copy would
     // still look out of date on the next launch and the same "one-off" change would be made
     // again every time, undoing whatever the driver had chosen since.
@@ -235,6 +243,7 @@ export async function pullSettingsFromProfile(uid: string): Promise<Partial<AppS
   const snap = await getDoc(doc(db, "users", uid));
   const remote = snap.exists() ? (snap.data().settings as Partial<AppSettings> | undefined) : undefined;
   if (!remote) return null;
+  if (remote.routeAvoid !== undefined) remote.routeAvoid = normalizeRouteAvoid(remote.routeAvoid);
   // The copy on the account may predate a one-off adjustment (see migrateStoredSettings). It
   // gets the same adjustment before it's merged in -- otherwise signing in would bring back
   // exactly what the adjustment on this phone had just changed.

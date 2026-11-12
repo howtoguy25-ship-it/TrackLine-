@@ -1,6 +1,7 @@
 import { env } from "@/config/env";
 import { decodePolyline, type LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
+import { roadFromInstruction, type SpeedInterval } from "@/map/routeChoices";
 
 export class DirectionsApiError extends Error {
   constructor(public status: string, message?: string) {
@@ -71,6 +72,9 @@ export interface Route {
   // Only ever set on the "tolls" entry of getRouteOptions' own Record -- see that function's
   // own comment for the real logic behind it.
   tollEstimate?: TollEstimate;
+  // Only on routes from getRouteChoices: Google's live speed along route.polyline (index ranges
+  // into that array), for drawing the slow and jammed stretches over the selected route.
+  speedIntervals?: SpeedInterval[];
 }
 
 // Google's overview_polyline (Route.polyline) is a deliberately simplified/lower-point-count
@@ -122,6 +126,7 @@ export interface TransitSummary {
 export interface DirectionsOptions {
   avoidHighways?: boolean;
   avoidTolls?: boolean;
+  avoidFerries?: boolean;
   waypoint?: LatLng;
   // Requests Google's live traffic-adjusted duration. `true` means departure_time=now (the
   // original behavior -- left opt-in rather than always-on because it's the one param that
@@ -238,8 +243,8 @@ function buildDirectionsUrl(
   mode: TravelMode,
   options: DirectionsOptions & { alternatives?: boolean }
 ): string {
-  const { avoidHighways, avoidTolls, waypoint, useTraffic, alternatives } = options;
-  const avoid = [avoidHighways && "highways", avoidTolls && "tolls"].filter(Boolean).join("|");
+  const { avoidHighways, avoidTolls, avoidFerries, waypoint, useTraffic, alternatives } = options;
+  const avoid = [avoidHighways && "highways", avoidTolls && "tolls", avoidFerries && "ferries"].filter(Boolean).join("|");
 
   return (
     "https://maps.googleapis.com/maps/api/directions/json" +
@@ -447,9 +452,10 @@ function parseProtoDurationSeconds(duration: string | undefined): number {
  *  Routes-API-sourced Route identically to a classic-Directions-API one. Only ever used for the
  *  heading-aware reroute below -- getRouteOptions/getDirections above keep using the classic API
  *  they already work well with. */
-function parseRoutesApiRoute(route: any): Route {
-  const steps: RouteStep[] = (route.legs?.[0]?.steps ?? []).map((step: any) => ({
+function parseRoutesApiRoute(route: any, withTolls = false): Route {
+  const steps: RouteStep[] = (route.legs ?? []).flatMap((leg: any) => leg.steps ?? []).map((step: any) => ({
     instruction: step.navigationInstruction?.instructions ?? "",
+    targetStreetName: roadFromInstruction(step.navigationInstruction?.instructions ?? "", directionsLanguage),
     maneuver: ROUTES_API_MANEUVER_MAP[step.navigationInstruction?.maneuver] ?? undefined,
     distanceMeters: step.distanceMeters ?? 0,
     durationSeconds: parseProtoDurationSeconds(step.staticDuration),
@@ -469,10 +475,15 @@ function parseRoutesApiRoute(route: any): Route {
   const durationSeconds = parseProtoDurationSeconds(route.staticDuration);
   const durationInTrafficSeconds = route.duration ? parseProtoDurationSeconds(route.duration) : undefined;
   const distanceMeters: number = route.distanceMeters ?? 0;
+  const description = typeof route.description === "string" ? route.description.trim() : "";
+  const intervals: any[] | undefined = route.travelAdvisory?.speedReadingIntervals;
+  const tollInfo = route.travelAdvisory?.tollInfo;
+  const tollPrice = tollInfo?.estimatedPrice?.[0];
 
   return {
     polyline: decodePolyline(route.polyline?.encodedPolyline ?? ""),
     steps,
+    summary: description.length > 0 ? description : undefined,
     distanceMeters,
     durationSeconds,
     etaText: formatSecondsAsEtaText(durationSeconds),
@@ -482,6 +493,18 @@ function parseRoutesApiRoute(route: any): Route {
     hasTrafficDelay:
       durationInTrafficSeconds != null &&
       durationInTrafficSeconds > durationSeconds + Math.max(60, durationSeconds * 0.1),
+    // Only filled in when the request asked for them (getRouteChoices does; the reroute doesn't).
+    // With TOLLS requested, Google sets tollInfo exactly when the route crosses a toll.
+    ...(withTolls ? { tollEstimate: { hasToll: !!tollInfo, priceText: tollPrice ? formatTollMoney(tollPrice) : null } } : {}),
+    ...(intervals
+      ? {
+          speedIntervals: intervals.map((iv) => ({
+            startIndex: iv.startPolylinePointIndex ?? 0,
+            endIndex: iv.endPolylinePointIndex ?? 0,
+            speed: iv.speed === "SLOW" || iv.speed === "TRAFFIC_JAM" ? iv.speed : "NORMAL",
+          })),
+        }
+      : {}),
   };
 }
 
@@ -533,9 +556,9 @@ export async function getHeadingAwareReroute(
   origin: LatLng,
   destination: LatLng,
   headingDeg: number,
-  options: { waypoint?: LatLng; avoidTolls?: boolean; signal?: AbortSignal } = {}
+  options: { waypoint?: LatLng; avoidTolls?: boolean; avoidHighways?: boolean; avoidFerries?: boolean; signal?: AbortSignal } = {}
 ): Promise<RerouteResult> {
-  const { waypoint, avoidTolls, signal } = options;
+  const { waypoint, avoidTolls, avoidHighways, avoidFerries, signal } = options;
   const body: Record<string, unknown> = {
     origin: {
       location: {
@@ -551,7 +574,9 @@ export async function getHeadingAwareReroute(
     routingPreference: "TRAFFIC_AWARE",
     computeAlternativeRoutes: true,
     ...(directionsLanguage !== "en" ? { languageCode: directionsLanguage } : {}),
-    ...(avoidTolls ? { routeModifiers: { avoidTolls: true } } : {}),
+    ...(avoidTolls || avoidHighways || avoidFerries
+      ? { routeModifiers: { avoidTolls: !!avoidTolls, avoidHighways: !!avoidHighways, avoidFerries: !!avoidFerries } }
+      : {}),
   };
 
   const res = await fetch(ROUTES_API_URL, {
@@ -580,8 +605,105 @@ export async function getHeadingAwareReroute(
     throw new DirectionsApiError("ZERO_RESULTS", "No real route found from the current position");
   }
 
-  const parsed = routes.map(parseRoutesApiRoute);
+  const parsed = routes.map((r) => parseRoutesApiRoute(r));
   return { route: parsed[0], alternates: parsed };
+}
+
+export interface RouteChoiceOptions {
+  avoidTolls?: boolean;
+  avoidHighways?: boolean;
+  avoidFerries?: boolean;
+  waypoint?: LatLng;
+}
+
+const ROUTE_CHOICES_FIELD_MASK =
+  "routes.distanceMeters,routes.duration,routes.staticDuration,routes.polyline.encodedPolyline,routes.description," +
+  "routes.travelAdvisory.speedReadingIntervals,routes.travelAdvisory.tollInfo," +
+  "routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.polyline.encodedPolyline," +
+  "routes.legs.steps.startLocation,routes.legs.steps.endLocation,routes.legs.steps.navigationInstruction";
+
+/**
+ * Every driving route Google offers for the route-selection screen, best first, each with live
+ * traffic time, whether it crosses a toll (and the Linkt price when Google has one), the live
+ * speed along it, and Google's own "via" description. One Routes API request.
+ *
+ * Google returns no alternatives for a trip with a stop on it (a documented Routes API rule),
+ * so with a waypoint this is a single route. If the Routes API itself refuses the request (not
+ * enabled on the key), this falls back to the classic Directions API's alternatives, which has
+ * no traffic-by-stretch or toll detail -- those parts of the screen then stay blank.
+ */
+export async function getRouteChoices(
+  origin: LatLng,
+  destination: LatLng,
+  options: RouteChoiceOptions = {}
+): Promise<Route[]> {
+  const { waypoint, avoidTolls, avoidHighways, avoidFerries } = options;
+  const toWaypoint = (p: LatLng) => ({ location: { latLng: { latitude: p.latitude, longitude: p.longitude } } });
+  const body: Record<string, unknown> = {
+    origin: toWaypoint(origin),
+    destination: toWaypoint(destination),
+    ...(waypoint ? { intermediates: [toWaypoint(waypoint)] } : {}),
+    travelMode: "DRIVE",
+    routingPreference: "TRAFFIC_AWARE",
+    computeAlternativeRoutes: !waypoint,
+    polylineQuality: "HIGH_QUALITY",
+    extraComputations: ["TRAFFIC_ON_POLYLINE", "TOLLS"],
+    routeModifiers: {
+      avoidTolls: !!avoidTolls,
+      avoidHighways: !!avoidHighways,
+      avoidFerries: !!avoidFerries,
+      tollPasses: ["AU_LINKT"],
+    },
+    ...(directionsLanguage !== "en" ? { languageCode: directionsLanguage } : {}),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(ROUTES_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": env.googleDirectionsApiKey,
+        "X-Goog-FieldMask": ROUTE_CHOICES_FIELD_MASK,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    // No connection: the classic API would fail the same way, so say so rather than retrying.
+    throw new DirectionsApiError("NETWORK_ERROR", err instanceof Error ? err.message : String(err));
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    Sentry.logger.warn("directions: route choices via Routes API failed, using Directions API", {
+      status: res.status,
+      body: errText.slice(0, 300),
+    });
+    return getClassicRouteChoices(origin, destination, options);
+  }
+
+  const json = await res.json();
+  const routes: any[] = json.routes ?? [];
+  if (routes.length === 0) throw new DirectionsApiError("ZERO_RESULTS", "No route found");
+  return routes.map((r) => parseRoutesApiRoute(r, true));
+}
+
+async function getClassicRouteChoices(
+  origin: LatLng,
+  destination: LatLng,
+  options: RouteChoiceOptions
+): Promise<Route[]> {
+  const url = buildDirectionsUrl(origin, destination, "driving", {
+    ...options,
+    useTraffic: true,
+    alternatives: !options.waypoint,
+  });
+  const res = await fetch(url);
+  const json = await res.json();
+  if (json.status !== "OK" || !json.routes?.length) {
+    throw new DirectionsApiError(json.status ?? "UNKNOWN_ERROR", json.error_message);
+  }
+  return json.routes.map(parseRoute);
 }
 
 // Same physical road path, not just similar -- two genuinely different real routes between the
