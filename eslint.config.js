@@ -17,4 +17,16 @@ module.exports = defineConfig([
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+  {
+    // Cloud Functions and their emulator tests run in Node under Jest, not in the app.
+    files: ["firebase/**/*.js"],
+    languageOptions: {
+      globals: {
+        require: "readonly", module: "writable", exports: "writable", process: "readonly",
+        Buffer: "readonly", __dirname: "readonly", console: "readonly",
+        describe: "readonly", test: "readonly", it: "readonly", expect: "readonly",
+        beforeAll: "readonly", afterAll: "readonly", beforeEach: "readonly", afterEach: "readonly", jest: "readonly",
+      },
+    },
+  },
 ]);

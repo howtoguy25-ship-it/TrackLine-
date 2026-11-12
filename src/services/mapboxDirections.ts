@@ -147,7 +147,7 @@ function exitNumberFrom(step: any, banner: any): string | undefined {
  * ours carries the manoeuvre at its END: ours[i] = their step i's road, with step i+1's
  * manoeuvre, lanes and exit. Their final "arrive" step becomes our last step's manoeuvre.
  */
-export function toAppSteps(mbSteps: any[], drivingSide: "left" | "right" = "left"): RouteStep[] {
+export function toAppSteps(mbSteps: any[], routeDrivingSide: "left" | "right" = "right"): RouteStep[] {
   const steps: RouteStep[] = [];
   for (let i = 0; i < mbSteps.length; i++) {
     const here = mbSteps[i];
@@ -161,6 +161,9 @@ export function toAppSteps(mbSteps: any[], drivingSide: "left" | "right" = "left
     const roads = Array.isArray(target?.intersections?.[0]?.bearings) ? target.intersections[0].bearings.length : 0;
     const instruction: string = (typeof m.instruction === "string" && m.instruction) || banner?.primary?.text || composeInstruction(target);
     const polyline = decodePolyline(here?.geometry ?? "", 6);
+    // The side at the manoeuvre itself (it can change mid-route at a border).
+    const side = target?.driving_side ?? here?.driving_side;
+    const drivingSide: "left" | "right" = side === "left" || side === "right" ? side : routeDrivingSide;
     steps.push({
       instruction,
       targetStreetName: next ? roadName(next) : undefined,
@@ -176,6 +179,7 @@ export function toAppSteps(mbSteps: any[], drivingSide: "left" | "right" = "left
       maneuverKind: next ? manoeuvreKindFor(m.type ?? "", m.modifier, lanes, roads) : "arrive",
       maneuverSide: sideOf(m.modifier),
       guidanceViewUrl: guidanceView(banner),
+      drivingSide,
     });
   }
   return steps;
@@ -223,7 +227,9 @@ function formatKm(meters: number): string {
 
 export function parseMapboxRoute(route: any): Route {
   const leg = route?.legs?.[0] ?? {};
-  const drivingSide = leg.steps?.[0]?.driving_side === "right" ? "right" : "left";
+  // Most of the world drives on the right; Mapbox says per step, this is only the fallback.
+  const firstSide = (leg.steps ?? []).find((s: any) => s?.driving_side === "left" || s?.driving_side === "right")?.driving_side;
+  const drivingSide: "left" | "right" = firstSide ?? "right";
   const steps = toAppSteps(leg.steps ?? [], drivingSide);
   const polyline = decodePolyline(route?.geometry ?? "", 6);
   const duration: number = route?.duration ?? 0;

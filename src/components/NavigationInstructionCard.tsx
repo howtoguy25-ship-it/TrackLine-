@@ -98,8 +98,9 @@ export function NavigationInstructionCard({
   // update far more often than the step itself does. Tracked by the instruction text's own
   // identity rather than a separate index prop, since two different steps are never going to
   // share the exact same instruction text back to back.
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
+  // Created once (useState's lazy initialiser), not read from a ref during render.
+  const [translateY] = useState(() => new Animated.Value(0));
+  const [opacity] = useState(() => new Animated.Value(1));
   const prevInstructionRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -335,7 +336,7 @@ export function NavigationInstructionCard({
       )}
 
       {/* Lanes for the coming manoeuvre, straight from the route data (never guessed). */}
-      {!collapsed && lanes && lanes.length > 0 && <LaneStrip lanes={lanes} />}
+      {!collapsed && lanes && lanes.length > 0 && <LaneStrip lanes={lanes} drivingSide={step.drivingSide} />}
 
       {/* Real, explicit request -- a small "Then" chip when the step right after this one
           follows almost immediately (<150m past this maneuver), so the driver knows another

@@ -571,11 +571,16 @@ OpenStreetMap (`scripts/record-osrm-test-routes.mjs`), each driven at its record
 
 | Route | Driven as planned: taken | Real straight-on road: missed | Leaving the route at the split: missed |
 |---|---|---|---|
-| M4 Silverwater | 10/10 | 4/4 | 7/7 |
+| M4 Silverwater | 10/10 | 4/4 | 6/6 |
 | M5 Marsh St (tunnel, exits, roundabouts) | 18/18 | 4/4 | 10/10 |
 | CBD Central → Circular Quay | 14/14 | 3/3 | 9/9 |
 | Parramatta local | 8/8 | 2/2 | 7/7 |
-| Castle Hill roundabouts | 10/10 | 7/7 | 7/7 |
+| Castle Hill roundabouts | 10/10 | 7/7 | 6/6 |
+| USA: Santa Monica, I-10 freeway | 7/7 | 4/4 | 5/5 |
+| Germany: Frankfurt Airport, A5 interchanges | 18/18 | 4/4 | 12/12 |
+| France: Paris, Place de l'Étoile | 5/5 | 1/1 | 3/3 |
+| UK: Heathrow, Bath Road roundabouts | 9/9 | 2/2 | 6/6 |
+| Japan: Tokyo, Shinjuku to Imperial Palace | 4/4 | 2/2 | 4/4 |
 
 No manoeuvre is ever "taken" on a drive that missed it, and none is "missed" on a drive that took
 it. Not every manoeuvre has a missable alternative: at a merge the lanes join, a roundabout's
@@ -586,3 +591,24 @@ Fixed on the way (each a real bug found by these drives): guidance moves to the 
 before each split, so "past the split" is now measured along the route, not by step index; a run
 of 20-30 m steps no longer skips or wrongly confirms a turn; slow roundabouts (15-20 km/h) are no
 longer abandoned by a 45 s timer (now 3 min, for parked/jammed only).
+
+### 14b. The whole world, not just Australia
+
+- **Driving side per step** (Mapbox gives it per step): roundabout direction and the U-turn lane
+  arrow follow it -- clockwise and right-swinging in the UK, Japan, India, Australia...;
+  anticlockwise and left-swinging elsewhere; changing over mid-route at a border. Fallback when
+  unstated: right (most of the world), not left.
+- **Google routes** (used wherever Mapbox can't answer) now feed the approach view too: `ramp-*`
+  is an exit or, for "Take the ramp onto...", an on-ramp; `keep-left/right` (how the US and
+  Europe mark motorway splits) and `fork-*` are splits; exit numbers are read from "exit 23B".
+  Before this, a Google route only zoomed for ramps, forks, merges and roundabouts, and called
+  every on-ramp an exit.
+- **Units**: the lane voice line has no distance in it; the distance in front of it follows the
+  km / miles setting; Mapbox speed limits in mph are converted.
+- **Proven on real roads** in six countries (table above). The OSRM demo server marks the UK and
+  Japan as right-hand traffic (it isn't configured for left-hand countries), so driving side is
+  proven separately in `__tests__/nav/worldwide.test.ts` with Mapbox-shaped data (a UK -> France
+  route through the Channel Tunnel). Taken/missed is geometric and doesn't depend on it.
+- Also fixed: the last turn before the destination now gets its chip (a few metres of road isn't
+  enough for the 3 s hold); a miss on a run of short steps is put on the turn where the car
+  actually left the route.

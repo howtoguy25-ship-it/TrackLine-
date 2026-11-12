@@ -1,5 +1,6 @@
 import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
 import { YamnetSiren, isYamnetAvailable } from "@/native/yamnetNative";
+import { setMicInUse } from "@/services/audioSession";
 
 const WINDOW_MS = 1000;
 const CONSECUTIVE_WINDOWS_REQUIRED = 2;
@@ -58,6 +59,7 @@ class SirenDetectionEngine {
       return;
     }
 
+    setMicInUse(true);
     await setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
@@ -119,6 +121,7 @@ class SirenDetectionEngine {
 
   async stop(): Promise<void> {
     this.running = false;
+    setMicInUse(false);
     if (this.pollHandle) {
       clearInterval(this.pollHandle);
       this.pollHandle = null;

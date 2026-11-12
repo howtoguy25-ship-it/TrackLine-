@@ -215,6 +215,8 @@ Needs the Mapbox token in the build. Do these as a passenger, or note what you s
 - [ ] Every ordinary turn is followed too (no zoom for plain turns): make a city turn as told and a green "Turn complete ✓" shows; at a roundabout, "Roundabout done ✓".
 - [ ] Miss an ordinary city turn on purpose (go straight where it says turn): "Rerouting…" within a few seconds, then the new route. It must never say "Turn complete ✓" for a turn you didn't make.
 - [ ] Slow traffic through a run of roundabouts: each one still gets its chip (the approach waits up to 3 min, not 45 s).
+- [ ] iPhone with the ring/silent switch ON silent, and EV Radar off: start a drive. The voice, recorded clips and the "Exit taken ✓" chime are all heard. Lock the screen: the voice carries on. Music from another app keeps playing underneath.
+- [ ] Outside Australia (or in a right-hand-traffic country on a trip): an exit or motorway split zooms in the same way; a U-turn lane arrow swings left there (right in the UK, Japan, Australia...); roundabout arrows go the local way round.
 
 ## If something doesn't match this
 

@@ -66,7 +66,8 @@ export function RecordVoiceScreen() {
     getRecordedVoiceName().then((name) => {
       if (name) setVoiceNameState(name);
     });
-    setAudioModeAsync({ allowsRecording: true }).catch(() => {});
+    // Playing back a take should work with the phone on silent too (iOS).
+    setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true }).catch(() => {});
   }, []);
 
   const onChangeVoiceName = useCallback((text: string) => {

@@ -1,6 +1,7 @@
 // Records real test routes for the manoeuvre tests (__tests__/nav/allManoeuvres.test.ts).
 //
-//   node scripts/record-osrm-test-routes.mjs
+//   node scripts/record-osrm-test-routes.mjs            (all routes)
+//   node scripts/record-osrm-test-routes.mjs us-la-i10  (just the named ones)
 //
 // For each route below it asks the public OSRM server (OpenStreetMap data, the same response
 // format as Mapbox Directions) for the route itself, then, for every turn and exit on it, for the
@@ -15,15 +16,23 @@ import path from "node:path";
 const OSRM = "https://router.project-osrm.org/route/v1/driving";
 const OUT = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "__tests__", "fixtures", "manoeuvres");
 
-// Real places around Sydney, chosen for a mix of motorway exits/merges, city-grid turns and
-// suburban roundabouts.
+// Real places, chosen for a mix of motorway exits/merges, city-grid turns and roundabouts: five
+// around Sydney, then the rest of the world -- right-hand traffic (USA, Germany, France) and
+// left-hand (UK, Japan) -- so the approach view and taken/missed are proven beyond Australia.
 const ROUTES = [
   { name: "m4-silverwater", from: [151.0035, -33.8226], to: [151.04, -33.834] },
   { name: "m5-marsh-st", from: [151.079, -33.9455], to: [151.172, -33.933] },
   { name: "cbd-central-to-quay", from: [151.2065, -33.884], to: [151.211, -33.861] },
   { name: "parramatta-local", from: [151.0035, -33.8150], to: [151.0300, -33.8060] },
   { name: "castle-hill-roundabouts", from: [151.004, -33.731], to: [151.025, -33.72] },
+  { name: "us-la-i10", from: [-118.479, 34.024], to: [-118.396, 34.028] },
+  { name: "de-frankfurt-a5", from: [8.57, 50.05], to: [8.64, 50.1] },
+  { name: "fr-paris-etoile", from: [2.285, 48.868], to: [2.305, 48.877] },
+  { name: "uk-london-m4", from: [-0.42, 51.488], to: [-0.31, 51.495] },
+  { name: "jp-tokyo", from: [139.7, 35.69], to: [139.76, 35.68] },
 ];
+
+const only = process.argv.slice(2);
 
 const TRACK = new Set(["turn", "off ramp", "on ramp", "fork", "merge", "roundabout", "rotary", "end of road", "exit roundabout"]);
 
@@ -92,7 +101,7 @@ const trimStep = (s) => ({
 });
 
 fs.mkdirSync(OUT, { recursive: true });
-for (const r of ROUTES) {
+for (const r of ROUTES.filter((x) => only.length === 0 || only.includes(x.name))) {
   const json = await get(`${OSRM}/${r.from.join(",")};${r.to.join(",")}?steps=true&overview=full&geometries=polyline6&alternatives=false`);
   const route = json.routes[0];
   const steps = route.legs[0].steps;

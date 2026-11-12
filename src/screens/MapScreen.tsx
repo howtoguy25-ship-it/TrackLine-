@@ -17,6 +17,7 @@ import { calloutLabel } from "@/nav/manoeuvre";
 import { ManoeuvreChip, type ChipTone } from "@/components/nav/ManoeuvreChip";
 import { JunctionViewCard } from "@/components/nav/JunctionViewCard";
 import { mapboxReroute, mapboxRouteForChoice, mapboxRoutingAvailable } from "@/services/navRouting";
+import { prepareNavigationAudio } from "@/services/audioSession";
 import { useAudioPlayer } from "expo-audio";
 import { env } from "@/config/env";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1465,6 +1466,11 @@ export function MapScreen() {
   useEffect(() => {
     dispatchApproachRef.current({ type: "routeChanged" });
   }, [route]);
+  // iOS: the voice, recorded clips and chimes play on silent and with the screen locked.
+  const navigating = !!route;
+  useEffect(() => {
+    if (navigating) void prepareNavigationAudio();
+  }, [navigating]);
   // Looking around the map (follow off), the dog-cam or placing a report ends it too.
   useEffect(() => {
     if (!followTilt || detectionOpen || placingAlert) dispatchApproachRef.current({ type: "panned" });

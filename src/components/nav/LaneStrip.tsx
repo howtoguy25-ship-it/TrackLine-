@@ -9,7 +9,15 @@ import { BLUE, WHITE } from "@/theme/colors";
 
 export const LANE_TILE = { valid: { fill: BLUE, arrow: WHITE }, other: { fill: "#2A2C30", arrow: "#9AA0A8" } } as const;
 
-export function LaneStrip({ lanes, scale = 1 }: { lanes: Lane[]; scale?: number }) {
+export function LaneStrip({
+  lanes,
+  scale = 1,
+  drivingSide = "right",
+}: {
+  lanes: Lane[];
+  scale?: number;
+  drivingSide?: "left" | "right";
+}) {
   const base = 34 * scale;
   return (
     <View
@@ -33,6 +41,7 @@ export function LaneStrip({ lanes, scale = 1 }: { lanes: Lane[]; scale?: number 
               color={tile.arrow}
               dimColor={lane.valid ? "rgba(255,255,255,0.45)" : tile.arrow}
               size={size * 0.72}
+              drivingSide={drivingSide}
             />
           </View>
         );

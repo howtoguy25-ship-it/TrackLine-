@@ -2,14 +2,20 @@
 // manoeuvre must end "taken" (never "missed"); drive the REAL carry-straight-on road at each
 // manoeuvre instead and that manoeuvre must end "missed" (never "taken").
 //
-// Five real Sydney routes (motorway exits and merges, CBD grid turns, suburban roundabouts),
-// recorded from OSRM / OpenStreetMap by scripts/record-osrm-test-routes.mjs.
+// Ten real routes -- five around Sydney, and the USA, Germany, France, the UK and Japan (motorway
+// exits, splits and merges, city-grid turns, roundabouts and Paris's Étoile) -- recorded from
+// OSRM / OpenStreetMap by scripts/record-osrm-test-routes.mjs.
 import { afterAll, describe, expect, it } from "@jest/globals";
 import m4 from "../fixtures/manoeuvres/m4-silverwater.json";
 import m5 from "../fixtures/manoeuvres/m5-marsh-st.json";
 import cbd from "../fixtures/manoeuvres/cbd-central-to-quay.json";
 import parramatta from "../fixtures/manoeuvres/parramatta-local.json";
 import castleHill from "../fixtures/manoeuvres/castle-hill-roundabouts.json";
+import usLa from "../fixtures/manoeuvres/us-la-i10.json";
+import deFrankfurt from "../fixtures/manoeuvres/de-frankfurt-a5.json";
+import frParis from "../fixtures/manoeuvres/fr-paris-etoile.json";
+import ukLondon from "../fixtures/manoeuvres/uk-london-m4.json";
+import jpTokyo from "../fixtures/manoeuvres/jp-tokyo.json";
 import { parseMapboxResponse } from "@/services/mapboxDirections";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
 import { decodePolyline, type LatLng } from "@/utils/polyline";
@@ -28,6 +34,12 @@ const ROUTES: { name: string; fixture: Fixture; speedKmh: number }[] = [
   { name: "CBD Central to Circular Quay", fixture: cbd as Fixture, speedKmh: 40 },
   { name: "Parramatta local", fixture: parramatta as Fixture, speedKmh: 45 },
   { name: "Castle Hill roundabouts", fixture: castleHill as Fixture, speedKmh: 45 },
+  // The rest of the world.
+  { name: "USA: Santa Monica, I-10 freeway", fixture: usLa as Fixture, speedKmh: 90 },
+  { name: "Germany: Frankfurt Airport, A5 interchanges", fixture: deFrankfurt as Fixture, speedKmh: 90 },
+  { name: "France: Paris, Place de l'Étoile", fixture: frParis as Fixture, speedKmh: 30 },
+  { name: "UK: Heathrow, Bath Road roundabouts", fixture: ukLondon as Fixture, speedKmh: 45 },
+  { name: "Japan: Tokyo, Shinjuku to Imperial Palace", fixture: jpTokyo as Fixture, speedKmh: 40 },
 ];
 
 interface Outcome {
@@ -211,6 +223,9 @@ describe.each(ROUTES)("$name", ({ name, fixture, speedKmh }) => {
       const off = straight.map((q) => distanceToLineMeters(q, nav.polyline));
       const leavesAt = off.findIndex((d) => d > 15);
       if (leavesAt < 0 || leavesAt > 7 || off.slice(leavesAt).some((d) => d <= 15)) continue;
+      // ...nor cuts back across the route on the way out (the U of a car-park exit).
+      const firstOff = off.findIndex((d) => d > 8);
+      if (firstOff >= 0 && off.slice(firstOff, leavesAt).some((d) => d <= 4)) continue;
       const track = [...nav.steps.slice(0, stepIndex + 1).flatMap((s) => s.polyline), ...straight];
       const { confirmed, missed } = drive(nav, track, speedKmh, true);
       expect({ step: stepIndex, taken: confirmed.has(stepIndex), missed: missed.has(stepIndex) }).toEqual({ step: stepIndex, taken: false, missed: true });

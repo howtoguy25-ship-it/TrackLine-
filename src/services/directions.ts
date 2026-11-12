@@ -3,7 +3,7 @@ import { decodePolyline, type LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
 import { roadFromInstruction, type SpeedInterval } from "@/map/routeChoices";
 import type { Lane } from "@/nav/lanes";
-import type { ManoeuvreKind } from "@/nav/manoeuvre";
+import { googleManoeuvre, type ManoeuvreKind } from "@/nav/manoeuvre";
 
 export class DirectionsApiError extends Error {
   constructor(public status: string, message?: string) {
@@ -59,6 +59,9 @@ export interface RouteStep {
   maneuverSide?: "left" | "right";
   /** Mapbox junction-view image for this manoeuvre (needs the access token appended). */
   guidanceViewUrl?: string;
+  /** Which side of the road traffic drives on here (Mapbox gives it per step, so a route that
+   *  crosses a border -- the Channel Tunnel, Hong Kong to Shenzhen -- changes over mid-route). */
+  drivingSide?: "left" | "right";
 }
 
 export interface Route {
@@ -225,7 +228,17 @@ export function manoeuvresAtStepEnds(steps: RouteStep[]): RouteStep[] {
   return steps.map((step, i) => {
     const next = steps[i + 1];
     if (next) {
-      return { ...step, instruction: next.instruction, targetStreetName: next.targetStreetName, maneuver: next.maneuver };
+      const g = googleManoeuvre(next.maneuver as string | undefined, next.instruction);
+      return {
+        ...step,
+        instruction: next.instruction,
+        targetStreetName: next.targetStreetName,
+        maneuver: next.maneuver,
+        // So exits, splits and merges get the approach view on Google routes too, anywhere.
+        maneuverKind: g.kind,
+        maneuverSide: g.side,
+        exitNumber: g.exitNumber,
+      };
     }
     const side = /destination (?:will be )?on the (left|right)/i.exec(step.instruction)?.[1]?.toLowerCase();
     return {
@@ -233,6 +246,7 @@ export function manoeuvresAtStepEnds(steps: RouteStep[]): RouteStep[] {
       instruction: side ? `Your destination is on the ${side}` : "You've arrived",
       targetStreetName: undefined,
       maneuver: undefined,
+      maneuverKind: "arrive",
     };
   });
 }

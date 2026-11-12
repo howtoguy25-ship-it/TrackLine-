@@ -20,7 +20,7 @@ const RIGHT_SHAPES: Record<"straight" | "slight" | "turn" | "sharp" | "uturn" | 
   merge: { shaft: "M21 29 L21 19 L13 10 L13 4", head: "7,9.5 13,3.5 19,9.5" },
 };
 
-function shapeFor(indication: LaneIndication): { shape: Shape; mirror: boolean } {
+export function laneArrowShape(indication: LaneIndication, drivingSide: "left" | "right"): { shape: Shape; mirror: boolean } {
   switch (indication) {
     case "slight right":
       return { shape: RIGHT_SHAPES.slight, mirror: false };
@@ -35,8 +35,10 @@ function shapeFor(indication: LaneIndication): { shape: Shape; mirror: boolean }
     case "sharp left":
       return { shape: RIGHT_SHAPES.sharp, mirror: true };
     case "uturn":
-      // Australia drives on the left, so U-turns swing right.
-      return { shape: RIGHT_SHAPES.uturn, mirror: true };
+      // A U-turn swings across the oncoming traffic: to the right where traffic drives on the
+      // left (UK, Australia, Japan, India...), to the left everywhere else. The base shape
+      // swings left.
+      return { shape: RIGHT_SHAPES.uturn, mirror: drivingSide === "left" };
     case "merge to left":
       return { shape: RIGHT_SHAPES.merge, mirror: false };
     case "merge to right":
@@ -55,16 +57,18 @@ interface Props {
   /** Colour for this lane's other arrows. */
   dimColor: string;
   size: number;
+  /** Which side traffic drives on (decides which way a U-turn arrow swings). */
+  drivingSide?: "left" | "right";
 }
 
-export function LaneArrow({ indications, highlight, color, dimColor, size }: Props) {
+export function LaneArrow({ indications, highlight, color, dimColor, size, drivingSide = "right" }: Props) {
   const list = indications.length ? indications : (["none"] as LaneIndication[]);
   // Draw the faded ones first so the route's arrow sits on top.
   const ordered = [...list].sort((a, b) => Number(a === highlight) - Number(b === highlight));
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32">
       {ordered.map((ind, i) => {
-        const { shape, mirror } = shapeFor(ind);
+        const { shape, mirror } = laneArrowShape(ind, drivingSide);
         const stroke = !highlight || ind === highlight ? color : dimColor;
         return (
           <G key={`${ind}-${i}`} transform={mirror ? "translate(32,0) scale(-1,1)" : undefined}>

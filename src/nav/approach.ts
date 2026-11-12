@@ -31,6 +31,8 @@ export interface ApproachState {
   confirmUntilMs: number | null;
   /** The last manoeuvre already resolved (taken), so each one is followed once, in order. */
   resolvedUpTo: number;
+  /** Furthest the car got past the split along the route while still ON it (metres). */
+  onRoutePastMax: number;
 }
 
 export const INITIAL_APPROACH: ApproachState = {
@@ -42,6 +44,7 @@ export const INITIAL_APPROACH: ApproachState = {
   offRouteSinceMs: null,
   confirmUntilMs: null,
   resolvedUpTo: -1,
+  onRoutePastMax: 0,
 };
 
 /** Within this of the next road counts as on it. */
@@ -65,6 +68,8 @@ export const TIGHT_ON_ROAD_METERS = 8;
 export const ON_ROUTE_METERS = 15;
 /** Past the split by this much before "on the next road" can mean anything. */
 export const PAST_SPLIT_METERS = 15;
+/** Furthest a car moves along the route between two fixes (~1 s at 200 km/h, with margin). */
+export const MAX_PROGRESS_PER_FIX_METERS = 60;
 export const CONFIRM_HOLD_MS = 3000;
 export const CONFIRM_DISTANCE_METERS = 50;
 export const MISSED_OFF_ROUTE_METERS = 30;
@@ -120,7 +125,7 @@ export function kindOfStep(step: Pick<RouteStep, "maneuverKind" | "maneuver" | "
   const m: ManeuverType = step.maneuver;
   if (!m) return undefined;
   if (m.startsWith("ramp")) return "exit";
-  if (m.startsWith("fork")) return "fork";
+  if (m.startsWith("fork") || (m as string).startsWith("keep")) return "fork";
   if (m === "merge") return "merge";
   if (m.startsWith("roundabout")) return "roundabout";
   return m === "straight" ? "continue" : "turn";
@@ -338,14 +343,27 @@ export function reduceApproach(state: ApproachState, event: ApproachEvent): { st
     return { state: { ...INITIAL_APPROACH, resolvedUpTo: index }, effects: restoreIf(state.zoomed, RESTORE_MS) };
   }
 
+  // "Past" means along the route, not just distance: 70 m before a turn is as far from the split
+  // as 70 m after it.
+  const pastSplit = Math.max(0, metersPastSplit(event.position, steps, index));
+  // Only progress driven continuously along the route counts: cutting across a bend onto a later
+  // part of it is a jump, not progress.
+  const continuous = pastSplit - state.onRoutePastMax <= MAX_PROGRESS_PER_FIX_METERS;
+  const onRoutePastMax =
+    event.offRouteMeters <= ON_ROUTE_METERS && continuous ? Math.max(state.onRoutePastMax, pastSplit) : state.onRoutePastMax;
+
   // Missed: well off the route for a few seconds.
   let offRouteSinceMs = state.offRouteSinceMs;
   if (event.offRouteMeters > MISSED_OFF_ROUTE_METERS) {
     offRouteSinceMs ??= nowMs;
     if (nowMs - offRouteSinceMs >= MISSED_HOLD_MS) {
+      // Which manoeuvre was missed: where the car left the route. A run of short steps (a slip
+      // lane 20 m after a turn) can be driven straight through on the route and left at the
+      // second split -- that's a miss of the second, not the first.
+      const missedIndex = manoeuvreLeftAt(steps, index, onRoutePastMax);
       return {
-        state: { ...INITIAL_APPROACH, phase: "missed", stepIndex: index, enteredAtMs: nowMs, resolvedUpTo: state.resolvedUpTo },
-        effects: [...restoreIf(state.zoomed, RESTORE_FAST_MS), { kind: "missed", stepIndex: index }],
+        state: { ...INITIAL_APPROACH, phase: "missed", stepIndex: missedIndex, enteredAtMs: nowMs, resolvedUpTo: state.resolvedUpTo },
+        effects: [...restoreIf(state.zoomed, RESTORE_FAST_MS), { kind: "missed", stepIndex: missedIndex }],
       };
     }
   } else {
@@ -354,9 +372,6 @@ export function reduceApproach(state: ApproachState, event: ApproachEvent): { st
 
   // Taken: past the split, on the road after it and clearly not on the road carrying straight
   // on, for 3 s or 50 m.
-  // "Past" means along the route, not just distance: 70 m before a turn is as far from the split
-  // as 70 m after it.
-  const pastSplit = Math.max(0, metersPastSplit(event.position, steps, index));
   const toNext = distanceToLineMeters(event.position, roadAfterSplit(steps, index));
   const toStraightOn = distanceToLineMeters(event.position, continuationOf(step.polyline));
   // On the road after the split and clearly apart from the straight-on road...
@@ -372,7 +387,10 @@ export function reduceApproach(state: ApproachState, event: ApproachEvent): { st
   let onNextSinceMs = state.onNextSinceMs;
   if (onNext || wellPast) {
     onNextSinceMs ??= nowMs;
-    if (wellPast || nowMs - onNextSinceMs >= CONFIRM_HOLD_MS || pastSplit >= CONFIRM_DISTANCE_METERS) {
+    // The last turn before the destination may leave only a few metres to drive: the evidence
+    // alone settles it there.
+    const intoArrival = index + 1 >= steps.length - 1;
+    if (wellPast || intoArrival || nowMs - onNextSinceMs >= CONFIRM_HOLD_MS || pastSplit >= CONFIRM_DISTANCE_METERS) {
       const confirmed: ApproachState = {
         ...INITIAL_APPROACH,
         phase: "confirm",
@@ -395,7 +413,23 @@ export function reduceApproach(state: ApproachState, event: ApproachEvent): { st
     onNextSinceMs = null;
   }
 
-  return { state: { ...state, onNextSinceMs, offRouteSinceMs }, effects: [] };
+  return { state: { ...state, onNextSinceMs, offRouteSinceMs, onRoutePastMax }, effects: [] };
+}
+
+/**
+ * The manoeuvre the car left the route at, given how far past the split of step `index` it
+ * stayed on the route: `index` itself, or a later tracked one whose split it had already
+ * driven through on the route.
+ */
+export function manoeuvreLeftAt(steps: RouteStep[], index: number, onRoutePastMeters: number): number {
+  let missed = index;
+  let splitAt = 0;
+  for (let k = index + 1; k < steps.length - 1; k++) {
+    splitAt += steps[k].distanceMeters;
+    if (onRoutePastMeters < splitAt + PAST_SPLIT_METERS) break;
+    if (shouldTrack(kindOfStep(steps[k]))) missed = k;
+  }
+  return missed;
 }
 
 /** The bit of route through the manoeuvre (for the wider, brighter line) and the road taken. */

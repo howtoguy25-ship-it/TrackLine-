@@ -100,6 +100,35 @@ export function manoeuvreKindFor(
   return turning ? "turn" : "continue";
 }
 
+/**
+ * Google routes (used wherever Mapbox can't answer) only carry a manoeuvre code and a sentence.
+ * Read what they can tell, worldwide:
+ *   ramp-*   -> an exit ("Take exit 23B", "At junction 12, exit onto M40", "...off-ramp") or else
+ *               an on-ramp ("Take the ramp onto I-10 E");
+ *   fork-*, keep-* -> a motorway split ("Keep left to continue on I-5 N") -- the legacy API says
+ *               keep-left / keep-right for those across the US and Europe;
+ *   merge, roundabout-* as they say.
+ * The exit number comes from the sentence ("exit 23B"), when it's in English; otherwise none.
+ */
+export function googleManoeuvre(
+  code: string | undefined,
+  instruction: string
+): { kind: ManoeuvreKind | undefined; side: "left" | "right" | undefined; exitNumber: string | undefined } {
+  const c = code ?? "";
+  const side: "left" | "right" | undefined = c.endsWith("-left") ? "left" : c.endsWith("-right") ? "right" : undefined;
+  const exitNumber = /\bexit\s+(\d+[A-Za-z]?)\b/i.exec(instruction)?.[1]?.toUpperCase();
+  let kind: ManoeuvreKind | undefined;
+  if (c.startsWith("ramp")) {
+    const onto = /\b(take|use)\b.*\bramp\b.*\bonto\b/i.test(instruction) && !/\bexit\b/i.test(instruction);
+    kind = onto ? "onramp" : "exit";
+  } else if (c.startsWith("fork") || c.startsWith("keep")) kind = "fork";
+  else if (c === "merge") kind = "merge";
+  else if (c.startsWith("roundabout")) kind = "roundabout";
+  else if (c.startsWith("turn") || c.startsWith("uturn")) kind = "turn";
+  else if (c === "straight") kind = "continue";
+  return { kind, side, exitNumber };
+}
+
 export function sideOf(modifier: string | undefined): "left" | "right" | undefined {
   if (!modifier) return undefined;
   if (modifier.includes("left")) return "left";
