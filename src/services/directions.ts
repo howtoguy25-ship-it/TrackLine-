@@ -2,6 +2,8 @@ import { env } from "@/config/env";
 import { decodePolyline, type LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
 import { roadFromInstruction, type SpeedInterval } from "@/map/routeChoices";
+import type { Lane } from "@/nav/lanes";
+import type { ManoeuvreKind } from "@/nav/manoeuvre";
 
 export class DirectionsApiError extends Error {
   constructor(public status: string, message?: string) {
@@ -43,6 +45,20 @@ export interface RouteStep {
   startLocation: LatLng;
   endLocation: LatLng;
   polyline: LatLng[];
+  // ---- Only on routes from Mapbox Directions (services/mapboxDirections.ts). Each one describes
+  // the manoeuvre at this step's END (endLocation), like the instruction above.
+  /** Lanes approaching the manoeuvre, left to right; absent when the data has none. */
+  lanes?: Lane[];
+  /** Signed motorway exit number ("3B"), when there is one. */
+  exitNumber?: string;
+  /** Road reference of the road the manoeuvre leads onto ("M4"). */
+  roadRef?: string;
+  /** What kind of manoeuvre it is, for the approach zoom and the confirmation chip. */
+  maneuverKind?: ManoeuvreKind;
+  /** Which side the road bends off to, when it does. */
+  maneuverSide?: "left" | "right";
+  /** Mapbox junction-view image for this manoeuvre (needs the access token appended). */
+  guidanceViewUrl?: string;
 }
 
 export interface Route {
@@ -75,6 +91,10 @@ export interface Route {
   // Only on routes from getRouteChoices: Google's live speed along route.polyline (index ranges
   // into that array), for drawing the slow and jammed stretches over the selected route.
   speedIntervals?: SpeedInterval[];
+  /** Where the route came from. Navigation uses Mapbox; previews may be Google. */
+  source?: "google" | "mapbox";
+  /** Mapbox's maxspeed annotation per polyline segment, in km/h (null where unknown). */
+  maxSpeedsKmh?: (number | null)[];
 }
 
 // Google's overview_polyline (Route.polyline) is a deliberately simplified/lower-point-count
@@ -193,10 +213,34 @@ function parseTransitSummary(leg: any): TransitSummary | undefined {
   return { legs, transfers: legs.length - 1 };
 }
 
+
+/**
+ * Google describes each step's manoeuvre at its START ("Turn left onto B", then the drive along
+ * B). Everything that reads steps here -- the instruction card, the voice, the countdown, the turn
+ * callouts -- reads a step's instruction as the manoeuvre at its END, measured to its end. Without
+ * this the app announced the turn just made, with the distance to the next one. So each step
+ * takes the next step's manoeuvre; the last step becomes the arrival.
+ */
+export function manoeuvresAtStepEnds(steps: RouteStep[]): RouteStep[] {
+  return steps.map((step, i) => {
+    const next = steps[i + 1];
+    if (next) {
+      return { ...step, instruction: next.instruction, targetStreetName: next.targetStreetName, maneuver: next.maneuver };
+    }
+    const side = /destination (?:will be )?on the (left|right)/i.exec(step.instruction)?.[1]?.toLowerCase();
+    return {
+      ...step,
+      instruction: side ? `Your destination is on the ${side}` : "You've arrived",
+      targetStreetName: undefined,
+      maneuver: undefined,
+    };
+  });
+}
+
 function parseRoute(route: any): Route {
   const leg = route.legs[0];
 
-  const steps: RouteStep[] = leg.steps.map((step: any) => ({
+  const steps: RouteStep[] = manoeuvresAtStepEnds(leg.steps.map((step: any) => ({
     instruction: stripHtml(step.html_instructions ?? ""),
     targetStreetName: extractBoldRoadName(step.html_instructions ?? ""),
     maneuver: step.maneuver,
@@ -205,7 +249,7 @@ function parseRoute(route: any): Route {
     startLocation: { latitude: step.start_location.lat, longitude: step.start_location.lng },
     endLocation: { latitude: step.end_location.lat, longitude: step.end_location.lng },
     polyline: decodePolyline(step.polyline?.points ?? ""),
-  }));
+  })));
 
   const durationSeconds: number = leg.duration?.value ?? 0;
   const durationInTrafficSeconds: number | undefined = leg.duration_in_traffic?.value;
@@ -453,7 +497,7 @@ function parseProtoDurationSeconds(duration: string | undefined): number {
  *  heading-aware reroute below -- getRouteOptions/getDirections above keep using the classic API
  *  they already work well with. */
 function parseRoutesApiRoute(route: any, withTolls = false): Route {
-  const steps: RouteStep[] = (route.legs ?? []).flatMap((leg: any) => leg.steps ?? []).map((step: any) => ({
+  const steps: RouteStep[] = manoeuvresAtStepEnds((route.legs ?? []).flatMap((leg: any) => leg.steps ?? []).map((step: any) => ({
     instruction: step.navigationInstruction?.instructions ?? "",
     targetStreetName: roadFromInstruction(step.navigationInstruction?.instructions ?? "", directionsLanguage),
     maneuver: ROUTES_API_MANEUVER_MAP[step.navigationInstruction?.maneuver] ?? undefined,
@@ -468,7 +512,7 @@ function parseRoutesApiRoute(route: any, withTolls = false): Route {
       longitude: step.endLocation?.latLng?.longitude ?? 0,
     },
     polyline: decodePolyline(step.polyline?.encodedPolyline ?? ""),
-  }));
+  })));
 
   // Same encoded-polyline format as the classic API (both are Google's own standard polyline
   // algorithm) -- decodePolyline works unchanged for either source.
