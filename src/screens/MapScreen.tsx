@@ -22,6 +22,14 @@ import MapView, {
   type PoiClickEvent,
 } from "react-native-maps";
 import { Map3DView, isMap3DSupported, type Map3DViewHandle } from "map3d";
+import { TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
+import { MapboxLayers } from "@/map-v2/MapboxLayers";
+import { USE_MAPBOX } from "@/map-v2/flag";
+import { isMapboxUsable } from "@/map-v2/mapbox";
+import type { MapPin } from "@/map-v2/pins";
+import { startSimulatedDrive, stopSimulatedDrive } from "@/dev/simulateDrive";
+import { isGpsReplayActive, subscribeGpsReplayActiveChange } from "@/dev/gpsReplay";
+import { incidentStyle } from "@/services/trafficNswModel";
 import * as Location from "expo-location";
 import { usePowerState } from "expo-battery";
 import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
@@ -128,6 +136,7 @@ import {
 import {
   findNearestTransitStation,
   getPlaceInfo,
+  searchPlaces,
   getStreetViewUrl,
   getStreetViewEmbedUrl,
   reverseGeocode,
@@ -262,6 +271,19 @@ function pointAtPolylineFraction(polyline: LatLng[], fraction: number): LatLng |
   return polyline[idx];
 }
 
+// What tapping a pin on the Mapbox map does (see onMapboxPinPress).
+type PinTarget =
+  | { kind: "zoomTo"; lat: number; lng: number }
+  | { kind: "alert"; alert: AlertDoc }
+  | { kind: "osm"; osm: OsmMarkerKind; at: LatLng }
+  | { kind: "trafficLightCluster"; lat: number; lng: number }
+  | { kind: "speedCameraCluster"; lat: number; lng: number }
+  | { kind: "venue"; placeId: string }
+  | { kind: "fuelPin"; pin: FuelStationPin }
+  | { kind: "incident"; incident: NearbyIncident }
+  | { kind: "liveCamera"; camera: LiveTrafficCamera }
+  | { kind: "origin" };
+
 export function MapScreen() {
   const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
   const { user } = useAuth();
@@ -279,7 +301,13 @@ export function MapScreen() {
   // Which snap point the "Where to?" sheet is at: 0 peek, 1 half, 2 full.
   const [whereToSheetIndex, setWhereToSheetIndex] = useState<0 | 1 | 2>(0);
 
-  const mapRef = useRef<MapView>(null);
+  // The map's camera handle. Both maps offer the same calls (see map-v2/TrackLineMap.tsx).
+  const mapRef = useRef<MapHandle>(null);
+  // The new Mapbox map, when this build can run it (native SDK + token) and USE_MAPBOX is on.
+  const [useMapboxMap] = useState(() => USE_MAPBOX && isMapboxUsable());
+  // Development builds: "Simulate drive" plays the active route as GPS (dev/simulateDrive.ts).
+  const [simulatingDrive, setSimulatingDrive] = useState(() => __DEV__ && isGpsReplayActive());
+  useEffect(() => (__DEV__ ? subscribeGpsReplayActiveChange(setSimulatingDrive) : undefined), []);
   // The map's own real, currently-rendered center -- ground truth from onRegionChangeComplete's
   // own `region` (gesture or programmatic alike), not inferred from JS state. See the "SIXTH
   // cause" drift safety-net effect (near userMovedMapRef) for why this matters.
@@ -3099,14 +3127,17 @@ export function MapScreen() {
   // 90s) -- position, stop, and "is a suggestion already showing" are all read fresh from refs
   // inside the interval callback instead.
   const trafficSuggestionRouteRef = useRef<Route | null>(null);
-  trafficSuggestionRouteRef.current = trafficSuggestionRoute;
   const stopLocationRef = useRef<LatLng | null>(null);
-  stopLocationRef.current = stopLocation;
   // Also skips while any of these other route-editing flows are up -- a second green line
   // (this suggestion's) appearing on top of the add-stop preview's own green line, or while
   // actively placing an alert pin, would just be confusing overlap, not a helpful suggestion.
   const otherFlowActiveRef = useRef(false);
-  otherFlowActiveRef.current = !!stopPreviewRoute || addingStopDuringNav || placingAlert;
+  // Kept in step after each render (the interval only reads them later).
+  useEffect(() => {
+    trafficSuggestionRouteRef.current = trafficSuggestionRoute;
+    stopLocationRef.current = stopLocation;
+    otherFlowActiveRef.current = !!stopPreviewRoute || addingStopDuringNav || placingAlert;
+  }, [trafficSuggestionRoute, stopLocation, stopPreviewRoute, addingStopDuringNav, placingAlert]);
   const trafficCheckInFlightRef = useRef(false);
   const trafficSuggestionDismissedAtRef = useRef(0);
 
@@ -4252,6 +4283,266 @@ export function MapScreen() {
     return () => clearInterval(interval);
   }, [route, heading, arrivalClockText, remainingDurationSeconds]);
 
+  // ---- What the Mapbox map draws (map-v2/MapboxLayers.tsx) ----
+  // Every icon pin with what tapping it does, keyed by the pin's id.
+  const mapboxPinData = useMemo(() => {
+    if (!useMapboxMap) return { pins: [] as MapPin[], targets: new Map<string, PinTarget>() };
+    const pins: MapPin[] = [];
+    const targets = new Map<string, PinTarget>();
+    const add = (pin: MapPin, target?: PinTarget) => {
+      pins.push(pin);
+      if (target) targets.set(pin.id, target);
+    };
+    for (const cluster of alertPins.clusters) {
+      add(
+        { id: `alert-cluster:${cluster.points[0].id}`, coordinate: { latitude: cluster.lat, longitude: cluster.lng }, icon: "alert-cluster", label: String(cluster.count), priority: 20 },
+        { kind: "zoomTo", lat: cluster.lat, lng: cluster.lng }
+      );
+    }
+    for (const { alert, size } of alertPins.singles) {
+      add(
+        {
+          id: `alert:${alert.id}`,
+          coordinate: { latitude: alert.lat, longitude: alert.lng },
+          icon: `alert:${alert.type}`,
+          size: size / 30,
+          anchor: "bottom",
+          priority: selectedAlert?.id === alert.id ? 31 : 30,
+        },
+        { kind: "alert", alert }
+      );
+    }
+    if (settings.showTrafficLights) {
+      for (const c of trafficLightClusters) {
+        if (c.count === 1) {
+          add({ id: `tl:${c.points[0].id}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "traffic-light", priority: 5 }, {
+            kind: "osm",
+            osm: "traffic_light",
+            at: { latitude: c.lat, longitude: c.lng },
+          });
+        } else {
+          add(
+            { id: `tlc:${c.key}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "traffic-light-cluster", label: String(c.count), priority: 5 },
+            { kind: "trafficLightCluster", lat: c.lat, lng: c.lng }
+          );
+        }
+      }
+    }
+    if (settings.showSpeedCameras) {
+      for (const c of speedCameraClusters) {
+        if (c.count === 1) {
+          add({ id: `sc:${c.points[0].id}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "speed-camera", priority: 8 }, {
+            kind: "osm",
+            osm: "speed_camera",
+            at: { latitude: c.lat, longitude: c.lng },
+          });
+        } else {
+          add(
+            { id: `scc:${c.key}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "speed-camera-cluster", label: String(c.count), priority: 8 },
+            { kind: "speedCameraCluster", lat: c.lat, lng: c.lng }
+          );
+        }
+      }
+    }
+    const venueLayer = (
+      kind: "fuel" | "restaurant" | "hotel",
+      clusters: typeof fuelViewportClusters
+    ) => {
+      for (const c of clusters) {
+        if (c.count === 1) {
+          const place = c.points[0].place;
+          add({ id: `${kind}-vp:${place.placeId}`, coordinate: place.location, icon: kind, priority: 10 }, { kind: "venue", placeId: place.placeId });
+        } else {
+          add(
+            { id: `${kind}-vpc:${c.key}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: `${kind}-cluster`, label: String(c.count), priority: 10 },
+            { kind: "zoomTo", lat: c.lat, lng: c.lng }
+          );
+        }
+      }
+    };
+    if (fuelStationsSheetOpen) {
+      for (const pin of fuelStationPins) {
+        add({ id: `fuel:${pin.id}`, coordinate: { latitude: pin.lat, longitude: pin.lng }, icon: "fuel", priority: 11 }, { kind: "fuelPin", pin });
+      }
+      venueLayer("fuel", fuelViewportClusters);
+    }
+    if (restaurantsSheetOpen) venueLayer("restaurant", restaurantViewportClusters);
+    if (hotelsSheetOpen) venueLayer("hotel", hotelViewportClusters);
+    if (settings.showLiveTraffic) {
+      for (const incident of nearbyTrafficIncidents) {
+        const st = incidentStyle(incident);
+        add(
+          {
+            id: `incident:${incident.id}`,
+            coordinate: { latitude: incident.lat, longitude: incident.lng },
+            icon: `incident:${st.color}:${st.icon}:${incident.major ? 1 : 0}`,
+            priority: incident.major ? 26 : 25,
+          },
+          { kind: "incident", incident }
+        );
+      }
+    }
+    if (settings.showLiveCameras) {
+      for (const camera of liveCameras) {
+        add({ id: `livecam:${camera.id}`, coordinate: { latitude: camera.lat, longitude: camera.lng }, icon: "live-camera", priority: 12 }, { kind: "liveCamera", camera });
+      }
+    }
+    if (placePage && !route && !pendingDestination) {
+      add({ id: `place-page:${placePage.placeId}`, coordinate: placePage.location, icon: "place-page", priority: 60 });
+    }
+    if (originOverride && !route && !pickingOrigin && !inRouteSelection) {
+      add({ id: "origin-override", coordinate: originOverride.location, icon: "origin", anchor: "bottom", priority: 55 }, { kind: "origin" });
+    }
+    return { pins, targets };
+  }, [
+    useMapboxMap,
+    alertPins,
+    selectedAlert?.id,
+    settings.showTrafficLights,
+    settings.showSpeedCameras,
+    settings.showLiveTraffic,
+    settings.showLiveCameras,
+    trafficLightClusters,
+    speedCameraClusters,
+    fuelStationsSheetOpen,
+    fuelStationPins,
+    fuelViewportClusters,
+    restaurantsSheetOpen,
+    restaurantViewportClusters,
+    hotelsSheetOpen,
+    hotelViewportClusters,
+    nearbyTrafficIncidents,
+    liveCameras,
+    placePage,
+    route,
+    pendingDestination,
+    originOverride,
+    pickingOrigin,
+    inRouteSelection,
+  ]);
+  const onMapboxPinPress = useCallback(
+    (pinId: string) => {
+      const target = mapboxPinData.targets.get(pinId);
+      if (!target) return;
+      switch (target.kind) {
+        case "zoomTo":
+          return onPlaceClusterPress(target.lat, target.lng);
+        case "alert":
+          return onMarkerPress(target.alert);
+        case "osm":
+          return onOsmMarkerPress(target.osm, target.at);
+        case "trafficLightCluster":
+          return onTrafficLightClusterPress(target.lat, target.lng);
+        case "speedCameraCluster":
+          return onSpeedCameraClusterPress(target.lat, target.lng);
+        case "venue":
+          return onViewVenueDetails(target.placeId);
+        case "fuelPin":
+          return target.pin.onPress();
+        case "incident":
+          return onSelectIncident(target.incident);
+        case "liveCamera":
+          return onLiveCameraPress(target.camera);
+        case "origin":
+          return onOriginMarkerPress();
+      }
+    },
+    [
+      mapboxPinData,
+      onPlaceClusterPress,
+      onMarkerPress,
+      onOsmMarkerPress,
+      onTrafficLightClusterPress,
+      onSpeedCameraClusterPress,
+      onViewVenueDetails,
+      onSelectIncident,
+      onLiveCameraPress,
+      onOriginMarkerPress,
+    ]
+  );
+
+  const mapboxNavRoute = useMemo(() => (route ? detailedRoutePolyline(route) : null), [route]);
+  const mapboxTurnCallouts = useMemo(
+    () =>
+      route && !addingStopDuringNav && !stopPreviewRoute
+        ? route.steps
+            .slice(activeStepIndex, Math.min(route.steps.length - 1, activeStepIndex + 3))
+            .map((step, i) => ({ key: `turn-${activeStepIndex + i}`, coordinate: step.endLocation, text: step.targetStreetName ?? step.instruction }))
+        : [],
+    [route, addingStopDuringNav, stopPreviewRoute, activeStepIndex]
+  );
+  const mapboxSelection = useMemo(
+    () =>
+      inRouteSelection
+        ? {
+            drawn: drawnSelection,
+            selectedIndex: selectionIndex,
+            selectedLine: selectedSelectionLine,
+            trafficStretches: selectedTrafficStretches,
+            bubbles: drawnSelection.flatMap(({ index }, pos) => {
+              const anchor = selectionBubbleAnchors[pos];
+              const row = selectionRows[index];
+              return anchor && row
+                ? [{ index, key: row.key, coordinate: anchor, timeText: row.timeText, tag: selectionTags[index] ?? null, selected: index === selectionIndex }]
+                : [];
+            }),
+            start: routeOriginLatLng,
+            destination: pendingDestination?.location ?? null,
+            onSelect: onSelectRouteRow,
+          }
+        : null,
+    [
+      inRouteSelection,
+      drawnSelection,
+      selectionIndex,
+      selectedSelectionLine,
+      selectedTrafficStretches,
+      selectionBubbleAnchors,
+      selectionRows,
+      selectionTags,
+      routeOriginLatLng,
+      pendingDestination,
+      onSelectRouteRow,
+    ]
+  );
+  const mapboxUser = useMemo(
+    () =>
+      currentLatLng
+        ? {
+            coordinate: currentLatLng,
+            heading,
+            accuracyMeters: currentAccuracyMeters,
+            deviceHeading: route ? deviceHeading : null,
+            navigating: !!route,
+            markerStyle: settings.mapMarkerStyle,
+            ghost: settings.visibility === "ghost",
+          }
+        : null,
+    [currentLatLng, heading, currentAccuracyMeters, route, deviceHeading, settings.mapMarkerStyle, settings.visibility]
+  );
+
+  // A tap on a named place drawn by the Mapbox map: find it with Google Places (same details,
+  // photos and hours as before) and open its card.
+  const onMapboxPoiPress = useCallback(
+    async (poi: { name: string; coordinate: LatLng }) => {
+      if (route || placingAlert || anySheetOpen) return;
+      setPlaceInfoLoading(true);
+      try {
+        const found = await searchPlaces(poi.name, poi.coordinate);
+        if (!found[0]) return;
+        const info = await getPlaceInfo(found[0].placeId);
+        if (!info) return;
+        setPlaceInfo(info);
+        placeInfoSheetRef.current?.expand();
+      } catch (err) {
+        Sentry.logger.error("map: mapbox poi lookup failed", { error: String(err) });
+      } finally {
+        setPlaceInfoLoading(false);
+      }
+    },
+    [route, placingAlert, anySheetOpen]
+  );
+
   return (
     <View style={styles.container} onTouchStart={autoGoRunning ? stopAutoGo : undefined}>
       {/* Everything map-related lives in its own flex:1 area so the banner ad below gets a
@@ -4276,8 +4567,56 @@ export function MapScreen() {
       // Apple's renderer has no equivalent for -- that was the real, confirmed tradeoff Apple
       // Maps cost, not worth it after all. Android was never affected either way (already
       // Google, still needed there for the custom Map3DView native module).
+      useMapboxMap ? (
+        <TrackLineMap
+          ref={mapRef}
+          theme={settings.mapTheme}
+          roadThickness={settings.roadThickness}
+          satellite={mapType === "hybrid"}
+          dimmed={isPickingRoute}
+          show3DBuildings={settings.show3DBuildings}
+          showTraffic={showsTrafficLayer}
+          padding={mapPadding}
+          initialCenter={currentLatLng ?? { latitude: -33.8688, longitude: 151.2093 }}
+          initialZoom={17}
+          onRegionChangeComplete={onRegionChangeComplete}
+          onPanDrag={onMapPanDrag}
+          onPoiPress={onMapboxPoiPress}
+          onMapReady={() => setMapReady(true)}
+        >
+          <MapboxLayers
+            navRoute={mapboxNavRoute}
+            remaining={route ? remainingPolyline : []}
+            onRoutePress={enterOverviewMode}
+            turnCallouts={mapboxTurnCallouts}
+            nextTurn={route && activeStep ? activeStep.endLocation : null}
+            stopPreview={stopPreviewRoute ? detailedRoutePolyline(stopPreviewRoute) : null}
+            trafficSuggestion={
+              trafficSuggestionRoute && !stopPreviewRoute
+                ? {
+                    line: detailedRoutePolyline(trafficSuggestionRoute),
+                    etaText: trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText,
+                    labelPoint: pointAtPolylineFraction(trafficSuggestionRoute.polyline, 0.5),
+                  }
+                : null
+            }
+            user={mapboxUser}
+            presences={visiblePresences}
+            presenceCellSize={presenceCellSizeDegrees}
+            onSelectPresence={setSelectedPresence}
+            onPresenceCluster={onPlaceClusterPress}
+            selection={mapboxSelection}
+            arrival={destinationLatLng ?? (pendingDestination && !route && !inRouteSelection ? pendingDestination.location : null)}
+            pins={mapboxPinData.pins}
+            onPinPress={onMapboxPinPress}
+            selectedComment={
+              selectedAlert?.comment ? { coordinate: { latitude: selectedAlert.lat, longitude: selectedAlert.lng }, text: selectedAlert.comment } : null
+            }
+          />
+        </TrackLineMap>
+      ) : (
       <MapView
-        ref={mapRef}
+        ref={mapRef as unknown as React.Ref<MapView>}
         provider={PROVIDER_GOOGLE}
         mapType={mapType}
         // The custom theme style only ever applies to the "standard" map type -- satellite/
@@ -4996,6 +5335,7 @@ export function MapScreen() {
             </Marker>
           ))}
       </MapView>
+      )
       )}
 
       {/* Real, confirmed bug: before this, nothing in the app ever reacted to a missing/denied
@@ -5113,7 +5453,9 @@ export function MapScreen() {
         </View>
       )}
 
-      {show3D && isMap3DSupported && currentLatLng && (
+      {/* Google's photoreal 3D view belongs to the old map; on Mapbox, "3D buildings" raises
+          the buildings in the map itself once it's tilted. */}
+      {!useMapboxMap && show3D && isMap3DSupported && currentLatLng && (
         <>
           <Map3DView
             ref={map3DRef}
@@ -5277,6 +5619,18 @@ export function MapScreen() {
             onClose={() => setModeSheetOpen(false)}
           />
         </>
+      )}
+
+      {__DEV__ && route && (
+        <Pressable
+          onPress={() => (simulatingDrive ? stopSimulatedDrive() : startSimulatedDrive(remainingPolyline.length > 1 ? remainingPolyline : detailedRoutePolyline(route)))}
+          style={({ pressed }) => [styles.simulateDriveChip, { bottom: insets.bottom + bottomBarHeight + spacing.xl * 3 }, pressed && { opacity: pressedOpacity }]}
+          accessibilityRole="button"
+          accessibilityLabel={simulatingDrive ? "Stop simulated drive" : "Simulate drive"}
+        >
+          <Ionicons name={simulatingDrive ? "stop" : "car-sport"} size={16} color="#FFFFFF" />
+          <Text style={styles.simulateDriveText}>{simulatingDrive ? "Stop simulation" : "Simulate drive"}</Text>
+        </Pressable>
       )}
 
       {route && (
@@ -6127,6 +6481,18 @@ export function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  simulateDriveChip: {
+    position: "absolute",
+    left: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(31,33,37,0.85)",
+  },
+  simulateDriveText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" },
   container: { flex: 1, backgroundColor: colors.surfaceMuted },
   mapArea: { flex: 1 },
   mapPlaceholder: { backgroundColor: colors.surfaceMuted },
