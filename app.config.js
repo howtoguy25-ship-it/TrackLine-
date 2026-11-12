@@ -69,6 +69,9 @@ module.exports = {
       // resolve code signing for the new widget-extension target during prebuild/EAS Build.
       appleTeamId: "9C85Z8Z8BD",
       infoPlist: {
+        // The home map's optional "Audio player" button opens the driver's music app. iOS only
+        // answers "is this app installed?" for URL schemes listed here.
+        LSApplicationQueriesSchemes: ["spotify", "music", "youtubemusic"],
         // Real, required Info.plist key for Live Activities -- per Apple's own docs, without
         // this on the MAIN app's Info.plist (not the widget extension's), Activity.request()
         // silently fails to start anything at all, no error surfaced anywhere.

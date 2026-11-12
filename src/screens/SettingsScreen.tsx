@@ -83,7 +83,7 @@ export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, keyof typeof Ioni
 const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   account: ["Account", "Purchases"],
   privacy: ["Privacy"],
-  mapDisplay: ["Map appearance", "Navigation card colors", "Your map marker", "Map layers"],
+  mapDisplay: ["Map view", "Map shortcuts", "Map appearance", "Navigation card colors", "Your map marker", "Map layers"],
   navigationVoice: ["Voice guidance", "Speed", "Public transit"],
   alertsCommunity: ["Live alerts", "Alert icons"],
   vehicleAI: ["AI Vehicle Detection", "Vehicle REV Checks", "EV Radar (siren detection)"],
@@ -874,6 +874,71 @@ export function SettingsScreen() {
             </Pressable>
           </View>
         )}
+      </Section>
+
+      {/* The switches that used to be rows in the old "Map tools" panel on the map. */}
+      <Section title="Map view" visible={shouldShow("Map view")}>
+        <Row
+          label="Satellite view"
+          icon={<Ionicons name="earth-outline" size={18} color={settings.defaultMapViewStyle === "satellite3d" ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.defaultMapViewStyle === "satellite3d"}
+            onValueChange={(value) => updateSettings({ defaultMapViewStyle: value ? "satellite3d" : "tilted3d" })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Row
+          label="3D buildings"
+          icon={<Ionicons name="business-outline" size={18} color={settings.show3DBuildings ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.show3DBuildings}
+            onValueChange={(value) => updateSettings({ show3DBuildings: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Row
+          label="Alerts on the map"
+          icon={<Ionicons name="warning-outline" size={18} color={settings.alertsEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.alertsEnabled}
+            onValueChange={(value) => updateSettings({ alertsEnabled: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          The map opens in TrackLine Light. Satellite view swaps the drawn map for aerial imagery; 3D buildings
+          opens the photorealistic 3D view where your phone supports it.
+        </Text>
+      </Section>
+
+      <Section title="Map shortcuts" visible={shouldShow("Map shortcuts")}>
+        <Row
+          label="Compass"
+          icon={<Ionicons name="compass-outline" size={18} color={settings.showCompass ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.showCompass}
+            onValueChange={(value) => updateSettings({ showCompass: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Row
+          label="Audio player"
+          icon={<Ionicons name="musical-notes-outline" size={18} color={settings.showAudioPlayer ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.showAudioPlayer}
+            onValueChange={(value) => updateSettings({ showAudioPlayer: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          Audio player adds a music button to the map that opens your music app (Spotify, Apple Music or YouTube
+          Music). It opens the app -- it can&apos;t control what&apos;s playing from here.
+        </Text>
       </Section>
 
       <Section title="Map appearance" visible={shouldShow("Map appearance")}>

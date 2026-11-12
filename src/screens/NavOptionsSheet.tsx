@@ -10,6 +10,10 @@ interface Props {
   onReportAlert: () => void;
   onShareEta: () => void;
   onOpenDetection: () => void;
+  // Satellite, 3D buildings, alerts and the nearby-place lists while driving. The round "Map
+  // tools" button that used to float over the map is gone; this row is how that panel is
+  // reached during a trip (on the home map its contents live in the Menu and Settings instead).
+  onOpenMapTools: () => void;
   onEndNavigation: () => void;
   onClose: () => void;
   onSheetChange?: (index: number) => void;
@@ -25,7 +29,7 @@ interface Props {
 // tab (ETA/road/Add Stop/options) rather than a wide row of icons competing with the turn
 // instructions for space.
 export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOptionsSheet(
-  { onReportAlert, onShareEta, onOpenDetection, onEndNavigation, onClose, onSheetChange, detectionBatteryLow },
+  { onReportAlert, onShareEta, onOpenDetection, onOpenMapTools, onEndNavigation, onClose, onSheetChange, detectionBatteryLow },
   ref
 ) {
   const insets = useSafeAreaInsets();
@@ -62,6 +66,14 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
           label="AI Vehicle Detection"
           subtitle={detectionBatteryLow ? "Battery below 50% -- still works, may run slower" : undefined}
           onPress={onOpenDetection}
+        />
+        <OptionRow
+          icon="layers-outline"
+          iconBg="#E1F1FD"
+          iconColor="#0A84E0"
+          label="Map tools"
+          subtitle="Satellite, 3D buildings, alerts, fuel and food nearby"
+          onPress={onOpenMapTools}
         />
 
         <View style={styles.divider} />

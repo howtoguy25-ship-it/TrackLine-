@@ -4,6 +4,24 @@
 // how things LOOK and FEEL on a phone is in TEST_ON_PHONE.md, marked "NEEDS DEVICE TEST".
 import { RUBIK, rubikFamilyForWeight } from "../src/theme/typography";
 import { scaleFor } from "../src/theme/scale";
+import { SETTINGS_VERSION, migrateStoredSettings } from "../src/services/settingsMigration";
+import {
+  ALERT_PIN_MAX,
+  ALERT_PIN_MIN,
+  HOME_ARROW_SCREEN_FRACTION,
+  STREET_LOOKUP_MIN_MOVE_M,
+  StreetNameTracker,
+  alertPinSize,
+  arrowScreenY,
+  countReportsAround,
+  floatingButtonsInteractive,
+  floatingButtonsOpacity,
+  headingDelta,
+  homeMapPadding,
+  roadFromRouteSteps,
+  shouldClusterAlerts,
+  zoomFromLatitudeDelta,
+} from "../src/map/homeMapLogic";
 
 const assert = {
   ok(value: unknown, message?: string): void {
@@ -57,6 +75,181 @@ check("the scale is clamped, so a tiny phone isn't cramped and a tablet isn't ov
 check("a missing or bad width never produces NaN sizes", () => {
   assert.equal(scaleFor(0), 1);
   assert.equal(scaleFor(NaN), 1);
+});
+
+console.log("§1 floating buttons vs the sheet");
+check("fully visible at peek and at exactly half height", () => {
+  assert.equal(floatingButtonsOpacity(200, 420), 1);
+  assert.equal(floatingButtonsOpacity(420, 420), 1);
+});
+check("HIDDEN ABOVE HALF: fades over the next 48pt, then gone", () => {
+  assert.equal(floatingButtonsOpacity(444, 420), 0.5);
+  assert.equal(floatingButtonsOpacity(468, 420), 0);
+  assert.equal(floatingButtonsOpacity(800, 420), 0);
+});
+check("a faded-out button can't be tapped", () => {
+  assert.equal(floatingButtonsInteractive(420, 420), true);
+  assert.equal(floatingButtonsInteractive(460, 420), false);
+  assert.equal(floatingButtonsInteractive(800, 420), false);
+});
+
+console.log("§1 where the driver sits on screen");
+check("the arrow lands at 62% of the screen height on a normal phone", () => {
+  const padding = homeMapPadding(844, 250);
+  assert.ok(Math.abs(arrowScreenY(844, padding) - 844 * HOME_ARROW_SCREEN_FRACTION) < 0.5);
+  assert.equal(padding.bottom, 250);
+});
+check("the arrow is always above whatever covers the bottom of the map", () => {
+  for (const [height, covered] of [[844, 250], [667, 300], [932, 220], [568, 330]] as const) {
+    const padding = homeMapPadding(height, covered);
+    assert.ok(arrowScreenY(height, padding) < height - padding.bottom, `h=${height} covered=${covered}`);
+  }
+});
+check("a very tall sheet can't pad the map away to nothing", () => {
+  const padding = homeMapPadding(568, 5000);
+  assert.ok(568 - padding.top - padding.bottom >= 100);
+});
+
+console.log("§1 report pins");
+check("22pt zoomed out, 34pt close up, never outside that range", () => {
+  assert.equal(alertPinSize(8), ALERT_PIN_MIN);
+  assert.equal(alertPinSize(12), ALERT_PIN_MIN);
+  assert.equal(alertPinSize(17), ALERT_PIN_MAX);
+  assert.equal(alertPinSize(21), ALERT_PIN_MAX);
+});
+check("sizes move in 4pt steps, growing with zoom", () => {
+  let previous = 0;
+  for (let zoom = 10; zoom <= 19; zoom += 0.25) {
+    const size = alertPinSize(zoom);
+    assert.ok((size - ALERT_PIN_MIN) % 4 === 0, `size ${size} at zoom ${zoom}`);
+    assert.ok(size >= previous);
+    previous = size;
+  }
+});
+check("a report on the active route is one step larger at every zoom", () => {
+  for (const zoom of [10, 13, 15, 18]) assert.equal(alertPinSize(zoom, true), alertPinSize(zoom) + 4);
+});
+check("reports are grouped into counts below zoom 12 and drawn singly from 12 up", () => {
+  assert.equal(shouldClusterAlerts(11.9), true);
+  assert.equal(shouldClusterAlerts(12), false);
+});
+check("zoom is derived sensibly from the latitude span", () => {
+  assert.ok(Math.abs(zoomFromLatitudeDelta(360) - 0) < 1e-9);
+  assert.ok(zoomFromLatitudeDelta(0.005) > zoomFromLatitudeDelta(0.05));
+  assert.ok(Number.isFinite(zoomFromLatitudeDelta(0)));
+});
+
+console.log("§1 'N reports around you'");
+check("counts only reports within 10km -- the real number, including zero", () => {
+  const here = { latitude: -33.8688, longitude: 151.2093 };
+  const reports = [
+    { lat: -33.8688, lng: 151.2093 }, // here
+    { lat: -33.9, lng: 151.2093 }, // ~3.5km
+    { lat: -33.95, lng: 151.2093 }, // ~9km
+    { lat: -34.0, lng: 151.2093 }, // ~14.6km
+  ];
+  assert.equal(countReportsAround(reports, here), 3);
+  assert.equal(countReportsAround([], here), 0);
+});
+
+console.log("§1 street-name pill throttle");
+const M = 1 / 111_320; // degrees of latitude per metre
+const fixAt = (metersNorth: number, heading = 0) => ({
+  latitude: -33.9 + metersNorth * M,
+  longitude: 151.2,
+  heading,
+});
+check("heading difference wraps correctly", () => {
+  assert.equal(headingDelta(350, 10), 20);
+  assert.equal(headingDelta(0, 180), 180);
+  assert.equal(headingDelta(90, 90), 0);
+});
+check("NO MORE THAN ONE LOOKUP PER 25m: a 1km drive ticking every 2m makes at most 40", () => {
+  const tracker = new StreetNameTracker();
+  for (let m = 0; m <= 1000; m += 2) {
+    const fix = fixAt(m);
+    if (tracker.update(fix)) tracker.resolve(fix, "George St");
+  }
+  assert.ok(tracker.lookupsStarted <= 1000 / STREET_LOOKUP_MIN_MOVE_M, `made ${tracker.lookupsStarted} lookups`);
+  assert.ok(tracker.lookupsStarted >= 10); // and it does keep looking, not just once
+});
+check("sitting still makes exactly one lookup however long it ticks", () => {
+  const tracker = new StreetNameTracker();
+  for (let second = 0; second < 600; second++) {
+    const fix = fixAt(0, second % 2 === 0 ? 0 : 3); // a little compass jitter
+    if (tracker.update(fix)) tracker.resolve(fix, "George St");
+  }
+  assert.equal(tracker.lookupsStarted, 1);
+  assert.equal(tracker.name, "George St");
+});
+check("heading jitter while parked never triggers a lookup, even a big swing", () => {
+  const tracker = new StreetNameTracker();
+  const first = fixAt(0, 0);
+  if (tracker.update(first)) tracker.resolve(first, "George St");
+  for (const heading of [90, 200, 310, 45]) tracker.update(fixAt(0.5, heading));
+  assert.equal(tracker.lookupsStarted, 1);
+});
+check("a real turn (moved and heading changed > 30 degrees) looks up before 25m", () => {
+  const tracker = new StreetNameTracker();
+  const first = fixAt(0, 0);
+  if (tracker.update(first)) tracker.resolve(first, "George St");
+  const turned = fixAt(12, 90);
+  assert.equal(tracker.update(turned), true);
+  tracker.resolve(turned, "Pitt St");
+  assert.equal(tracker.name, "Pitt St");
+});
+check("a stretch of road already named is answered from memory, with no lookup", () => {
+  const tracker = new StreetNameTracker();
+  for (let m = 0; m <= 300; m += 5) {
+    const fix = fixAt(m);
+    if (tracker.update(fix)) tracker.resolve(fix, m < 150 ? "George St" : "Pitt St");
+  }
+  const after = tracker.lookupsStarted;
+  for (let m = 0; m <= 300; m += 5) tracker.update(fixAt(m)); // drive it again
+  assert.equal(tracker.lookupsStarted, after);
+});
+check("only one lookup is ever in flight at a time", () => {
+  const tracker = new StreetNameTracker();
+  assert.equal(tracker.update(fixAt(0)), true); // not resolved yet
+  assert.equal(tracker.update(fixAt(100)), false);
+  assert.equal(tracker.update(fixAt(200)), false);
+  assert.equal(tracker.lookupsStarted, 1);
+});
+check("a failed lookup isn't cached, so the road gets another try", () => {
+  const tracker = new StreetNameTracker();
+  assert.equal(tracker.update(fixAt(0)), true);
+  tracker.fail();
+  assert.equal(tracker.update(fixAt(40)), true);
+});
+check("'no road here' is remembered too, and hides the pill", () => {
+  const tracker = new StreetNameTracker();
+  const fix = fixAt(0);
+  if (tracker.update(fix)) tracker.resolve(fix, null);
+  assert.equal(tracker.name, null);
+  assert.equal(tracker.update(fixAt(1)), false);
+});
+check("while navigating, the road is the street the previous step turned onto", () => {
+  const steps = [{ targetStreetName: "George St" }, { targetStreetName: "Pitt St" }, {}];
+  assert.equal(roadFromRouteSteps(steps, 0), null);
+  assert.equal(roadFromRouteSteps(steps, 1), "George St");
+  assert.equal(roadFromRouteSteps(steps, 2), "Pitt St");
+  assert.equal(roadFromRouteSteps([{}, {}], 1), null);
+});
+
+console.log("§1 the map opens on TrackLine Light");
+check("a phone that was on satellite is moved back to the drawn map, once", () => {
+  const migrated = migrateStoredSettings({ defaultMapViewStyle: "satellite3d", mapTheme: "dark" }, undefined);
+  assert.equal(migrated.defaultMapViewStyle, "tilted3d");
+  assert.equal(migrated.mapTheme, "light");
+  assert.equal(migrated.settingsVersion, SETTINGS_VERSION);
+});
+check("a flat-view preference is left alone -- only satellite is reset", () => {
+  assert.equal(migrateStoredSettings({ defaultMapViewStyle: "flat", mapTheme: "light" }, 1).defaultMapViewStyle, "flat");
+});
+check("choosing satellite AFTER the reset sticks: an up-to-date phone is never touched again", () => {
+  const again = migrateStoredSettings({ defaultMapViewStyle: "satellite3d", mapTheme: "dark" }, SETTINGS_VERSION);
+  assert.equal(again.defaultMapViewStyle, "satellite3d");
+  assert.equal(again.mapTheme, "dark");
 });
 
 console.log(`\n${passed} checks passed`);

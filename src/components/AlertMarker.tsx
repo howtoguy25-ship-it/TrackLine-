@@ -14,6 +14,9 @@ interface Props {
   // it shows while a user is actively viewing this alert and hides again the moment they swipe
   // the sheet away (or tap a different alert), reappearing if they come back to it later.
   isSelected: boolean;
+  // Badge diameter in points: 22 when zoomed out up to 34 close in, a step larger for a report
+  // on the active route (map/homeMapLogic.ts -- alertPinSize). Defaults to the standard 30.
+  size?: number;
 }
 
 // Memoized so MapScreen re-renders (e.g. every GPS tick, which changes currentLatLng but not
@@ -23,11 +26,18 @@ interface Props {
 // Fixed layout numbers (not measured at runtime) for the optional comment caption below the pin
 // -- see the `anchor` comment on the Marker itself for why these need to be exact constants
 // rather than whatever the comment's own text happens to lay out to.
-const PIN_SIZE = 34;
+const DEFAULT_PIN_SIZE = 30;
+// The small triangle under the badge whose tip marks the exact spot on the road.
+const POINTER_HEIGHT = 6;
 const COMMENT_GAP = 3;
 const COMMENT_HEIGHT = 30;
 
-export const AlertMarker = React.memo(function AlertMarker({ alert, onPress, isSelected }: Props) {
+export const AlertMarker = React.memo(function AlertMarker({
+  alert,
+  onPress,
+  isSelected,
+  size = DEFAULT_PIN_SIZE,
+}: Props) {
   // Real, confirmed bug this fixes: tracksViewChanges={false} below (the correct, cheap default
   // for a marker with no comment) ALSO froze this pin's rendered bitmap at whatever
   // alertIconTheme was active the moment it first mounted -- picking a different icon pack in
@@ -49,12 +59,18 @@ export const AlertMarker = React.memo(function AlertMarker({ alert, onPress, isS
   // fixed pixel sizes above (not measured after layout, which react-native-maps has no hook for
   // anyway) so the pin's own bottom edge -- not the caption's -- stays the true anchor point
   // regardless of whether this alert has a comment.
+  // Anchored at the pointer's tip, so the report sits exactly ON its point of road whatever
+  // size the badge is drawn at.
+  const pinHeight = size + POINTER_HEIGHT;
+  const color = ALERT_COLORS[alert.type];
   const anchor = alert.comment
-    ? { x: 0.5, y: PIN_SIZE / (PIN_SIZE + COMMENT_GAP + COMMENT_HEIGHT) }
+    ? { x: 0.5, y: pinHeight / (pinHeight + COMMENT_GAP + COMMENT_HEIGHT) }
     : { x: 0.5, y: 1 };
   return (
     <Marker
-      key={settings.alertIconTheme}
+      // Re-keyed when the icon theme or the size changes: with tracksViewChanges off the marker
+      // is a snapshot, and a new key is what makes the map take a fresh one.
+      key={`${settings.alertIconTheme}-${size}`}
       coordinate={{ latitude: alert.lat, longitude: alert.lng }}
       anchor={anchor}
       // react-native-maps fires MapView's own onPress *in addition to* a tapped Marker's onPress
@@ -78,9 +94,10 @@ export const AlertMarker = React.memo(function AlertMarker({ alert, onPress, isS
       tracksViewChanges={!!alert.comment}
     >
       <View style={styles.column}>
-        <View style={[styles.pin, { backgroundColor: ALERT_COLORS[alert.type] }]}>
-          <AlertTypeGlyph type={alert.type} size={18} color="#FFFFFF" />
+        <View style={[styles.pin, { backgroundColor: color, width: size, height: size, borderRadius: size / 2 }]}>
+          <AlertTypeGlyph type={alert.type} size={Math.round(size * 0.55)} color="#FFFFFF" />
         </View>
+        <View style={[styles.pointer, { borderTopColor: color }]} />
         {/* Small, semi-transparent (not fully opaque, not so transparent it's hard to read --
             per explicit request) caption directly under the pin -- only while this alert is the
             one currently selected/being viewed (isSelected), hiding again once its detail sheet
@@ -109,10 +126,17 @@ const styles = StyleSheet.create({
   column: {
     alignItems: "center",
   },
+  pointer: {
+    width: 0,
+    height: 0,
+    marginTop: -2,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: POINTER_HEIGHT + 2,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+  },
   pin: {
-    width: PIN_SIZE,
-    height: PIN_SIZE,
-    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,

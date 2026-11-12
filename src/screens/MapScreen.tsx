@@ -30,7 +30,7 @@ import BottomSheet from "@gorhom/bottom-sheet";
 import { useNavigation, useIsFocused, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing, pressedOpacity, scaleFor } from "@/theme/tokens";
 import { getMapStyle } from "@/utils/mapStyle";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import { clusterPoints } from "@/utils/markerCluster";
@@ -47,12 +47,9 @@ import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
 import { MapToolsSheet } from "@/screens/MapToolsSheet";
 import { SoundSheet } from "@/screens/SoundSheet";
 import { VisibilitySheet } from "@/screens/VisibilitySheet";
-import { MenuButton } from "@/components/MenuButton";
-import { CompassButton } from "@/components/CompassButton";
 import { GhostModeExplainerModal, hasSeenGhostModeExplainer, markGhostModeExplainerSeen } from "@/components/GhostModeExplainerModal";
 import { useAutoGhostMode, autoGhostOnArrival } from "@/hooks/useAutoGhostMode";
 import { Tracky } from "@/components/trackys/Tracky";
-import { SoundButton } from "@/components/SoundButton";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import { RouteOptionsCard } from "@/components/RouteOptionsCard";
 import { AlertMarker } from "@/components/AlertMarker";
@@ -60,7 +57,7 @@ import { AlertStillHereCard } from "@/components/AlertStillHereCard";
 import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
 import { AlertBanner } from "@/components/AlertBanner";
 import { NearbyAlertToast, type NearbyAlertNotification } from "@/components/NearbyAlertToast";
-import { BannerAdBar } from "@/components/BannerAdBar";
+import { BannerAdBar, BANNER_HEIGHT } from "@/components/BannerAdBar";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { AlertReportSheet } from "@/screens/AlertReportSheet";
 import { AlertDetailSheet } from "@/screens/AlertDetailSheet";
@@ -71,8 +68,8 @@ import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
 import { ParkingSheet } from "@/screens/ParkingSheet";
-import { WhereToSheet } from "@/screens/WhereToSheet";
-import type { ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
+import { WhereToSheet, WHERE_TO_SNAP_FRACTIONS } from "@/screens/WhereToSheet";
+import { threeSnapHeights, type ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
@@ -123,6 +120,22 @@ import {
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
 import { parseDriveLink } from "@/services/driveLink";
+import { useSharedValue } from "react-native-reanimated";
+import { HomeMapControls } from "@/components/HomeMapControls";
+import { StreetPill } from "@/components/StreetPill";
+import {
+  HOME_FOLLOW_ZOOM,
+  RoadLookupTracker,
+  alertPinSize,
+  arrowScreenY,
+  countReportsAround,
+  homeMapPadding,
+  roadFromRouteSteps,
+  shouldClusterAlerts,
+  zoomFromLatitudeDelta,
+  STATIONARY_AFTER_MS,
+} from "@/map/homeMapLogic";
+import { openMusicApp } from "@/services/musicApp";
 import { subscribeNswTraffic } from "@/services/trafficNsw";
 import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/services/trafficNswModel";
 import { TrafficIncidentLayer } from "@/components/TrafficIncidentLayer";
@@ -307,7 +320,14 @@ export function MapScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const navRoute = useRoute<RouteProp<RootStackParamList, "Map">>();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Shared with the home map's floating buttons, which run on the UI thread:
+  //   mapBearing         -- the map's current bearing, for the compass needle
+  //   sheetVisibleHeight -- how much of the "Where to?" sheet is showing, written by the sheet
+  const mapBearing = useSharedValue(0);
+  const sheetVisibleHeight = useSharedValue(0);
+  // Which snap point the "Where to?" sheet is at: 0 peek, 1 half, 2 full.
+  const [whereToSheetIndex, setWhereToSheetIndex] = useState<0 | 1 | 2>(0);
 
   const mapRef = useRef<MapView>(null);
   // The map's own real, currently-rendered center -- ground truth from onRegionChangeComplete's
@@ -443,11 +463,12 @@ export function MapScreen() {
   // after that, the existing satellite FAB (setMapType) is the live, manual override, same as
   // every other "saved default, live toggle still works" setting in this app. "tilted3d" needs
   // no correction at all here (mapType's own useState default above is already "standard").
-  const mapViewStyleAppliedRef = useRef(false);
   useEffect(() => {
-    if (!settingsLoaded || mapViewStyleAppliedRef.current) return;
-    mapViewStyleAppliedRef.current = true;
-    if (settings.defaultMapViewStyle === "satellite3d") setMapType("hybrid");
+    if (!settingsLoaded) return;
+    // Follows Settings > Map view > Satellite both ways, every time it changes -- that switch
+    // is where the satellite toggle lives now that the Map tools panel is gone from the home
+    // map. (It used to be applied once at launch only.)
+    setMapType(settings.defaultMapViewStyle === "satellite3d" ? "hybrid" : "standard");
   }, [settingsLoaded, settings.defaultMapViewStyle]);
 
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
@@ -765,7 +786,9 @@ export function MapScreen() {
   // core rendering + live position + the active route only, mirroring the web build's own
   // staged rollout. Renders as an overlay on top of the existing MapView, matching how the
   // web version layers its own Map3DElement over the classic 2D map.
-  const [show3D, setShow3D] = useState(false);
+  // Settings > Map view > 3D buildings (it was a row in the old Map tools panel, held only in
+  // memory; as a setting it's remembered).
+  const show3D = settings.show3DBuildings;
   // Tilted, near-horizontal "front view" of the 3D tiles/buildings on top of the default
   // top-down 3D angle -- the module's own `tilt(deltaDeg)` is relative, not absolute, but
   // since Map3DView is only ever mounted while show3D is true (unmounts fully when it's
@@ -970,10 +993,19 @@ export function MapScreen() {
   // flips true, this stops for good, same "manual gesture wins" guarantee as before, just no
   // longer racing a clock against real-world GPS variance to earn that guarantee.
   const userMovedMapRef = useRef(false);
+  // While following on the home map the camera is heading-up at street zoom: the road ahead
+  // runs up the screen, the way it will once a trip starts. `headingRef` rather than `heading`
+  // itself in the dependency list -- heading is recomputed on every fix anyway, and listing it
+  // would only make this run twice per fix.
+  const followHeadingRef = useRef(0);
   useEffect(() => {
     if (!currentLatLng || route || !mapReady || userMovedMapRef.current) return;
-    mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
-  }, [currentLatLng, route, mapReady]);
+    mapRef.current?.animateCamera(
+      { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM },
+      { duration: 500 }
+    );
+    mapBearing.set(followHeadingRef.current);
+  }, [currentLatLng, route, mapReady, mapBearing]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
   // that only appears once the driver has actually panned away, mirroring Waze's own behaviour.
@@ -1103,9 +1135,24 @@ export function MapScreen() {
   // to bias toward).
   const isNavChaseView =
     !!route && followTilt && !overviewMode && settings.defaultMapViewStyle !== "flat";
+  // The plain home map: nothing picked, nothing being placed. This is the state the "Where to?"
+  // sheet, the floating buttons and the street pill all belong to.
+  const isHomeIdle = !route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint;
+  // The ad banner is laid out UNDER the map (not over it) whenever it's showing, together with
+  // the bottom safe area -- so the map view is that much shorter than the screen.
+  const bannerShown = !route && !pendingDestination;
+  const bannerAreaHeight = bannerShown ? BANNER_HEIGHT + insets.bottom : 0;
+  const mapAreaHeight = windowHeight - bannerAreaHeight;
+  const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, WHERE_TO_SNAP_FRACTIONS);
+  // Home: the sheet's peek height is padded off the bottom (keeping the arrow and the Google
+  // logo clear of it) and the arrow sits at 62% of the screen -- see homeMapPadding.
+  const homePadding = homeMapPadding(mapAreaHeight, whereToHeights.peek, windowHeight);
+  const homeArrowY = arrowScreenY(mapAreaHeight, homePadding);
   const mapPadding = isNavChaseView
     ? { top: windowHeight * 0.34, right: 0, bottom: 0, left: 0 }
-    : { top: 0, right: 0, bottom: 0, left: 0 };
+    : isHomeIdle
+      ? homePadding
+      : { top: 0, right: 0, bottom: 0, left: 0 };
 
   // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
   // coords.speed is m/s, converted here once rather than in the display component so every
@@ -1167,42 +1214,66 @@ export function MapScreen() {
   // fetchSpeedLimitNear's own SpeedLimitResult.roadName), just previously discarded. Shown on
   // the nav card as its own "current road" row, distinct from the next-turn instruction text.
   const [currentRoadName, setCurrentRoadName] = useState<string | null>(null);
-  const lastSpeedLimitFetchRef = useRef<LatLng | null>(null);
-  const lastSpeedLimitStepIndexRef = useRef<number | null>(null);
-  const speedLimitFetchInFlightRef = useRef(false);
+  // One lookup answers both "what's the speed limit here" and "what street is this", so one
+  // tracker decides when that lookup is worth making (map/homeMapLogic.ts): only after moving
+  // more than 25m or turning more than 30 degrees since the last one, never while one is
+  // already in flight, and never for a stretch of road that's been answered before. In between
+  // -- and it is re-read every second -- everything comes from memory.
+  const roadTrackerRef = useRef(new RoadLookupTracker<{ roadName: string | null; kmh: number | null; estimated: boolean }>());
+  const roadFixRef = useRef<{ latitude: number; longitude: number; heading: number; speedKmh: number | null } | null>(null);
+  // When the driver last actually moved -- the street pill swaps to "N reports around you"
+  // after ten seconds without.
+  const lastMovedAtRef = useRef(0);
+  const [stationary, setStationary] = useState(false);
   useEffect(() => {
-    if (!currentLatLng) return;
-    const stepChanged = !!route && lastSpeedLimitStepIndexRef.current !== activeStepIndex;
-    const last = lastSpeedLimitFetchRef.current;
-    const movedFar =
-      !last || distanceKm(last.latitude, last.longitude, currentLatLng.latitude, currentLatLng.longitude) >= 0.05;
-    if (!stepChanged && !movedFar) return;
-    if (speedLimitFetchInFlightRef.current) return;
+    roadFixRef.current = currentLatLng
+      ? { latitude: currentLatLng.latitude, longitude: currentLatLng.longitude, heading, speedKmh: currentSpeedKmh }
+      : null;
+    followHeadingRef.current = heading;
+  });
+  const evaluateRoad = useCallback(() => {
+    const fix = roadFixRef.current;
+    if (!fix) return;
+    const tracker = roadTrackerRef.current;
+    const apply = () => {
+      const road = tracker.value;
+      setSpeedLimitKmh(road?.kmh ?? null);
+      setSpeedLimitEstimated(road?.estimated ?? false);
+      setCurrentRoadName(road?.roadName ?? null);
+    };
+    if (tracker.update(fix)) {
+      fetchSpeedLimitNear(fix.latitude, fix.longitude, fix.heading)
+        .then((result) => {
+          tracker.resolve(
+            fix,
+            result ? { roadName: result.roadName ?? null, kmh: result.kmh ?? null, estimated: result.estimated ?? false } : null
+          );
+          apply();
+        })
+        .catch(() => tracker.fail());
+    }
+    apply();
 
-    lastSpeedLimitFetchRef.current = currentLatLng;
-    lastSpeedLimitStepIndexRef.current = activeStepIndex;
-    speedLimitFetchInFlightRef.current = true;
-    fetchSpeedLimitNear(currentLatLng.latitude, currentLatLng.longitude, heading)
-      .then((result) => {
-        setSpeedLimitKmh(result?.kmh ?? null);
-        setSpeedLimitEstimated(result?.estimated ?? false);
-        setCurrentRoadName(result?.roadName ?? null);
-      })
-      .catch(() => {
-        setSpeedLimitKmh(null);
-        setSpeedLimitEstimated(false);
-        setCurrentRoadName(null);
-      })
-      .finally(() => {
-        speedLimitFetchInFlightRef.current = false;
-      });
-  }, [currentLatLng, route, activeStepIndex, heading]);
+    // Moving at walking pace or faster counts as moving; GPS speed is noisy below that.
+    const now = Date.now();
+    if (lastMovedAtRef.current === 0 || (fix.speedKmh ?? 0) >= 3) lastMovedAtRef.current = now;
+    setStationary(now - lastMovedAtRef.current >= STATIONARY_AFTER_MS);
+  }, []);
+  // Re-read on every new position, and at least once a second regardless -- so the pill keeps
+  // up even when fixes arrive slowly, without a network request per tick.
+  useEffect(() => {
+    evaluateRoad();
+  }, [currentLatLng, evaluateRoad]);
+  useEffect(() => {
+    const timer = setInterval(evaluateRoad, 1000);
+    return () => clearInterval(timer);
+  }, [evaluateRoad]);
   useEffect(() => {
     if (!currentLatLng) {
       setSpeedLimitKmh(null);
       setSpeedLimitEstimated(false);
       setCurrentRoadName(null);
-      lastSpeedLimitFetchRef.current = null;
+      roadTrackerRef.current.reset();
     }
   }, [currentLatLng]);
 
@@ -1521,8 +1592,14 @@ export function MapScreen() {
     // tapping it always resumes live tracking, not just a single jump.
     userMovedMapRef.current = false;
     setPannedAwayIdle(false);
-    mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
-  }, [currentLatLng, route, followTilt, toggleFollowTilt]);
+    // Flies back to follow mode -- position, heading-up, street zoom and the default tilt --
+    // over 600ms; the re-centre button fades out as pannedAwayIdle clears.
+    mapRef.current?.animateCamera(
+      { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH },
+      { duration: 600 }
+    );
+    mapBearing.set(followHeadingRef.current);
+  }, [currentLatLng, route, followTilt, toggleFollowTilt, mapBearing]);
 
   // Tapping the route line pulls the camera back into a wider, still-tilted "overview" --
   // Apple/Google Maps' own convention when you tap the route during nav: not the tight
@@ -2427,6 +2504,17 @@ export function MapScreen() {
       // (pan, pinch, rotate, tilt alike) as opposed to this app's own animateCamera calls, so
       // this catches the rotate-only case onPanDrag misses.
       if (details?.isGesture && followTilt) setFollowTilt(false);
+      // On the idle home map a pinch-zoom or a twist is "moving away" just as a drag is --
+      // onPanDrag only hears drags -- so it too stops the follow and brings up Re-centre.
+      if (details?.isGesture && !route && !userMovedMapRef.current) {
+        userMovedMapRef.current = true;
+        setPannedAwayIdle(true);
+      }
+      // The compass needle follows the map's real bearing, read back from the map itself.
+      mapRef.current
+        ?.getCamera()
+        .then((camera) => mapBearing.set(camera.heading ?? 0))
+        .catch(() => {});
 
       setOsmZoomDelta(region.latitudeDelta);
 
@@ -2529,6 +2617,8 @@ export function MapScreen() {
       fetchViewportPlaces,
       placementFrontView,
       heading,
+      route,
+      mapBearing,
     ]
   );
 
@@ -3781,20 +3871,11 @@ export function MapScreen() {
     await confirmAlert(alert.id);
   }, []);
 
-  // The right-edge FAB stack's base offset -- during navigation this leaves real room below it
-  // for the new bottom trip bar (NavBottomBar), using its actual measured height instead of a
-  // guessed constant (same reasoning as instructionCardHeight/routeCardHeight above).
-  const navFabBaseBottom = insets.bottom + 24 + (route ? bottomBarHeight + spacing.sm : 0);
-  // Real, explicit request -- the whole former column of separate secondary FABs (AI Detection,
-  // 3D, satellite, locate) collapsed into the single map-tools button (see MapToolsSheet), so
-  // this no longer needs the even-spacing-across-several-buttons machinery that used to live
-  // here -- just one position, one step above the Report "+" FAB's own fixed slot while not
-  // navigating (they'd otherwise sit on top of each other).
-  const fabSecondaryStep = route ? 48 : 64;
-  const fabSecondaryBottom = (indexFromBottom: number) =>
-    navFabBaseBottom + (indexFromBottom + (route ? 0 : 1)) * fabSecondaryStep;
-
   const activeStep = route?.steps[activeStepIndex] ?? null;
+  // The road shown on the trip bar and the live street chip. While navigating it's read off the
+  // route itself -- the street the previous step turned onto -- which is exact and costs no
+  // lookup; the looked-up name fills in on the first step or where the route names no street.
+  const navRoadName = route ? roadFromRouteSteps(route.steps, activeStepIndex) ?? currentRoadName : currentRoadName;
   // Real "you've arrived at the stop" detection for a transit trip -- scoped to the FIRST
   // boarding stop of the whole journey (route.transitSummary.legs[0], see services/
   // directions.ts), which is the concrete case actually asked for: walk to the stop, then get
@@ -3843,6 +3924,57 @@ export function MapScreen() {
     }
     return [...currentStepPolyline, ...restSteps.flatMap((s) => s.polyline)];
   }, [route, activeStepIndex, currentLatLng?.latitude, currentLatLng?.longitude]);
+  // How reports are drawn at the current zoom: grouped into counts when zoomed out, otherwise
+  // one pin each, with reports on the active route a step larger.
+  const mapZoom = zoomFromLatitudeDelta(osmZoomDelta);
+  const alertPins = useMemo(() => {
+    if (shouldClusterAlerts(mapZoom)) {
+      const groups = clusterPoints(
+        visibleAlerts.map((alert) => ({ id: alert.id, lat: alert.lat, lng: alert.lng, alert })),
+        Math.max(osmZoomDelta / 12, 0.004)
+      );
+      const base = alertPinSize(mapZoom);
+      return {
+        clusters: groups.filter((group) => group.count > 1),
+        singles: groups.filter((group) => group.count === 1).map((group) => ({ alert: group.points[0].alert, size: base })),
+      };
+    }
+    const routeLine = route && remainingPolyline.length > 1 ? remainingPolyline : null;
+    return {
+      clusters: [],
+      singles: visibleAlerts.map((alert) => ({
+        alert,
+        size: alertPinSize(mapZoom, !!routeLine && distanceToPolylineMeters(alert.lat, alert.lng, routeLine) <= 60),
+      })),
+    };
+    // remainingPolyline changes on every fix; whether a report is "on the route" only needs
+    // re-checking when the step changes, so it's keyed on that instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleAlerts, mapZoom, osmZoomDelta, route, activeStepIndex]);
+
+  // The real number behind the street pill's "N reports around you": active reports within 10km.
+  // Counted from a position rounded to ~100m: the count can't change meaningfully over less,
+  // and this keeps it from being recounted on every GPS fix.
+  const reportsLat = currentLatLng ? Math.round(currentLatLng.latitude * 1000) / 1000 : null;
+  const reportsLng = currentLatLng ? Math.round(currentLatLng.longitude * 1000) / 1000 : null;
+  const reportsAround = useMemo(
+    () =>
+      reportsLat === null || reportsLng === null
+        ? 0
+        : countReportsAround(visibleAlerts, { latitude: reportsLat, longitude: reportsLng }),
+    [visibleAlerts, reportsLat, reportsLng]
+  );
+  const uiScale = scaleFor(windowWidth);
+  // The Audio player button (Settings > Map shortcuts) opens the driver's music app.
+  const openAudioPlayer = useCallback(() => {
+    openMusicApp().then((opened) => {
+      if (!opened) {
+        setBannerMessage("No music app found. Install Spotify, Apple Music or YouTube Music to use this button.");
+        setBannerVisible(true);
+      }
+    });
+  }, []);
+
   // Which incidents to draw: those around the driver, most important first, capped (see
   // incidentsNear). The centre is rounded to roughly a kilometre so this list -- and the pins
   // made from it -- is rebuilt when the driver has actually moved somewhere, not on every GPS
@@ -4084,8 +4216,10 @@ export function MapScreen() {
         initialRegion={{
           latitude: currentLatLng?.latitude ?? 37.7749,
           longitude: currentLatLng?.longitude ?? -122.4194,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
+          // Street level from the first frame (about zoom 17), not a suburb-wide view that
+          // then has to zoom in.
+          latitudeDelta: 0.004,
+          longitudeDelta: 0.004,
         }}
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={onMapPress}
@@ -4513,10 +4647,30 @@ export function MapScreen() {
             </View>
           </Marker>
         )}
-        {visibleAlerts.map((alert) => (
+        {/* Reports: one pin each from zoom 12 in, sized by zoom and a step larger when the
+            report is on the route being driven; below zoom 12 they're grouped into counts (see
+            alertPins above and map/homeMapLogic.ts). */}
+        {alertPins.clusters.map((cluster) => (
+          <Marker
+            key={`alert-cluster-${cluster.points[0].id}-${cluster.count}`}
+            coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
+            onPress={(e) => {
+              e.stopPropagation();
+              onPlaceClusterPress(cluster.lat, cluster.lng);
+            }}
+          >
+            <View style={styles.alertClusterBadge}>
+              <Text style={styles.alertClusterText}>{cluster.count}</Text>
+            </View>
+          </Marker>
+        ))}
+        {alertPins.singles.map(({ alert, size }) => (
           <AlertMarker
             key={alert.id}
             alert={alert}
+            size={size}
             onPress={onMarkerPress}
             isSelected={selectedAlert?.id === alert.id}
           />
@@ -4837,7 +4991,14 @@ export function MapScreen() {
           headers). Hidden entirely while a bottom sheet/picker covers this corner of the screen
           anyway, same real "don't render on top of stuff" gating every other on-demand overlay
           on this screen already follows. */}
-      {!anySheetOpen && !placingAlert && !pendingDestination && !pickingOrigin && !pickingDestinationPoint && (
+      {!anySheetOpen &&
+        !placingAlert &&
+        !pendingDestination &&
+        !pickingOrigin &&
+        !pickingDestinationPoint &&
+        // On the home map the dial is only shown with the sheet at its peek: it's fixed to the
+        // map, and a raised sheet would otherwise slide up over it.
+        (!!route || whereToSheetIndex === 0) && (
         <LiveSpeedometer
           speedKmh={liveSpeed.speedKmh}
           speedLimitKmh={speedLimitKmh}
@@ -4853,7 +5014,13 @@ export function MapScreen() {
           // screen already shifts up by NavBottomBar's own real measured height
           // (bottomBarHeight) while a route is active -- this now does the same instead of
           // being the one exception.
-          bottom={route ? insets.bottom + bottomBarHeight + spacing.sm : undefined}
+          // On the home map it sits just above the sheet's peek edge, one slot above where
+          // Re-centre appears, so the two never share a spot.
+          bottom={
+            route
+              ? insets.bottom + bottomBarHeight + spacing.sm
+              : whereToHeights.peek + 12 + 58 * uiScale + 8
+          }
         />
       )}
 
@@ -4968,12 +5135,13 @@ export function MapScreen() {
           onDestinationSelected={onDestinationSelected}
           onFindNearestStation={onFindNearestStation}
           findingNearestStation={findingNearestStation}
-          originLabel={routeOriginLabel}
-          onPressOrigin={openOriginPicker}
           onFindRestaurants={onFindRestaurants}
           onFindHotels={onFindHotels}
           onFindPetrol={onFindPetrol}
           onFindParking={onFindParking}
+          bottomInset={bannerAreaHeight}
+          visibleHeight={sheetVisibleHeight}
+          onSheetChange={setWhereToSheetIndex}
         />
       )}
 
@@ -5014,7 +5182,7 @@ export function MapScreen() {
       {route && (
         <NavigationInstructionCard
           step={activeStep}
-          roadName={currentRoadName}
+          roadName={navRoadName}
           themeKey={settings.navCardTheme}
           onExit={exitNavigation}
           onExpandDirections={() => directionsSheetRef.current?.expand()}
@@ -5046,7 +5214,7 @@ export function MapScreen() {
           etaText={formatDurationText(remainingDurationSeconds)}
           arrivalClockText={arrivalClockText}
           distanceRemainingText={formatDistance(remainingDistanceMeters, settings.distanceUnit)}
-          roadName={currentRoadName}
+          roadName={navRoadName}
           themeKey={settings.navCardTheme}
           hasStop={!!stopLocation}
           onAddStop={() => setAddingStopDuringNav(true)}
@@ -5069,7 +5237,7 @@ export function MapScreen() {
           too. Floats just above NavBottomBar, horizontally centered -- same hide conditions as
           that bar (the add-stop search/confirm bars occupy this same screen region) so nothing
           ever stacks on top of it. */}
-      {route && !addingStopDuringNav && !stopPreviewRoute && currentRoadName && (
+      {route && !addingStopDuringNav && !stopPreviewRoute && navRoadName && (
         <View
           pointerEvents="none"
           style={[styles.currentStreetChipWrap, { bottom: insets.bottom + bottomBarHeight + spacing.md + 8 }]}
@@ -5077,27 +5245,23 @@ export function MapScreen() {
           <View style={styles.currentStreetChip}>
             <Ionicons name="navigate" size={11} color="#FFFFFF" style={{ transform: [{ rotate: "90deg" }] }} />
             <Text style={styles.currentStreetChipText} numberOfLines={1}>
-              {currentRoadName}
+              {navRoadName}
             </Text>
           </View>
         </View>
       )}
 
-      {/* Real, explicit request -- the same live currentRoadName lookup above, surfaced on the
-          plain home map too (not just during navigation) as a white, rounded, bold pill
-          centred just under the driver's own live marker -- Waze-style. currentRoadName is
-          already fetched continuously off the real GPS fix regardless of whether a route is
-          active (see its own effect above), so this is the exact same real, live data, just
-          also shown before a trip starts. Hidden the instant navigation actually begins (the
-          dark nav-time chip above takes over then) and while anything else covers the map. */}
-      {!route && !anySheetOpen && !placingAlert && !pendingDestination && currentRoadName && (
-        <View pointerEvents="none" style={styles.idleStreetChipWrap}>
-          <View style={styles.idleStreetChip}>
-            <Text style={styles.idleStreetChipText} numberOfLines={1}>
-              {currentRoadName}
-            </Text>
-          </View>
-        </View>
+      {/* The street-name pill under the driver's arrow on the home map (components/StreetPill).
+          Shown only while the map is actually following the driver -- once they pan away the
+          arrow is no longer above it, so a pill there would be labelling empty road. */}
+      {isHomeIdle && !anySheetOpen && !pannedAwayIdle && (
+        <StreetPill
+          streetName={currentRoadName}
+          reportsAround={reportsAround}
+          stationary={stationary}
+          top={homeArrowY + 30 * uiScale}
+          scale={uiScale}
+        />
       )}
 
       {/* Real, explicit request: a dedicated exit-lane guidance bar, shown only during the
@@ -5372,132 +5536,36 @@ export function MapScreen() {
           card or topRightControls too, so smaller (not gone) is enough to give the road back
           without losing the controls entirely. Full size on the plain home map, where nothing
           else competes for that space. */}
-      {!anySheetOpen && !placingAlert && !pendingDestination && !pickingOrigin && !pickingDestinationPoint && (
-        <>
-      {/* Hidden during navigation -- Report now lives in the bottom trip bar's "..." options
-          menu (see NavOptionsSheet), so this would just be a second, redundant entry point to
-          the same flow while also being the button that most needs the space back for the new
-          bottom bar. Still the only way to report an alert while just browsing the map. */}
-      {!route && (
-        <Pressable
-          style={({ pressed }) => [styles.reportFab, { bottom: insets.bottom + 24 }, pressed && { opacity: pressedOpacity }]}
-          onPress={openAlertTypePicker}
-          accessibilityLabel="Report an alert"
-        >
-          {/* Waze-style yellow triangle report button -- a real filled Ionicons "triangle"
-              glyph as the shape itself (not a circle with a triangle icon inside it), with the
-              white "+" layered centered on top. nudged down slightly since a triangle's visual
-              weight sits lower than its bounding box's true center. */}
-          <Ionicons name="triangle" size={58} color="#FBBF24" style={styles.reportFabTriangle} />
-          <Ionicons name="add" size={22} color="#1F2937" style={styles.reportFabPlus} />
-        </Pressable>
+      {/* Every floating button on the idle home map -- Menu, Compass, Audio player, Sound,
+          Report, Re-centre -- lives in HomeMapControls. Report and Re-centre ride 12pt above
+          the "Where to?" sheet and all of them fade out as it rises past half height, so none
+          can overlap it. Navigation has its own controls and shows none of these. */}
+      {isHomeIdle && !anySheetOpen && (
+        <HomeMapControls
+          sheetVisibleHeight={sheetVisibleHeight}
+          sheetHalfHeight={whereToHeights.half}
+          bottomInset={0}
+          topInset={insets.top}
+          unreadCount={inboxUnreadCount}
+          dashcamBadge={detectionBatteryLow}
+          onMenu={() => navigation.navigate("MainMenu")}
+          onMenuLongPress={() => visibilitySheetRef.current?.expand()}
+          showCompass={settings.showCompass}
+          bearing={mapBearing}
+          onCompass={() => {
+            mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 });
+            mapBearing.set(0);
+          }}
+          showAudioPlayer={settings.showAudioPlayer}
+          onAudioPlayer={openAudioPlayer}
+          soundOff={settings.spokenDirections === "off"}
+          onSound={() => soundSheetRef.current?.expand()}
+          onReport={openAlertTypePicker}
+          showRecenter={pannedAwayIdle}
+          onRecenter={onRecenter}
+        />
       )}
 
-      {/* Real, explicit request -- Waze-style bottom-left Re-centre FAB on the idle home map,
-          appearing ONLY once the driver has actually panned/dragged the map away from their own
-          live position (pannedAwayIdle, kept in sync with userMovedMapRef's own set/reset sites
-          above). Distinct from the always-visible right-side fabSecondary recenter button
-          (onLocateButtonPress, which also toggles camera height once following) -- this one is
-          purely the "you've drifted, tap to snap back" affordance and disappears again the
-          moment onRecenter runs. */}
-      {!route && pannedAwayIdle && (
-        <Pressable
-          style={({ pressed }) => [
-            styles.recenterFabLeft,
-            { bottom: insets.bottom + 24 },
-            pressed && { opacity: pressedOpacity },
-          ]}
-          onPress={onRecenter}
-          accessibilityLabel="Re-centre on my location"
-        >
-          <Ionicons name="navigate" size={22} color="#FFFFFF" />
-        </Pressable>
-      )}
-
-      {/* Waze-style top-left Menu + Compass column, and the mid-right Sound button -- only on
-          the plain home map (same gating as the Report/Tools/Recenter stack above), never
-          during navigation, which has its own dedicated nav UI. */}
-      {!route && (
-        <>
-          <MenuButton
-            onPress={() => navigation.navigate("MainMenu")}
-            onLongPress={() => visibilitySheetRef.current?.expand()}
-            unreadCount={inboxUnreadCount}
-            style={[styles.menuButtonPosition, { top: insets.top + spacing.md }]}
-          />
-          {settings.showCompass && (
-            <CompassButton
-              onPress={() => mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 })}
-              style={[styles.menuButtonPosition, { top: insets.top + spacing.md + 80 }]}
-            />
-          )}
-          <SoundButton
-            muted={settings.spokenDirections === "off"}
-            onPress={() => soundSheetRef.current?.expand()}
-            style={styles.soundButtonPosition}
-          />
-        </>
-      )}
-
-        </>
-      )}
-
-      {/* Real, explicit request -- ONE map-tools button replaces the whole former column of
-          separate floating circles (recenter, satellite/map style, 3D buildings, dashcam,
-          settings, layers/alerts/nearby-places) -- every one of those now lives as a labelled
-          row in MapToolsSheet below instead. Rendered here (not inside the `!placingAlert` block
-          above) so it stays reachable even while placing an alert -- a real, previously-fixed
-          need (switching to satellite imagery to place a pin accurately against real ground
-          features) that moving this button inside that stricter block would otherwise regress.
-          Position/coordinate-space notes from the old satellite button this replaces still apply:
-          rendered here, BEFORE mapArea's own closing </View> below, so it shares the same
-          coordinate frame as mapArea (not the outer container BannerAdBar also lives in -- see
-          git history for the real, confirmed alignment bug that distinction fixed). */}
-      {!anySheetOpen && !pendingDestination && (
-        <Pressable
-          style={({ pressed }) => [
-            styles.fabSecondary,
-            route && styles.fabSecondaryCompact,
-            { bottom: fabSecondaryBottom(0), zIndex: 0 },
-            pressed && { opacity: pressedOpacity },
-          ]}
-          onPress={() => toolsSheetRef.current?.expand()}
-          accessibilityLabel={
-            detectionBatteryLow ? "Map tools -- dashcam battery below 50%" : "Map tools"
-          }
-        >
-          <Ionicons name="apps" size={route ? 15 : 20} color="#FFFFFF" />
-          {/* Advisory only -- see detectionBatteryLow's own comment at MapToolsSheet's usage
-              below. Never disables this Pressable, just flags before the driver opens the sheet. */}
-          {detectionBatteryLow && (
-            <View style={styles.fabBatteryBadge} pointerEvents="none">
-              <Ionicons name="battery-dead-outline" size={11} color="#FFFFFF" />
-            </View>
-          )}
-        </Pressable>
-      )}
-      {/* Real, explicit request -- a real, always-visible, one-tap Recenter button on the front
-          (not-navigating) map, not just the "Recenter" row buried a tap deeper inside the Tools
-          sheet above (that row still exists too, for whoever's already got the sheet open). Same
-          real onLocateButtonPress handler either way -- this is just a second, faster entry point
-          to it. Stacked one slot above the Report "+" and Tools "..." FABs (fabSecondaryBottom(1),
-          the next position up in the same column) with an explicit zIndex so it always renders on
-          top of them rather than risking either covering it depending on render order. Hidden
-          during navigation -- that case already has its own dedicated Recenter pill in
-          topRightControls once the driver pans away from the live chase-cam view. */}
-      {!route && !anySheetOpen && !pendingDestination && (
-        <Pressable
-          style={({ pressed }) => [
-            styles.fabSecondary,
-            { bottom: fabSecondaryBottom(1), zIndex: 1 },
-            pressed && { opacity: pressedOpacity },
-          ]}
-          onPress={onLocateButtonPress}
-          accessibilityLabel="Recenter on my location"
-        >
-          <Ionicons name="navigate" size={20} color="#FFFFFF" />
-        </Pressable>
-      )}
       </View>
 
       {/* Never shown while navigating -- a driving app shouldn't have anything competing for
@@ -5563,6 +5631,21 @@ export function MapScreen() {
                 navigation, since that's the real scenario this exists for: spotting something
                 just passed and wanting the clearer, driver's-eye front view to place it
                 precisely, an option that doesn't apply when just browsing the map. */}
+            {/* Satellite on/off, right here on the placement bar: lining a pin up against real
+                ground features is exactly when aerial imagery helps, and the Map tools button
+                that used to offer it during placement no longer floats over the map. */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.placementButton,
+                styles.placementButtonRemove,
+                pressed && { opacity: pressedOpacity },
+              ]}
+              onPress={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
+              disabled={submittingAlert}
+              accessibilityLabel={mapType === "hybrid" ? "Switch to the drawn map" : "Switch to satellite view"}
+            >
+              <Ionicons name={mapType === "hybrid" ? "map-outline" : "earth-outline"} size={20} color={colors.text} />
+            </Pressable>
             {route && (
               <Pressable
                 style={({ pressed }) => [
@@ -5823,6 +5906,10 @@ export function MapScreen() {
         onReportAlert={onNavOptionsReportAlert}
         onShareEta={onNavOptionsShareEta}
         onOpenDetection={onNavOptionsOpenDetection}
+        onOpenMapTools={() => {
+          navOptionsSheetRef.current?.close();
+          toolsSheetRef.current?.expand();
+        }}
         onEndNavigation={onNavOptionsEndNavigation}
         onClose={() => navOptionsSheetRef.current?.close()}
         onSheetChange={(index) => setNavOptionsSheetOpen(index >= 0)}
@@ -5878,12 +5965,10 @@ export function MapScreen() {
           onLocateButtonPress();
         }}
         show3D={show3D}
-        onToggle3D={() =>
-          setShow3D((v) => {
-            Sentry.logger.info("map: toggling 3D view", { next: !v });
-            return !v;
-          })
-        }
+        onToggle3D={() => {
+          Sentry.logger.info("map: toggling 3D view", { next: !show3D });
+          updateSettings({ show3DBuildings: !show3D });
+        }}
         satelliteOn={mapType === "hybrid"}
         onToggleSatellite={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
         onOpenDetection={onToolsSheetOpenDetection}
@@ -6417,6 +6502,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  alertClusterBadge: {
+    minWidth: 30,
+    height: 30,
+    paddingHorizontal: 8,
+    borderRadius: 15,
+    backgroundColor: colors.text,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  alertClusterText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   osmLoadingBadge: {
     width: 40,
     height: 40,

@@ -1,8 +1,15 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from "react-native-reanimated";
-import { colors, radius, shadow } from "@/theme/tokens";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedReaction,
+  withSpring,
+  runOnJS,
+  type SharedValue,
+} from "react-native-reanimated";
+import { colors, shadow } from "@/theme/tokens";
 
 // Real, explicit request (Waze-style redesign Phase 2) -- the persistent "Where to?" sheet has
 // three real snap points (peek/half/full), none of which is "closed": unlike SimpleBottomSheet's
@@ -26,19 +33,44 @@ interface Props {
   snapFractions: [number, number, number];
   topInset: number;
   onChange?: (index: 0 | 1 | 2) => void;
+  // Height of anything that sits BELOW the view this sheet lives in (the ad banner and bottom
+  // safe area, which are laid out under the map rather than over it). The sheet is already
+  // positioned above that; this is only so its snap heights are worked out from the space it
+  // really has, instead of from the whole screen.
+  bottomInset?: number;
+  // Written on every frame with how much of the sheet is currently showing, in points. The home
+  // map's floating buttons read it to ride on the sheet's top edge and to fade out as it rises
+  // (see HomeMapControls) -- all on the UI thread, with no re-render per frame.
+  visibleHeight?: SharedValue<number>;
   children: React.ReactNode;
 }
 
-const HANDLE_HEIGHT = 22;
+/**
+ * The three heights a sheet with these settings snaps to. Exported so a parent can lay things
+ * out around the sheet (map padding, floating buttons) from the very same numbers the sheet
+ * itself uses, instead of a second copy of the arithmetic.
+ */
+export function threeSnapHeights(
+  screenHeight: number,
+  topInset: number,
+  bottomInset: number,
+  snapFractions: [number, number, number]
+): { peek: number; half: number; full: number } {
+  const max = Math.max(0, screenHeight - topInset - bottomInset);
+  return { peek: snapFractions[0] * max, half: snapFractions[1] * max, full: snapFractions[2] * max };
+}
+
+// Grabber: 44x5, 10pt from the sheet's top edge, with the same again below it.
+const HANDLE_HEIGHT = 25;
 const SPRING_CONFIG = { damping: 32, stiffness: 300, mass: 0.9 };
 const VELOCITY_FLING_THRESHOLD = 800;
 
 export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function ThreeSnapBottomSheet(
-  { snapFractions, topInset, onChange, children },
+  { snapFractions, topInset, onChange, bottomInset = 0, visibleHeight, children },
   ref
 ) {
   const { height: screenHeight } = useWindowDimensions();
-  const maxSheetHeight = Math.max(0, screenHeight - topInset);
+  const maxSheetHeight = Math.max(0, screenHeight - topInset - bottomInset);
   const [peekHeight, halfHeight, fullHeight] = useMemo(
     () => snapFractions.map((f) => f * maxSheetHeight) as [number, number, number],
     [snapFractions, maxSheetHeight]
@@ -138,6 +170,14 @@ export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(f
     [peekOffset, halfOffset, translateY, dragStartY, notifyIndex]
   );
 
+  useAnimatedReaction(
+    () => fullHeight - translateY.value,
+    (showing) => {
+      if (visibleHeight) visibleHeight.set(showing);
+    },
+    [fullHeight, visibleHeight]
+  );
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
@@ -150,7 +190,10 @@ export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(f
   }));
 
   return (
-    <Animated.View pointerEvents="box-none" style={[styles.sheet, { height: fullHeight }, animatedStyle]}>
+    <Animated.View
+      pointerEvents="box-none"
+      style={[styles.sheet, { height: fullHeight }, animatedStyle]}
+    >
       <GestureDetector gesture={panGesture}>
         <View style={styles.handleWrap}>
           <View style={styles.handle} />
@@ -168,8 +211,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     ...shadow.high,
   },
   handleWrap: {
@@ -178,10 +221,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
+    width: 44,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: colors.grabber,
   },
   content: {
     overflow: "hidden",

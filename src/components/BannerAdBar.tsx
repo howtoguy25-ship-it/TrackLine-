@@ -1,4 +1,5 @@
-import { View, StyleSheet, Dimensions } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
 import { env } from "@/config/env";
 import { Sentry } from "@/services/sentry";
@@ -14,34 +15,35 @@ import { Sentry } from "@/services/sentry";
 // formula (height = 50-90dp scaled off device width, same math the SDK itself uses to compute
 // this exact banner size) -- means the row already has its final height on the very first
 // frame, so there's nothing left to jump when the ad content actually arrives.
-const ADAPTIVE_BANNER_HEIGHT = Math.max(50, Math.min(90, Math.round(Dimensions.get("window").width / 6.4)));
+// A standard 320x50 banner: the one size every ad network fills and the least intrusive on a
+// map. (This used to be a "large anchored adaptive" banner, which grew to 90pt+ on wide phones.)
+export const BANNER_HEIGHT = 50;
 
-// A persistent strip reserved at the very bottom of the screen, outside the map's own
-// layout -- see MapScreen.tsx, which only renders this when NOT navigating, and gives it its
-// own flex row below the map rather than floating it over the map/controls. That keeps it
-// physically incapable of ever overlapping the route, turn instructions, or FAB buttons,
-// including while actively driving.
 export function BannerAdBar() {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
-      <BannerAd
-        unitId={env.ads.bannerUnitId}
-        size={BannerAdSize.LARGE_ANCHORED_ADAPTIVE_BANNER}
-        onAdLoaded={() => Sentry.logger.info("ads: banner loaded")}
-        onAdFailedToLoad={(error) => {
-          Sentry.logger.error("ads: banner failed to load", { error: String(error) });
-          console.warn("[ads] banner failed to load", error);
-        }}
-      />
+    // White, and padded by the bottom safe area, so the banner sits inside it with the sheet's
+    // own white running straight down to the screen edge -- no dark strip under the ad, and
+    // nothing behind the home indicator but white.
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+      <View style={styles.slot}>
+        <BannerAd
+          unitId={env.ads.bannerUnitId}
+          size={BannerAdSize.BANNER}
+          onAdLoaded={() => Sentry.logger.info("ads: banner loaded")}
+          onAdFailedToLoad={(error) => {
+            Sentry.logger.error("ads: banner failed to load", { error: String(error) });
+            console.warn("[ads] banner failed to load", error);
+          }}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    minHeight: ADAPTIVE_BANNER_HEIGHT,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  container: { width: "100%", backgroundColor: "#FFFFFF", alignItems: "center" },
+  // The slot keeps its 50pt whether or not an ad has loaded, so the layout above it (the sheet,
+  // the floating buttons, the map padding) never jumps when one arrives.
+  slot: { width: 320, height: BANNER_HEIGHT, alignItems: "center", justifyContent: "center" },
 });

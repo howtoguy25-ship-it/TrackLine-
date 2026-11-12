@@ -126,7 +126,7 @@ export function incidentsNear(
 
 export interface IncidentStyle {
   /** An Ionicons name. */
-  icon: "car-sport" | "construct" | "flag" | "water" | "flame" | "warning" | "hand-left";
+  icon: "car-sport" | "construct" | "flag" | "water" | "flame" | "warning" | "hand-left" | "close-circle";
   color: string;
   label: string;
 }
@@ -136,6 +136,8 @@ export function incidentStyle(incident: Pick<TrafficIncident, "kind" | "category
   const category = incident.category.toLowerCase();
   if (incident.kind === "fire") return { icon: "flame", color: "#DC2626", label: "Fire" };
   if (incident.kind === "flood") return { icon: "water", color: "#2563EB", label: "Flooding" };
+  // A closed road outranks whatever closed it.
+  if (/\bclos(ed|ure)/.test(category)) return { icon: "close-circle", color: "#DC2626", label: "Road closed" };
   if (incident.kind === "roadwork") return { icon: "construct", color: "#D97706", label: "Roadwork" };
   if (incident.kind === "majorevent") return { icon: "flag", color: "#7C3AED", label: "Major event" };
   if (category.includes("crash") || category.includes("accident")) {

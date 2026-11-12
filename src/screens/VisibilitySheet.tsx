@@ -24,7 +24,7 @@ interface Props {
 }
 
 // Real, explicit request (Ghost mode + visibility control) -- opened by a long-press on the
-// home map's own Menu button (see MapScreen.tsx/MenuButton.tsx). "Big switch" is the Visible/
+// home map's own Menu button (see MapScreen.tsx / HomeMapControls.tsx). "Big switch" is the Visible/
 // Ghost toggle up top (the fast, one-tap path real drivers actually use); the three-way radio
 // group underneath is the same full picker Settings > Privacy exposes, kept in sync with it
 // since both read/write the exact same settings.visibility field.

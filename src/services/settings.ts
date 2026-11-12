@@ -2,11 +2,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import type { AlertType } from "@/types/alert";
+import { SETTINGS_VERSION, migrateStoredSettings } from "@/services/settingsMigration";
 import type { MapThemeKey, RoadThicknessKey } from "@/utils/mapStyle";
 import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import type { AuRegionCode } from "@/utils/auStates";
 import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+
+export { SETTINGS_VERSION, migrateStoredSettings };
 
 // Real, explicit request (Waze-style redesign build rules) -- every setting persists locally
 // via AsyncStorage AND syncs to Firestore once a driver is actually signed in (not the app's own
@@ -102,6 +105,15 @@ export interface AppSettings {
   // Menu button, resets heading/north on tap. Settings > Map shortcuts > Show compass controls
   // whether it's actually rendered at all.
   showCompass: boolean;
+  // Settings > Map shortcuts > Audio player: a round music button, top-right on the home map,
+  // that opens the driver's music app. Off by default -- it's a shortcut, not a core control.
+  showAudioPlayer: boolean;
+  // Which one-off settings adjustments have been applied to this phone (see
+  // migrateStoredSettings). Not something a driver sets.
+  settingsVersion: number;
+  // Settings > Map display > 3D buildings. (Was a row in the old Map tools panel, kept only in
+  // memory; it's a setting now, so it's remembered.)
+  show3DBuildings: boolean;
   // Real, explicit request -- how chatty spoken turn-by-turn guidance is: "normal" speaks every
   // manoeuvre, "lessChatty" trims routine ones, "onlyAlerts" speaks only hazard/police/camera
   // call-outs (no turn-by-turn speech at all), "off" is fully silent. Distinct from (and takes
@@ -160,6 +172,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speedWarningChimeEnabled: true,
   defaultMapViewStyle: "tilted3d",
   showCompass: true,
+  showAudioPlayer: false,
+  settingsVersion: SETTINGS_VERSION,
+  show3DBuildings: false,
   spokenDirections: "normal",
   distanceUnit: "km",
   visibility: "ghost",
@@ -185,7 +200,14 @@ export async function loadSettings(): Promise<AppSettings> {
     if (RETIRED_NAV_CARD_THEME_KEYS.has(parsed.navCardTheme)) {
       delete parsed.navCardTheme;
     }
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const migrated = migrateStoredSettings({ ...DEFAULT_SETTINGS, ...parsed }, parsed.settingsVersion);
+    // Saved straight away when an adjustment was applied -- otherwise the stored copy would
+    // still look out of date on the next launch and the same "one-off" change would be made
+    // again every time, undoing whatever the driver had chosen since.
+    if (parsed.settingsVersion !== SETTINGS_VERSION) {
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(migrated)).catch(() => {});
+    }
+    return migrated;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -212,5 +234,13 @@ export async function pushSettingsToProfile(uid: string, settings: AppSettings):
 export async function pullSettingsFromProfile(uid: string): Promise<Partial<AppSettings> | null> {
   const snap = await getDoc(doc(db, "users", uid));
   const remote = snap.exists() ? (snap.data().settings as Partial<AppSettings> | undefined) : undefined;
-  return remote ?? null;
+  if (!remote) return null;
+  // The copy on the account may predate a one-off adjustment (see migrateStoredSettings). It
+  // gets the same adjustment before it's merged in -- otherwise signing in would bring back
+  // exactly what the adjustment on this phone had just changed.
+  if (typeof remote.settingsVersion === "number" && remote.settingsVersion >= SETTINGS_VERSION) return remote;
+  const adjusted: Partial<AppSettings> = { ...remote, settingsVersion: SETTINGS_VERSION };
+  if (adjusted.defaultMapViewStyle === "satellite3d") adjusted.defaultMapViewStyle = "tilted3d";
+  if (adjusted.mapTheme !== undefined) adjusted.mapTheme = "light";
+  return adjusted;
 }

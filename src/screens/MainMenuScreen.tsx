@@ -1,3 +1,6 @@
+import { useLocation } from "@/context/LocationContext";
+import { subscribeNearbyPresence, type PresenceDoc } from "@/services/presence";
+import { metersBetween } from "@/map/homeMapLogic";
 import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, ScrollView, Share, Alert, ActivityIndicator } from "react-native";
 import { Text } from "@/components/AppText";
@@ -26,6 +29,9 @@ import { searchPlaces, getPlaceDetails } from "@/services/places";
 // upcoming calendar events with a location, a real Inbox row with an unread badge, Invite a
 // friend (native Share), and Help -- alongside the already-existing Sign in/Account and
 // Settings rows.
+// "Nearby" for the menu's Trackys count.
+const TRACKYS_NEARBY_RADIUS_M = 25_000;
+
 export function MainMenuScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -35,6 +41,23 @@ export function MainMenuScreen() {
   const isGhostMode = settings.visibility === "ghost";
   const appearance = useTrackyAppearance(isGhostMode);
   const firstName = (user?.displayName ?? "").split(" ")[0];
+
+  // Other visible drivers near here, from the live presence feed (the same one that draws them
+  // on the map). Not listened to at all when the driver has switched Trackys off.
+  const { location } = useLocation();
+  const [presences, setPresences] = useState<PresenceDoc[]>([]);
+  const presenceUid = user?.uid ?? null;
+  useEffect(() => {
+    if (!presenceUid || !settings.showTrackysOnMap) return;
+    return subscribeNearbyPresence(presenceUid, setPresences);
+  }, [presenceUid, settings.showTrackysOnMap]);
+  const here = location?.coords;
+  const trackysNearby =
+    here && settings.showTrackysOnMap
+      ? presences.filter(
+          (p) => p.uid !== presenceUid && metersBetween(here.latitude, here.longitude, p.lat, p.lng) <= TRACKYS_NEARBY_RADIUS_M
+        ).length
+      : 0;
 
   const [unreadCount, setUnreadCount] = useState(0);
   useEffect(() => {
@@ -123,6 +146,14 @@ export function MainMenuScreen() {
             <Pressable onPress={() => navigation.navigate("TrackyProfile")} hitSlop={6}>
               <Text style={styles.viewProfileLink}>View profile</Text>
             </Pressable>
+            {/* The real number of visible drivers within 25km right now. Shown only when there
+                is at least one -- with nobody around (or before the presence service has been
+                deployed) there's simply no line, never a "0" or an invented figure. */}
+            {trackysNearby > 0 && (
+              <Text style={styles.trackysNearby}>
+                {trackysNearby === 1 ? "1 Tracky online nearby" : `${trackysNearby} Trackys online nearby`}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -170,6 +201,17 @@ export function MainMenuScreen() {
           label="Inbox"
           badge={unreadCount > 0 ? unreadCount : undefined}
           onPress={() => navigation.navigate("Inbox")}
+        />
+        {/* Moved here from the old "Map tools" panel on the map. */}
+        <MenuRow
+          icon="videocam-outline"
+          label="Dashcam (AI vehicle detection)"
+          onPress={() => navigation.navigate("VehicleDetection")}
+        />
+        <MenuRow
+          icon="map-outline"
+          label="Map display"
+          onPress={() => navigation.navigate("Settings", { category: "mapDisplay" })}
         />
         <MenuRow icon="settings-outline" label="Settings" onPress={() => navigation.navigate("SettingsCategories")} />
         <MenuRow icon="person-add-outline" label="Invite a friend" onPress={onInviteFriend} />
@@ -307,6 +349,7 @@ const styles = StyleSheet.create({
     borderRightColor: colors.surfaceMuted,
   },
   mascotGreeting: { fontSize: 15, fontWeight: "800", color: colors.text },
+  trackysNearby: { fontSize: 12, fontWeight: "500", color: colors.textMuted, marginTop: 4 },
   viewProfileLink: { fontSize: 12, fontWeight: "700", color: colors.accent, marginTop: 2 },
   visibilityPill: {
     flexDirection: "row",

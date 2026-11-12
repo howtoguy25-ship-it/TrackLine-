@@ -1,4 +1,5 @@
 import React, { forwardRef, useCallback, useEffect, useRef, useState } from "react";
+import type { SharedValue } from "react-native-reanimated";
 import {
   View,
   FlatList,
@@ -80,14 +81,20 @@ interface Props {
   onDestinationSelected: (place: PlaceDetails) => void;
   onFindNearestStation?: () => void;
   findingNearestStation?: boolean;
-  originLabel?: string;
-  onPressOrigin?: () => void;
   onFindRestaurants: () => void;
   onFindHotels: () => void;
   onFindPetrol: () => void;
   onFindParking: () => void;
   onSheetChange?: (index: 0 | 1 | 2) => void;
+  /** Height of whatever sits under the sheet (the ad banner); the sheet rests on top of it. */
+  bottomInset?: number;
+  /** Receives how much of the sheet is showing, every frame -- see ThreeSnapBottomSheet. */
+  visibleHeight?: SharedValue<number>;
 }
+
+// Peek / half / full, as fractions of the space between the status bar and whatever is under
+// the sheet. Exported because the map lays itself out around the sheet from these same numbers.
+export const WHERE_TO_SNAP_FRACTIONS: [number, number, number] = [0.24, 0.55, 0.92];
 
 // What the main search input is currently FOR -- "route" (the default: picking a destination to
 // drive to) or assigning one of the real saved-place slots. Picking a result branches on this
@@ -102,8 +109,8 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     onDestinationSelected,
     onFindNearestStation,
     findingNearestStation,
-    originLabel,
-    onPressOrigin,
+    bottomInset,
+    visibleHeight,
     onFindRestaurants,
     onFindHotels,
     onFindPetrol,
@@ -114,7 +121,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
 ) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const snapFractions: [number, number, number] = [0.24, 0.55, 0.92];
+  const snapFractions = WHERE_TO_SNAP_FRACTIONS;
 
   const [query, setQuery] = useState("");
   const [pickTarget, setPickTarget] = useState<PickTarget>("route");
@@ -443,25 +450,16 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
 
   return (
     <>
-    <ThreeSnapBottomSheet ref={ref} snapFractions={snapFractions} topInset={insets.top} onChange={onSheetChange}>
+    <ThreeSnapBottomSheet
+      ref={ref}
+      snapFractions={snapFractions}
+      topInset={insets.top}
+      onChange={onSheetChange}
+      bottomInset={bottomInset}
+      visibleHeight={visibleHeight}
+    >
       <View style={styles.content}>
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
-          {!!originLabel && !!onPressOrigin && !picking && (
-            <>
-              <Pressable
-                style={({ pressed }) => [styles.originRow, pressed && styles.rowPressed]}
-                onPress={onPressOrigin}
-                accessibilityLabel={`Starting point: ${originLabel}. Tap to change.`}
-              >
-                <Ionicons name="ellipse" size={10} color={colors.accent} />
-                <Text style={styles.originText} numberOfLines={2}>
-                  {originLabel}
-                </Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
-              </Pressable>
-              <View style={styles.originDivider} />
-            </>
-          )}
 
           {picking && (
             <View style={styles.pickingBanner}>
