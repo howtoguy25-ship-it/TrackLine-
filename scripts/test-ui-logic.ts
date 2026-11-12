@@ -7,6 +7,7 @@ import { scaleFor } from "../src/theme/scale";
 import { SETTINGS_VERSION, migrateStoredSettings } from "../src/services/settingsMigration";
 import { SearchSession, matchQuality, rankPredictions } from "../src/services/searchRanking";
 import { formatDistance } from "../src/utils/navFormat";
+import { isLookupablePlaceId, summarizeParking, todaysHours } from "../src/services/placePageLogic";
 import {
   ALERT_PIN_MAX,
   ALERT_PIN_MIN,
@@ -304,6 +305,35 @@ check("under 1km in tens of metres, then kilometres to one decimal", () => {
 });
 check("miles when the driver has chosen miles", () => {
   assert.ok(/mi$/.test(formatDistance(5000, "miles")), formatDistance(5000, "miles"));
+});
+
+console.log("§4 place page");
+check("a car park within 40m is treated as the place's own", () => {
+  const summary = summarizeParking([{ name: "Westfield car park", distanceMeters: 25 }]);
+  assert.equal(summary.kind, "onsite");
+});
+check("otherwise the nearest one, with an honest walk time (straight line x1.3 at 80m/min)", () => {
+  const summary = summarizeParking([
+    { name: "Far", distanceMeters: 700 },
+    { name: "Wilson Parking", distanceMeters: 300 },
+  ]);
+  assert.ok(summary.kind === "nearby" && summary.name === "Wilson Parking" && summary.walkMinutes === 5);
+});
+check("no car park within 800m hides the section rather than guessing", () => {
+  assert.equal(summarizeParking([{ name: "Too far", distanceMeters: 1500 }]).kind, "none");
+  assert.equal(summarizeParking([]).kind, "none");
+});
+check("today's opening hours are picked out of Google's week list", () => {
+  const week = ["Monday: 9:00 AM – 5:00 PM", "Tuesday: Closed", "Sunday: 10:00 AM – 4:00 PM"];
+  assert.equal(todaysHours(week, new Date(2026, 10, 16)), "9:00 AM – 5:00 PM"); // a Monday
+  assert.equal(todaysHours(week, new Date(2026, 10, 17)), "Closed");
+  assert.equal(todaysHours(week, new Date(2026, 10, 19)), null); // Thursday isn't listed
+  assert.equal(todaysHours(undefined, new Date()), null);
+});
+check("a place from a shared link isn't looked up (it isn't a Google place)", () => {
+  assert.equal(isLookupablePlaceId("shared:-33.85,151.21"), false);
+  assert.equal(isLookupablePlaceId("ChIJ3S-JXmauEmsRUcIaWtf4MzE"), true);
+  assert.equal(isLookupablePlaceId("osm:node:123"), true);
 });
 
 console.log(`\n${passed} checks passed`);

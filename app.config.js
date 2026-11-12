@@ -195,6 +195,17 @@ module.exports = {
         },
       ],
       [
+        // Place page "Add photo": picks one existing photo from the library. The camera is
+        // never opened, so no camera permission is asked for here.
+        "expo-image-picker",
+        {
+          photosPermission:
+            "TrackLine lets you choose a photo to add to a place's page. Photos are reviewed before anyone else sees them.",
+          cameraPermission: false,
+          microphonePermission: false,
+        },
+      ],
+      [
         // Voice search: tapping the microphone in "Where to?" turns what's said into the search
         // text. Speech recognition is a separate iOS permission from the microphone itself, so
         // it gets its own prompt and its own explanation. The microphone string is repeated

@@ -68,8 +68,9 @@ import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
 import { ParkingSheet } from "@/screens/ParkingSheet";
-import { WhereToSheet, WHERE_TO_SNAP_FRACTIONS } from "@/screens/WhereToSheet";
-import { threeSnapHeights, type ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
+import { WhereToSheet, WHERE_TO_SNAP_FRACTIONS, type WhereToSheetRef } from "@/screens/WhereToSheet";
+import { PlacePage, PLACE_PAGE_SHEET_FRACTION } from "@/screens/PlacePage";
+import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
@@ -349,7 +350,7 @@ export function MapScreen() {
   const hotelsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const fuelStationsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const parkingSheetRef = useRef<SimpleBottomSheetRef>(null);
-  const whereToSheetRef = useRef<ThreeSnapBottomSheetRef>(null);
+  const whereToSheetRef = useRef<WhereToSheetRef>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
   const toolsSheetRef = useRef<BottomSheet>(null);
@@ -474,6 +475,12 @@ export function MapScreen() {
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
   const [pendingDestination, setPendingDestination] = useState<PlaceDetails | null>(null);
+  // The place page (UI pass 2, section 4): a search result being looked at before any route is
+  // fetched. The map is centred on it in the top 40%, under the page's own sheet.
+  const [placePage, setPlacePage] = useState<PlaceDetails | null>(null);
+  // Where the parking list is centred: the place page's "See more parking" opens it around the
+  // place rather than around the driver. Null = around the driver, as before.
+  const [parkingCenter, setParkingCenter] = useState<LatLng | null>(null);
   // Real, explicit request: candidate route(s) must stand out clearly from the surrounding
   // street network while picking one, not blend into it -- dims every other road (see
   // getMapStyle's own ROUTE_PICKING_DIM_STYLERS) for exactly the window a destination is picked
@@ -999,13 +1006,14 @@ export function MapScreen() {
   // would only make this run twice per fix.
   const followHeadingRef = useRef(0);
   useEffect(() => {
-    if (!currentLatLng || route || !mapReady || userMovedMapRef.current) return;
+    // Not while a place page is up: the camera is showing the place, not the driver.
+    if (!currentLatLng || route || !mapReady || userMovedMapRef.current || placePage) return;
     mapRef.current?.animateCamera(
       { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM },
       { duration: 500 }
     );
     mapBearing.set(followHeadingRef.current);
-  }, [currentLatLng, route, mapReady, mapBearing]);
+  }, [currentLatLng, route, mapReady, mapBearing, placePage]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
   // that only appears once the driver has actually panned away, mirroring Waze's own behaviour.
@@ -1137,10 +1145,13 @@ export function MapScreen() {
     !!route && followTilt && !overviewMode && settings.defaultMapViewStyle !== "flat";
   // The plain home map: nothing picked, nothing being placed. This is the state the "Where to?"
   // sheet, the floating buttons and the street pill all belong to.
-  const isHomeIdle = !route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint;
+  const isHomeIdle =
+    !route && !pendingDestination && !placingAlert && !pickingOrigin && !pickingDestinationPoint && !placePage;
   // The ad banner is laid out UNDER the map (not over it) whenever it's showing, together with
   // the bottom safe area -- so the map view is that much shorter than the screen.
-  const bannerShown = !route && !pendingDestination;
+  // Hidden on the route-selection screen and during navigation (as asked), and on the place
+  // page, whose own sheet and "View routes" button take the whole bottom of the screen.
+  const bannerShown = !route && !pendingDestination && !placePage;
   const bannerAreaHeight = bannerShown ? BANNER_HEIGHT + insets.bottom : 0;
   const mapAreaHeight = windowHeight - bannerAreaHeight;
   const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, WHERE_TO_SNAP_FRACTIONS);
@@ -1150,9 +1161,12 @@ export function MapScreen() {
   const homeArrowY = arrowScreenY(mapAreaHeight, homePadding);
   const mapPadding = isNavChaseView
     ? { top: windowHeight * 0.34, right: 0, bottom: 0, left: 0 }
-    : isHomeIdle
-      ? homePadding
-      : { top: 0, right: 0, bottom: 0, left: 0 };
+    : placePage
+      ? // The place sits in the middle of the 40% above the place page's sheet.
+        { top: insets.top, right: 0, bottom: windowHeight * PLACE_PAGE_SHEET_FRACTION, left: 0 }
+      : isHomeIdle
+        ? homePadding
+        : { top: 0, right: 0, bottom: 0, left: 0 };
 
   // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
   // coords.speed is m/s, converted here once rather than in the display component so every
@@ -2898,6 +2912,31 @@ export function MapScreen() {
       })
       .finally(() => setPlaceInfoLoading(false));
   }, [closeAllPlaceSheets]);
+
+  // A search result: show its place page, with the map moved onto it.
+  const onPlaceChosen = useCallback(
+    (place: PlaceDetails) => {
+      closeAllPlaceSheets();
+      whereToSheetRef.current?.collapse();
+      setPlacePage(place);
+      // The camera stops following the driver while the place is shown (the follow effect checks
+      // placePage), and comes back to them when the page closes.
+      mapRef.current?.animateCamera({ center: place.location, zoom: 16, heading: 0, pitch: 0 }, { duration: 500 });
+      mapBearing.set(0);
+    },
+    [closeAllPlaceSheets, mapBearing]
+  );
+  const closePlacePage = useCallback(() => {
+    setPlacePage(null);
+    userMovedMapRef.current = false;
+    setPannedAwayIdle(false);
+    if (currentLatLng) {
+      mapRef.current?.animateCamera(
+        { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH },
+        { duration: 600 }
+      );
+    }
+  }, [currentLatLng]);
 
   const onDestinationSelected = useCallback(
     (place: PlaceDetails) => {
@@ -4650,6 +4689,19 @@ export function MapScreen() {
         {/* Reports: one pin each from zoom 12 in, sized by zoom and a step larger when the
             report is on the route being driven; below zoom 12 they're grouped into counts (see
             alertPins above and map/homeMapLogic.ts). */}
+        {placePage && !route && !pendingDestination && (
+          <Marker
+            key={`place-page-${placePage.placeId}`}
+            coordinate={placePage.location}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
+            zIndex={20}
+          >
+            <View style={styles.placePagePin}>
+              <View style={styles.placePagePinDot} />
+            </View>
+          </Marker>
+        )}
         {alertPins.clusters.map((cluster) => (
           <Marker
             key={`alert-cluster-${cluster.points[0].id}-${cluster.count}`}
@@ -5142,6 +5194,31 @@ export function MapScreen() {
           bottomInset={bannerAreaHeight}
           visibleHeight={sheetVisibleHeight}
           onSheetChange={setWhereToSheetIndex}
+          onPlaceChosen={onPlaceChosen}
+        />
+      )}
+
+      {placePage && !route && !pendingDestination && (
+        <PlacePage
+          place={placePage}
+          origin={currentLatLng}
+          onBack={() => {
+            closePlacePage();
+            whereToSheetRef.current?.openSearch();
+          }}
+          onClose={closePlacePage}
+          onViewRoutes={(place) => {
+            setPlacePage(null);
+            onDestinationSelected(place);
+          }}
+          onSeeMoreParking={(place) => {
+            setParkingCenter(place.location);
+            onFindParking();
+          }}
+          onPlanDrive={(place) => {
+            closePlacePage();
+            navigation.navigate("PlanADrive", { initialDestination: place });
+          }}
         />
       )}
 
@@ -5888,9 +5965,13 @@ export function MapScreen() {
           />
           <ParkingSheet
             ref={parkingSheetRef}
-            location={currentLatLng}
+            location={parkingCenter ?? currentLatLng}
             onViewDetails={onViewVenueDetails}
-            onSheetChange={(index) => setParkingSheetOpen(index >= 0)}
+            onSheetChange={(index) => {
+              setParkingSheetOpen(index >= 0);
+              // Closed: back to "around the driver" for next time.
+              if (index < 0) setParkingCenter(null);
+            }}
           />
         </>
       )}
@@ -6502,6 +6583,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
+  // The place page's pin: a red disc with a white centre and a soft shadow.
+  placePagePin: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#E5342B",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  placePagePinDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#FFFFFF" },
   alertClusterBadge: {
     minWidth: 30,
     height: 30,

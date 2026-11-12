@@ -153,6 +153,67 @@ describe("trafficNsw/{docId} (the shared live-traffic snapshot)", () => {
   });
 });
 
+describe("placePhotos/{photoId} (moderated place photos)", () => {
+  const good = (uid, photoId) => ({
+    placeId: "ChIJ-test",
+    uploaderUid: uid,
+    storagePath: `placePhotos/${uid}/${photoId}.jpg`,
+    status: "pending",
+  });
+
+  test("a driver can file their own photo for review, as pending", async () => {
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertSucceeds(setDoc(doc(self, "placePhotos/p1"), good("driver-a", "p1")));
+  });
+
+  test("a photo can't be filed as already approved, for someone else, or at another path", async () => {
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertFails(setDoc(doc(self, "placePhotos/p2"), { ...good("driver-a", "p2"), status: "approved" }));
+    await assertFails(setDoc(doc(self, "placePhotos/p3"), good("driver-b", "p3")));
+    await assertFails(
+      setDoc(doc(self, "placePhotos/p4"), { ...good("driver-a", "p4"), storagePath: "placePhotos/driver-b/p4.jpg" })
+    );
+  });
+
+  test("other drivers can't see a pending photo, but can once it's approved", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "placePhotos/p5"), good("driver-a", "p5"));
+      await setDoc(doc(ctx.firestore(), "placePhotos/p6"), { ...good("driver-a", "p6"), status: "approved" });
+    });
+    const other = testEnv.authenticatedContext("driver-b").firestore();
+    await assertFails(getDoc(doc(other, "placePhotos/p5")));
+    await assertSucceeds(getDoc(doc(other, "placePhotos/p6")));
+    // ...and the uploader can always see their own.
+    await assertSucceeds(getDoc(doc(testEnv.authenticatedContext("driver-a").firestore(), "placePhotos/p5")));
+  });
+
+  test("the uploader can't approve their own photo; the owner can", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "placePhotos/p7"), good("driver-a", "p7"));
+    });
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertFails(setDoc(doc(self, "placePhotos/p7"), { ...good("driver-a", "p7"), status: "approved" }));
+    const admin = testEnv.authenticatedContext("admin", { email: "support@tracklinemaps.com" }).firestore();
+    await assertSucceeds(setDoc(doc(admin, "placePhotos/p7"), { ...good("driver-a", "p7"), status: "approved" }));
+  });
+});
+
+describe("placeReports/{reportId}", () => {
+  test("a driver can report a place with a known reason; nobody but the owner can read reports", async () => {
+    const self = testEnv.authenticatedContext("driver-a").firestore();
+    await assertSucceeds(
+      addDoc(collection(self, "placeReports"), { reportedBy: "driver-a", placeId: "ChIJ-x", reason: "closed" })
+    );
+    await assertFails(
+      addDoc(collection(self, "placeReports"), { reportedBy: "driver-b", placeId: "ChIJ-x", reason: "closed" })
+    );
+    await assertFails(
+      addDoc(collection(self, "placeReports"), { reportedBy: "driver-a", placeId: "ChIJ-x", reason: "made-up" })
+    );
+    await assertFails(getDocs(collection(self, "placeReports")));
+  });
+});
+
 describe("userReports/{reportId}", () => {
   test("a signed-in driver CAN create a report attributed to themselves, about someone else", async () => {
     const self = testEnv.authenticatedContext("driver-a").firestore();

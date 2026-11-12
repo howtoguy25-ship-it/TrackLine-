@@ -3,7 +3,7 @@ import { View, Pressable, StyleSheet, FlatList, ActivityIndicator, Keyboard } fr
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { useLocation } from "@/context/LocationContext";
@@ -59,7 +59,8 @@ export function PlanADriveScreen() {
     getSearchHistory().then(setHistory);
   }, []);
 
-  const [destination, setDestination] = useState<PlaceDetails | null>(null);
+  const planRoute = useRoute<RouteProp<RootStackParamList, "PlanADrive">>();
+  const [destination, setDestination] = useState<PlaceDetails | null>(planRoute.params?.initialDestination ?? null);
   const [minutesFromNow, setMinutesFromNow] = useState(0);
   const [eta, setEta] = useState<{ etaText: string; distanceText: string } | null>(null);
   const [etaLoading, setEtaLoading] = useState(false);

@@ -418,6 +418,7 @@ export async function getOsmPlaceInfo(placeId: string): Promise<PlaceInfo> {
     website: el.tags?.website || el.tags?.["contact:website"],
     reviews: [],
     photoUrls: [],
+    photoAttributions: [],
     category,
   };
 }

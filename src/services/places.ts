@@ -117,6 +117,9 @@ export interface PlaceInfo extends PlaceDetails {
   // Real Google Places photos for this business -- up to PLACE_INFO_MAX_PHOTOS, empty array
   // (never fabricated) when Google has none on file for it.
   photoUrls: string[];
+  // Who took each photo, aligned with photoUrls -- Google's terms require it to be shown with
+  // the photo. Plain text (Google sends it as a link; only the name is kept). May be "".
+  photoAttributions: string[];
   // Google's own real 0-4 price scale -- see priceLevelText below. undefined means Google has
   // no price data for this place (most non-business addresses), never guessed.
   priceLevel?: number;
@@ -229,6 +232,20 @@ export async function findNearestTransitStation(location: LatLng): Promise<Place
 // sheet actually looks at, not an unbounded gallery.
 const PLACE_INFO_MAX_PHOTOS = 6;
 
+/** Photo URLs and their (required) credits, kept in step -- a photo is dropped with its credit. */
+function placePhotosWithCredit(photos: any[] | undefined): { photoUrls: string[]; photoAttributions: string[] } {
+  const photoUrls: string[] = [];
+  const photoAttributions: string[] = [];
+  for (const photo of (photos ?? []).slice(0, PLACE_INFO_MAX_PHOTOS)) {
+    const url = nearbyPlacePhotoUrl(photo?.photo_reference);
+    if (!url) continue;
+    photoUrls.push(url);
+    const html = Array.isArray(photo.html_attributions) ? photo.html_attributions.join(", ") : "";
+    photoAttributions.push(html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim());
+  }
+  return { photoUrls, photoAttributions };
+}
+
 export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
   const params = new URLSearchParams({
     place_id: placeId,
@@ -272,10 +289,7 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
       relativeTime: r.relative_time_description,
       text: r.text,
     })),
-    photoUrls: (result.photos ?? [])
-      .slice(0, PLACE_INFO_MAX_PHOTOS)
-      .map((p: any) => nearbyPlacePhotoUrl(p.photo_reference))
-      .filter((url: string | null): url is string => url !== null),
+    ...placePhotosWithCredit(result.photos),
     priceLevel: result.price_level,
     category: primaryCategoryLabel(result.types),
   };

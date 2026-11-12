@@ -48,8 +48,17 @@ export async function getSavedPlaces(): Promise<SavedPlaces> {
   }
 }
 
+// Every screen showing saved places is told when they change, so a place saved from one (the
+// place page) appears straight away in another (the "Where to?" sheet).
+const savedPlacesListeners = new Set<(places: SavedPlaces) => void>();
+export function subscribeSavedPlaces(listener: (places: SavedPlaces) => void): () => void {
+  savedPlacesListeners.add(listener);
+  return () => savedPlacesListeners.delete(listener);
+}
+
 async function persist(next: SavedPlaces): Promise<SavedPlaces> {
   await AsyncStorage.setItem(SAVED_PLACES_KEY, JSON.stringify(next));
+  savedPlacesListeners.forEach((listener) => listener(next));
   return next;
 }
 

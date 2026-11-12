@@ -47,6 +47,34 @@ describe("voiceRecordings/{uid}/{fileName}", () => {
   });
 });
 
+describe("placePhotos/{uid}/{fileName}", () => {
+  const jpeg = { contentType: "image/jpeg" };
+
+  test("a driver CAN upload a JPEG to their own folder, and another signed-in driver can fetch it by path", async () => {
+    const self = testEnv.authenticatedContext("driver-a").storage();
+    await assertSucceeds(uploadBytes(ref(self, "placePhotos/driver-a/x1.jpg"), new Uint8Array([1, 2, 3]), jpeg));
+    const other = testEnv.authenticatedContext("driver-b").storage();
+    await assertSucceeds(getBytes(ref(other, "placePhotos/driver-a/x1.jpg")));
+  });
+
+  test("a driver CANNOT upload into someone else's folder", async () => {
+    const self = testEnv.authenticatedContext("driver-a").storage();
+    await assertFails(uploadBytes(ref(self, "placePhotos/driver-b/x2.jpg"), new Uint8Array([1]), jpeg));
+  });
+
+  test("anything that isn't a JPEG is refused", async () => {
+    const self = testEnv.authenticatedContext("driver-a").storage();
+    await assertFails(
+      uploadBytes(ref(self, "placePhotos/driver-a/x3.jpg"), new Uint8Array([1]), { contentType: "text/html" })
+    );
+  });
+
+  test("a signed-out client can't fetch a photo", async () => {
+    const anon = testEnv.unauthenticatedContext().storage();
+    await assertFails(getBytes(ref(anon, "placePhotos/driver-a/x1.jpg")));
+  });
+});
+
 describe("every other path (catch-all)", () => {
   test("even a signed-in driver CANNOT write outside voiceRecordings/", async () => {
     const self = testEnv.authenticatedContext("driver-a").storage();

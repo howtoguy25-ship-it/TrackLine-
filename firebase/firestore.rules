@@ -183,6 +183,34 @@ service cloud.firestore {
     // dedicated Cloud Function the way sendWave's rate-limit/block logic does. No client read
     // or update/delete at all -- only the admin can review reports (same convention as the
     // `broadcasts` collection), and a report can never be edited or withdrawn once filed.
+    // Photos drivers add to a place page. Created "pending" by the uploader; only the project
+    // owner can approve (or reject) one. Other drivers can read a photo only once approved --
+    // the app's query asks for approved ones, which these rules allow.
+    match /placePhotos/{photoId} {
+      allow read: if isSignedIn()
+        && (resource.data.status == "approved" || resource.data.uploaderUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.uploaderUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.placeId is string
+        && request.resource.data.placeId.size() > 0
+        && request.resource.data.placeId.size() <= 300
+        && request.resource.data.storagePath == "placePhotos/" + request.auth.uid + "/" + photoId + ".jpg";
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.uploaderUid == request.auth.uid);
+    }
+
+    // "This place is wrong" reports from the place page. Self-attributed, read only by the
+    // project owner, never edited.
+    match /placeReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.placeId is string
+        && request.resource.data.reason in ["wrong_location", "closed", "wrong_name", "other"];
+      allow update, delete: if false;
+    }
+
     match /userReports/{reportId} {
       allow read: if isAdmin();
       allow create: if isSignedIn()

@@ -63,7 +63,8 @@ export type RootStackParamList = {
   Inbox: undefined;
   // Real destination + departure-time planner, Phase 4's own main-menu "Plan a drive" card. See
   // PlanADriveScreen.tsx.
-  PlanADrive: undefined;
+  // Optionally opened with a destination already chosen (the place page's "Add to a planned drive").
+  PlanADrive: { initialDestination?: PlaceDetails } | undefined;
   // Real FAQ + contact row, Phase 4's own main-menu Help row. See HelpScreen.tsx.
   Help: undefined;
   // Real, explicit request (Copyright/trademark safety audit, Part 4) -- Settings > About's own

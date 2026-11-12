@@ -10,6 +10,21 @@ service firebase.storage {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Place photos (see placePhotos in firestore.rules). Written only into the uploader's own
+    // folder, JPEG only, under 8 MB. Readable by signed-in drivers by exact path -- never
+    // listable, and the paths are random, so a photo can only be found through its Firestore
+    // document, which other drivers can only read once the photo is approved.
+    match /placePhotos/{uid}/{fileName} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource != null
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType == "image/jpeg";
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

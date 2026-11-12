@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import Animated, { SlideInDown, type SharedValue } from "react-native-reanimated";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import * as Crypto from "expo-crypto";
@@ -46,6 +46,7 @@ import {
   removeCustomPlace,
   pushSavedPlacesToProfile,
   pullSavedPlacesFromProfile,
+  subscribeSavedPlaces,
   type SavedPlaces,
   type SavedPlaceSlot,
 } from "@/services/savedPlaces";
@@ -103,6 +104,17 @@ interface Props {
   bottomInset?: number;
   /** Receives how much of the sheet is showing, every frame -- see ThreeSnapBottomSheet. */
   visibleHeight?: SharedValue<number>;
+  /**
+   * A destination chosen in the search screen -- shown on the place page before any route is
+   * fetched. Shortcuts on the sheet itself (Home, Work, a saved place, a recent) skip that page
+   * and go straight to routes through onDestinationSelected.
+   */
+  onPlaceChosen?: (place: PlaceDetails) => void;
+}
+
+export interface WhereToSheetRef extends ThreeSnapBottomSheetRef {
+  /** Opens the full-screen search -- e.g. "Back" from the place page. */
+  openSearch: () => void;
 }
 
 // Peek / half / full, as fractions of the space between the status bar and whatever is under
@@ -116,7 +128,7 @@ export const WHERE_TO_SNAP_FRACTIONS: [number, number, number] = [0.24, 0.55, 0.
 // the phone's share sheet opens with a link to it (services/driveLink.ts).
 type PickTarget = "route" | SavedPlaceSlot | "custom" | "share";
 
-export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function WhereToSheet(
+export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToSheet(
   {
     biasLocation,
     onDestinationSelected,
@@ -124,6 +136,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     findingNearestStation,
     bottomInset,
     visibleHeight,
+    onPlaceChosen,
     onFindRestaurants,
     onFindHotels,
     onFindPetrol,
@@ -178,6 +191,8 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   useEffect(() => {
     getSearchHistory().then(setHistory);
     getSavedPlaces().then(setSaved);
+    // Saved from somewhere else (the place page) -- shown here straight away.
+    return subscribeSavedPlaces(setSaved);
   }, []);
 
   // Same real cross-device sync pattern as SettingsContext -- pulled once per real sign-in,
@@ -266,12 +281,25 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     setSearchOpen(true);
   }, []);
 
+  // The sheet itself, plus a way for the map to reopen the search screen.
+  const sheetRef = useRef<ThreeSnapBottomSheetRef>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      collapse: () => sheetRef.current?.collapse(),
+      expandHalf: () => sheetRef.current?.expandHalf(),
+      expandFull: () => sheetRef.current?.expandFull(),
+      openSearch: () => openSearch("route"),
+    }),
+    [openSearch]
+  );
+
   const handlePicked = useCallback(
     async (place: PlaceDetails) => {
       if (pickTarget === "route") {
         addSearchHistoryEntry(place).then(setHistory);
         resetSearch();
-        onDestinationSelected(place);
+        (onPlaceChosen ?? onDestinationSelected)(place);
         return;
       }
       if (pickTarget === "home" || pickTarget === "work") {
@@ -300,7 +328,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
       setPlaceName(place.name);
       setNamingPlace(place);
     },
-    [pickTarget, onDestinationSelected, persistSaved, resetSearch]
+    [pickTarget, onDestinationSelected, onPlaceChosen, persistSaved, resetSearch]
   );
 
   const confirmNamedPlace = useCallback(async () => {
@@ -569,7 +597,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   return (
     <>
     <ThreeSnapBottomSheet
-      ref={ref}
+      ref={sheetRef}
       snapFractions={snapFractions}
       topInset={insets.top}
       onChange={onSheetChange}
@@ -804,7 +832,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
                 style={({ pressed }) => [styles.resultRow, pressed && styles.rowPressed]}
                 onPress={() => {
                   resetSearch();
-                  onDestinationSelected(item);
+                  (onPlaceChosen ?? onDestinationSelected)(item);
                 }}
                 onLongPress={() => onLongPressCustomPlace(item.placeId, item.label ?? item.name)}
               >
