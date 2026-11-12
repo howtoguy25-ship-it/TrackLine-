@@ -1,6 +1,24 @@
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { MapSurface } from "@/components/ui/Surface";
 import { showLaneStrip } from "@/nav/lanes";
+import {
+  APPROACH_CAMERA,
+  CHIP_MS,
+  INITIAL_APPROACH,
+  approachCenter,
+  distanceToLineMeters,
+  kindOfStep,
+  manoeuvreHighlight,
+  reduceApproach,
+  type ApproachEvent,
+  type ApproachState,
+} from "@/nav/approach";
+import { calloutLabel } from "@/nav/manoeuvre";
+import { ManoeuvreChip, type ChipTone } from "@/components/nav/ManoeuvreChip";
+import { JunctionViewCard } from "@/components/nav/JunctionViewCard";
+import { mapboxReroute, mapboxRouteForChoice, mapboxRoutingAvailable } from "@/services/navRouting";
+import { useAudioPlayer } from "expo-audio";
+import { env } from "@/config/env";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip, FloatingButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -23,6 +41,7 @@ import { isMapboxUsable } from "@/map-v2/mapbox";
 import type { Region } from "@/map-v2/geo";
 import type { MapPin } from "@/map-v2/pins";
 import { startSimulatedDrive, stopSimulatedDrive } from "@/dev/simulateDrive";
+import { onTestDriveRequested, testDrive } from "@/dev/testDrives";
 import { isGpsReplayActive, subscribeGpsReplayActiveChange } from "@/dev/gpsReplay";
 import { incidentStyle } from "@/services/trafficNswModel";
 import * as Location from "expo-location";
@@ -312,6 +331,10 @@ export function MapScreen() {
   const visibilitySheetRef = useRef<BottomSheet>(null);
 
   const [route, setRoute] = useState<Route | null>(null);
+  const routeRef = useRef<Route | null>(null);
+  useEffect(() => {
+    routeRef.current = route;
+  }, [route]);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   // Real, explicit request: the headline ETA/arrival-time must keep syncing with LIVE traffic
   // for as long as a trip is active, not just reflect whatever Google returned once at route
@@ -1296,7 +1319,10 @@ export function MapScreen() {
     // broken even though it works fine on its own. Pitch/zoom are only ever set once, when
     // follow-tilt is first entered (toggleFollowTilt/enterOverviewMode below) -- after that, only
     // center/heading keep tracking live position/direction of travel.
-    mapRef.current?.animateCamera({ center: currentLatLng, heading }, { duration: 600 });
+    // During the approach view the camera sits a little ahead, so the split and the lanes show.
+    const approaching = approachRef.current.phase === "approach" && approachRef.current.stepIndex !== null;
+    const split = approaching ? route.steps[approachRef.current.stepIndex!]?.endLocation : null;
+    mapRef.current?.animateCamera({ center: split ? approachCenter(currentLatLng, split) : currentLatLng, heading }, { duration: 600 });
   }, [route, followTilt, currentLatLng, heading, detectionOpen, placingAlert]);
 
   // Actually applies the "tilted, zoomed in" chase cam the comment above promises -- followTilt
@@ -1360,105 +1386,131 @@ export function MapScreen() {
     );
   }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle]);
 
-  // Real, confirmed request -- a closer, tighter "one person mode" camera specifically while
-  // actually executing a highway exit/ramp/fork, matching how Waze/Google Maps zoom in tight
-  // on complex interchanges so it's obvious which lane/ramp to take, then pull back out to the
-  // normal driving view once past it. Reuses the exact same "set pitch/zoom once, let the
-  // per-tick effect above keep center/heading fresh" pattern the default chase-cam effect above
-  // already uses -- this only ever touches pitch/zoom, never center/heading, so it can't fight
-  // that effect's own continuous position tracking.
-  //
-  // Triggered by REAL route data, not a guess: Google's own maneuver codes already distinguish
-  // a highway off-ramp/fork (ramp-left/right, fork-left/right) from an ordinary turn, and the
-  // distance trigger is the real remaining distance to that step's own end location (the ramp
-  // itself), not an arbitrary timer -- so "for a certain amount of time" naturally falls out of
-  // how fast the vehicle is actually covering that real distance, and it reverts the instant the
-  // route's own activeStepIndex moves past the ramp (a real, GPS-driven event), not a guessed
-  // duration that could cut off early or run on after the exit is already done.
-  const EXIT_MANEUVERS = new Set(["ramp-left", "ramp-right", "fork-left", "fork-right"]);
-  const EXIT_ZOOM_TRIGGER_METERS = 400;
-  // Flatter, much more overhead pitch than the default 60/68 chase pose -- real, explicit
-  // request for a genuine "top view" of the interchange (so the fork/ramp split itself is
-  // readable, the way a junction diagram reads) instead of the normal tilted driver's-eye chase
-  // angle. Not fully 0 (a true bird's-eye straight-down view loses any sense of the road ahead)
-  // -- "just enough" to read as overhead while still orienting the driver forward. Zoom pushed
-  // in slightly further too (19.5 -> 19.8) since the point is to focus tight on the split, not
-  // the wider surrounding area.
-  const EXIT_ZOOM_PITCH = 22;
-  const EXIT_ZOOM_ZOOM = 19.8;
-  const exitZoomActiveRef = useRef(false);
-  const [exitZoomActive, setExitZoomActive] = useState(false);
-  const [exitZoomDistanceMeters, setExitZoomDistanceMeters] = useState(0);
+  // The approach view around exits, merges, splits, roundabouts, lane changes and complex turns
+  // (nav/approach.ts): zoom in 200 m out (400 m above 90 km/h), confirm the manoeuvre with a
+  // green chip and ease back out, or catch a miss and reroute. The state machine decides; this
+  // only carries out its effects on the camera, the chip and the reroute.
+  const [approach, setApproach] = useState<ApproachState>(INITIAL_APPROACH);
+  const approachRef = useRef<ApproachState>(INITIAL_APPROACH);
+  const [manoeuvreChip, setManoeuvreChip] = useState<{ text: string; tone: ChipTone } | null>(null);
+  const chipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set when the approach machine sees a missed manoeuvre; the reroute effect below acts on it.
+  const missedManoeuvreRef = useRef(false);
+  const chimePlayer = useAudioPlayer(require("../../assets/sounds/speed_warning_chime.wav"));
+  // What the effects need from this render (read inside callbacks, never stale).
+  const approachCameraRef = useRef({ followTilt, overviewMode, flat: settings.defaultMapViewStyle === "flat", currentLatLng, heading, voiceEnabled });
   useEffect(() => {
-    exitZoomActiveRef.current = false;
-    setExitZoomActive(false);
-  }, [route, followTilt]);
-  useEffect(() => {
-    if (!route || !followTilt || detectionOpen || placingAlert || !currentLatLng) return;
-    const step = route.steps[activeStepIndex];
-    const isExitStep = !!step && EXIT_MANEUVERS.has(step.maneuver ?? "");
+    approachCameraRef.current = { followTilt, overviewMode, flat: settings.defaultMapViewStyle === "flat", currentLatLng, heading, voiceEnabled };
+  });
 
-    if (isExitStep && !exitZoomActiveRef.current) {
-      const distanceToRampMeters =
-        distanceKm(
-          currentLatLng.latitude,
-          currentLatLng.longitude,
-          step.endLocation.latitude,
-          step.endLocation.longitude
-        ) * 1000;
-      if (distanceToRampMeters <= EXIT_ZOOM_TRIGGER_METERS) {
-        exitZoomActiveRef.current = true;
-        setExitZoomActive(true);
-        setExitZoomDistanceMeters(distanceToRampMeters);
-        mapRef.current?.animateCamera(
-          { center: currentLatLng, heading, pitch: EXIT_ZOOM_PITCH, zoom: EXIT_ZOOM_ZOOM },
-          { duration: 600 }
-        );
+  const showManoeuvreChip = useCallback((text: string, tone: ChipTone, ms: number | null) => {
+    if (chipTimerRef.current) clearTimeout(chipTimerRef.current);
+    setManoeuvreChip({ text, tone });
+    chipTimerRef.current = ms === null ? null : setTimeout(() => setManoeuvreChip(null), ms);
+  }, []);
+
+  const dispatchApproach = useCallback(
+    (event: ApproachEvent) => {
+      const before = approachRef.current;
+      const { state, effects } = reduceApproach(before, event);
+      approachRef.current = state;
+      if (state.phase !== before.phase || state.stepIndex !== before.stepIndex) setApproach(state);
+      const cam = approachCameraRef.current;
+      for (const effect of effects) {
+        if (effect.kind === "zoomIn") {
+          if (cam.followTilt) {
+            mapRef.current?.animateCamera(
+              { center: effect.center, heading: effect.heading, pitch: APPROACH_CAMERA.pitch, zoom: APPROACH_CAMERA.zoom },
+              { duration: APPROACH_CAMERA.durationMs }
+            );
+          }
+        } else if (effect.kind === "restore") {
+          // Back to the normal follow pose (the same one the chase cam uses), unless the driver
+          // is looking around the map themselves.
+          if (cam.followTilt && cam.currentLatLng) {
+            mapRef.current?.animateCamera(
+              cam.flat
+                ? { center: cam.currentLatLng, heading: cam.heading, pitch: 0, zoom: 17 }
+                : cam.overviewMode
+                  ? { center: cam.currentLatLng, heading: cam.heading, pitch: 45, zoom: 15 }
+                  : { center: cam.currentLatLng, heading: cam.heading, pitch: 60, zoom: 18.5 },
+              { duration: effect.durationMs }
+            );
+          }
+          if (event.type !== "tick" && event.type !== "rerouted") setManoeuvreChip(null);
+        } else if (effect.kind === "confirmed") {
+          showManoeuvreChip(effect.text, "good", CHIP_MS);
+          if (cam.voiceEnabled) {
+            try {
+              chimePlayer.seekTo(0);
+              chimePlayer.play();
+            } catch {
+              // No sound is fine; the chip says it.
+            }
+          }
+        } else if (effect.kind === "missed") {
+          missedManoeuvreRef.current = true;
+          showManoeuvreChip("Rerouting…", "neutral", null);
+        }
       }
-      return;
-    }
-
-    if (!isExitStep && exitZoomActiveRef.current) {
-      // Real exit maneuver just passed (activeStepIndex advanced past it) -- back to whichever
-      // normal chase-cam pose was active before the exit-zoom override, same pitch/zoom values
-      // the default chase-cam effect above uses for each mode. This is the "tracks the user as
-      // turning, then automatically zooms out" half of the request: the per-tick effect above
-      // keeps re-centering/re-heading the camera every GPS tick throughout the whole exit-zoom
-      // window (it never stops just because pitch/zoom got overridden here), so the camera is
-      // already following the driver through the actual turn -- this only needs to hand pitch/
-      // zoom back to normal once activeStepIndex confirms the turn is done.
-      exitZoomActiveRef.current = false;
-      setExitZoomActive(false);
-      mapRef.current?.animateCamera(
-        overviewMode
-          ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : { center: currentLatLng, heading, pitch: 60, zoom: 18.5 },
-        { duration: 700 }
-      );
-    }
-  }, [route, followTilt, activeStepIndex, detectionOpen, currentLatLng, heading, overviewMode, placingAlert]);
-
-  // Keeps ExitLaneGuidance's own distance countdown live on every GPS tick while the exit-zoom
-  // window is active -- deliberately separate from the camera-pose effect above (which only
-  // fires once per exit, not every tick) so updating the displayed distance never re-triggers
-  // an animateCamera call.
+    },
+    [chimePlayer, showManoeuvreChip]
+  );
+  const dispatchApproachRef = useRef(dispatchApproach);
   useEffect(() => {
-    if (!exitZoomActive || !route || !currentLatLng) return;
+    dispatchApproachRef.current = dispatchApproach;
+  }, [dispatchApproach]);
+
+  // A new route (or none) ends any approach in progress.
+  useEffect(() => {
+    dispatchApproachRef.current({ type: "routeChanged" });
+  }, [route]);
+  // Looking around the map (follow off), the dog-cam or placing a report ends it too.
+  useEffect(() => {
+    if (!followTilt || detectionOpen || placingAlert) dispatchApproachRef.current({ type: "panned" });
+  }, [followTilt, detectionOpen, placingAlert]);
+
+  useEffect(() => {
+    if (!route || !followTilt || detectionOpen || placingAlert || !currentLatLng || travelMode !== "driving") return;
     const step = route.steps[activeStepIndex];
     if (!step) return;
-    setExitZoomDistanceMeters(
-      distanceKm(currentLatLng.latitude, currentLatLng.longitude, step.endLocation.latitude, step.endLocation.longitude) *
-        1000
-    );
-  }, [exitZoomActive, route, activeStepIndex, currentLatLng]);
+    dispatchApproach({
+      type: "tick",
+      nowMs: Date.now(),
+      position: currentLatLng,
+      speedKmh: currentSpeedKmh,
+      activeStepIndex,
+      steps: route.steps,
+      metersToManoeuvre: remainingStepMeters(step, currentLatLng.latitude, currentLatLng.longitude),
+      offRouteMeters: distanceToLineMeters(currentLatLng, route.polyline),
+    });
+  }, [route, followTilt, detectionOpen, placingAlert, currentLatLng, travelMode, activeStepIndex, currentSpeedKmh, dispatchApproach]);
 
-  // Real signal, not a guess -- see ExitLaneGuidance's own comment on why this only ever claims
-  // a side (left/right), not a specific lane count/number.
-  const exitZoomDirection: "left" | "right" | null = !exitZoomActive
-    ? null
-    : (route?.steps[activeStepIndex]?.maneuver ?? "").includes("left")
-      ? "left"
-      : "right";
+  useEffect(
+    () => () => {
+      if (chipTimerRef.current) clearTimeout(chipTimerRef.current);
+    },
+    []
+  );
+
+  const approachStep = approach.phase === "approach" && approach.stepIndex !== null ? route?.steps[approach.stepIndex] ?? null : null;
+  const approachKind = approachStep ? kindOfStep(approachStep) : undefined;
+  // The green "keep left / right" exit banner stays for exits with no lane data.
+  const exitZoomActive = approach.phase === "approach";
+  const exitZoomDirection: "left" | "right" | null =
+    approachStep && (approachKind === "exit" || approachKind === "fork")
+      ? approachStep.maneuverSide ?? ((approachStep.maneuver ?? "").includes("left") ? "left" : "right")
+      : null;
+  // On the map during the approach: the road through the split, the road taken, the label.
+  // Non-essential pins (venues, other drivers) are hidden meanwhile; reports stay.
+  const approachDrawing = useMemo(() => {
+    if (!route || approach.phase !== "approach" || approach.stepIndex === null) return null;
+    const highlight = manoeuvreHighlight(route.steps, approach.stepIndex);
+    if (!highlight) return null;
+    const step = route.steps[approach.stepIndex];
+    const text = calloutLabel(step);
+    return { ...highlight, callout: text ? { coordinate: step.endLocation, text } : null };
+  }, [route, approach]);
 
   // Real, explicit request -- Waze/Google-Maps-style auto-zoom that pulls the camera OUT as
   // real driving speed increases (more road ahead visible at highway speed) and back IN at low
@@ -1976,6 +2028,7 @@ export function MapScreen() {
     );
     if (nextIndex !== activeStepIndex) setActiveStepIndex(nextIndex);
     if (arrived) {
+      dispatchApproachRef.current({ type: "arrived" });
       announcePhrase({ kind: "arrived" });
     } else if (
       announcement &&
@@ -2099,8 +2152,12 @@ export function MapScreen() {
       }
     }
 
+    // A missed exit/merge (the approach machine saw it) reroutes at once, cooldown or not.
+    const missedManoeuvre = missedManoeuvreRef.current;
+    if (missedManoeuvre) reason = "missed-turn";
     if (!reason) return;
-    if (Date.now() - lastRerouteAtRef.current < REROUTE_COOLDOWN_MS) return;
+    if (!missedManoeuvre && Date.now() - lastRerouteAtRef.current < REROUTE_COOLDOWN_MS) return;
+    missedManoeuvreRef.current = false;
 
     offRouteStreakRef.current = 0;
     headingDivergeSinceRef.current = null;
@@ -2121,10 +2178,7 @@ export function MapScreen() {
     // getHeadingAwareReroute's own header for exactly what Google's heading field does and
     // doesn't guarantee). Only the driving mode gets this treatment; walking/transit/bicycling
     // have no U-turn-legality concern worth the Routes API's extra cost, same as before.
-    const reroutePromise: Promise<Route> =
-      travelMode !== "driving"
-        ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode)
-        : getHeadingAwareReroute(currentLatLng, destinationLatLng, heading, {
+    const googleReroute = (): Promise<Route> => getHeadingAwareReroute(currentLatLng, destinationLatLng, heading, {
             ...avoidRouteOptions(settings.routeAvoid),
             signal: controller.signal,
           }).then(({ route: primary, alternates }) => {
@@ -2147,18 +2201,42 @@ export function MapScreen() {
             }
             return chosen;
           });
+    // Driving reroutes come from Mapbox (live traffic, Avoid settings, no U-turn where possible,
+    // given up after ~2.5 s), with Google as the fallback.
+    const reroutePromise: Promise<Route> =
+      travelMode !== "driving"
+        ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode)
+        : mapboxRoutingAvailable()
+          ? mapboxReroute(currentLatLng, destinationLatLng, heading, settings.routeAvoid, controller.signal).catch((err) => {
+              if (controller.signal.aborted) throw err;
+              console.warn("[reroute] Mapbox failed, using Google", err);
+              return googleReroute();
+            })
+          : googleReroute();
 
     reroutePromise
       .then((fresh) => {
         if (controller.signal.aborted) return;
         guidanceRef.current = createGuidanceState();
         setActiveStepIndex(0);
+        dispatchApproachRef.current({ type: "rerouted" });
         setRoute(fresh);
         setAcceptedSuggestionOriginalRoute(null);
-        mapRef.current?.fitToCoordinates(fresh.polyline, {
-          edgePadding: { top: 120, right: 60, bottom: 120, left: 60 },
-          animated: true,
-        });
+        setManoeuvreChip(null);
+        // "Rerouting" was said when this started; now the new route's first instruction.
+        const first = fresh.steps[0];
+        if (first && navVoiceRef.current.enabled && navVoiceRef.current.mode !== "off") {
+          speakPlan(
+            planStepAnnouncement(
+              { step: first, distanceMeters: remainingStepMeters(first, currentLatLng.latitude, currentLatLng.longitude), kind: "early" },
+              settings.distanceUnit,
+              navVoiceRef.current.language
+            ),
+            { voiceIdentifier: voiceIdentifierRef.current, volume: voiceVolumeRef.current },
+            true
+          );
+        }
+        // The driver is moving: stay in the follow view rather than jumping out to the whole route.
         // Real, explicit request -- logged every reroute (time, position, reason, old vs new
         // ETA) to the console in dev mode, never in a production build.
         if (__DEV__) {
@@ -2177,13 +2255,15 @@ export function MapScreen() {
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
+        dispatchApproachRef.current({ type: "rerouteFailed" });
+        setManoeuvreChip(null);
         console.warn("[map] reroute failed", err);
         Sentry.logger.error("map: reroute failed", { error: String(err) });
       })
       .finally(() => {
         if (!controller.signal.aborted) setRerouting(false);
       });
-  }, [currentLatLng, route, destinationLatLng, travelMode, heading, currentSpeedKmh, activeStepIndex, announcePhrase, settings.routeAvoid]);
+  }, [currentLatLng, route, destinationLatLng, travelMode, heading, currentSpeedKmh, activeStepIndex, announcePhrase, settings.routeAvoid, settings.distanceUnit]);
 
   // EV Radar (Phase 6): start/stop siren detection with the map screen lifecycle -- mount-once
   // (deps: []), NOT re-keyed on location. It used to also depend on currentLatLng/user/
@@ -3357,9 +3437,35 @@ export function MapScreen() {
       // comment) -- clears any custom "From" so it doesn't silently carry over into the next,
       // unrelated destination search once this trip ends.
       setOriginOverride(null);
+      // Navigate on Mapbox's version of the picked route, so the lanes, exits and junction views
+      // match the line drawn. The drive starts at once on the picked route and switches over as
+      // soon as Mapbox answers (normally well before the first manoeuvre); if it can't, the
+      // picked route simply carries on.
+      if (travelMode === "driving" && chosen.source !== "mapbox" && currentLatLng && mapboxRoutingAvailable()) {
+        mapboxRouteForChoice(chosen, currentLatLng, destination.location, settings.routeAvoid, heading)
+          .then((navRoute) => {
+            if (!navRoute || routeRef.current !== chosen) return; // ended or changed meanwhile
+            guidanceRef.current = createGuidanceState();
+            setActiveStepIndex(0);
+            setRoute(navRoute);
+          })
+          .catch((err) => console.warn("[nav] Mapbox route unavailable, staying on the picked route", err));
+      }
     },
-    [currentLatLng, heading, settings.defaultMapViewStyle, announcePhrase]
+    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.routeAvoid, announcePhrase]
   );
+
+  // Development builds: Settings › Developer › test drives start a recorded motorway drive here
+  // (navigation on the recorded route, the simulated car on its own track).
+  useEffect(() => {
+    if (!__DEV__) return;
+    return onTestDriveRequested((kind) => {
+      const drive = testDrive(kind);
+      stopSimulatedDrive();
+      startRoute(drive.route, { placeId: `test-drive:${kind}`, name: drive.destination.name, address: "", location: drive.destination.location });
+      startSimulatedDrive(drive.track, drive.speedKmh);
+    });
+  }, [startRoute]);
 
   const confirmRoute = useCallback(() => {
     const chosen = travelMode === "driving" ? routeChoices?.[selectedChoiceIndex] : modeRoute;
@@ -4562,17 +4668,18 @@ export function MapScreen() {
                 : null
             }
             user={mapboxUser}
-            presences={visiblePresences}
+            presences={approachDrawing ? [] : visiblePresences}
             presenceCellSize={presenceCellSizeDegrees}
             onSelectPresence={setSelectedPresence}
             onPresenceCluster={onPlaceClusterPress}
             selection={mapboxSelection}
             arrival={destinationLatLng ?? (pendingDestination && !route && !inRouteSelection ? pendingDestination.location : null)}
-            pins={mapboxPinData.pins}
+            pins={approachDrawing ? mapboxPinData.pins.filter((p) => p.id.startsWith("alert")) : mapboxPinData.pins}
             onPinPress={onMapboxPinPress}
             selectedComment={
               selectedAlert?.comment ? { coordinate: { latitude: selectedAlert.lat, longitude: selectedAlert.lng }, text: selectedAlert.comment } : null
             }
+            manoeuvre={approachDrawing}
           />
         </TrackLineMap>
       )
@@ -4967,13 +5074,23 @@ export function MapScreen() {
           MapView/mapRef regardless of mapType ("standard" vs "hybrid" satellite -- see the
           MapView's own mapType prop), so this and the exit-zoom camera pose both already apply
           identically in satellite navigation, not just the standard map. */}
-      {route && exitZoomActive && exitZoomDirection && !addingStopDuringNav && !stopPreviewRoute && (
+      {route && exitZoomActive && exitZoomDirection && !laneStripLanes && !addingStopDuringNav && !stopPreviewRoute && (
         <ExitLaneGuidance
           direction={exitZoomDirection}
-          distanceMeters={exitZoomDistanceMeters}
+          distanceMeters={metersToManoeuvre ?? 0}
           instruction={activeStep?.instruction ?? ""}
           bottom={insets.bottom + bottomBarHeight + spacing.sm}
         />
+      )}
+
+      {/* Mapbox's junction picture for a complex interchange, until the manoeuvre point. */}
+      {route && activeStep?.guidanceViewUrl && metersToManoeuvre !== null && metersToManoeuvre <= 1000 && !addingStopDuringNav && (
+        <JunctionViewCard url={activeStep.guidanceViewUrl} token={env.mapboxPublicToken} top={insets.top + instructionCardHeight + 8} />
+      )}
+
+      {/* "Exit taken ✓" after a confirmed manoeuvre, "Rerouting…" after a missed one. */}
+      {route && manoeuvreChip && (
+        <ManoeuvreChip text={manoeuvreChip.text} tone={manoeuvreChip.tone} top={insets.top + instructionCardHeight + 8} />
       )}
 
       {/* Real mid-trip add-a-stop search -- overlays the turn card at the same top position

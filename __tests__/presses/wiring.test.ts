@@ -41,6 +41,10 @@ describe("wired into the live app", () => {
     ["src/map-v2/MapboxLayers.tsx", "PresenceLayerV2"],
     ["src/map-v2/MapboxLayers.tsx", "RouteLine"],
     ["src/screens/SettingsScreen.tsx", "TouchDebuggerRow"],
+    ["src/components/NavigationInstructionCard.tsx", "LaneStrip"],
+    ["src/screens/MapScreen.tsx", "ManoeuvreChip"],
+    ["src/screens/MapScreen.tsx", "JunctionViewCard"],
+    ["src/screens/MapScreen.tsx", "ExitLaneGuidance"],
   ])("%s renders <%s>", (file, component) => {
     expect(renders(file, component)).toBe(true);
   });

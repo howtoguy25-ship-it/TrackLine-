@@ -6,7 +6,13 @@ Live Traffic NSW, full settings reorg, etc.). Kept current so a new session can 
 where this one left off — see `CODEBASE_MAP.md` for what the repo looks like and `NOTES.md` for
 honest limitations/missing keys.
 
-## Strict verification + button & colour system (latest)
+## Lane guidance + exit/merge zoom (branch `lane-guidance`, latest)
+
+- [x] Mapbox routing for the drive, lanes, lane strip, lane voice, approach zoom, confirm/missed, reroute (AUDIT §14)
+- [x] Fixed: turn instructions announced the turn just made (Google step order)
+- [ ] Device check: `TEST_ON_PHONE.md` §13
+
+## Strict verification + button & colour system
 
 - [x] Root cause of the old home screen on the phone: old builds / dev server JS (AUDIT §12); build stamp in Settings › About — `2a9bc36`, dev build `7d8f1253`
 - [x] One Button family, Lucide line icons, one shadow, press/appear motion, colour meaning groups, WCAG AA tests (AUDIT §13)

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Chip } from "@/components/ui/Button";
+import { TEST_DRIVE_LABELS, requestTestDrive, type TestDriveKind } from "@/dev/testDrives";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Alert, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
@@ -1225,6 +1226,24 @@ export function SettingsScreen() {
             Running: {getBuildStamp()}
           </Text>
           <TouchDebuggerRow />
+          <Text style={styles.helperText}>
+            Test drives: a recorded drive onto the M4 and off at the Silverwater Road exit, to check lane guidance, the
+            approach zoom, the confirmation chip and rerouting.
+          </Text>
+          {(Object.keys(TEST_DRIVE_LABELS) as TestDriveKind[]).map((kind) => (
+            <Button
+              key={kind}
+              variant="secondary"
+              fullWidth
+              label={TEST_DRIVE_LABELS[kind]}
+              onPress={() => {
+                navigation.navigate("Map");
+                // After the map is back in front.
+                setTimeout(() => requestTestDrive(kind), 300);
+              }}
+              style={{ marginTop: 8 }}
+            />
+          ))}
         </Section>
       )}
       {__DEV__ && (

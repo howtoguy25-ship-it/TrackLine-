@@ -540,3 +540,22 @@ the real `MapScreen`). On-device confirmation is the `TEST_ON_PHONE.md` checklis
 | Rubik 600, 17–18pt, sentence case | YES | `Button.tsx:43` labelSize; appWide "sentence case" |
 | Press 0.96 + 6% darker, 120ms, light haptic, no overshoot; appear 180ms fade + 8pt | YES | `ui/PressableScale.tsx:12`, `ui/Appear.tsx:9`; buttons "press is 96%…"; appWide "presses use timing, not springs" |
 | Nothing loops except Go now fill and Tracky idle, both off with Reduce Motion | YES | speedometer pulse → one bump; LIVE dot steady; `MapScreen.tsx:4812`; appWide "nothing loops…", "both stop with Reduce Motion" |
+
+## 14. Lane guidance + exit/merge zoom (branch `lane-guidance`)
+
+| Requirement | Done? | Evidence |
+|---|---|---|
+| Navigated route from Mapbox driving-traffic (steps, banners, voice, overview full, polyline6, congestion+maxspeed, alternatives) | YES (falls back to the picked Google route without a token/signal) | `services/mapboxDirections.ts` directionsUrl; `services/navRouting.ts`; MapScreen startRoute swap; routing test "asks driving-traffic for…" |
+| Parse manoeuvre type/modifier, exit number, road ref, lanes (indications, valid, valid_indication, active), banner lane components, guidance view | YES | `toAppSteps`; routing tests (real recorded route + Mapbox-shaped response) |
+| Lane strip from 1 km, valid lanes white on blue and larger, others grey on dark, own SVG arrows | YES | `components/nav/LaneStrip.tsx`, `LaneArrow.tsx`; NavigationInstructionCard; laneStrip tests |
+| No fake lanes | YES | `lanesAreUseful`, routing "no lane data means no lanes" |
+| Voice: "In 400 m, keep left, use the two left lanes to take exit 3B"; recorded clips + TTS | YES | `navSpeechPlan.laneLine`; laneStrip "spoken lane guidance" tests |
+| Approach zoom: 200 m / 400 m above 90 km/h; exits, merges, lane changes, splits, complex intersections, roundabouts | YES | `nav/manoeuvre.ts`, `nav/approach.ts`; approach tests |
+| Camera 1.2 s, z18, 60°, centred ahead | YES | `APPROACH_CAMERA`; MapScreen dispatchApproach + per-tick follow centre |
+| Highlight: wider/brighter route, exit-side glow, split callout, turn arrow | YES | `MapboxLayers` manoeuvre-through / manoeuvre-glow / callout; existing nav-turn-arrow |
+| Junction view card when present | YES (rare in Australia) | `components/nav/JunctionViewCard.tsx` |
+| Hide non-essential pins during zoom | YES | MapScreen `approachDrawing` filters pins/presences |
+| Correct: green chip 2 s + chime, ease back 1.5 s | YES | approach "taking the exit…" on the real route |
+| Missed: ease back, "Rerouting…", Mapbox reroute (traffic, Avoid, no U-turn), "Rerouting" + new instruction, ~2 s, duplicates cancelled | YES | approach "missing the exit…"; `mapboxReroute` (2.5 s timeout), `pickReroute`, reroute abort; routing "a new reroute cancels…" |
+| Never stuck zoomed in | YES | approach "never gets stuck" tests (pan, reroute, failure, arrival, new route) |
+| Two recorded Sydney test drives (taken / missed) | YES | `src/dev/testRoutes/*.json`, `src/dev/testDrives.ts`, Settings › Developer |

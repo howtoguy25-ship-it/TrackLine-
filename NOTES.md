@@ -750,3 +750,37 @@ $ npx expo export --platform ios  iOS Bundled (2753 modules), exit 0
   a button is a `Button`, `Chip` or `FloatingButton` (a test scans for it).
 - **Reduce Motion** turns off the Go now countdown entirely (no fill, no auto-start; tap Go now),
   Tracky's idle bob, press scaling (the 6% darken stays) and the appear rise (a plain fade stays).
+
+## Lane guidance and the approach view (branch `lane-guidance`) — limits and decisions
+
+- **The route you drive comes from Mapbox** (`driving-traffic`, with steps, banner and voice
+  instructions, full polyline6 geometry, congestion and max-speed annotations, alternatives).
+  The drive starts at once on the route picked from the (Google) choices and switches to the
+  closest-matching Mapbox route as soon as Mapbox answers. If there's no Mapbox token, no signal
+  or an error, the picked route carries on: no lanes, the old green "keep left/right" exit banner,
+  and everything else as before. The public token is used directly (no Cloud Function proxy).
+- **Lanes are only ever the router's own data.** A manoeuvre with no lane data gets no strip and
+  no lane sentence. Lane data is OpenStreetMap's `turn:lanes` in Mapbox's Australian coverage, and
+  it is patchy: in the recorded test routes the Silverwater Road exit has lanes (4 lanes, the left
+  one for the exit), the M5 Marsh Street split has them, but the Hill Road, Centenary Drive and
+  Australia Avenue off-ramps and the M4 on-ramp merge have none. Expect the strip on some exits,
+  not all.
+- **Junction views (the big interchange picture)** are shown when Mapbox sends one. Australian
+  coverage is very limited, so on most manoeuvres there won't be one; the card simply doesn't appear.
+- **Exit numbers** come from Mapbox's banner "exit-number" component or the OSM `junction:ref` on
+  the ramp; Sydney motorways rarely sign numbered exits, so "take exit 3B" is uncommon here and
+  "take the exit to <road>" is the usual sentence.
+- **Lane sentences are English only.** In another navigation language the router's own
+  translated instruction is spoken without the lane part.
+- **Confirming a manoeuvre needs the driver clearly on the new road**: within 20 m of it, at least
+  15 m past the split, and 5 m nearer it than the road carrying straight on, for 3 s or 50 m. Ramps
+  run alongside the motorway at first (9 m apart 60 m past the Silverwater split), so the chip can
+  come a second or two after the split rather than exactly at it.
+- **Fixed a long-standing directions bug**: Google describes each step's manoeuvre at its start,
+  but the card, voice and countdown read it as the manoeuvre at the step's end, so the app
+  announced the turn just made, with the distance to the next one. Google steps are now shifted
+  (`manoeuvresAtStepEnds`); Mapbox steps are built the right way round.
+- **Test routes are real**: OSRM (router.project-osrm.org) responses over OpenStreetMap, the same
+  format as Mapbox Directions minus banner/voice instructions, recorded because this environment
+  has no Mapbox token. Settings › Developer has "M4 Silverwater exit (taken)" and "(missed)".
+- After a reroute the camera stays in the follow view (it no longer zooms out to the whole route).

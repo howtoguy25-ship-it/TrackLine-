@@ -200,6 +200,19 @@ Install the development build from the `mapbox-map` branch.
 - [ ] Settings › Map appearance › Dark: floating buttons turn dark grey with white icons.
 - [ ] iOS/Android Reduce Motion on: Go now has no countdown fill; Tracky stops bobbing; nothing else loops.
 
+## 13. Lane guidance on a real motorway — NEEDS DEVICE TEST
+
+Needs the Mapbox token in the build. Do these as a passenger, or note what you saw after parking.
+- [ ] Development build: Settings › Developer › "M4 Silverwater exit (taken)". The car drives onto the M4; ~1 km before the Silverwater Road exit the top card shows 4 lane tiles with the left one blue and a little bigger; the voice says "...keep left, use the left lane to take the exit to Silverwater Road".
+- [ ] Same drive, ~400 m before the exit (it's doing 90 km/h): the map zooms in and tilts (about 1 s), the route through the split is wider and brighter, the exit side glows, a label sits at the split, and other drivers and venue pins disappear meanwhile.
+- [ ] After the exit: a green "Exit taken ✓" chip under the top card with a soft chime (silent if sound is off), then the camera eases back to the normal view.
+- [ ] Settings › Developer › "M4 Silverwater exit (missed)": the car stays on the M4; within a few seconds of passing the exit the camera eases back, "Rerouting…" shows, you hear "Re-routing" and then the new first instruction, and a new route is drawn from where the car is.
+- [ ] Real drive: a motorway exit you know (e.g. M4 eastbound to Silverwater Rd, M5 eastbound to Marsh St). Lane tiles where the data has them; nothing where it doesn't (that's correct, not a bug).
+- [ ] Real drive: joining a motorway from an on-ramp. Approach zoom near the merge, then "Merge complete ✓".
+- [ ] Real drive: miss an exit on purpose where safe. Rerouting starts within a few seconds and the new route arrives in about 2 s.
+- [ ] Pan the map during an approach: the zoom stops and doesn't come back until the next manoeuvre.
+- [ ] Turn instructions now name the turn that's coming (not the one you've just done), with the right distance.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

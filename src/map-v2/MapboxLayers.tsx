@@ -14,7 +14,7 @@ import { iconsUsed, type MapPin } from "@/map-v2/pins";
 import type { PresenceDoc } from "@/services/presence";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
-import { GREEN, TRAFFIC } from "@/theme/colors";
+import { GREEN, LAVENDER, PURPLE_BRIGHT, TRAFFIC } from "@/theme/colors";
 
 // Everything drawn on the Mapbox map, from plain data the map screen already works out: the
 // route being driven (travelled part faded, turn callouts, the turn arrow), route choices
@@ -72,6 +72,8 @@ interface Props {
   pins: MapPin[];
   onPinPress: (pinId: string) => void;
   selectedComment: { coordinate: LatLng; text: string } | null;
+  /** During the approach view: the road through the manoeuvre, the road taken, and the label. */
+  manoeuvre?: { through: LatLng[]; exitSide: LatLng[]; callout: { coordinate: LatLng; text: string } | null } | null;
 }
 
 const FIXED_ICONS = [
@@ -146,6 +148,22 @@ export function MapboxLayers(props: Props) {
       {turnArrow.length > 1 && (
         <RouteLine id="nav-turn-arrow" coordinates={turnArrow} color="#FFFFFF" width={5} casingColor={ROUTE_PURPLE_CASING} casingWidth={9} aboveLayerID="nav-route-line" />
       )}
+      {/* Approach view: a soft glow on the road being taken, and the route through the split
+          wider and brighter on top of the normal route. */}
+      {props.manoeuvre && props.manoeuvre.exitSide.length > 1 && (
+        <RouteLine id="manoeuvre-glow" coordinates={props.manoeuvre.exitSide} color={LAVENDER} width={26} opacity={0.4} />
+      )}
+      {props.manoeuvre && props.manoeuvre.through.length > 1 && (
+        <RouteLine
+          id="manoeuvre-through"
+          coordinates={props.manoeuvre.through}
+          color={PURPLE_BRIGHT}
+          width={12}
+          casingColor="#FFFFFF"
+          casingWidth={18}
+          aboveLayerID="nav-route-line"
+        />
+      )}
       {props.stopPreview && <RouteLine id="stop-preview" coordinates={props.stopPreview} color={SUGGESTION_GREEN} width={7} />}
       {props.trafficSuggestion && (
         <RouteLine id="traffic-suggestion" coordinates={props.trafficSuggestion.line} color={SUGGESTION_GREEN} width={7} />
@@ -216,6 +234,15 @@ export function MapboxLayers(props: Props) {
           </View>
         </MarkerPin>
       )}
+      {props.manoeuvre?.callout && (
+        <MarkerPin coordinate={props.manoeuvre.callout.coordinate} anchor={{ x: 0.5, y: 1.25 }}>
+          <View style={styles.manoeuvreCallout} testID="manoeuvre-callout">
+            <Text style={styles.manoeuvreCalloutText} numberOfLines={1}>
+              {props.manoeuvre.callout.text}
+            </Text>
+          </View>
+        </MarkerPin>
+      )}
       {props.selectedComment && (
         <MarkerPin coordinate={props.selectedComment.coordinate} anchor={{ x: 0.5, y: 0 }}>
           <View style={styles.comment}>
@@ -269,4 +296,15 @@ const styles = StyleSheet.create({
   },
   commentText: { fontSize: 12, color: "#FFFFFF" },
   ghostSlot: { width: 28, height: 28 },
+  manoeuvreCallout: {
+    maxWidth: 200,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: "#3B0764",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+    ...shadow.medium,
+  },
+  manoeuvreCalloutText: { fontSize: 16, fontWeight: "700", color: "#FFFFFF" },
 });

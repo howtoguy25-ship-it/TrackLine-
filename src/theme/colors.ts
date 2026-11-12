@@ -32,6 +32,8 @@ export const BLACK = "#000000";
 export const PURPLE = "#6A1FD1";
 export const PURPLE_BEST = "#5212B8";
 export const LAVENDER = "#C9A8F5";
+/** The route through a manoeuvre during the approach view: the route purple, brightened. */
+export const PURPLE_BRIGHT = "#8A4DF0";
 export const RED = "#E5484D";
 /** Red for text on white or on the pale red fill (6.3:1 / 5.5:1; 4.8:1 on that fill pressed). */
 export const RED_TEXT = "#B8262B";
