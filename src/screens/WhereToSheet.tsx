@@ -1,5 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useRef, useState } from "react";
-import type { SharedValue } from "react-native-reanimated";
+import Animated, { SlideInDown, type SharedValue } from "react-native-reanimated";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import * as Crypto from "expo-crypto";
 import {
   View,
   FlatList,
@@ -10,10 +12,12 @@ import {
   Alert,
   Modal,
   Share,
+  ScrollView,
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, Rect } from "react-native-svg";
 import { ThreeSnapBottomSheet, type ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
 import { AddressKeypadAccessory, ADDRESS_KEYPAD_ACCESSORY_ID } from "@/components/AddressKeypadAccessory";
 import {
@@ -23,7 +27,17 @@ import {
   type PlacePrediction,
   type PlaceDetails,
 } from "@/services/places";
-import { getSearchHistory, addSearchHistoryEntry } from "@/services/searchHistory";
+import { getSearchHistory, addSearchHistoryEntry, removeSearchHistoryEntry } from "@/services/searchHistory";
+import { AUTOCOMPLETE_DEBOUNCE_MS, SearchSession, rankPredictions } from "@/services/searchRanking";
+import {
+  getCalendarPermissionStatus,
+  requestCalendarAccess,
+  getUpcomingEventsWithLocation,
+  type UpcomingDriveEvent,
+} from "@/services/calendarEvents";
+import { Tracky } from "@/components/trackys/Tracky";
+import type { TrackyMoodKey } from "@/components/trackys/moods";
+import { formatDistance } from "@/utils/navFormat";
 import {
   getSavedPlaces,
   setHomeOrWork,
@@ -57,24 +71,23 @@ import {
 // search (services/voiceSearch.ts): tap it, say a place, and the words fill the search box and
 // run the same search typing would.
 
-function formatPredictionDistance(meters: number): string {
-  return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
-}
 
-function predictionIconFor(types: string[] | undefined): { name: keyof typeof Ionicons.glyphMap; bg: string } {
+// Outlined icons for search results. A plain outlined pin for anything that isn't obviously a
+// station, airport, hotel, food place or park.
+function predictionIconFor(types: string[] | undefined): keyof typeof Ionicons.glyphMap {
   const t = new Set(types ?? []);
   if (t.has("train_station") || t.has("transit_station") || t.has("subway_station") || t.has("light_rail_station")) {
-    return { name: "train", bg: "#1D4ED8" };
+    return "train-outline";
   }
-  if (t.has("bus_station")) return { name: "bus", bg: "#1D4ED8" };
-  if (t.has("airport")) return { name: "airplane", bg: "#1D4ED8" };
-  if (t.has("lodging")) return { name: "bed", bg: "#7C3AED" };
-  if (t.has("restaurant") || t.has("cafe") || t.has("food")) return { name: "restaurant", bg: "#EA580C" };
-  if (t.has("park")) return { name: "leaf", bg: "#16A34A" };
-  return { name: "location", bg: "#DC2626" };
+  if (t.has("bus_station")) return "bus-outline";
+  if (t.has("airport")) return "airplane-outline";
+  if (t.has("lodging")) return "bed-outline";
+  if (t.has("restaurant") || t.has("cafe") || t.has("food")) return "restaurant-outline";
+  if (t.has("park")) return "leaf-outline";
+  return "location-outline";
 }
 
-export type WhereToCategory = "saved" | "fuel" | "food" | "parking";
+export type WhereToCategory = "saved" | "fuel" | "food" | "parking" | "hotels";
 
 interface Props {
   biasLocation?: LatLng;
@@ -148,6 +161,18 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   const [contactsQuery, setContactsQuery] = useState("");
   const [drivingToContactId, setDrivingToContactId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The full-screen search (section 3 of the UI pass): opens over everything when the sheet's
+  // search field is tapped, closes when a place is chosen or the driver backs out.
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Why the last search came back empty-handed: offline is shown differently from a key/quota
+  // problem, and both differently from "nothing matches".
+  const [searchFailure, setSearchFailure] = useState<"offline" | "service" | null>(null);
+  // One autocomplete billing session per search -- see services/searchRanking.ts.
+  const sessionRef = useRef(new SearchSession(() => Crypto.randomUUID()));
+  // Which query the current predictions answer, so "no results" is only claimed for the text
+  // that was actually searched (not for a keystroke still waiting out the debounce).
+  const [answeredQuery, setAnsweredQuery] = useState("");
+  const { settings } = useSettings();
   const micNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -181,48 +206,71 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
       if (!text.trim()) {
         setPredictions([]);
         setErrorText(null);
+        setSearchFailure(null);
+        setAnsweredQuery("");
         return;
       }
       debounceRef.current = setTimeout(async () => {
         setLoading(true);
         setErrorText(null);
+        setSearchFailure(null);
         try {
-          const results = await searchPlaces(text, biasLocation);
-          const sorted = [...results].sort(
-            (a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity)
-          );
-          setPredictions(sorted);
+          const results = await searchPlaces(text, biasLocation, sessionRef.current.forAutocomplete());
+          setPredictions(rankPredictions(results, text));
+          setAnsweredQuery(text);
         } catch (err) {
           setPredictions([]);
-          setErrorText(
-            err instanceof PlacesApiError
-              ? /billing/i.test(err.message)
+          setAnsweredQuery(text);
+          if (err instanceof PlacesApiError) {
+            setSearchFailure("service");
+            setErrorText(
+              /billing/i.test(err.message)
                 ? "Search unavailable -- billing isn't enabled on this app's Google Cloud project"
                 : `Search unavailable (${err.status}) -- check the Places API key`
-              : "Search failed -- check your connection"
-          );
+            );
+          } else {
+            setSearchFailure("offline");
+            setErrorText(null);
+          }
         } finally {
           setLoading(false);
         }
-      }, 300);
+      }, AUTOCOMPLETE_DEBOUNCE_MS);
     },
     [biasLocation]
   );
 
   const resetSearch = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setQuery("");
     setPredictions([]);
+    setAnsweredQuery("");
+    setSearchFailure(null);
+    setErrorText(null);
     setPickTarget("route");
+    setActiveCategory(null);
+    setSearchOpen(false);
+    sessionRef.current.abandon();
     Keyboard.dismiss();
+  }, []);
+
+  /** Opens the full-screen search, for a destination or to fill a saved-place slot. */
+  const openSearch = useCallback((target: PickTarget = "route") => {
+    setActiveCategory(null);
+    setPickTarget(target);
+    setQuery("");
+    setPredictions([]);
+    setAnsweredQuery("");
+    setErrorText(null);
+    setSearchFailure(null);
+    setSearchOpen(true);
   }, []);
 
   const handlePicked = useCallback(
     async (place: PlaceDetails) => {
       if (pickTarget === "route") {
-        setQuery(place.name);
-        setPredictions([]);
-        Keyboard.dismiss();
         addSearchHistoryEntry(place).then(setHistory);
+        resetSearch();
         onDestinationSelected(place);
         return;
       }
@@ -275,7 +323,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
   const onSelectPrediction = useCallback(
     async (prediction: PlacePrediction) => {
       try {
-        const details = await getPlaceDetails(prediction.placeId);
+        const details = await getPlaceDetails(prediction.placeId, sessionRef.current.forDetails());
         handlePicked(details);
       } catch (err) {
         setErrorText(
@@ -288,16 +336,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     [handlePicked]
   );
 
-  const beginPicking = useCallback(
-    (target: PickTarget) => {
-      setActiveCategory(null);
-      setPickTarget(target);
-      setQuery("");
-      setPredictions([]);
-      if (ref && typeof ref !== "function") ref.current?.expandHalf();
-    },
-    [ref]
-  );
+  const beginPicking = openSearch;
 
   const onPressHomeOrWork = useCallback(
     (slot: SavedPlaceSlot) => {
@@ -351,7 +390,8 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     Keyboard.dismiss();
     setMicNote(null);
     setListening(true);
-    if (ref && typeof ref !== "function") ref.current?.expandHalf();
+    // What's heard is typed into the search screen, so that's where listening happens.
+    setSearchOpen(true);
     const session = await startVoiceSearch(navLanguage, {
       onPartial: onChangeText,
       onFinal: onChangeText,
@@ -364,7 +404,7 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     voiceSessionRef.current = session;
     // Never got as far as listening (no permission, not available): onEnd won't be coming.
     if (!session) setListening(false);
-  }, [listening, navLanguage, onChangeText, ref, showMicNote]);
+  }, [listening, navLanguage, onChangeText, showMicNote]);
   // Leaving the screen mid-sentence must let go of the microphone.
   useEffect(() => {
     return () => voiceSessionRef.current?.stop();
@@ -418,19 +458,96 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
     ? contactsWithAddresses.filter((c) => c.name.toLowerCase().includes(contactsQuery.trim().toLowerCase()))
     : contactsWithAddresses;
 
+  // "More options" > calendar. Before access is given the row offers to connect; afterwards it
+  // shows the next event that has a location, and opens the list of them.
+  const [calendarStatus, setCalendarStatus] = useState<"granted" | "denied" | "undetermined" | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<UpcomingDriveEvent[]>([]);
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [drivingToEventId, setDrivingToEventId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getCalendarPermissionStatus()
+      .then(async (status) => {
+        if (cancelled) return;
+        setCalendarStatus(status);
+        if (status === "granted") {
+          const events = await getUpcomingEventsWithLocation();
+          if (!cancelled) setCalendarEvents(events);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const onPressCalendar = useCallback(async () => {
+    if (calendarStatus === "granted") {
+      setEventsOpen(true);
+      return;
+    }
+    const granted = await requestCalendarAccess().catch(() => false);
+    setCalendarStatus(granted ? "granted" : "denied");
+    if (!granted) {
+      Alert.alert("Calendar access is off", "You can turn it on for TrackLine in your phone's Settings.");
+      return;
+    }
+    setCalendarEvents(await getUpcomingEventsWithLocation().catch(() => []));
+    setEventsOpen(true);
+  }, [calendarStatus]);
+  const onPickEvent = useCallback(
+    async (event: UpcomingDriveEvent) => {
+      setDrivingToEventId(event.id);
+      try {
+        const found = await searchPlaces(event.location, biasLocation);
+        if (found.length === 0) {
+          Alert.alert("Couldn't find that address", `No match found for "${event.location}".`);
+          return;
+        }
+        const place = await getPlaceDetails(found[0].placeId);
+        setEventsOpen(false);
+        onDestinationSelected(place);
+      } catch {
+        Alert.alert("Couldn't look up that address", "Check your connection and try again.");
+      } finally {
+        setDrivingToEventId(null);
+      }
+    },
+    [biasLocation, onDestinationSelected]
+  );
+  const nextEvent = calendarEvents[0];
+
+  const onRemoveRecent = useCallback(async (placeId: string) => {
+    setHistory(await removeSearchHistoryEntry(placeId));
+  }, []);
+
+  const onLongPressCustomPlace = useCallback(
+    (placeId: string, name: string) => {
+      Alert.alert(name, "Remove this saved place?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => persistSaved(await removeCustomPlace(placeId)),
+        },
+      ]);
+    },
+    [persistSaved]
+  );
+
   const onPressCategory = useCallback(
     (category: WhereToCategory) => {
       if (category === "saved") {
         setActiveCategory((v) => (v === "saved" ? null : "saved"));
-        if (ref && typeof ref !== "function") ref.current?.expandHalf();
         return;
       }
       setActiveCategory(null);
+      resetSearch();
       if (category === "fuel") onFindPetrol();
       else if (category === "food") onFindRestaurants();
       else if (category === "parking") onFindParking();
+      else if (category === "hotels") onFindHotels();
     },
-    [ref, onFindPetrol, onFindRestaurants, onFindParking]
+    [onFindPetrol, onFindRestaurants, onFindParking, onFindHotels, resetSearch]
   );
 
   const picking = pickTarget !== "route";
@@ -444,9 +561,10 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
           : pickTarget === "share"
             ? "Share a drive to…"
             : null;
-  const showPredictions = predictions.length > 0;
-  const showHistory = !picking && !query.trim() && predictions.length === 0 && history.length > 0 && activeCategory === null;
-  const showSavedList = activeCategory === "saved" && !picking && !query.trim();
+  const typed = query.trim();
+  const showSavedList = activeCategory === "saved" && !picking && !typed;
+  // "Nothing matches" is only said for the text that was actually searched, once the answer is in.
+  const showNoResults = !!typed && !loading && !searchFailure && answeredQuery === query && predictions.length === 0;
 
   return (
     <>
@@ -459,183 +577,215 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
       visibleHeight={visibleHeight}
     >
       <View style={styles.content}>
-        <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
+        {/* The search field. Tapping it opens the full-screen search -- the sheet itself never
+            shows a keyboard. */}
+        <Pressable
+          style={({ pressed }) => [styles.field, pressed && { opacity: pressedOpacity }]}
+          onPress={() => openSearch("route")}
+          accessibilityRole="search"
+          accessibilityLabel="Where to? Search for a place"
+        >
+          <Ionicons name="search" size={24} color={colors.textMuted} />
+          <Text style={styles.fieldPlaceholder}>Where to?</Text>
+          <Pressable onPress={onPressMic} hitSlop={12} accessibilityRole="button" accessibilityLabel="Search by voice">
+            <Ionicons name="mic" size={24} color={colors.text} />
+          </Pressable>
+        </Pressable>
 
-          {picking && (
-            <View style={styles.pickingBanner}>
-              <Text style={styles.pickingBannerText}>{pickingLabel}</Text>
-              <Pressable onPress={resetSearch} hitSlop={10} accessibilityLabel="Cancel">
-                <Ionicons name="close-circle" size={20} color={colors.textFaint} />
-              </Pressable>
-            </View>
+        {/* Home, Work, the driver's own saved places, then + New -- scrolling sideways once
+            there are more than fit. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.slotRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          <SlotChip
+            label="Home"
+            icon={<HomeGlyph />}
+            onPress={() => onPressHomeOrWork("home")}
+            onLongPress={() => onLongPressHomeOrWork("home")}
+          />
+          <SlotChip
+            label="Work"
+            icon={<WorkGlyph />}
+            onPress={() => onPressHomeOrWork("work")}
+            onLongPress={() => onLongPressHomeOrWork("work")}
+          />
+          {saved.custom.map((place) => (
+            <SlotChip
+              key={place.placeId}
+              label={place.label ?? place.name}
+              icon={<Ionicons name="bookmark" size={20} color="#7C3AED" />}
+              onPress={() => onDestinationSelected(place)}
+              onLongPress={() => onLongPressCustomPlace(place.placeId, place.label ?? place.name)}
+            />
+          ))}
+          <SlotChip
+            label="New"
+            icon={<Ionicons name="add" size={22} color={colors.accent} />}
+            link
+            onPress={() => beginPicking("custom")}
+          />
+        </ScrollView>
+
+        <ScrollView style={styles.listFlex} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
+          {history.length > 0 && <Text style={styles.sectionLabel}>Recent</Text>}
+          {history.map((item) => (
+            <RecentRow
+              key={item.placeId}
+              place={item}
+              onPress={() => onDestinationSelected(item)}
+              onDelete={() => onRemoveRecent(item.placeId)}
+            />
+          ))}
+
+          <Text style={styles.sectionLabel}>More options</Text>
+          <OptionRow
+            icon="people-outline"
+            title="Drive to friends & family"
+            subtitle="Search contacts"
+            onPress={onOpenContactsPicker}
+          />
+          <OptionRow
+            icon="calendar-outline"
+            title={calendarStatus === "granted" ? "Upcoming events" : "Connect calendar"}
+            subtitle={
+              calendarStatus !== "granted"
+                ? "Get to events on time"
+                : nextEvent
+                  ? `${nextEvent.title} · ${nextEvent.startDate.toLocaleString(undefined, {
+                      weekday: "short",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}`
+                  : "No upcoming events with a location"
+            }
+            onPress={onPressCalendar}
+          />
+          {onFindNearestStation && (
+            <OptionRow
+              icon="train-outline"
+              title="Nearest train/bus station"
+              subtitle={findingNearestStation ? "Finding the closest stop…" : "Walking directions to the closest stop"}
+              onPress={onFindNearestStation}
+              busy={findingNearestStation}
+            />
           )}
+          <OptionRow
+            icon="share-outline"
+            title="Share drive"
+            subtitle="Send someone a link to a place"
+            onPress={() => openSearch("share")}
+          />
+        </ScrollView>
+      </View>
+    </ThreeSnapBottomSheet>
 
-          <View style={styles.inputRow}>
-            <View style={styles.searchIconWrap}>
-              <Ionicons name="search" size={18} color={colors.accent} />
-            </View>
+    {/* ---------------- The full-screen search ---------------- */}
+    <Modal visible={searchOpen} transparent animationType="none" onRequestClose={resetSearch} statusBarTranslucent>
+      <Animated.View entering={SlideInDown.duration(250)} style={[styles.searchScreen, { paddingTop: insets.top + spacing.sm }]}>
+        {picking && (
+          <View style={styles.pickingBanner}>
+            <Text style={styles.pickingBannerText}>{pickingLabel}</Text>
+          </View>
+        )}
+        <View style={styles.searchTopRow}>
+          <Pressable onPress={resetSearch} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+            <Ionicons name="chevron-back" size={28} color={colors.textMuted} />
+          </Pressable>
+          <View style={styles.searchField}>
             <TextInput
               value={query}
               onChangeText={onChangeText}
-              onFocus={() => {
-                if (ref && typeof ref !== "function") ref.current?.expandHalf();
-                setAddressInputFocused(true);
-              }}
+              autoFocus
+              onFocus={() => setAddressInputFocused(true)}
               onBlur={() => setAddressInputFocused(false)}
-              placeholder={picking ? "Search address…" : "Where to?"}
+              placeholder={picking ? "Search address" : "Where to?"}
               placeholderTextColor={colors.textFaint}
-              style={styles.input}
+              selectionColor={colors.primary}
+              style={styles.searchInput}
+              returnKeyType="search"
+              autoCorrect={false}
               inputAccessoryViewID={ADDRESS_KEYPAD_ACCESSORY_ID}
             />
             {loading && <ActivityIndicator size="small" color={colors.accent} />}
-            {!picking && (
+            {query.length > 0 ? (
+              <Pressable onPress={() => onChangeText("")} hitSlop={12} accessibilityLabel="Clear search">
+                <Ionicons name="close-circle" size={22} color={colors.textFaint} />
+              </Pressable>
+            ) : (
               <Pressable
                 onPress={onPressMic}
-                hitSlop={10}
+                hitSlop={12}
                 accessibilityRole="button"
                 accessibilityLabel={listening ? "Stop listening" : "Search by voice"}
                 accessibilityState={{ selected: listening }}
               >
-                <Ionicons
-                  name={listening ? "mic" : "mic-outline"}
-                  size={20}
-                  color={listening ? colors.danger : colors.textMuted}
-                />
+                <Ionicons name={listening ? "mic" : "mic-outline"} size={22} color={listening ? colors.danger : colors.text} />
               </Pressable>
             )}
           </View>
-          {listening && <Text style={[styles.micNote, { color: colors.danger }]}>Listening… say where you want to go</Text>}
-          {!!micNote && !listening && <Text style={styles.micNote}>{micNote}</Text>}
-          <AddressKeypadAccessory
-            visible={addressInputFocused}
-            onKeyPress={(char) => onChangeText(query + char)}
-          />
+        </View>
+        {listening && <Text style={[styles.micNote, { color: colors.danger }]}>Listening… say where you want to go</Text>}
+        {!!micNote && !listening && <Text style={styles.micNote}>{micNote}</Text>}
+        <AddressKeypadAccessory visible={addressInputFocused} onKeyPress={(char) => onChangeText(query + char)} />
 
-          {!picking && (
-            <>
-              <View style={styles.chipsRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.slotChip, pressed && { opacity: pressedOpacity }]}
-                  onPress={() => onPressHomeOrWork("home")}
-                  onLongPress={() => onLongPressHomeOrWork("home")}
-                >
-                  <Ionicons name="home" size={15} color={colors.accent} />
-                  <Text style={styles.slotChipText}>Home</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.slotChip, pressed && { opacity: pressedOpacity }]}
-                  onPress={() => onPressHomeOrWork("work")}
-                  onLongPress={() => onLongPressHomeOrWork("work")}
-                >
-                  <Ionicons name="briefcase" size={15} color={colors.accent} />
-                  <Text style={styles.slotChipText}>Work</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.slotChip, pressed && { opacity: pressedOpacity }]}
-                  onPress={() => beginPicking("custom")}
-                >
-                  <Ionicons name="add" size={15} color={colors.accent} />
-                  <Text style={styles.slotChipText}>New</Text>
-                </Pressable>
-              </View>
+        {!typed && !picking && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            <CategoryChip icon="bookmark" label="Saved" active={activeCategory === "saved"} onPress={() => onPressCategory("saved")} />
+            <CategoryChip icon="car" label="Fuel" onPress={() => onPressCategory("fuel")} />
+            <CategoryChip icon="restaurant" label="Food" onPress={() => onPressCategory("food")} />
+            <CategoryChip icon="square-outline" label="Parking" onPress={() => onPressCategory("parking")} />
+            <CategoryChip icon="bed" label="Hotels" onPress={() => onPressCategory("hotels")} />
+          </ScrollView>
+        )}
 
-              <View style={styles.chipsRow}>
-                <CategoryChip
-                  icon="bookmark"
-                  label="Saved"
-                  active={activeCategory === "saved"}
-                  onPress={() => onPressCategory("saved")}
-                />
-                <CategoryChip icon="car" label="Fuel" onPress={() => onPressCategory("fuel")} />
-                <CategoryChip icon="restaurant" label="Food" onPress={() => onPressCategory("food")} />
-                <CategoryChip icon="square-outline" label="Parking" onPress={() => onPressCategory("parking")} />
-              </View>
+        {typed && searchFailure === "offline" && (
+          <EmptyState mood="rainy" title="You're offline" body="Search needs a connection. Check your signal and try again." />
+        )}
+        {typed && searchFailure === "service" && !!errorText && (
+          <EmptyState mood="grumpy" title="Search isn't working right now" body={errorText} />
+        )}
+        {showNoResults && (
+          <EmptyState mood="focused" title="No places found" body={`Nothing matches "${typed}". Try a street, suburb or business name.`} />
+        )}
 
-              {onFindNearestStation && !query.trim() && activeCategory === null && (
-                <Pressable
-                  style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
-                  onPress={onFindNearestStation}
-                  disabled={findingNearestStation}
-                >
-                  {findingNearestStation ? (
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  ) : (
-                    <Ionicons name="train-outline" size={18} color={colors.accent} />
-                  )}
-                  <Text style={styles.quickActionText}>
-                    {findingNearestStation ? "Finding nearest station…" : "Nearest train/bus station"}
-                  </Text>
-                </Pressable>
-              )}
-
-              {!query.trim() && activeCategory === null && (
-                <Pressable
-                  style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
-                  onPress={onOpenContactsPicker}
-                >
-                  <Ionicons name="people-outline" size={18} color={colors.accent} />
-                  <Text style={styles.quickActionText}>Drive to friends & family</Text>
-                </Pressable>
-              )}
-
-              {!query.trim() && activeCategory === null && (
-                <Pressable
-                  style={({ pressed }) => [styles.quickAction, pressed && styles.rowPressed]}
-                  onPress={() => {
-                    setPickTarget("share");
-                    if (ref && typeof ref !== "function") ref.current?.expandHalf();
-                  }}
-                >
-                  <Ionicons name="share-outline" size={18} color={colors.accent} />
-                  <Text style={styles.quickActionText}>Share drive</Text>
-                </Pressable>
-              )}
-            </>
-          )}
-
-          {!!errorText && (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={16} color={colors.danger} />
-              <Text style={styles.errorText}>{errorText}</Text>
-            </View>
-          )}
-        </Pressable>
-
-        {showPredictions && (
+        {typed && predictions.length > 0 && (
           <FlatList
             data={predictions}
             keyExtractor={(item) => item.placeId}
             style={styles.listFlex}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
-            renderItem={({ item }) => {
-              const { name: iconName, bg: iconBg } = predictionIconFor(item.types);
-              return (
-                <Pressable
-                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                  onPress={() => onSelectPrediction(item)}
-                >
-                  <View style={[styles.predictionIconWrap, { backgroundColor: iconBg }]}>
-                    <Ionicons name={iconName} size={16} color="#FFFFFF" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.predictionTitleRow}>
-                      <Text style={styles.primaryText} numberOfLines={1}>
-                        {item.primaryText}
-                      </Text>
-                      {item.distanceMeters !== undefined && (
-                        <Text style={styles.predictionDistance}>{formatPredictionDistance(item.distanceMeters)}</Text>
-                      )}
-                    </View>
-                    {!!item.secondaryText && (
-                      <Text style={styles.secondaryText} numberOfLines={1}>
-                        {item.secondaryText}
-                      </Text>
-                    )}
-                  </View>
-                </Pressable>
-              );
-            }}
+            renderItem={({ item }) => (
+              <Pressable
+                style={({ pressed }) => [styles.resultRow, pressed && styles.rowPressed]}
+                onPress={() => onSelectPrediction(item)}
+              >
+                <View style={styles.resultIcon}>
+                  <Ionicons name={predictionIconFor(item.types)} size={28} color={colors.textMuted} />
+                </View>
+                <View style={styles.resultText}>
+                  <Text style={styles.resultTitle} numberOfLines={1}>
+                    {item.primaryText}
+                  </Text>
+                  {!!item.secondaryText && (
+                    <Text style={styles.resultSubtitle} numberOfLines={1}>
+                      {item.secondaryText}
+                    </Text>
+                  )}
+                </View>
+                {item.distanceMeters !== undefined && (
+                  <Text style={styles.resultDistance}>{formatDistance(item.distanceMeters, settings.distanceUnit)}</Text>
+                )}
+              </Pressable>
+            )}
           />
         )}
 
@@ -644,106 +794,143 @@ export const WhereToSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(function 
             data={saved.custom}
             keyExtractor={(item) => item.placeId}
             style={styles.listFlex}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
             ListEmptyComponent={
-              <Text style={styles.emptyText}>No saved places yet -- tap &quot;New&quot; above to add one.</Text>
+              <EmptyState mood="chill" title="No saved places yet" body={'Tap "+ New" on the map to save one.'} />
             }
             renderItem={({ item }) => (
-              <View style={styles.row}>
-                <Pressable style={styles.historyRowMain} onPress={() => onDestinationSelected(item)}>
-                  <Ionicons name="bookmark" size={16} color={colors.accent} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.primaryText} numberOfLines={1}>
-                      {item.label ?? item.name}
-                    </Text>
-                    <Text style={styles.secondaryText} numberOfLines={1}>
-                      {item.address}
-                    </Text>
-                  </View>
-                </Pressable>
-                <Pressable
-                  onPress={async () => {
-                    const next = await removeCustomPlace(item.placeId);
-                    persistSaved(next);
-                  }}
-                  hitSlop={10}
-                  style={styles.historyRemoveButton}
-                  accessibilityLabel={`Remove ${item.name}`}
-                >
-                  <Ionicons name="close" size={16} color={colors.textFaint} />
-                </Pressable>
-              </View>
-            )}
-          />
-        )}
-
-        {showHistory && (
-          <FlatList
-            data={history}
-            keyExtractor={(item) => item.placeId}
-            style={styles.listFlex}
-            contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
-            ListHeaderComponent={<Text style={styles.historyHeaderText}>Recent searches</Text>}
-            renderItem={({ item }) => (
-              <Pressable style={styles.row} onPress={() => onDestinationSelected(item)}>
-                <Ionicons name="time-outline" size={16} color={colors.textMuted} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.primaryText} numberOfLines={1}>
-                    {item.name}
+              <Pressable
+                style={({ pressed }) => [styles.resultRow, pressed && styles.rowPressed]}
+                onPress={() => {
+                  resetSearch();
+                  onDestinationSelected(item);
+                }}
+                onLongPress={() => onLongPressCustomPlace(item.placeId, item.label ?? item.name)}
+              >
+                <View style={styles.resultIcon}>
+                  <Ionicons name="bookmark-outline" size={26} color={colors.textMuted} />
+                </View>
+                <View style={styles.resultText}>
+                  <Text style={styles.resultTitle} numberOfLines={1}>
+                    {item.label ?? item.name}
                   </Text>
-                  {!!item.address && (
-                    <Text style={styles.secondaryText} numberOfLines={1}>
-                      {item.address}
-                    </Text>
-                  )}
+                  <Text style={styles.resultSubtitle} numberOfLines={1}>
+                    {item.address}
+                  </Text>
                 </View>
               </Pressable>
             )}
           />
         )}
-      </View>
-    </ThreeSnapBottomSheet>
 
-    <Modal visible={!!namingPlace} transparent animationType="fade" onRequestClose={cancelNamingPlace}>
-      <View style={styles.nameModalOverlay}>
-        <View style={styles.nameModalCard}>
-          <Text style={styles.nameModalTitle}>Name this place</Text>
-          {!!namingPlace?.address && (
-            <Text style={styles.nameModalAddress} numberOfLines={2}>
-              {namingPlace.address}
-            </Text>
-          )}
-          <TextInput
-            value={placeName}
-            onChangeText={setPlaceName}
-            placeholder="e.g. Mum's, Gym, School"
-            placeholderTextColor={colors.textFaint}
-            style={styles.nameModalInput}
-            maxLength={40}
-            autoFocus
-            selectTextOnFocus
-            returnKeyType="done"
-            onSubmitEditing={confirmNamedPlace}
-          />
-          <View style={styles.nameModalActions}>
-            <Pressable
-              style={({ pressed }) => [styles.nameModalButton, pressed && { opacity: pressedOpacity }]}
-              onPress={cancelNamingPlace}
-            >
-              <Text style={styles.nameModalButtonTextMuted}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.nameModalButton,
-                styles.nameModalButtonPrimary,
-                pressed && { opacity: pressedOpacity },
-              ]}
-              onPress={confirmNamedPlace}
-            >
-              <Text style={styles.nameModalButtonTextPrimary}>Save</Text>
-            </Pressable>
+        {!typed && !showSavedList && (
+          <ScrollView style={styles.listFlex} keyboardShouldPersistTaps="handled">
+            {history.length > 0 ? (
+              <>
+                <Text style={[styles.sectionLabel, { paddingHorizontal: spacing.lg }]}>Recent</Text>
+                {history.map((item) => (
+                  <RecentRow
+                    key={item.placeId}
+                    place={item}
+                    inset
+                    onPress={() => handlePicked(item)}
+                    onDelete={() => onRemoveRecent(item.placeId)}
+                  />
+                ))}
+              </>
+            ) : (
+              <EmptyState mood="chill" title="Where are we off to?" body="Search for a place, an address or a business." />
+            )}
+          </ScrollView>
+        )}
+
+        {/* "+ New": name the place that was just picked. An overlay inside this screen rather
+            than a second Modal -- iOS won't present one modal while another is on screen. */}
+        {!!namingPlace && (
+          <View style={styles.nameModalOverlay}>
+            <View style={styles.nameModalCard}>
+              <Text style={styles.nameModalTitle}>Name this place</Text>
+              {!!namingPlace.address && (
+                <Text style={styles.nameModalAddress} numberOfLines={2}>
+                  {namingPlace.address}
+                </Text>
+              )}
+              <TextInput
+                value={placeName}
+                onChangeText={setPlaceName}
+                placeholder="e.g. Mum's, Gym, School"
+                placeholderTextColor={colors.textFaint}
+                style={styles.nameModalInput}
+                maxLength={40}
+                autoFocus
+                selectTextOnFocus
+                returnKeyType="done"
+                onSubmitEditing={confirmNamedPlace}
+              />
+              <View style={styles.nameModalActions}>
+                <Pressable
+                  style={({ pressed }) => [styles.nameModalButton, pressed && { opacity: pressedOpacity }]}
+                  onPress={cancelNamingPlace}
+                >
+                  <Text style={styles.nameModalButtonTextMuted}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.nameModalButton, styles.nameModalButtonPrimary, pressed && { opacity: pressedOpacity }]}
+                  onPress={confirmNamedPlace}
+                >
+                  <Text style={styles.nameModalButtonTextPrimary}>Save</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
+        )}
+      </Animated.View>
+    </Modal>
+
+    {/* Upcoming calendar events that have a location -- tap one to get directions there. */}
+    <Modal visible={eventsOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEventsOpen(false)}>
+      <View style={[styles.contactsModal, { paddingTop: insets.top + spacing.md }]}>
+        <View style={styles.contactsModalHeader}>
+          <Text style={styles.contactsModalTitle}>Upcoming events</Text>
+          <Pressable onPress={() => setEventsOpen(false)} hitSlop={10} accessibilityLabel="Close">
+            <Ionicons name="close" size={22} color={colors.textMuted} />
+          </Pressable>
         </View>
+        {calendarEvents.length === 0 ? (
+          <EmptyState
+            mood="sleepy"
+            title="Nothing coming up"
+            body="Events in your calendar that have a location will show here."
+          />
+        ) : (
+          <FlatList
+            data={calendarEvents}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
+            renderItem={({ item }) => (
+              <Pressable
+                style={({ pressed }) => [styles.resultRow, pressed && styles.rowPressed]}
+                onPress={() => onPickEvent(item)}
+                disabled={drivingToEventId === item.id}
+              >
+                <View style={styles.resultIcon}>
+                  <Ionicons name="calendar-outline" size={26} color={colors.textMuted} />
+                </View>
+                <View style={styles.resultText}>
+                  <Text style={styles.resultTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.resultSubtitle} numberOfLines={1}>
+                    {item.startDate.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })} ·{" "}
+                    {item.location}
+                  </Text>
+                </View>
+                {drivingToEventId === item.id && <ActivityIndicator color={colors.accent} />}
+              </Pressable>
+            )}
+          />
+        )}
       </View>
     </Modal>
 
@@ -838,31 +1025,236 @@ function CategoryChip({
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.categoryChip,
-        active && styles.categoryChipActive,
-        pressed && { opacity: pressedOpacity },
-      ]}
+      style={({ pressed }) => [styles.categoryChip, active && styles.categoryChipActive, pressed && { opacity: pressedOpacity }]}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!active }}
     >
-      <Ionicons name={icon} size={15} color={active ? "#FFFFFF" : colors.text} />
+      <Ionicons name={icon} size={18} color={active ? "#FFFFFF" : colors.text} />
       <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{label}</Text>
     </Pressable>
   );
 }
 
+// Home and Work chip artwork: two small original drawings, not system icons.
+function HomeGlyph() {
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24">
+      <Path d="M3 11.2 L12 3.5 L21 11.2" stroke="#F97316" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d="M5.5 10 V20 H18.5 V10" fill="#38BDF8" />
+      <Rect x="10" y="13.5" width="4" height="6.5" rx="1" fill="#FFFFFF" />
+    </Svg>
+  );
+}
+
+function WorkGlyph() {
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24">
+      <Rect x="8.5" y="3.5" width="7" height="4" rx="1.4" stroke="#7C4A1E" strokeWidth={2} fill="none" />
+      <Rect x="3" y="7" width="18" height="13" rx="2.5" fill="#B7793D" />
+      <Rect x="3" y="11.5" width="18" height="2" fill="#7C4A1E" />
+      <Rect x="10.5" y="10.5" width="3" height="4" rx="0.8" fill="#FBBF24" />
+    </Svg>
+  );
+}
+
+function SlotChip({
+  label,
+  icon,
+  link,
+  onPress,
+  onLongPress,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  link?: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.slotChip, pressed && { opacity: pressedOpacity }]}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {icon}
+      <Text style={[styles.slotChipText, link && { color: colors.accent }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** A recent search. Swipe left to reveal Delete. */
+function RecentRow({
+  place,
+  inset,
+  onPress,
+  onDelete,
+}: {
+  place: PlaceDetails;
+  inset?: boolean;
+  onPress: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <ReanimatedSwipeable
+      friction={2}
+      rightThreshold={40}
+      overshootRight={false}
+      renderRightActions={() => (
+        <Pressable style={styles.deleteAction} onPress={onDelete} accessibilityRole="button" accessibilityLabel={`Delete ${place.name}`}>
+          <Text style={styles.deleteActionText}>Delete</Text>
+        </Pressable>
+      )}
+    >
+      <Pressable
+        style={({ pressed }) => [styles.resultRow, !inset && styles.resultRowFlush, pressed && styles.rowPressed]}
+        onPress={onPress}
+        accessibilityHint="Swipe left to delete"
+      >
+        <View style={styles.resultIcon}>
+          <Ionicons name="time-outline" size={26} color={colors.textMuted} />
+        </View>
+        <View style={styles.resultText}>
+          <Text style={styles.resultTitle} numberOfLines={1}>
+            {place.name}
+          </Text>
+          {!!place.address && (
+            <Text style={styles.resultSubtitle} numberOfLines={1}>
+              {place.address}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    </ReanimatedSwipeable>
+  );
+}
+
+/** A "More options" row: icon, title, and a blue line saying what it does. */
+function OptionRow({
+  icon,
+  title,
+  subtitle,
+  busy,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  busy?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.resultRow, styles.resultRowFlush, pressed && styles.rowPressed]}
+      onPress={onPress}
+      disabled={busy}
+      accessibilityRole="button"
+    >
+      <View style={styles.resultIcon}>
+        {busy ? <ActivityIndicator color={colors.accent} /> : <Ionicons name={icon} size={26} color={colors.textMuted} />}
+      </View>
+      <View style={styles.resultText}>
+        <Text style={styles.resultTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={[styles.resultSubtitle, { color: colors.accent }]} numberOfLines={1}>
+          {subtitle}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** Empty, no-results and offline states: a small Tracky and a line or two. */
+function EmptyState({ mood, title, body }: { mood: TrackyMoodKey; title: string; body: string }) {
+  return (
+    <View style={styles.emptyState}>
+      <Tracky mood={mood} size={72} />
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyBody}>{body}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
-  pressableFill: {},
-  originRow: {
+  // --- the sheet
+  field: {
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceMuted,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  fieldPlaceholder: { flex: 1, fontSize: 20, fontWeight: "400", color: colors.textFaint },
+  slotRow: { gap: spacing.sm, paddingTop: spacing.lg, paddingBottom: spacing.sm },
+  slotChip: {
+    height: 62,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: colors.chipBorder,
+    backgroundColor: colors.surface,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    minHeight: 36,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    maxWidth: 220,
   },
-  originText: { flex: 1, fontSize: 14, fontWeight: "700", color: colors.text },
-  originDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: spacing.sm },
+  slotChipText: { fontSize: 20, fontWeight: "600", color: colors.text },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.textMuted,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  // --- rows shared by the sheet and the search screen: icon column 68pt, divider inset to it
+  resultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 72,
+    paddingRight: spacing.lg,
+    backgroundColor: colors.surface,
+  },
+  resultRowFlush: { paddingRight: 0 },
+  resultIcon: { width: 68, alignItems: "center", justifyContent: "center" },
+  resultText: {
+    flex: 1,
+    alignSelf: "stretch",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  resultTitle: { fontSize: 20, fontWeight: "600", color: colors.text },
+  resultSubtitle: { fontSize: 15, fontWeight: "400", color: colors.textMuted, marginTop: 2 },
+  resultDistance: { fontSize: 17, fontWeight: "400", color: colors.textMuted, marginLeft: spacing.sm },
+  deleteAction: { width: 96, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" },
+  deleteActionText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+  // --- the full-screen search
+  searchScreen: { ...StyleSheet.absoluteFill, backgroundColor: colors.surface },
+  searchTopRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, paddingHorizontal: spacing.sm },
+  searchField: {
+    flex: 1,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceMuted,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  searchInput: { flex: 1, fontSize: 20, fontWeight: "400", color: colors.text, height: "100%" },
+  categoryRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  emptyState: { alignItems: "center", paddingHorizontal: spacing.xl, paddingTop: spacing.xl, gap: spacing.xs },
+  emptyTitle: { fontSize: 18, fontWeight: "600", color: colors.text, marginTop: spacing.sm, textAlign: "center" },
+  emptyBody: { fontSize: 15, color: colors.textMuted, textAlign: "center" },
   pickingBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -870,72 +1262,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   pickingBannerText: { fontSize: 13, fontWeight: "700", color: colors.accent },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.xl,
-    paddingHorizontal: spacing.md,
-    height: 52,
-    gap: spacing.sm + 2,
-    marginTop: spacing.xs,
-  },
-  searchIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.accentSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  input: { flex: 1, fontSize: 16, color: colors.text },
   micNote: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs, paddingHorizontal: spacing.xs },
-  chipsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
-  slotChip: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-  },
-  slotChipText: { fontSize: 13, fontWeight: "700", color: colors.text },
   categoryChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
+    height: 44,
     backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm - 2,
+    borderRadius: 22,
+    paddingHorizontal: spacing.lg,
   },
   categoryChipActive: { backgroundColor: colors.accent },
-  categoryChipText: { fontSize: 13, fontWeight: "700", color: colors.text },
+  categoryChipText: { fontSize: 16, fontWeight: "600", color: colors.text },
   categoryChipTextActive: { color: "#FFFFFF" },
-  quickAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.md - 2,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    marginTop: spacing.sm,
-  },
-  quickActionText: { fontSize: 14, fontWeight: "600", color: colors.accent },
-  errorBanner: {
-    marginTop: spacing.sm,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: "#FEF2F2",
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  errorText: { flex: 1, fontSize: 12, color: colors.danger },
   listFlex: { flex: 1, marginTop: spacing.sm },
   row: {
     flexDirection: "row",
@@ -946,20 +1285,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   rowPressed: { backgroundColor: colors.surfaceMuted },
-  historyRowMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.md },
-  historyRemoveButton: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  historyHeaderText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    marginBottom: spacing.xs,
-  },
-  emptyText: { fontSize: 13, color: colors.textMuted, paddingVertical: spacing.lg, textAlign: "center" },
   predictionIconWrap: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-  predictionTitleRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.xs + 2 },
-  predictionDistance: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
   primaryText: { flexShrink: 1, fontSize: 15, color: colors.text, fontWeight: "600" },
   secondaryText: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   nameModalOverlay: {
@@ -1010,4 +1336,5 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   contactsSearchInput: { flex: 1, fontSize: 15, color: colors.text },
+
 });

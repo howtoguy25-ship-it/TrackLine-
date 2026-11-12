@@ -5,6 +5,8 @@
 import { RUBIK, rubikFamilyForWeight } from "../src/theme/typography";
 import { scaleFor } from "../src/theme/scale";
 import { SETTINGS_VERSION, migrateStoredSettings } from "../src/services/settingsMigration";
+import { SearchSession, matchQuality, rankPredictions } from "../src/services/searchRanking";
+import { formatDistance } from "../src/utils/navFormat";
 import {
   ALERT_PIN_MAX,
   ALERT_PIN_MIN,
@@ -250,6 +252,58 @@ check("choosing satellite AFTER the reset sticks: an up-to-date phone is never t
   const again = migrateStoredSettings({ defaultMapViewStyle: "satellite3d", mapTheme: "dark" }, SETTINGS_VERSION);
   assert.equal(again.defaultMapViewStyle, "satellite3d");
   assert.equal(again.mapTheme, "dark");
+});
+
+console.log("§3 search results order");
+const p = (primaryText: string, distanceMeters?: number, secondaryText = "") => ({ primaryText, secondaryText, distanceMeters });
+check("a name that starts with the query beats one that only contains it as a later word", () => {
+  assert.equal(matchQuality(p("Bondi Beach"), "bond"), 0);
+  assert.equal(matchQuality(p("North Bondi"), "bond"), 1);
+  assert.equal(matchQuality(p("12 Smith St"), "bond"), 2);
+});
+check("matching ignores case, accents and extra spaces", () => {
+  assert.equal(matchQuality(p("Café Sydney"), "  CAFE  "), 0);
+});
+check("nearest first WITHIN a level of match -- a far exact name still beats a near loose one", () => {
+  const ranked = rankPredictions(
+    [p("North Bondi", 500), p("Bondi Beach", 9000), p("Bondi Junction", 4000), p("1 Bond St", 100)],
+    "bondi"
+  );
+  assert.equal(ranked.map((r) => r.primaryText).join(" | "), "Bondi Junction | Bondi Beach | North Bondi | 1 Bond St");
+});
+check("results without a distance go after those with one, otherwise in Google's own order", () => {
+  const ranked = rankPredictions([p("Bondi A"), p("Bondi B", 3000), p("Bondi C")], "bondi");
+  assert.equal(ranked.map((r) => r.primaryText).join(","), "Bondi B,Bondi A,Bondi C");
+});
+check("an empty query keeps Google's order untouched", () => {
+  const list = [p("Z", 900), p("A", 10)];
+  assert.equal(rankPredictions(list, "").map((r) => r.primaryText).join(","), "A,Z");
+});
+check("SESSION TOKENS: every keystroke of one search shares a token; choosing a result ends it", () => {
+  let n = 0;
+  const session = new SearchSession(() => `token-${++n}`);
+  const typed = ["b", "bo", "bon", "bond", "bondi"].map(() => session.forAutocomplete());
+  assert.ok(typed.every((t) => t === "token-1"));
+  assert.equal(session.forDetails(), "token-1");
+  assert.equal(session.active, false);
+  assert.equal(session.forAutocomplete(), "token-2"); // the next search is a new session
+});
+check("an abandoned search doesn't leak its token into the next one", () => {
+  let n = 0;
+  const session = new SearchSession(() => `t${++n}`);
+  session.forAutocomplete();
+  session.abandon();
+  assert.equal(session.forDetails(), undefined);
+  assert.equal(session.forAutocomplete(), "t2");
+});
+
+console.log("§3 distance formatting");
+check("under 1km in tens of metres, then kilometres to one decimal", () => {
+  assert.equal(formatDistance(347, "km"), "350 m");
+  assert.equal(formatDistance(3640, "km"), "3.6 km");
+});
+check("miles when the driver has chosen miles", () => {
+  assert.ok(/mi$/.test(formatDistance(5000, "miles")), formatDistance(5000, "miles"));
 });
 
 console.log(`\n${passed} checks passed`);

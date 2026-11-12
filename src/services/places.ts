@@ -35,7 +35,14 @@ export class PlacesApiError extends Error {
   }
 }
 
-export async function searchPlaces(query: string, biasLocation?: LatLng): Promise<PlacePrediction[]> {
+export async function searchPlaces(
+  query: string,
+  biasLocation?: LatLng,
+  // Pass the same token for every keystroke of one search, and again to getPlaceDetails for the
+  // result chosen: Google then bills the whole search as one session instead of per request
+  // (see services/searchRanking.ts -- SearchSession).
+  sessionToken?: string
+): Promise<PlacePrediction[]> {
   if (!query.trim()) return [];
 
   // No `types` restriction -- Google's default returns addresses, suburbs/localities,
@@ -46,7 +53,11 @@ export async function searchPlaces(query: string, biasLocation?: LatLng): Promis
   const params = new URLSearchParams({
     input: query,
     key: env.googlePlacesApiKey,
+    // Australia first: ranks Australian matches above same-named places overseas, without
+    // hiding the overseas ones (a hard country filter would).
+    region: "au",
   });
+  if (sessionToken) params.set("sessiontoken", sessionToken);
   if (biasLocation) {
     params.set("location", `${biasLocation.latitude},${biasLocation.longitude}`);
     params.set("radius", "50000");
@@ -384,12 +395,14 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
+export async function getPlaceDetails(placeId: string, sessionToken?: string): Promise<PlaceDetails> {
   const params = new URLSearchParams({
     place_id: placeId,
     key: env.googlePlacesApiKey,
     fields: "place_id,name,formatted_address,geometry",
   });
+  // Ends the autocomplete session this result came from (see searchPlaces).
+  if (sessionToken) params.set("sessiontoken", sessionToken);
 
   const res = await fetch(
     `https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`
