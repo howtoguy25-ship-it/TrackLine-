@@ -6,7 +6,14 @@ Live Traffic NSW, full settings reorg, etc.). Kept current so a new session can 
 where this one left off — see `CODEBASE_MAP.md` for what the repo looks like and `NOTES.md` for
 honest limitations/missing keys.
 
-## UI pass 2 — home, search, place page, route selection (latest)
+## Mapbox map + button fix (latest)
+
+- [x] Buttons-do-nothing fix (Menu was a native modal; screens opened behind it) — `e74a550`, dev build `ac01134e`
+- [x] Branch `mapbox-map`: §1 setup + §2 own style — `f8316a8`; §3 every map feature on Mapbox — `3248b15`;
+      §4 switch-over (react-native-maps removed) + §5 verification — this branch's latest commit
+- [ ] Device check: `TEST_ON_PHONE.md` §10 (buttons) and §11 (new map)
+
+## UI pass 2 — home, search, place page, route selection
 
 All six sections done on `claude/go-session-0d5bup` (see `AUDIT.md` §10 for the
 requirement-by-requirement table, `NOTES.md` "UI pass 2" for limits and the verification output):

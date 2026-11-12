@@ -15,7 +15,6 @@ import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
 import { VehicleDetectionErrorBoundary } from "@/components/VehicleDetectionErrorBoundary";
-import { MapboxMapScreen } from "@/screens/MapboxMapScreen";
 import { VoicePickerScreen } from "@/screens/VoicePickerScreen";
 import { RecordVoiceScreen } from "@/screens/RecordVoiceScreen";
 import { navigationIntegration } from "@/services/sentry";
@@ -97,7 +96,6 @@ export type RootStackParamList = {
   // MapLibreReactNativeSpec-generated.o"). Real Mapbox was the user's own explicit engine
   // choice, so the now-superseded, already-broken-by-this prototype was deleted rather than the
   // real engine.
-  MapboxMapPreview: undefined;
   // Phase 3 of the Waze-style redesign -- the real "Current voice" picker (search, Recommended/
   // My recorded voices/All languages sections, consent modal). See VoicePickerScreen.tsx.
   VoicePicker: undefined;
@@ -216,11 +214,6 @@ export function RootNavigator() {
           name="DocumentScan"
           component={DocumentScanScreen}
           options={{ presentation: MODAL_SCREENS.DocumentScan as "modal" }}
-        />
-        <Stack.Screen
-          name="MapboxMapPreview"
-          component={MapboxMapScreen}
-          options={{ headerShown: true, title: "Mapbox map preview" }}
         />
         <Stack.Screen
           name="VoicePicker"

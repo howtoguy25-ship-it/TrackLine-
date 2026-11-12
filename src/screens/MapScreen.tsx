@@ -12,20 +12,10 @@ import {
   Linking,
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
-import MapView, {
-  PROVIDER_GOOGLE,
-  Polyline,
-  Marker,
-  Circle,
-  type Region,
-  type MapPressEvent,
-  type PoiClickEvent,
-} from "react-native-maps";
-import { Map3DView, isMap3DSupported, type Map3DViewHandle } from "map3d";
 import { TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
 import { MapboxLayers } from "@/map-v2/MapboxLayers";
-import { USE_MAPBOX } from "@/map-v2/flag";
 import { isMapboxUsable } from "@/map-v2/mapbox";
+import type { Region } from "@/map-v2/geo";
 import type { MapPin } from "@/map-v2/pins";
 import { startSimulatedDrive, stopSimulatedDrive } from "@/dev/simulateDrive";
 import { isGpsReplayActive, subscribeGpsReplayActiveChange } from "@/dev/gpsReplay";
@@ -39,7 +29,6 @@ import { useNavigation, useIsFocused, useRoute, type RouteProp } from "@react-na
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing, pressedOpacity, scaleFor } from "@/theme/tokens";
-import { getMapStyle } from "@/utils/mapStyle";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import { clusterPoints } from "@/utils/markerCluster";
 
@@ -47,7 +36,6 @@ import { useLocation } from "@/context/LocationContext";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { MuteButton } from "@/components/MuteButton";
-import { CarNavArrow, PersonLocationDot } from "@/components/LocationMarkers";
 import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/DestinationSearchBar";
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
@@ -57,20 +45,15 @@ import { SoundSheet } from "@/screens/SoundSheet";
 import { VisibilitySheet } from "@/screens/VisibilitySheet";
 import { GhostModeExplainerModal, hasSeenGhostModeExplainer, markGhostModeExplainerSeen } from "@/components/GhostModeExplainerModal";
 import { useAutoGhostMode, autoGhostOnArrival } from "@/hooks/useAutoGhostMode";
-import { Tracky } from "@/components/trackys/Tracky";
 import { RouteDirectionsSheet } from "@/screens/RouteDirectionsSheet";
 import {
   AvoidSheet,
-  CheckeredFlagPin,
   RouteSelectionSheet,
   RouteSelectionTopCard,
-  RouteTimeBubble,
-  StartDot,
   TravelModeSheet,
   transitRouteTitle,
   type RouteChoiceRow,
 } from "@/components/RouteSelection";
-import { AlertMarker } from "@/components/AlertMarker";
 import { AlertStillHereCard } from "@/components/AlertStillHereCard";
 import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
 import { AlertBanner } from "@/components/AlertBanner";
@@ -92,7 +75,6 @@ import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
-import { PresenceLayer } from "@/components/PresenceLayer";
 import { PresenceCard } from "@/screens/PresenceCard";
 import {
   subscribeNearbyPresence,
@@ -145,7 +127,7 @@ import {
   type PlaceInfo,
   type NearbyPlace,
 } from "@/services/places";
-import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds, type OsmPoiCategory } from "@/services/osmPlaces";
+import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds } from "@/services/osmPlaces";
 import {
   distanceKm,
   bearingDegrees,
@@ -176,7 +158,6 @@ import {
 import { openMusicApp } from "@/services/musicApp";
 import { subscribeNswTraffic } from "@/services/trafficNsw";
 import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/services/trafficNswModel";
-import { TrafficIncidentLayer } from "@/components/TrafficIncidentLayer";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
@@ -208,12 +189,6 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
 const DIAGNOSTIC_DISABLE_MAPVIEW = false;
-// Traffic-light cluster badges show this many small light glyphs before folding the rest into a
-// "+N" suffix -- see the badge's own render for why (a badge that just kept growing wider for a
-// 15-light intersection would stop being a compact marker).
-const MAX_CLUSTER_ICONS = 5;
-// Same idea for speed-camera clusters, capped lower since that glyph renders much bigger.
-const MAX_SPEED_CAMERA_CLUSTER_ICONS = 3;
 
 // Real live-location markers -- see components/LocationMarkers.tsx: a directional arrow badge
 // (rotated live with heading via flat+rotation, exactly like the original CSS triangle) while
@@ -255,9 +230,6 @@ const STILL_HERE_RADIUS_METERS = 300;
 const STILL_HERE_MIN_SPEED_KMH = 5;
 const STILL_HERE_HEADING_TOLERANCE_DEG = 70;
 
-// Slow and jammed stretches drawn over the selected route on the route-selection screen.
-const TRAFFIC_SLOW_ORANGE = "#FF8A00";
-const TRAFFIC_JAM_RED = "#E5222B";
 // At most this many route lines on the route-selection map (transit can offer many more
 // itineraries in the list; the selected one is always drawn).
 const MAX_DRAWN_ROUTES = 3;
@@ -303,8 +275,8 @@ export function MapScreen() {
 
   // The map's camera handle. Both maps offer the same calls (see map-v2/TrackLineMap.tsx).
   const mapRef = useRef<MapHandle>(null);
-  // The new Mapbox map, when this build can run it (native SDK + token) and USE_MAPBOX is on.
-  const [useMapboxMap] = useState(() => USE_MAPBOX && isMapboxUsable());
+  // Whether this build can draw the map at all (Mapbox native SDK linked + token set).
+  const [mapboxUsable] = useState(() => isMapboxUsable());
   // Development builds: "Simulate drive" plays the active route as GPS (dev/simulateDrive.ts).
   const [simulatingDrive, setSimulatingDrive] = useState(() => __DEV__ && isGpsReplayActive());
   useEffect(() => (__DEV__ ? subscribeGpsReplayActiveChange(setSimulatingDrive) : undefined), []);
@@ -448,10 +420,6 @@ export function MapScreen() {
   // Color theme + road-thickness preset are independent Settings picks (see mapStyle.ts) --
   // memoized so a re-render that doesn't touch either (or the route-picking dim state) doesn't
   // rebuild this array (and every styler object inside it) from scratch on every frame.
-  const mapCustomStyle = useMemo(
-    () => getMapStyle(settings.mapTheme, settings.roadThickness, isPickingRoute),
-    [settings.mapTheme, settings.roadThickness, isPickingRoute]
-  );
   // Real, confirmed request -- show a driver what the live traffic layer's own colors actually
   // mean, but only briefly and only the moment it actually turns on (route picking/following
   // starts), not a permanent fixture competing with the map for attention.
@@ -769,7 +737,6 @@ export function MapScreen() {
   // toggled off), each mount starts from the same default camera, so a fixed +60/-60 delta
   // pair is a safe, always-correct toggle rather than needing to track absolute angle.
   const [frontView, setFrontView] = useState(false);
-  const map3DRef = useRef<Map3DViewHandle>(null);
 
   useEffect(() => {
     if (!show3D) setFrontView(false);
@@ -778,7 +745,8 @@ export function MapScreen() {
   const toggleFrontView = useCallback(() => {
     setFrontView((was) => {
       const next = !was;
-      map3DRef.current?.tilt(next ? 60 : -60);
+      // Front view: tilt almost to the horizon over the raised buildings; back to the 3D angle.
+      mapRef.current?.animateCamera({ pitch: next ? 80 : 65 }, { duration: 500 });
       return next;
     });
   }, []);
@@ -923,7 +891,7 @@ export function MapScreen() {
   // while navigating. Only runs while NOT actively navigating (`!route`), so it can never
   // fight the chase-cam's own pitch/zoom ownership during a real drive.
   useEffect(() => {
-    if (isMap3DSupported || !currentLatLng || route) return;
+    if (!currentLatLng || route) return;
     if (show3D) {
       mapRef.current?.animateCamera(
         { center: currentLatLng, pitch: 65, zoom: 18.5 },
@@ -932,7 +900,7 @@ export function MapScreen() {
     } else {
       mapRef.current?.animateCamera({ pitch: 0 }, { duration: 500 });
     }
-  }, [show3D, isMap3DSupported, currentLatLng, route]);
+  }, [show3D, currentLatLng, route]);
 
   // `initialRegion` above is a mount-time-only prop, so it never moves the map once the very
   // first real GPS fix actually lands -- this is that correction (skipped while navigating since
@@ -2747,33 +2715,6 @@ export function MapScreen() {
   // predates that switch, from when iOS used Apple's MapKit, which has no such event) fires only
   // for an actual tap on a real Google-rendered POI icon/footprint, carrying that business's own
   // real placeId directly -- no distance-guessing needed at all.
-  const onMapPress = useCallback((_e: MapPressEvent) => {
-    // Intentionally empty -- tapping the bare map (road, land, water) is a no-op now. Kept as a
-    // real prop (rather than removing onPress entirely) only so a future "tap empty map to
-    // dismiss something" convenience has a real place to live without re-discovering this.
-  }, []);
-
-  const onMapPoiClick = useCallback(
-    (e: PoiClickEvent) => {
-      // Real, explicit request -- business popups fully disabled during active navigation, not
-      // just de-prioritized. A driver mid-turn-by-turn shouldn't have a tap open a business card.
-      if (route || placingAlert || anySheetOpen) return;
-      const { placeId } = e.nativeEvent;
-      setPlaceInfoLoading(true);
-      getPlaceInfo(placeId)
-        .then((info) => {
-          if (!info) return;
-          setPlaceInfo(info);
-          placeInfoSheetRef.current?.expand();
-        })
-        .catch((err) => {
-          console.warn("[map] place info lookup failed", err);
-          Sentry.logger.error("map: place info lookup failed", { error: String(err) });
-        })
-        .finally(() => setPlaceInfoLoading(false));
-    },
-    [route, placingAlert, anySheetOpen]
-  );
 
   // Real drive-time quick-check for whatever place PlaceInfoSheet is currently showing -- see
   // placeInfoEtaText's own comment. Keyed on the place's real placeId (not the whole object,
@@ -4286,7 +4227,6 @@ export function MapScreen() {
   // ---- What the Mapbox map draws (map-v2/MapboxLayers.tsx) ----
   // Every icon pin with what tapping it does, keyed by the pin's id.
   const mapboxPinData = useMemo(() => {
-    if (!useMapboxMap) return { pins: [] as MapPin[], targets: new Map<string, PinTarget>() };
     const pins: MapPin[] = [];
     const targets = new Map<string, PinTarget>();
     const add = (pin: MapPin, target?: PinTarget) => {
@@ -4395,7 +4335,6 @@ export function MapScreen() {
     }
     return { pins, targets };
   }, [
-    useMapboxMap,
     alertPins,
     selectedAlert?.id,
     settings.showTrafficLights,
@@ -4567,7 +4506,11 @@ export function MapScreen() {
       // Apple's renderer has no equivalent for -- that was the real, confirmed tradeoff Apple
       // Maps cost, not worth it after all. Android was never affected either way (already
       // Google, still needed there for the custom Map3DView native module).
-      useMapboxMap ? (
+      !mapboxUsable ? (
+        <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder, styles.mapUnavailable]}>
+          <Text style={styles.mapUnavailableText}>The map can&apos;t load in this build (Mapbox isn&apos;t set up).</Text>
+        </View>
+      ) : (
         <TrackLineMap
           ref={mapRef}
           theme={settings.mapTheme}
@@ -4614,727 +4557,6 @@ export function MapScreen() {
             }
           />
         </TrackLineMap>
-      ) : (
-      <MapView
-        ref={mapRef as unknown as React.Ref<MapView>}
-        provider={PROVIDER_GOOGLE}
-        mapType={mapType}
-        // The custom theme style only ever applies to the "standard" map type -- satellite/
-        // hybrid imagery has no styleable roads/land polygons to restyle, so Google/Apple just
-        // ignore it there. Safe to always pass. Theme picked in Settings (see mapStyle.ts).
-        customMapStyle={mapCustomStyle}
-        // Real, confirmed request -- Google Maps SDK's own live traffic layer (real congestion
-        // data, yellow/orange/red segments on the actual roads -- the same data Apple/Google
-        // Maps' own apps show), not a fabricated overlay. Only on while a route/route-choice is
-        // actually relevant (picking or following a route) rather than always-on, which would
-        // clutter idle map browsing with congestion data nobody's using yet.
-        showsTraffic={showsTrafficLayer}
-        // Real, explicit request -- match Waze's own map, which renders building footprints as
-        // flat 2D blocks (styled via `customMapStyle`'s "building" rules in mapStyle.ts), never
-        // Google's native raised/extruded 3D buildings. Without this, Google's SDK still draws
-        // its own grey 3D building geometry on top of/instead of the styled flat polygons at
-        // close zoom, regardless of customMapStyle -- a real, documented native layer that's
-        // separate from the JSON style and has to be turned off explicitly.
-        showsBuildings={false}
-        mapPadding={mapPadding}
-        style={StyleSheet.absoluteFill}
-        // Always false -- the native blue dot is fully replaced by custom markers below (the
-        // car puck while navigating, the person marker otherwise), not just swapped in during
-        // navigation. A plain dot doesn't communicate which way you're facing either, which
-        // matters once the camera itself is also rotating to match heading.
-        showsUserLocation={false}
-        showsMyLocationButton={false}
-        // Explicit rather than relying on the library default -- two-finger twist-to-rotate
-        // and two-finger drag-to-tilt are both genuinely native MapView gestures, not something
-        // this app has to implement by hand.
-        rotateEnabled
-        pitchEnabled
-        // `initialRegion` is a mount-time-only prop -- react-native-maps never re-reads it once
-        // the map has rendered once, so SOME value is required here even before a real fix
-        // exists. This coordinate (San Francisco) is an arbitrary engineering placeholder, never
-        // meant to mean anything -- and is never actually seen by a real user: the
-        // locationGateOverlay above covers the whole screen for as long as currentLatLng is null,
-        // so this placeholder renders invisibly underneath it until the recenter effect below
-        // (which fires the instant a real fix exists) corrects it. Real, confirmed bug this
-        // combination fixes: previously nothing covered this placeholder at all, so a slow first
-        // fix (or a genuinely denied permission) left a real user looking at San Francisco with
-        // no indication it wasn't their own live position.
-        initialRegion={{
-          latitude: currentLatLng?.latitude ?? 37.7749,
-          longitude: currentLatLng?.longitude ?? -122.4194,
-          // Street level from the first frame (about zoom 17), not a suburb-wide view that
-          // then has to zoom in.
-          latitudeDelta: 0.004,
-          longitudeDelta: 0.004,
-        }}
-        onRegionChangeComplete={onRegionChangeComplete}
-        onPress={onMapPress}
-        onPoiClick={onMapPoiClick}
-        onPanDrag={onMapPanDrag}
-        onMapReady={() => setMapReady(true)}
-      >
-        {/* Route line style -- a white "casing" line drawn first (underneath), then the real
-            colored route on top slightly narrower, the same layered-outline look Google/Apple
-            Maps use so the route reads as a single clean band against any map style/theme
-            instead of a flat single-color stroke. zIndex keeps the casing strictly below the
-            colored line even though both are drawn back-to-back here.
-            Real, confirmed bug this also fixes -- Android's own native Polyline view manager
-            (react-native-maps) never actually had a `lineJoin` prop wired up at all (confirmed
-            from its own source: only `lineCap` had a @ReactProp, `lineJoin` was a dead, never-
-            called method on the native view) -- so corners rendered with the Google Maps SDK's
-            default miter/sharp join on Android regardless of this `lineJoin="round"` prop, no
-            matter what width was used. Patched via patches/react-native-maps+*.patch (same
-            patch-package mechanism already used elsewhere in this project) to actually register
-            and call it. iOS's Google Maps SDK renders solid polyline joins/caps rounded by
-            default already, not independently configurable the way Android's is.
-            Slimmed down (22/16 -> 14/8) per explicit request for a clean, slim line rather than
-            a chunky/blocky band -- still a real, clearly-visible two-tone casing+color band at
-            typical driving zoom, just not an oversized one. */}
-        {route && remainingPolyline.length > 1 && (
-          <>
-            <Polyline
-              coordinates={remainingPolyline}
-              strokeWidth={14}
-              strokeColor="#FFFFFF"
-              lineCap="round"
-              lineJoin="round"
-              zIndex={1}
-            />
-            <Polyline
-              coordinates={remainingPolyline}
-              strokeWidth={8}
-              // Real, confirmed audit fix -- the brief's own Phase 2 spec literally specifies a
-              // purple active-route line (#6A1FD1 in the "full redesign" doc's own exact
-              // colour); this used to be the app's blue accent instead.
-              strokeColor="#6A1FD1"
-              lineCap="round"
-              lineJoin="round"
-              tappable
-              onPress={enterOverviewMode}
-              zIndex={2}
-            />
-          </>
-        )}
-        {/* Real, explicit request -- dark-purple street-name callouts at the next few upcoming
-            turns, Waze-style, pulled straight off each real RouteStep's own endLocation (the
-            actual real turn point) and targetStreetName (falling back to the full instruction
-            text on the rare step Google's own HTML didn't bold a road name for -- same fallback
-            targetStreetName's own header comment documents). Capped to the next 3 real upcoming
-            turns (not the whole remaining route) to match Waze's own "show what's coming up
-            soon, not the entire trip at once" convention and avoid cluttering a long route with
-            dozens of overlapping labels. Excludes the final step -- that's the arrival point,
-            already marked by the checkered-flag destination pin above, not another turn. */}
-        {route && !addingStopDuringNav && !stopPreviewRoute && (
-          <>
-            {route.steps.slice(activeStepIndex, Math.min(route.steps.length - 1, activeStepIndex + 3)).map((step, i) => (
-              <Marker
-                key={`turn-callout-${activeStepIndex + i}`}
-                coordinate={step.endLocation}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-              >
-                <View style={styles.turnCalloutPill}>
-                  <Text style={styles.turnCalloutText} numberOfLines={1}>
-                    {step.targetStreetName ?? step.instruction}
-                  </Text>
-                </View>
-              </Marker>
-            ))}
-          </>
-        )}
-        {/* Real mid-trip add-a-stop preview, per explicit request: the route through the new
-            stop draws in green, right alongside the still-live blue route above -- a genuine
-            side-by-side comparison, not a replacement, until confirmStopPreview actually
-            commits it (see the confirm/back bar below). */}
-        {stopPreviewRoute && (
-          <Polyline coordinates={detailedRoutePolyline(stopPreviewRoute)} strokeWidth={7} strokeColor="#22C55E" />
-        )}
-        {/* Real traffic-jam reroute suggestion -- same green-alongside-blue treatment as the
-            add-stop preview above, drawn only once a genuinely faster side-streets alternative
-            has actually been found (see the periodic check effect). Route 1 (blue, above) never
-            stops being drawn while this is up. */}
-        {trafficSuggestionRoute && !stopPreviewRoute && (
-          <>
-            <Polyline coordinates={detailedRoutePolyline(trafficSuggestionRoute)} strokeWidth={7} strokeColor="#22C55E" />
-            {/* Real, explicit request -- the alternate's actual ETA shown directly on the map
-                (same floating-pill pattern the route picker uses for its 3 profiles), not just
-                the banner's "save N min" text. Real Apple/Google Maps convention: a faster-route
-                callout always shows its own real arrival time, not only a relative delta. */}
-            {(() => {
-              const labelPoint = pointAtPolylineFraction(trafficSuggestionRoute.polyline, 0.5);
-              if (!labelPoint) return null;
-              return (
-                <Marker coordinate={labelPoint} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={5}>
-                  <View style={[styles.routeEtaPill, { backgroundColor: "#22C55E", borderColor: "#22C55E" }]}>
-                    <Text style={[styles.routeEtaPillText, styles.routeEtaPillTextSelected]}>
-                      {trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText}
-                    </Text>
-                  </View>
-                </Marker>
-              );
-            })()}
-          </>
-        )}
-        {/* Real, explicit request -- a Waze-style accuracy circle under the live position
-            marker, radius set to the real GPS horizontal accuracy value for this fix (see
-            currentAccuracyMeters above), teal to match the recolored marker it surrounds.
-            Skipped outright on a fix with no reported accuracy, or one so precise (<3m) the
-            circle would just be a sliver smaller than the marker itself and add visual noise
-            for no real information. */}
-        {currentLatLng && currentAccuracyMeters != null && currentAccuracyMeters >= 3 && (
-          <Circle
-            center={currentLatLng}
-            radius={currentAccuracyMeters}
-            strokeWidth={1}
-            strokeColor="rgba(20, 184, 166, 0.5)"
-            fillColor="rgba(20, 184, 166, 0.12)"
-            zIndex={0}
-          />
-        )}
-        {/* Live device-compass "flashlight" cone -- separate from the route arrow below and
-            rotated by deviceHeading (magnetometer), not travel heading, so it visually shows
-            which way the PHONE is physically pointing right now without ever moving the
-            route-facing arrow itself. Rendered first so it paints underneath the puck. Anchored
-            at its narrow tip (y: 1) so it fans outward from the puck's exact position instead
-            of rotating around its own center. */}
-        {route && currentLatLng && deviceHeading != null && (
-          <Marker
-            coordinate={currentLatLng}
-            anchor={{ x: 0.5, y: 1 }}
-            flat
-            rotation={deviceHeading}
-            tracksViewChanges={false}
-          >
-            <View style={styles.compassConeGlyph} />
-          </Marker>
-        )}
-        {/* Real navigation arrow, replacing the default blue dot while actively navigating/
-            driving -- flat+rotation is react-native-maps' own built-in support for a marker
-            that rotates with heading instead of always facing the camera, so it turns a full
-            live 360° with every heading update. CarNavArrow is a plain-View/SVG component (see
-            components/LocationMarkers.tsx), deliberately not a raster <Image> -- react-native-
-            maps has several open iOS issues where flat+rotation on a custom *Image* marker
-            child stops reflecting live rotation updates once tracksViewChanges is false (the
-            exact bug an earlier photo-based version of this marker hit); a plain View doesn't
-            have that problem, so tracksViewChanges can safely stay false here, matching every
-            other static marker in this app. */}
-        {route && currentLatLng && (
-          // Real, confirmed bug this key fixes: tracksViewChanges={false} is correct for live
-          // rotation (see this block's own comment -- the native `rotation` prop handles that
-          // independently), but it ALSO froze this marker's rendered bitmap at whatever
-          // markerStyle was active the very first time it mounted -- picking a different map
-          // marker in Settings while already navigating silently did nothing on screen until
-          // the app restarted, since react-native-maps never re-snapshots a tracksViewChanges=
-          // false marker just because its JS child re-rendered. Keying on markerStyle forces a
-          // real remount (a fresh native marker, not a re-render) the instant it changes, which
-          // sidesteps needing tracksViewChanges at all.
-          <Marker
-            key={`nav-arrow-${settings.mapMarkerStyle}`}
-            coordinate={currentLatLng}
-            anchor={{ x: 0.5, y: 0.5 }}
-            flat
-            rotation={heading}
-            tracksViewChanges={false}
-          >
-            <CarNavArrow markerStyle={settings.mapMarkerStyle} />
-          </Marker>
-        )}
-        {/* Real person/location marker for the normal (not navigating) map view -- replacing
-            the default blue dot there too. Deliberately not rotated: a walking/browsing
-            position doesn't have the same "facing direction" a moving vehicle does, so this
-            just tracks live position with a pulsing halo, the same convention Waze/Google Maps
-            use for a plain "you are here" marker versus their own directional vehicle pucks. */}
-        {!route && !inRouteSelection && currentLatLng && (
-          <Marker coordinate={currentLatLng} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
-            <PersonLocationDot />
-          </Marker>
-        )}
-        {/* Real, explicit request -- "Own marker shows translucent 'Spooky' Tracky outline when
-            hidden." A separate, small badge Marker next to the real position marker above
-            (rather than replacing it) -- CarNavArrow's own live heading rotation is safety-
-            relevant while driving and never something Ghost mode should take away. */}
-        {settings.visibility === "ghost" && currentLatLng && (
-          <Marker coordinate={currentLatLng} anchor={{ x: -0.1, y: 1.4 }} tracksViewChanges={false}>
-            <Tracky mood="spooky" size={28} animated={false} reactOnTap={false} translucent />
-          </Marker>
-        )}
-        {/* Real, explicit request (Part 3 client + ADD-ON Part B) -- other visible+driving
-            drivers, 32pt, each gliding along its own published road path, clustered into a
-            "+N" bubble. Its own component so its several-times-a-second animation tick never
-            re-renders this whole screen -- see PresenceLayer.tsx. */}
-        <PresenceLayer
-          presences={visiblePresences}
-          cellSizeDegrees={presenceCellSizeDegrees}
-          onSelect={setSelectedPresence}
-          onClusterPress={onPlaceClusterPress}
-        />
-        {/* Route selection: the alternatives in lavender (tappable), the selected route in
-            purple with a darker casing on top of them, its slow and jammed stretches over it
-            in orange and red, and a time bubble per route placed where its line stands apart. */}
-        {inRouteSelection &&
-          drawnSelection.map(({ index, line }) => {
-            if (index === selectionIndex) return null;
-            return (
-              <Polyline
-                key={`alt-${selectionRows[index]?.key ?? index}`}
-                coordinates={line}
-                strokeWidth={6}
-                strokeColor={colors.routeAlt}
-                tappable
-                onPress={() => onSelectRouteRow(index)}
-                zIndex={1}
-                lineCap="round"
-                lineJoin="round"
-              />
-            );
-          })}
-        {inRouteSelection && selectedSelectionLine && (
-          <>
-            <Polyline
-              coordinates={selectedSelectionLine}
-              strokeWidth={12}
-              strokeColor={colors.routePurpleCasing}
-              zIndex={2}
-              lineCap="round"
-              lineJoin="round"
-            />
-            <Polyline
-              coordinates={selectedSelectionLine}
-              strokeWidth={8}
-              strokeColor={colors.routePurple}
-              zIndex={3}
-              lineCap="round"
-              lineJoin="round"
-            />
-            {selectedTrafficStretches.map((stretch, i) => (
-              <Polyline
-                key={`traffic-${i}`}
-                coordinates={stretch.coordinates}
-                strokeWidth={8}
-                strokeColor={stretch.speed === "TRAFFIC_JAM" ? TRAFFIC_JAM_RED : TRAFFIC_SLOW_ORANGE}
-                zIndex={4}
-                lineCap="round"
-                lineJoin="round"
-              />
-            ))}
-          </>
-        )}
-        {inRouteSelection &&
-          drawnSelection.map(({ index }, pos) => {
-            const anchor = selectionBubbleAnchors[pos];
-            const row = selectionRows[index];
-            if (!anchor || !row) return null;
-            const isSelected = index === selectionIndex;
-            return (
-              <Marker
-                key={`bubble-${row.key}-${isSelected ? "on" : "off"}`}
-                coordinate={anchor}
-                anchor={{ x: 0.5, y: 1 }}
-                onPress={() => onSelectRouteRow(index)}
-                tracksViewChanges={false}
-                zIndex={isSelected ? 31 : 30}
-              >
-                <RouteTimeBubble timeText={row.timeText} tag={selectionTags[index] ?? null} selected={isSelected} />
-              </Marker>
-            );
-          })}
-        {inRouteSelection && routeOriginLatLng && (
-          <Marker coordinate={routeOriginLatLng} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={25}>
-            <StartDot />
-          </Marker>
-        )}
-        {inRouteSelection && pendingDestination && (
-          <Marker
-            coordinate={pendingDestination.location}
-            anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
-            zIndex={26}
-          >
-            <CheckeredFlagPin />
-          </Marker>
-        )}
-        {/* Highlighted arrival spot -- the exact picked destination (not wherever the
-            polyline decoder's last point happens to land), so it's obvious exactly which
-            building/driveway is the actual arrival point rather than "somewhere on this
-            block". A soft green halo ring plus a matching green pin on top, both anchored to
-            the same coordinate -- green specifically (not the app's usual blue accent) so the
-            arrival point reads distinctly as "destination reached here", the same convention
-            the app's own original navigation design used.
-
-            Real, explicit request: the "choose destination point" pin picker's own confirmed
-            point never got this same treatment -- only the committed, actually-navigating
-            destinationLatLng did, so the "Choose a route" preview screen showed a route line
-            with no distinct highlighted marker at all for where it actually ends. Now shows the
-            exact same halo+pin for pendingDestination too, while still only previewing (never
-            once real navigation -- route -- has taken over and destinationLatLng exists instead,
-            avoiding two overlapping halos at the same spot). */}
-        {(() => {
-          const arrivalLatLng = destinationLatLng ?? (pendingDestination && !route && !inRouteSelection ? pendingDestination.location : null);
-          if (!arrivalLatLng) return null;
-          return (
-            <>
-              <Circle
-                center={arrivalLatLng}
-                radius={40}
-                strokeWidth={2}
-                strokeColor="rgba(34, 197, 94, 0.9)"
-                fillColor="rgba(34, 197, 94, 0.18)"
-              />
-              <Marker coordinate={arrivalLatLng} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
-                {/* Real, explicit request -- Waze's own checkered-flag destination marker
-                    (a real recognizable finish-line convention), replacing the plain teardrop
-                    pin. A dark circular badge + white flag glyph on top of a short pin point,
-                    rather than a bare icon -- the icon font itself only ever renders one flat
-                    color, so the badge+pin-point shape is what actually reads as "a pin planted
-                    here" rather than a loose flag floating over the halo. */}
-                <View style={styles.destinationPinWrap}>
-                  <View style={styles.destinationFlagBadge}>
-                    <MaterialCommunityIcons name="flag-checkered" size={20} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.destinationPinPoint} />
-                </View>
-              </Marker>
-            </>
-          );
-        })()}
-        {/* Real, confirmed bug: confirming a custom starting point never actually showed it
-            anywhere on the map afterward -- originOverride only ever drove the route math and a
-            text label, so there was nothing to look at (or tap) once the picker closed. This is
-            that real, persistent, tappable marker (see onOriginMarkerPress -- Change pin/
-            Continue to choose destination/Exit). Blue to match the picker's own pin color.
-            Hidden while pickingOrigin itself is open since the fixed center-pin overlay already
-            represents this exact same point while it's actively being edited. */}
-        {originOverride && !route && !pickingOrigin && !inRouteSelection && (
-          <Marker
-            coordinate={originOverride.location}
-            anchor={{ x: 0.5, y: 1 }}
-            onPress={(e) => {
-              e.stopPropagation();
-              onOriginMarkerPress();
-            }}
-            tracksViewChanges={false}
-          >
-            <View style={styles.originPinWrap}>
-              <Ionicons name="location" size={40} color={colors.accent} />
-            </View>
-          </Marker>
-        )}
-        {/* Reports: one pin each from zoom 12 in, sized by zoom and a step larger when the
-            report is on the route being driven; below zoom 12 they're grouped into counts (see
-            alertPins above and map/homeMapLogic.ts). */}
-        {placePage && !route && !pendingDestination && (
-          <Marker
-            key={`place-page-${placePage.placeId}`}
-            coordinate={placePage.location}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-            zIndex={20}
-          >
-            <View style={styles.placePagePin}>
-              <View style={styles.placePagePinDot} />
-            </View>
-          </Marker>
-        )}
-        {alertPins.clusters.map((cluster) => (
-          <Marker
-            key={`alert-cluster-${cluster.points[0].id}-${cluster.count}`}
-            coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-            onPress={(e) => {
-              e.stopPropagation();
-              onPlaceClusterPress(cluster.lat, cluster.lng);
-            }}
-          >
-            <View style={styles.alertClusterBadge}>
-              <Text style={styles.alertClusterText}>{cluster.count}</Text>
-            </View>
-          </Marker>
-        ))}
-        {alertPins.singles.map(({ alert, size }) => (
-          <AlertMarker
-            key={alert.id}
-            alert={alert}
-            size={size}
-            onPress={onMarkerPress}
-            isSelected={selectedAlert?.id === alert.id}
-          />
-        ))}
-        {settings.showTrafficLights &&
-          trafficLightClusters.map((c) =>
-            c.count === 1 ? (
-              <Marker
-                key={`tl-${c.points[0].id}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onOsmMarkerPress("traffic_light", { latitude: c.lat, longitude: c.lng });
-                }}
-              >
-                <View style={styles.osmIconBadgeTrafficLight}>
-                  <MaterialCommunityIcons name={TRAFFIC_LIGHT_MARKER.icon} size={TRAFFIC_LIGHT_MARKER.glyphSize} color="#FFFFFF" />
-                </View>
-              </Marker>
-            ) : (
-              <Marker
-                key={`tlc-${c.key}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onTrafficLightClusterPress(c.lat, c.lng);
-                }}
-              >
-                <View style={styles.osmClusterBadge}>
-                  {/* Per explicit request: how-many-lights-are-here shown as that many small
-                      light glyphs instead of a bare number, so the badge communicates the real
-                      count at a glance the same way the marker itself does. Capped at
-                      MAX_CLUSTER_ICONS -- a real intersection cluster can run into the teens,
-                      and a badge that just keeps growing wider stops being a compact marker;
-                      the remainder folds into a "+N" suffix instead. */}
-                  {Array.from({ length: Math.min(c.count, MAX_CLUSTER_ICONS) }).map((_, i) => (
-                    <MaterialCommunityIcons
-                      key={i}
-                      name={TRAFFIC_LIGHT_MARKER.icon}
-                      size={TRAFFIC_LIGHT_MARKER.glyphSize}
-                      color="#FFFFFF"
-                    />
-                  ))}
-                  {c.count > MAX_CLUSTER_ICONS && (
-                    <Text style={styles.osmClusterBadgeText}>+{c.count - MAX_CLUSTER_ICONS}</Text>
-                  )}
-                </View>
-              </Marker>
-            )
-          )}
-        {settings.showSpeedCameras &&
-          speedCameraClusters.map((c) =>
-            c.count === 1 ? (
-              <Marker
-                key={`sc-${c.points[0].id}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onOsmMarkerPress("speed_camera", { latitude: c.lat, longitude: c.lng });
-                }}
-              >
-                <View style={styles.osmIconBadgeSpeedCamera}>
-                  <MaterialCommunityIcons name={SPEED_CAMERA_MARKER.icon} size={SPEED_CAMERA_MARKER.glyphSize} color="#FFFFFF" />
-                </View>
-              </Marker>
-            ) : (
-              <Marker
-                key={`scc-${c.key}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onSpeedCameraClusterPress(c.lat, c.lng);
-                }}
-              >
-                <View style={styles.osmClusterBadgeSpeedCamera}>
-                  {/* Same "show what's actually there" fix as the traffic-light cluster badge
-                      above -- capped lower (MAX_SPEED_CAMERA_CLUSTER_ICONS, not the traffic
-                      light MAX_CLUSTER_ICONS) since this glyph is drawn much bigger
-                      (SPEED_CAMERA_MARKER.glyphSize=18 vs traffic lights' 9), and a compact
-                      badge stops being compact once several of those are packed in a row. */}
-                  {Array.from({ length: Math.min(c.count, MAX_SPEED_CAMERA_CLUSTER_ICONS) }).map((_, i) => (
-                    <MaterialCommunityIcons
-                      key={i}
-                      name={SPEED_CAMERA_MARKER.icon}
-                      size={SPEED_CAMERA_MARKER.glyphSize}
-                      color="#FFFFFF"
-                    />
-                  ))}
-                  {c.count > MAX_SPEED_CAMERA_CLUSTER_ICONS && (
-                    <Text style={styles.osmClusterBadgeText}>+{c.count - MAX_SPEED_CAMERA_CLUSTER_ICONS}</Text>
-                  )}
-                </View>
-              </Marker>
-            )
-          )}
-        {/* Real, explicit request -- petrol stations visible on the map itself, not just in
-            FuelStationsSheet's own list. Only shown while that sheet is actually open (matches
-            every other on-demand marker layer on this screen -- alerts/traffic-lights/speed-
-            cameras are all settings-gated the same way) so idle map browsing doesn't get
-            cluttered with pins nobody asked to see yet; fuelStationPins itself is cleared the
-            moment FuelStationsSheet unmounts (a route starting), so this can't show stale data
-            either. */}
-        {fuelStationsSheetOpen &&
-          fuelStationPins.map((pin) => (
-            <Marker
-              key={`fuel-${pin.id}`}
-              coordinate={{ latitude: pin.lat, longitude: pin.lng }}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                pin.onPress();
-              }}
-            >
-              <View style={styles.fuelPinWrap}>
-                <View style={styles.fuelPinBadge}>
-                  <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
-                </View>
-              </View>
-            </Marker>
-          ))}
-        {/* Real, explicit request -- "zoom out...display all that's available" for petrol
-            stations beyond the sheet's own fixed-radius nearest-N list above (fuelViewportOnlyPins
-            is already de-duped against it, see its own comment). Same open-sheet gating, same
-            tap-through to the detail sheet. Clustered (see fuelViewportClusters above) so a
-            dense area doesn't render dozens of individual pins at once. */}
-        {fuelStationsSheetOpen &&
-          fuelViewportClusters.map((c) =>
-            c.count === 1 ? (
-              <Marker
-                key={`fuel-vp-${c.points[0].place.placeId}`}
-                coordinate={c.points[0].place.location}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onViewVenueDetails(c.points[0].place.placeId);
-                }}
-              >
-                <View style={styles.fuelPinWrap}>
-                  <View style={styles.fuelPinBadge}>
-                    <MaterialCommunityIcons name="gas-station" size={16} color="#FFFFFF" />
-                  </View>
-                </View>
-              </Marker>
-            ) : (
-              <Marker
-                key={`fuel-vpc-${c.key}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onPlaceClusterPress(c.lat, c.lng);
-                }}
-              >
-                <View style={styles.fuelPinWrap}>
-                  <View style={[styles.placeClusterBadge, { backgroundColor: "#16A34A" }]}>
-                    <MaterialCommunityIcons name="gas-station" size={14} color="#FFFFFF" />
-                    <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
-                  </View>
-                </View>
-              </Marker>
-            )
-          )}
-        {/* Real, explicit request -- same "zoom out and see everything available" treatment for
-            restaurants, including real fast-food chains (KFC, McDonald's, etc -- OSM's own
-            amenity=fast_food tag, already included in osmPlaces.ts's CATEGORY_TAGS.restaurant).
-            RestaurantsSheet has no GPS-anchored pin-reporting of its own the way FuelStationsSheet
-            does, so this viewport layer is the only source of restaurant pins on the map -- no
-            dedup needed against anything else. Clustered, same reasoning as the fuel layer above. */}
-        {restaurantsSheetOpen &&
-          restaurantViewportClusters.map((c) =>
-            c.count === 1 ? (
-              <Marker
-                key={`rest-vp-${c.points[0].place.placeId}`}
-                coordinate={c.points[0].place.location}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onViewVenueDetails(c.points[0].place.placeId);
-                }}
-              >
-                <View style={styles.fuelPinWrap}>
-                  <View style={styles.restaurantPinBadge}>
-                    <Ionicons name="restaurant" size={15} color="#FFFFFF" />
-                  </View>
-                </View>
-              </Marker>
-            ) : (
-              <Marker
-                key={`rest-vpc-${c.key}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onPlaceClusterPress(c.lat, c.lng);
-                }}
-              >
-                <View style={styles.fuelPinWrap}>
-                  <View style={[styles.placeClusterBadge, { backgroundColor: "#F97316" }]}>
-                    <Ionicons name="restaurant" size={13} color="#FFFFFF" />
-                    <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
-                  </View>
-                </View>
-              </Marker>
-            )
-          )}
-        {/* Same real treatment for hotels -- see restaurant block's own comment above. */}
-        {hotelsSheetOpen &&
-          hotelViewportClusters.map((c) =>
-            c.count === 1 ? (
-              <Marker
-                key={`hotel-vp-${c.points[0].place.placeId}`}
-                coordinate={c.points[0].place.location}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onViewVenueDetails(c.points[0].place.placeId);
-                }}
-              >
-                <View style={styles.fuelPinWrap}>
-                  <View style={styles.hotelPinBadge}>
-                    <Ionicons name="bed" size={15} color="#FFFFFF" />
-                  </View>
-                </View>
-              </Marker>
-            ) : (
-              <Marker
-                key={`hotel-vpc-${c.key}`}
-                coordinate={{ latitude: c.lat, longitude: c.lng }}
-                anchor={{ x: 0.5, y: 1 }}
-                tracksViewChanges={false}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onPlaceClusterPress(c.lat, c.lng);
-                }}
-              >
-                <View style={styles.fuelPinWrap}>
-                  <View style={[styles.placeClusterBadge, { backgroundColor: "#6366F1" }]}>
-                    <Ionicons name="bed" size={13} color="#FFFFFF" />
-                    <Text style={styles.placeClusterBadgeText}>{c.count}</Text>
-                  </View>
-                </View>
-              </Marker>
-            )
-          )}
-        {settings.showLiveTraffic && nearbyTrafficIncidents.length > 0 && (
-          <TrafficIncidentLayer incidents={nearbyTrafficIncidents} onSelect={onSelectIncident} />
-        )}
-        {settings.showLiveCameras &&
-          liveCameras.map((camera) => (
-            <Marker
-              key={`lc-${camera.id}`}
-              coordinate={{ latitude: camera.lat, longitude: camera.lng }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-              onPress={(e) => {
-                e.stopPropagation();
-                onLiveCameraPress(camera);
-              }}
-            >
-              <View style={styles.osmIconBadgeLiveCamera}>
-                <Ionicons name="videocam" size={16} color="#FFFFFF" />
-              </View>
-            </Marker>
-          ))}
-      </MapView>
       )
       )}
 
@@ -5453,31 +4675,22 @@ export function MapScreen() {
         </View>
       )}
 
-      {/* Google's photoreal 3D view belongs to the old map; on Mapbox, "3D buildings" raises
-          the buildings in the map itself once it's tilted. */}
-      {!useMapboxMap && show3D && isMap3DSupported && currentLatLng && (
-        <>
-          <Map3DView
-            ref={map3DRef}
-            style={StyleSheet.absoluteFill}
-            center={currentLatLng}
-            markerPosition={currentLatLng}
-            routeCoordinates={route?.polyline}
-          />
-          <Pressable
-            style={({ pressed }) => [
-              styles.frontViewButton,
-              { top: insets.top + spacing.md },
-              frontView && styles.fabActive,
-              pressed && { opacity: pressedOpacity },
-            ]}
-            onPress={toggleFrontView}
-            accessibilityLabel={frontView ? "Switch to top-down 3D view" : "Switch to front view"}
-          >
-            <Ionicons name={frontView ? "layers" : "eye"} size={18} color="#FFFFFF" />
-            <Text style={styles.frontViewButtonText}>{frontView ? "Top-down" : "Front view"}</Text>
-          </Pressable>
-        </>
+      {/* 3D buildings on and not navigating: switch between the 3D angle and a near-horizon
+          "front view" over the raised buildings. */}
+      {show3D && !route && currentLatLng && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.frontViewButton,
+            { top: insets.top + spacing.md },
+            frontView && styles.fabActive,
+            pressed && { opacity: pressedOpacity },
+          ]}
+          onPress={toggleFrontView}
+          accessibilityLabel={frontView ? "Switch to top-down 3D view" : "Switch to front view"}
+        >
+          <Ionicons name={frontView ? "layers" : "eye"} size={18} color="#FFFFFF" />
+          <Text style={styles.frontViewButtonText}>{frontView ? "Top-down" : "Front view"}</Text>
+        </Pressable>
       )}
 
       {/* Custom "From" picker -- reachable either from the idle search panel's own From row
@@ -6481,6 +5694,8 @@ export function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  mapUnavailable: { alignItems: "center", justifyContent: "center", padding: 24 },
+  mapUnavailableText: { fontSize: 15, color: colors.textMuted, textAlign: "center" },
   simulateDriveChip: {
     position: "absolute",
     left: spacing.lg,

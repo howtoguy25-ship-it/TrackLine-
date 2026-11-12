@@ -30,7 +30,8 @@ const ENTRIES: LicenseEntry[] = [
   {
     name: "OpenStreetMap",
     license: "Open Database License (ODbL) -- © OpenStreetMap contributors",
-    description: "Traffic-light and speed-camera locations, and nearby fuel/restaurant/hotel/parking place data, queried live from OpenStreetMap's community-mapped data via the Overpass API.",
+    description:
+      "The roads, places and names on the map (through Mapbox's map data, which is built on OpenStreetMap), plus traffic-light and speed-camera locations and nearby fuel/restaurant/hotel/parking place data, queried live via the Overpass API.",
     url: "https://www.openstreetmap.org/copyright",
   },
   {
@@ -41,14 +42,15 @@ const ENTRIES: LicenseEntry[] = [
   },
   {
     name: "Mapbox",
-    license: "Mapbox Terms of Service",
-    description: "Road-network map matching, used server-side to snap a visible driver's (delayed) location samples to the road they were on before showing them to other drivers (see Settings > Privacy).",
+    license: "Mapbox Terms of Service -- © Mapbox, © OpenStreetMap",
+    description:
+      "The map itself: map tiles, satellite imagery, live traffic and map rendering (@rnmapbox/maps). Also road-network map matching, used server-side to snap a visible driver's (delayed) location samples to the road they were on before showing them to other drivers (see Settings > Privacy).",
     url: "https://www.mapbox.com/legal/tos",
   },
   {
-    name: "Google Maps, Places, Directions & Street View",
+    name: "Google Places, Routes & Street View",
     license: "Google Maps Platform Terms of Service",
-    description: "The map itself, search, routing, and Street View imagery.",
+    description: "Place search and details, routing and live traffic times, and Street View imagery.",
     url: "https://cloud.google.com/maps-platform/terms",
   },
   {

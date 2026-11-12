@@ -171,6 +171,24 @@ One device is enough. Install the development build from §1, sign in, and allow
 - [ ] With the search keyboard up, tapping a result works first time (doesn't just close the keyboard).
 - [ ] Settings › Developer › Touch debugger on: each tap shows a red box with a component name on what you touched.
 
+## 11. The new Mapbox map — NEEDS DEVICE TEST
+
+Install the development build from the `mapbox-map` branch.
+- [ ] Map opens on your position: pale land, green parks, blue water, light-grey roads with white edges; Mapbox logo bottom-left.
+- [ ] Zoom out to a city view: motorway/primary names still show; residential names appear from street level; names never overlap.
+- [ ] Highway numbers (M2, A3…) sit on green shields with yellow text; suburb names are large blue-grey capitals.
+- [ ] Settings › Map appearance: each colour theme and road thickness changes the map; Map view › Satellite shows imagery with names.
+- [ ] Tilt the map with two fingers past ~30°: buildings rise (with 3D buildings on). Front view button tilts further.
+- [ ] Your arrow glides smoothly (no jumping), turns with heading; the teal accuracy circle stays the same size on the ground when zooming.
+- [ ] Drag the map: Re-centre appears; tap it to fly back. Twist/pinch also count as moving the map.
+- [ ] Pick a destination: lavender alternatives (tap to select), purple selected route with orange/red traffic, time bubbles, blue start dot, checkered flag; routes fit between card and sheet.
+- [ ] Go: purple route with white edge; the part behind you fades; a white arrow on the route at the next turn; dark-purple street callouts; tap the route for overview; auto-zoom eases in near turns and out on motorways.
+- [ ] Dev build: tap **Simulate drive** during navigation; the car drives the route at 50 km/h and guidance follows. Tap again to stop.
+- [ ] Report pins sit on the road and group into numbered circles when zoomed out; tapping opens the report; a selected report shows its comment.
+- [ ] Traffic lights / speed cameras / fuel / food / hotel pins and their clusters; NSW incidents and traffic cameras; Trackys of other drivers glide along roads.
+- [ ] Tap a shop/park name on the map: its place card opens.
+- [ ] About › Licences lists © Mapbox and © OpenStreetMap.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

@@ -62,6 +62,12 @@ Re-centre on the home map, anchored to the sheet), `StreetPill.tsx`, `ThreeSnapB
 travel-mode sheets, two-state bottom sheet with Go now, time bubbles, start dot, checkered-flag
 pin). The old `RouteOptionsCard.tsx` and `MenuButton`/`CompassButton`/`SoundButton` are gone.
 
+Map (Mapbox, `src/map-v2/`): `TrackLineMap.tsx` (MapView + Camera; the camera handle MapScreen
+uses), `MapboxLayers.tsx` (everything drawn on the map, from plain data), `layers/` (RouteLine,
+PinLayer, MapIcons, UserPuck, MarkerPin, PresenceLayerV2), `styles/buildStyle.ts` + the generated
+style JSONs (`npx tsx scripts/build-map-styles.ts`), `geo.ts`/`pins.ts`/`gestures.ts` (pure),
+`mapbox.ts` (safe lazy loader). Dev "Simulate drive": `src/dev/simulateDrive.ts`.
+
 Pure rules (no rendering, unit-tested): `src/map/homeMapLogic.ts` (button fade, arrow position,
 pin sizes, street-pill throttle), `src/map/routeChoices.ts` (distinct routes, avoid options,
 traffic labels, route tags, bubble placement), `src/services/searchRanking.ts`,

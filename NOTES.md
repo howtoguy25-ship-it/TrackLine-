@@ -683,3 +683,40 @@ map buttons — `pointerEvents="none"` once faded; Re-centre — `none` while hi
 own row below the map, not over it; Tracky/presence pins and dashcam badge — map markers /
 `none`; splash — native, hidden once fonts load; keypad number row — iOS `InputAccessoryView`
 attached only to the search field, Android row only while that field is focused.
+
+## Mapbox map (branch `mapbox-map`) — limits and decisions
+
+- **Mapbox is the only map.** `react-native-maps` (+ its patch and config plugin) is removed; the
+  Google style JSON (`utils/mapStyle.ts`) now only names the Settings choices. If a build has no
+  Mapbox native SDK or token, the map area says so instead of drawing a map.
+- **Tokens:** runtime public token from `EXPO_PUBLIC_MAPBOX_TOKEN`, falling back to
+  `MAPBOX_PUBLIC_TOKEN` (the name already stored in EAS — there is no `EXPO_PUBLIC_MAPBOX_TOKEN`
+  in EAS yet). Build-time `RNMAPBOX_MAPS_DOWNLOAD_TOKEN` (sensitive, in EAS). Telemetry off.
+- **Label font:** Rubik isn't on Mapbox's glyph server; uploading it needs a Mapbox Studio step
+  with an account token that has fonts:write. Map labels use Mapbox's "DIN Pro" (closest
+  geometric sans) with Arial Unicode as fallback. Everything outside the map is still Rubik.
+- **Zoom scale:** the camera code was tuned on Google's 256px-tile zoom; Mapbox tiles are 512px,
+  so the map handle subtracts 1 (`geo.ts MAPBOX_ZOOM_OFFSET`) — follow zoom 17 etc. look the same.
+- **Business taps:** Mapbox has no Google place IDs on its map, so a tap on a POI label is
+  resolved with a Google Places text search at that spot (one extra Places request per tap).
+- **3D:** Google's photoreal Map3DView overlay is no longer shown; "3D buildings" now raises
+  Mapbox's own buildings once the camera is tilted past 30°. The `map3d` native module is still
+  installed (unused) — remove it in a follow-up to drop the Google Maps 3D SDK from builds.
+- **Clusters** keep the app's existing grid clustering (reports, OSM, venues, Trackys); cluster
+  badges now show a coloured circle with the count (the old row-of-glyphs badge is gone).
+- **Simulate drive** (dev builds): a button during navigation plays the remaining route as GPS at
+  50 km/h through the GPS-replay channel.
+- **Not verified on a device.** Every visual/feel item is in `TEST_ON_PHONE.md` §11.
+
+### Mapbox migration — verification (2026-11-12)
+
+```
+$ npx tsc --noEmit                (exit 0)
+$ npx expo lint                   ✖ 218 problems (184 errors, 34 warnings)   # was 230 before
+$ npx jest                        Test Suites: 10 passed — Tests: 107 passed
+  (__tests__/mapV2.test.ts: style rules, route drawing, camera, re-centre, auto-zoom,
+   pin clustering, simulate drive — 32 tests)
+$ gl-style-validate               trackline-light / dark / satellite-streets: exit 0
+$ npx tsx scripts/test-*.ts       61 + 32 + 21 + 20 + 11 + 14 + 19 checks passed
+$ npx expo export --platform ios  iOS Bundled (2753 modules), exit 0
+```

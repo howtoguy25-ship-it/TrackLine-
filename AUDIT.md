@@ -431,3 +431,53 @@ judged on a phone — each one is listed in `TEST_ON_PHONE.md` §9.
 | Dashcam | Main menu › Dashcam (AI vehicle detection); the Menu button shows a badge while it's running |
 | Settings | Main menu › Settings (and Main menu › Map display goes straight to the map section) |
 | All of the above during navigation | Trip options › Map tools opens the same panel |
+
+## 11. Mapbox migration — the new map (branch `mapbox-map`)
+
+The home/navigation map is now drawn only by Mapbox (`@rnmapbox/maps` 10.3.17, `src/map-v2/`).
+`react-native-maps`, its patch, its config plugin, the Google map styles and the `USE_MAPBOX`
+flag are gone. Google Places / Routes / Directions / Street View are unchanged.
+"Code + tests" means the feature is built and its logic unit-tested; how it looks and feels on
+a phone is in `TEST_ON_PHONE.md` §11 (NEEDS DEVICE TEST for every row — no device here).
+
+| Old feature (react-native-maps) | Ported to Mapbox? | Evidence |
+|---|---|---|
+| Map style / 7 colour themes / road thickness | YES (new style, not a restyle) | `map-v2/styles/buildStyle.ts` → `trackline-light/dark/satellite-streets.json` (pass `gl-style-validate`); every theme = a palette over the same rules; jest "map style" (11 tests) |
+| Street labels by zoom (motorway z10 … service z16), 250px spacing, no overlap, class priority | YES | `LABEL_MIN_ZOOM`, `roadLabelLayer`; jest checks each class |
+| Road widths by class z14→z18, white casing, lines down to z9 | YES | `ROAD_WIDTHS`, `roadWidthExpression`; jest checks every class |
+| Green highway shields, yellow text | YES | `road-shields` layer + `tl-shield` image (TrackLineMap) |
+| Suburb labels #6E8FA6 with halo | YES | `suburb-labels` layer |
+| Route-picking dimmed base map | YES | `buildStyle(..., { dimmed })` |
+| Satellite (hybrid) | YES | `trackline-satellite-streets.json` (imagery + labels) |
+| 3D buildings | YES (changed engine) | fill-extrusion once pitch > 30° (`TrackLineMap`); the Google photoreal Map3DView overlay is no longer used; "Front view" button now tilts the Mapbox camera |
+| Live traffic layer (`showsTraffic`) | YES | Mapbox `mapbox-traffic-v1` source, moderate/heavy/severe coloured |
+| User arrow / person dot, heading, smooth movement | YES | `UserPuck`: app position → `CustomLocationProvider` → native `LocationPuck` (native interpolation) |
+| GPS accuracy circle | YES | `CircleLayer` with metres-true radius; jest "accuracy circle" |
+| Compass "flashlight" cone | YES | `SymbolLayer`, map-aligned rotation |
+| Ghost-mode Spooky badge | YES | `MarkerPin` beside the puck |
+| Street-name pill, compass button, re-centre, follow mode | YES (unchanged screen code) | same handle (`animateCamera`/`getCamera`); bearing read back from the Mapbox camera |
+| Gestures → re-centre state | YES | `GestureTracker` (Mapbox `isUserInteraction`); jest "re-centre state" |
+| Auto-zoom by speed / near turns, chase-cam, overview, exit zoom | YES (unchanged screen code) | camera calls go through `cameraStopFrom` (zoom offset −1 for 512px tiles); jest "camera", "auto-zoom" |
+| fitToCoordinates / animateToRegion (route fit 600 ms, search result fit, place page) | YES | `TrackLineMap` handle → `setCamera({bounds, padding})` honouring the sheet/card padding |
+| Navigation route: purple + white casing | YES | `RouteLine` "nav-route" |
+| Travelled part fading | YES (new) | `splitRouteAt`; jest "route drawing" |
+| Turn arrow on the route | YES (new) | `turnArrowAt` white arrow line; jest |
+| Dark-purple street callouts at turns | YES | `MarkerPin` ×≤3 |
+| Tap route → overview | YES | `RouteLine onPress` |
+| Add-stop preview line, traffic-suggestion line + ETA pill | YES | `RouteLine` + `MarkerPin` |
+| Route selection: purple selected + casing, lavender tappable alternatives, traffic stretches | YES | `MapboxLayers` selection lines |
+| Time bubbles ("10 min / Best") | YES | `MarkerPin` + `RouteTimeBubble` at `bubbleAnchors` |
+| Start dot, checkered destination pin, arrival flag | YES | `PinLayer` "route-ends" (icons `start`, `flag`) |
+| Report / hazard / police pins, sized by zoom, selection | YES | one `SymbolLayer` (`PinLayer`), icon `alert:<type>`, size = zoom size |
+| Report clusters (count) | YES | `alert-cluster` pins with count label; jest "pin clustering" |
+| Selected report's comment bubble | YES | `MarkerPin` |
+| Traffic lights / speed cameras (OSM) + clusters | YES | pins `traffic-light`, `speed-camera`, `*-cluster` |
+| Fuel / food / hotel pins + viewport clusters | YES | pins `fuel`, `restaurant`, `hotel`, `*-cluster` |
+| Live Traffic NSW incidents | YES | pins `incident:<colour>:<icon>:<major>` |
+| NSW traffic cameras | YES | pins `live-camera` |
+| Place-page pin, custom-origin pin (tappable) | YES | pins `place-page`, `origin` |
+| Other drivers' Trackys gliding along roads, clusters, trail | YES | `PresenceLayerV2` (same playback maths, symbol + circle layers) |
+| Tap a business on the map (`onPoiClick`) | YES (different source) | taps on the style's POI labels → Google Places text search → same place card |
+| EV siren radar, dashcam overlay | YES (not map layers) | unchanged screen overlays above the map |
+| Simulate drive | YES (new, dev builds) | `dev/simulateDrive.ts` through the GPS-replay channel; jest "simulate drive" |
+| Map / Mapbox attribution | YES | Mapbox logo + ⓘ on the map; About › Licences: © Mapbox, © OpenStreetMap |

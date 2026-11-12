@@ -161,20 +161,6 @@ module.exports = {
         },
       ],
       "expo-status-bar",
-      // Deliberately using react-native-maps' own config plugin here instead of the old
-      // `ios.config.googleMapsApiKey` field -- that field triggers a legacy, unmaintained
-      // plugin bundled in @expo/config-plugins (node_modules/@expo/config-plugins/build/
-      // ios/Maps.js) that injects `pod 'react-native-google-maps', ...` into the Podfile, a
-      // pod name that hasn't existed since old react-native-maps versions -- current
-      // react-native-maps (1.x) ships its own plugin that correctly adds
-      // `pod 'react-native-maps/Google', ...` (a real subspec) instead. Real error this was
-      // causing: "[!] No podspec found for `react-native-google-maps`" failing `pod install`.
-      [
-        "react-native-maps",
-        {
-          iosGoogleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
-        },
-      ],
       [
         "expo-location",
         {
@@ -369,8 +355,6 @@ module.exports = {
       // Read at runtime by the Mapbox map (src/map-v2/mapbox.ts). EXPO_PUBLIC_MAPBOX_TOKEN first;
       // MAPBOX_PUBLIC_TOKEN is the name already stored in EAS.
       mapboxPublicToken: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN,
-      // "1"/"0" forces the new Mapbox map on/off; unset = on in development builds (src/map-v2/flag.ts).
-      useMapbox: process.env.EXPO_PUBLIC_USE_MAPBOX,
       // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
       // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
       // false (never fabricated) when this is unset, so auto-mood just skips that one signal.

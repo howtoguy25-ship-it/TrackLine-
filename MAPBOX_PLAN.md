@@ -1,4 +1,9 @@
-# Mapbox Engine Switch — Plan (not started)
+# Mapbox Engine Switch — DONE on branch `mapbox-map` (see AUDIT.md §11)
+
+> Superseded: the switch was built as a new map in `src/map-v2/` and react-native-maps removed.
+> The plan below is kept for history.
+
+## Original plan
 
 **Status: BLOCKED/deferred, by explicit decision (see AUDIT.md section 2 and NOTES.md's
 matching Phase 1B entry).** `@rnmapbox/maps` is installed, both real Mapbox tokens are live as
