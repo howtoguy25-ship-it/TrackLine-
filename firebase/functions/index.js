@@ -17,6 +17,8 @@ const {
 } = require("./presencePath");
 const personaCore = require("./personaSpeechCore");
 const trafficCore = require("./trafficNswCore");
+const schoolZonesCore = require("./schoolZonesCore");
+const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
 
@@ -1093,4 +1095,51 @@ exports.refreshNswTrafficNow = onCall({ secrets: [TFNSW_API_KEY] }, async (reque
     throw new HttpsError("permission-denied", "Owner only.");
   }
   return refreshNswTrafficSnapshot();
+});
+
+
+// ---- School zones (official data) ----
+// Every Monday: Transport for NSW's School Zones data (CC BY 4.0, regenerated weekly) ->
+// schoolZoneTiles/{tile} (0.1 degree tiles, polygons as encoded polylines) and the NSW calendar
+// -> schoolCalendars/AU-NSW (terms from the same data + the official NSW public holidays).
+// Phones read the tiles around them and cache them (src/schoolZones/zoneStore.ts). A failed
+// download changes nothing: the last good data stays (phones re-check it within 30 days).
+const NSW_SCHOOL_ZONES_ZIP =
+  "https://opendata.transport.nsw.gov.au/data/dataset/4253a054-b377-4b5b-83d1-71385bb6ff33/resource/b6d7d02c-5625-461c-8b44-bba1a6ef3e0f/download/schoolzones.zip";
+
+async function refreshNswSchoolZones() {
+  const { unzipSync, strFromU8 } = require("fflate");
+  const response = await fetch(NSW_SCHOOL_ZONES_ZIP, { signal: AbortSignal.timeout(120000) });
+  if (!response.ok) throw new Error(`school zones download: ${response.status}`);
+  const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+  const name = Object.keys(files).find((f) => /schoolzones\.json$/i.test(f));
+  if (!name) throw new Error("school zones: SchoolZones.json not in the archive");
+  const built = schoolZonesCore.buildTiles(JSON.parse(strFromU8(files[name])));
+  if (built.count < 1000) throw new Error(`school zones: only ${built.count} zones read -- not replacing good data`);
+
+  const db = getFirestore();
+  const updatedAt = Date.now();
+  const meta = { region: "AU-NSW", source: schoolZonesCore.SOURCE, sourceUrl: schoolZonesCore.SOURCE_URL, generated: built.generated, updatedAt };
+  const keys = Object.keys(built.tiles);
+  for (let i = 0; i < keys.length; i += 400) {
+    const batch = db.batch();
+    for (const k of keys.slice(i, i + 400)) batch.set(db.doc(`schoolZoneTiles/${k}`), { ...meta, tile: k, zones: built.tiles[k] });
+    await batch.commit();
+  }
+  // Tiles that no longer have a zone (a zone removed from the official data) are emptied.
+  const stale = await db.collection("schoolZoneTiles").where("region", "==", "AU-NSW").where("updatedAt", "<", updatedAt).get();
+  for (let i = 0; i < stale.docs.length; i += 400) {
+    const batch = db.batch();
+    for (const d of stale.docs.slice(i, i + 400)) batch.set(d.ref, { ...meta, tile: d.id, zones: [] });
+    await batch.commit();
+  }
+  const calendar = schoolZonesCore.nswCalendar(built.terms, built.lateTerms, nswPublicHolidays);
+  if (calendar) await db.doc("schoolCalendars/AU-NSW").set({ ...calendar, updatedAt });
+  await db.doc("dataSources/schoolZones-AU-NSW").set({ ...meta, zones: built.count, skipped: built.skipped, tiles: keys.length, calendarValidTo: calendar ? calendar.validTo : null });
+  return { zones: built.count, skipped: built.skipped, tiles: keys.length };
+}
+
+exports.refreshSchoolZones = onSchedule({ schedule: "every monday 03:17", timeZone: "Australia/Sydney", timeoutSeconds: 540, memory: "1GiB" }, async () => {
+  const result = await refreshNswSchoolZones();
+  console.log("[schoolZones] NSW refreshed", result);
 });
