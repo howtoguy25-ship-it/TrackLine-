@@ -634,3 +634,12 @@ $ firebase emulators:exec … "npm --prefix firebase/tests test"
 Test Suites: 6 passed, 6 total — Tests: 126 passed, 126 total
 $ npx expo export --platform ios          iOS Bundled (2774 modules), exit 0
 ```
+
+### UI pass 2 — EAS development build
+
+- **Android** `94283ddc-7980-4a5b-8b08-623ef06274c8` (profile `development`, commit `14aaaae`,
+  arm64-only debug APK). A duplicate queued by mistake (`a3e2618b…`) was cancelled before it started.
+- **iOS**: not started from this session. EAS needs an ad-hoc provisioning profile for the Live
+  Activity widget target (`com.trackline.navigate.widget`) and can only create one interactively —
+  run `eas build --profile development --platform ios` from your own terminal once.
+
