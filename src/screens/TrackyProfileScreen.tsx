@@ -71,7 +71,7 @@ export function TrackyProfileScreen() {
         )}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.grid}>
           {TRACKY_MOOD_ORDER.map((key) => {
             const mood = TRACKY_MOODS[key];

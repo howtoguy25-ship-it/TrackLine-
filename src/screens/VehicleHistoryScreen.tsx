@@ -216,7 +216,7 @@ export function VehicleHistoryScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={entries}
           keyExtractor={(item) => item.plate}
           contentContainerStyle={[styles.list, selectMode && { paddingBottom: spacing.xxl + 64 }]}

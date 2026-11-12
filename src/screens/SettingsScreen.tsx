@@ -38,6 +38,8 @@ import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 import { ALL_ALERT_TYPES, type AppSettings, type VisibilityMode } from "@/services/settings";
 import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
+import { TouchDebuggerRow } from "@/debug/TouchDebuggerRow";
+import { CATEGORY_SECTIONS } from "@/screens/settingsCategories";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
@@ -58,37 +60,7 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 // every section (no category param -- every existing `navigation.navigate("Settings")` call
 // site keeps working exactly as before) or only the sections belonging to one category, via the
 // new SettingsCategoriesScreen's own list of category cards.
-export type SettingsCategory = "account" | "privacy" | "mapDisplay" | "navigationVoice" | "alertsCommunity" | "vehicleAI" | "developer";
-
-export const SETTINGS_CATEGORY_LABELS: Record<SettingsCategory, string> = {
-  account: "Account",
-  privacy: "Privacy",
-  mapDisplay: "Map display",
-  navigationVoice: "Navigation & voice",
-  alertsCommunity: "Alerts & community",
-  vehicleAI: "Vehicle & AI tools",
-  developer: "Developer",
-};
-
-export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, keyof typeof Ionicons.glyphMap> = {
-  account: "person-circle-outline",
-  privacy: "eye-off-outline",
-  mapDisplay: "map-outline",
-  navigationVoice: "navigate-outline",
-  alertsCommunity: "notifications-outline",
-  vehicleAI: "car-sport-outline",
-  developer: "code-slash-outline",
-};
-
-const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
-  account: ["Account", "Purchases"],
-  privacy: ["Privacy"],
-  mapDisplay: ["Map view", "Map shortcuts", "Map appearance", "Navigation card colors", "Your map marker", "Map layers"],
-  navigationVoice: ["Voice guidance", "Speed", "Public transit"],
-  alertsCommunity: ["Live alerts", "Alert icons"],
-  vehicleAI: ["AI Vehicle Detection", "Vehicle REV Checks", "EV Radar (siren detection)"],
-  developer: ["GPS replay (dev only)"],
-};
+export { SETTINGS_CATEGORY_LABELS, SETTINGS_CATEGORY_ICONS, type SettingsCategory } from "@/screens/settingsCategories";
 
 function sensitivityLabel(value: number): string {
   if (value <= 0.4) return "Low";
@@ -656,7 +628,7 @@ export function SettingsScreen() {
   const shouldShow = (sectionTitle: string) => !category || CATEGORY_SECTIONS[category].includes(sectionTitle);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.content}>
       {/* Real, confirmed request -- black background for this screen. App.tsx's global
           <StatusBar style="dark" /> assumes a light background everywhere else, which would
           leave the status bar icons invisible against this screen's new black background --
@@ -1275,6 +1247,11 @@ export function SettingsScreen() {
           limits/off-route rerouting against a real recorded drive without actually driving.
           Paste in your own real GPX export (any phone GPS logger, Strava, Google Maps Timeline,
           etc) -- see src/dev/gpsReplay.ts's own header for why nothing is bundled here. */}
+      {__DEV__ && (
+        <Section title="Touch debugger (dev only)" visible={shouldShow("Touch debugger (dev only)")}>
+          <TouchDebuggerRow />
+        </Section>
+      )}
       {__DEV__ && (
         <Section title="GPS replay (dev only)" visible={shouldShow("GPS replay (dev only)")}>
           <Text style={styles.helperText}>

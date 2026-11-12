@@ -1,8 +1,10 @@
+// Must be the first import: react-native-gesture-handler has to set itself up before anything
+// that uses it (bottom sheets, Reanimated gestures, swipeable rows) is loaded.
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/context/AuthContext";
 import { LocationProvider } from "@/context/LocationContext";
@@ -19,6 +21,7 @@ import { Rubik_500Medium } from "@expo-google-fonts/rubik/500Medium";
 import { Rubik_600SemiBold } from "@expo-google-fonts/rubik/600SemiBold";
 import { Rubik_700Bold } from "@expo-google-fonts/rubik/700Bold";
 import { setRubikReady } from "@/theme/typography";
+import { TouchDebugRoot } from "@/debug/TouchDebugRoot";
 import * as SplashScreen from "expo-splash-screen";
 
 // Installed at module scope so it's active as early as this file is ever imported/evaluated
@@ -125,7 +128,9 @@ function App() {
                   <AppOpenAdManager />
                 </AdsErrorBoundary>
               )}
-              <RootNavigator />
+              <TouchDebugRoot>
+                <RootNavigator />
+              </TouchDebugRoot>
             </LocationProvider>
           </SettingsProvider>
         </AuthProvider>

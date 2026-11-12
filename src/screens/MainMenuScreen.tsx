@@ -133,7 +133,7 @@ export function MainMenuScreen() {
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.mascotRow}>
           {appearance.mode === "custom" ? (
             <Tracky customization={appearance.customization} size={96} />

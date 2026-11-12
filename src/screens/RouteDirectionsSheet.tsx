@@ -51,7 +51,7 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </Pressable>
           </View>
-          <BottomSheetFlatList
+          <BottomSheetFlatList keyboardShouldPersistTaps="handled"
             data={route.steps}
             keyExtractor={(_: RouteStep, i: number) => String(i)}
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.lg }}

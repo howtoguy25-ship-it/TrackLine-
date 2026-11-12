@@ -51,7 +51,7 @@ export function HelpScreen() {
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
         {FAQ.map((item) => (
           <View key={item.question} style={styles.faqItem}>
             <Text style={styles.question}>{item.question}</Text>

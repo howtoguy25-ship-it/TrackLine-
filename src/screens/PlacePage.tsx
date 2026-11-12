@@ -213,7 +213,7 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
 
       <View style={[styles.sheet, { height: sheetHeight }]}>
         <View style={styles.grabber} />
-        <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: footerHeight + spacing.lg }}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: footerHeight + spacing.lg }}>
           <Text style={[styles.name, { fontSize: 30 * k }]} numberOfLines={3}>
             {place.name}
           </Text>
@@ -283,7 +283,7 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
           {(googlePhotos.length > 0 || userPhotos.length > 0 || canAddPhoto) && (
             <>
               <Text style={styles.sectionTitle}>Photos</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
+              <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
                 {canAddPhoto && (
                   <Pressable
                     onPress={addPhoto}

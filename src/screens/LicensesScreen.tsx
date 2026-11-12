@@ -105,7 +105,7 @@ export function LicensesScreen() {
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
         <Text style={styles.intro}>
           TrackLine&apos;s own original artwork (the Tracky characters, the app icon, and every alert
           icon) is hand-made for this app, not traced or downloaded. Everything below is

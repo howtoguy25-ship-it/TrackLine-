@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
+import { Pressable, StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
@@ -16,6 +16,11 @@ interface Props extends Omit<PressableProps, "style"> {
   haptic?: boolean;
   children?: React.ReactNode;
 }
+
+// The Pressable itself is the animated, sized element. (It used to be a flex:1 child of an
+// Animated.View; with flex:1 a child gets no height of its own unless the wrapper has a fixed
+// one, so a button styled by its padding could draw fine while its touchable area was zero.)
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function PressableScale({ style, haptic = true, onPressIn, onPressOut, children, ...rest }: Props) {
   const scale = useSharedValue(1);
@@ -39,11 +44,19 @@ export function PressableScale({ style, haptic = true, onPressIn, onPressOut, ch
     [onPressOut, scale]
   );
 
+  // onPress, onLongPress, disabled, accessibility props etc. all pass straight through in `rest`.
   return (
-    <Animated.View style={[style, animatedStyle]}>
-      <Pressable {...rest} onPressIn={handlePressIn} onPressOut={handlePressOut} style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        {children}
-      </Pressable>
-    </Animated.View>
+    <AnimatedPressable
+      {...rest}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[styles.centered, style, animatedStyle]}
+    >
+      {children}
+    </AnimatedPressable>
   );
 }
+
+const styles = StyleSheet.create({
+  centered: { alignItems: "center", justifyContent: "center" },
+});

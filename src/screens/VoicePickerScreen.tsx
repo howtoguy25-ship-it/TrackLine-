@@ -302,7 +302,7 @@ export function VoicePickerScreen() {
       {!loaded ? (
         <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
       ) : (
-        <SectionList
+        <SectionList keyboardShouldPersistTaps="handled"
           sections={sections}
           keyExtractor={rowKey}
           contentContainerStyle={{ paddingBottom: spacing.xxl }}

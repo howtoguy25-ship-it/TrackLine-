@@ -1,5 +1,5 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import Animated, { SlideInDown, type SharedValue } from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import * as Crypto from "expo-crypto";
 import {
@@ -657,7 +657,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
           />
         </ScrollView>
 
-        <ScrollView style={styles.listFlex} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={styles.listFlex} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
           {history.length > 0 && <Text style={styles.sectionLabel}>Recent</Text>}
           {history.map((item) => (
             <RecentRow
@@ -711,8 +711,12 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
     </ThreeSnapBottomSheet>
 
     {/* ---------------- The full-screen search ---------------- */}
-    <Modal visible={searchOpen} transparent animationType="none" onRequestClose={resetSearch} statusBarTranslucent>
-      <Animated.View entering={SlideInDown.duration(250)} style={[styles.searchScreen, { paddingTop: insets.top + spacing.sm }]}>
+    {/* Native slide, not a Reanimated "entering" animation: a layout animation inside a Modal
+        isn't guaranteed to run, and a Modal that opens with its content still parked off-screen
+        is an invisible full-screen layer that swallows every tap (with its autoFocus field
+        raising the keyboard). The native animation always ends with the screen in place. */}
+    <Modal visible={searchOpen} transparent animationType="slide" onRequestClose={resetSearch} statusBarTranslucent>
+      <View style={[styles.searchScreen, { paddingTop: insets.top + spacing.sm }]}>
         {picking && (
           <View style={styles.pickingBanner}>
             <Text style={styles.pickingBannerText}>{pickingLabel}</Text>
@@ -913,7 +917,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
             </View>
           </View>
         )}
-      </Animated.View>
+      </View>
     </Modal>
 
     {/* Upcoming calendar events that have a location -- tap one to get directions there. */}
@@ -932,7 +936,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
             body="Events in your calendar that have a location will show here."
           />
         ) : (
-          <FlatList
+          <FlatList keyboardShouldPersistTaps="handled"
             data={calendarEvents}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}
@@ -1002,7 +1006,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                   : "No matches for that search."}
               </Text>
             ) : (
-              <FlatList
+              <FlatList keyboardShouldPersistTaps="handled"
                 data={filteredContacts}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}

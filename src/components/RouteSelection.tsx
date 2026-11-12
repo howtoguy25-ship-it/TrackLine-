@@ -425,7 +425,7 @@ export function RouteSelectionSheet({
       </GestureDetector>
 
       {hasRoutes && expanded && (
-        <ScrollView style={{ maxHeight: listMaxHeight }} bounces={false}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: listMaxHeight }} bounces={false}>
           {rows.map((row, i) => {
             const isSelected = i === selectedIndex;
             return (

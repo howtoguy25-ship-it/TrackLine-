@@ -643,3 +643,43 @@ $ npx expo export --platform ios          iOS Bundled (2774 modules), exit 0
   Activity widget target (`com.trackline.navigate.widget`) and can only create one interactively —
   run `eas build --profile development --platform ios` from your own terminal once.
 
+
+## Bug fix — buttons don't respond / nothing navigates (keyboard pops up on the Menu)
+
+**Root cause (main):** the Main menu was registered as a native `transparentModal`. On iOS,
+react-native-screens' native stack keeps every ordinary ("push") screen on the base navigation
+controller and presents modals on top of it — so every screen opened from the Menu (Plan a drive,
+Settings, Inbox, Help, Sign in, Tracky profile…) was pushed *underneath* the Menu. The row showed
+its press highlight and then nothing visible happened. Plan a drive's destination field has
+`autoFocus`, so opening it behind the Menu raised the keyboard "by itself" on top of the Menu.
+The same trap existed for the dashcam (a `fullScreenModal`), whose "Run REV Check" pushed REV
+Check behind the camera.
+
+**Fixes**
+- `RootNavigator.tsx`: Main menu is an ordinary stack screen (it is an opaque full-screen panel,
+  so it never needed to be a modal). REV Check and document scan are presented as modals, so they
+  appear above the dashcam. REV Check's "Manage keys in Settings" closes the modals before opening
+  Settings. The rule lives in `src/navigation/modalStack.ts`.
+- Dev-only guards: `onUnhandledAction` warns for a navigate() to an unknown screen;
+  `onStateChange` warns if a push screen ever sits above a modal again.
+- `PressableScale`: the Pressable itself is now the animated, sized element (it used to be a
+  `flex:1` child of an Animated.View, which can collapse to a zero-height touch area when the
+  wrapper's height isn't fixed). Still forwards onPress / onLongPress / disabled.
+- Full-screen search: uses the Modal's native slide instead of a Reanimated `entering` animation
+  inside the Modal (a layout animation that doesn't run would leave an invisible full-screen
+  layer swallowing taps). The search field is only mounted while the search is open.
+- `HomeMapControls`: touchability starts from the sheet's real position on first render.
+- `react-native-gesture-handler` is the first import in `App.tsx`; `GestureHandlerRootView` already
+  wrapped the app once.
+- `keyboardShouldPersistTaps="handled"` on every ScrollView/FlatList (23 lists).
+- **Touch debugger (dev builds only):** Settings › Developer › Touch debugger. Every touch draws a
+  red outline + component name around the view that actually received it, and logs
+  `[touch] <component>`; every screen change logs `[press] <component> -> <screen>`.
+
+**Overlay audit** (everything drawn above the screens): Where-to sheet — `box-none`, never covers
+more than itself; full-screen search, Avoid/travel-mode sheets, contacts/events/naming dialogs,
+place-page "More" menu — mounted only while open; street pill — `pointerEvents="none"`; floating
+map buttons — `pointerEvents="none"` once faded; Re-centre — `none` while hidden; ad banner — its
+own row below the map, not over it; Tracky/presence pins and dashcam badge — map markers /
+`none`; splash — native, hidden once fonts load; keypad number row — iOS `InputAccessoryView`
+attached only to the search field, Android row only while that field is focused.

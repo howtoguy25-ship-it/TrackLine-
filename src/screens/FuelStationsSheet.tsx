@@ -284,7 +284,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
 
         {/* Plain, un-wrapped FlatList -- see SimpleBottomSheet.tsx's own header comment for why
             this now has zero gesture composition with the sheet at all. */}
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={filteredStations}
           keyExtractor={(item) => item.placeId}
           style={styles.listFlex}

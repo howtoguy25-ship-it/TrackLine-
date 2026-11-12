@@ -239,9 +239,9 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                 sheet's own pan gesture handler intercepts drag touches meant for a plain
                 ScrollView's content, so scrolling silently does nothing unless the library's own
                 gesture-aware scroll component is used. */}
-            <BottomSheetScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+            <BottomSheetScrollView keyboardShouldPersistTaps="handled" style={styles.scroll} showsVerticalScrollIndicator={false}>
               {place.photoUrls.length > 0 && (
-                <ScrollView
+                <ScrollView keyboardShouldPersistTaps="handled"
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.photoRow}

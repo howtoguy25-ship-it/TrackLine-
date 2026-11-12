@@ -163,6 +163,14 @@ One device is enough. Install the development build from §1, sign in, and allow
 - [ ] Do nothing for 10 s: Go now fills darker blue and navigation starts. Touch the screen during the fill: it stops.
 - [ ] Leave later opens Plan a drive with this destination filled in. "Add a stop" (pulled-up list) adds a stop.
 
+## 10. Buttons respond (bug fix) — NEEDS DEVICE TEST
+
+- [ ] Menu › each row (Plan a drive, Sign in, Inbox, Dashcam, Map display, Settings, Invite a friend, Help, Visible to other drivers, View profile) opens its screen in front, and Back returns to the Menu. No keyboard appears on the Menu.
+- [ ] Dashcam › Run REV Check opens REV Check on top of the camera; Scan plate/VIN opens on top of that.
+- [ ] Every floating home button, place-page button and route-screen button responds on the first tap.
+- [ ] With the search keyboard up, tapping a result works first time (doesn't just close the keyboard).
+- [ ] Settings › Developer › Touch debugger on: each tap shows a red box with a component name on what you touched.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

@@ -124,7 +124,7 @@ export function OwnerDashboardScreen() {
   const canSend = title.trim().length > 0 && body.trim().length > 0 && !sending;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.sectionTitle}>Live usage</Text>
       <Text style={styles.helperText}>
         Real numbers from every device that's opened this app, refreshed automatically while this

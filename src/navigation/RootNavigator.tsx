@@ -25,6 +25,8 @@ import { LicensesScreen } from "@/screens/LicensesScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
 import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
 import type { PlaceDetails } from "@/services/places";
+import { MODAL_SCREENS, screensHiddenBehindModal } from "@/navigation/modalStack";
+import { logNavigation } from "@/debug/touchDebug";
 
 export type RevCheckParams = {
   // Prefilled plate -- from tapping a saved vehicle history entry, or a "Run REV Check" tap in
@@ -144,6 +146,18 @@ export function RootNavigator() {
     <NavigationContainer
       ref={navigationRef}
       onReady={() => navigationIntegration.registerNavigationContainer(navigationRef)}
+      // navigate("Typo") would otherwise do nothing at all; say so in development.
+      onUnhandledAction={(action) => {
+        if (__DEV__) console.warn("[nav] nothing handled this navigation (unknown screen?)", JSON.stringify(action));
+      }}
+      onStateChange={(state) => {
+        const names = state?.routes.map((r) => r.name) ?? [];
+        logNavigation(names[names.length - 1] ?? "?");
+        const hidden = screensHiddenBehindModal(names);
+        if (__DEV__ && hidden.length > 0) {
+          console.warn(`[nav] ${hidden.join(", ")} opened behind a modal screen and can't be seen (see navigation/modalStack.ts)`);
+        }
+      }}
     >
       <Stack.Navigator
         screenOptions={{
@@ -173,7 +187,9 @@ export function RootNavigator() {
         <Stack.Screen
           name="MainMenu"
           component={MainMenuScreen}
-          options={{ presentation: "transparentModal", animation: "slide_from_left" }}
+          // An ordinary screen, not a modal: every row opens another screen, and on iOS a
+          // screen opened from a modal is drawn underneath it (see navigation/modalStack.ts).
+          options={{ animation: "slide_from_left" }}
         />
         <Stack.Screen name="Inbox" component={InboxScreen} />
         <Stack.Screen name="PlanADrive" component={PlanADriveScreen} />
@@ -189,14 +205,18 @@ export function RootNavigator() {
         <Stack.Screen
           name="RevCheck"
           component={RevCheckScreen}
-          options={{ headerShown: true, title: "REV Check" }}
+          options={{ headerShown: true, title: "REV Check", presentation: MODAL_SCREENS.RevCheck as "modal" }}
         />
         <Stack.Screen
           name="OwnerDashboard"
           component={OwnerDashboardScreen}
           options={{ headerShown: true, title: "Owner Dashboard" }}
         />
-        <Stack.Screen name="DocumentScan" component={DocumentScanScreen} />
+        <Stack.Screen
+          name="DocumentScan"
+          component={DocumentScanScreen}
+          options={{ presentation: MODAL_SCREENS.DocumentScan as "modal" }}
+        />
         <Stack.Screen
           name="MapboxMapPreview"
           component={MapboxMapScreen}
@@ -216,7 +236,7 @@ export function RootNavigator() {
           name="VehicleDetection"
           component={VehicleDetectionRoute}
           options={{
-            presentation: "fullScreenModal",
+            presentation: MODAL_SCREENS.VehicleDetection as "fullScreenModal",
             animation: "slide_from_bottom",
             // The real fix -- see this file's own header comment on VehicleDetectionRoute for
             // why this (not expo-screen-orientation) is what actually lets this one screen

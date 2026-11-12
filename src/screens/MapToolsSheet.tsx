@@ -63,7 +63,7 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
     >
-      <BottomSheetScrollView
+      <BottomSheetScrollView keyboardShouldPersistTaps="handled"
         style={styles.scroll}
         contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}
         showsVerticalScrollIndicator={false}

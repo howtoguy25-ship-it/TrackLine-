@@ -632,7 +632,12 @@ export function RevCheckScreen() {
       )}
 
       <Pressable
-        onPress={() => navigation.navigate("Settings", { category: "vehicleAI" })}
+        onPress={() => {
+          // REV Check is a modal; Settings isn't, so it would open hidden behind it. Close the
+          // modal screens first (see navigation/modalStack.ts).
+          navigation.popToTop();
+          navigation.navigate("Settings", { category: "vehicleAI" });
+        }}
         style={({ pressed }) => [styles.settingsLink, pressed && { opacity: pressedOpacity }]}
       >
         <MaterialCommunityIcons name="key-variant" size={16} color={colors.accent} />

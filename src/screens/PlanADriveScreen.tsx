@@ -171,7 +171,7 @@ export function PlanADriveScreen() {
             />
             {searching && <ActivityIndicator size="small" color={colors.accent} />}
           </View>
-          <FlatList
+          <FlatList keyboardShouldPersistTaps="handled"
             data={query.trim() ? predictions : quickPicks}
             keyExtractor={(item: any) => item.placeId}
             ListHeaderComponent={

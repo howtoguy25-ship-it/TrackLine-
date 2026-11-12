@@ -104,7 +104,7 @@ export function TrackyCustomizerScreen() {
         <Tracky customization={draft} size={120} animated reactOnTap />
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
+      <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar} contentContainerStyle={styles.tabBarContent}>
         {TABS.map((t) => (
           <Pressable
             key={t.key}
@@ -116,7 +116,7 @@ export function TrackyCustomizerScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.panel}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.panel}>
         {tab === "presets" && (
           <View style={styles.grid}>
             {TRACKY_PRESETS.map((preset) => {

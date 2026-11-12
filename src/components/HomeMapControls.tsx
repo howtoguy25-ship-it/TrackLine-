@@ -11,7 +11,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { PressableScale } from "@/components/PressableScale";
 import { CompassNeedle, RecenterIcon, ReportIcon } from "@/components/icons/MapControlIcons";
-import { FLOATING_GAP, floatingButtonsOpacity } from "@/map/homeMapLogic";
+import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity } from "@/map/homeMapLogic";
 import { colors, shadow, scaleFor } from "@/theme/tokens";
 
 // Every floating button on the idle home map, in one place:
@@ -73,7 +73,11 @@ export function HomeMapControls(props: Props) {
   const opacity = useDerivedValue(() => floatingButtonsOpacity(sheetVisibleHeight.value, sheetHalfHeight));
   // A faded-out button must not be tappable. Touchability is ordinary React state, flipped only
   // when the fade crosses its midpoint -- twice per drag, not once per frame.
-  const [interactive, setInteractive] = useState(true);
+  // Starts from where the sheet is right now, so a screen that opens with the sheet already
+  // pulled up never has tappable-but-invisible buttons for a frame.
+  const [interactive, setInteractive] = useState(() =>
+    floatingButtonsInteractive(sheetVisibleHeight.get(), sheetHalfHeight)
+  );
   useAnimatedReaction(
     () => opacity.value > 0.5,
     (now, before) => {
