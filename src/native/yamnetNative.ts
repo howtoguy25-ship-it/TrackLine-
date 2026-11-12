@@ -12,8 +12,17 @@ interface YamnetSirenNativeModule {
   /**
    * Runs inference on one ~1s window of mono 16kHz PCM float samples and returns the
    * top classification results (label + confidence), matching YAMNet's 521 AudioSet classes.
+   * Kept for contract-compatibility with direct-PCM callers; sirenDetection.ts uses
+   * classifyFile below instead, since this app never has raw PCM on hand (see its own comment).
    */
   classify(pcmSamples: number[]): Promise<ClassificationResult[]>;
+  /**
+   * Real end-to-end path: reads the real recorded audio file at `uri` (whatever compressed
+   * format expo-audio's recorder actually produced -- AAC/m4a on both platforms), decodes and
+   * resamples it to real 16kHz mono PCM natively (AVFoundation on iOS, MediaCodec on Android),
+   * then classifies it. Returns the same shape as classify().
+   */
+  classifyFile(uri: string): Promise<ClassificationResult[]>;
 }
 
 // This native module is provided by the local "yamnet-siren" Expo module (see
@@ -35,6 +44,9 @@ export const YamnetSiren: YamnetSirenNativeModule = nativeModule ?? {
     return false;
   },
   async classify() {
+    return [];
+  },
+  async classifyFile() {
     return [];
   },
 };

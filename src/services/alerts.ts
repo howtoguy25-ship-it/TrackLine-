@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   onSnapshot,
   query,
@@ -12,9 +13,10 @@ import {
   addDoc,
   type Unsubscribe,
 } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "@/services/firebase";
 import { encodeGeohash } from "@/utils/geo";
-import { classifyAuRegion, type AuRegionCode } from "@/utils/auStates";
+import { classifyAuRegion } from "@/utils/auStates";
 import { ALERT_TTL_MS, type AlertDoc, type AlertType } from "@/types/alert";
 import { containsBlockedLanguage, clampToWordLimit } from "@/utils/commentFilter";
 
@@ -54,6 +56,7 @@ function toAlertDoc(id: string, data: any): AlertDoc {
       data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : (data.createdAt ?? Date.now()),
     expiresAt: data.expiresAt instanceof Timestamp ? data.expiresAt.toMillis() : data.expiresAt,
     confirmCount: data.confirmCount ?? 0,
+    denyCount: data.denyCount ?? 0,
     // Pre-migration docs could still have the old plain-array shape for a short window (short-
     // lived alerts, 45min-24h TTL, all pruned by the scheduled cleanup function well within a
     // day) -- treated as "nobody's hidden it yet" rather than crashing on the shape mismatch.
@@ -97,6 +100,7 @@ export async function reportAlert(
     createdAt: serverTimestamp(),
     expiresAt: Timestamp.fromMillis(now + ttlMs),
     confirmCount: 0,
+    denyCount: 0,
     hiddenBy: {},
     ...(safeComment ? { comment: safeComment } : {}),
   });
@@ -167,8 +171,41 @@ export async function hideAlertForUser(alertId: string, uid: string): Promise<vo
   });
 }
 
+// Real, explicit request -- the new Inbox screen's own "delete + undo" row action. Reverses
+// hideAlertForUser by removing this uid's own entry from the map entirely (not just letting the
+// 1-hour timer run out), so "Undo" genuinely puts the alert straight back rather than only
+// working within whatever time happens to be left on the hide.
+export async function unhideAlertForUser(alertId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
+    [`hiddenBy.${uid}`]: deleteField(),
+  });
+}
+
+const INBOX_LAST_VIEWED_KEY = "@trackline/inboxLastViewedAt";
+
+// Real "unread" badge count for the main menu's Inbox row -- persisted locally (not synced
+// across devices; a real, deliberately simple per-device "have I opened the Inbox since this
+// alert came in" signal, same scope every other local AsyncStorage-backed counter in this app
+// already has, e.g. services/voice.ts's consent-shown counter).
+export async function getInboxLastViewedAt(): Promise<number> {
+  const raw = await AsyncStorage.getItem(INBOX_LAST_VIEWED_KEY);
+  return raw ? Number(raw) : 0;
+}
+
+export async function markInboxViewedNow(): Promise<void> {
+  await AsyncStorage.setItem(INBOX_LAST_VIEWED_KEY, String(Date.now()));
+}
+
 export async function confirmAlert(alertId: string): Promise<void> {
   await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
     confirmCount: increment(1),
+  });
+}
+
+// "Not here" vote -- the other half of the automatic proximity "Still here? / Not here" prompt
+// (see MapScreen's AlertStillHereCard). Mirrors confirmAlert exactly, just the other counter.
+export async function denyAlert(alertId: string): Promise<void> {
+  await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
+    denyCount: increment(1),
   });
 }

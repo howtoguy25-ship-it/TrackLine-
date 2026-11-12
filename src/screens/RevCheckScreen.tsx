@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, Pressable, StyleSheet, ScrollView, Linking, Keyboard } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import { useIAP, ErrorCode, type Purchase } from "react-native-iap";
-import { recordManualCheck, recordRevCheckResult, getVehicleHistory } from "@/services/vehicleHistory";
+import { recordManualCheck, recordRevCheckResult, recordPlateLookupResult, getVehicleHistory } from "@/services/vehicleHistory";
 import { runRevCheck, subscribeRevCheckProviderStatus, type RevCheckResult } from "@/services/revCheck";
+import { runPlateLookup, subscribePlateLookupProviderStatus, type PlateLookupResult } from "@/services/plateLookup";
 import { AU_STATES, DEFAULT_AU_STATE } from "@/utils/auStates";
 import { REV_CHECK_PRODUCT_ID, REV_CHECK_FALLBACK_PRICE_LABEL } from "@/services/iap";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -47,9 +50,28 @@ export function RevCheckScreen() {
   const [plate, setPlate] = useState(params?.plate ?? "");
   const [vin, setVin] = useState(params?.vin ?? "");
   const [state, setState] = useState(params?.state ?? DEFAULT_AU_STATE);
+
+  // Real, explicit request: camera capture for plate/VIN (see DocumentScanScreen) navigates
+  // back to this exact screen instance with a fresh plate/vin/state in route.params -- unlike
+  // the useState initializers right above (mount-only), these keep the visible fields in sync
+  // on every later return trip from a scan too, not just the very first time this screen opens.
+  useEffect(() => {
+    if (params?.plate !== undefined) setPlate(params.plate);
+  }, [params?.plate]);
+  useEffect(() => {
+    if (params?.vin !== undefined) setVin(params.vin);
+  }, [params?.vin]);
+  useEffect(() => {
+    if (params?.state !== undefined) setState(params.state);
+  }, [params?.state]);
   const [checking, setChecking] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [result, setResult] = useState<RevCheckResult | null>(null);
+  // Real, second result -- the plate+state lookup (make/model/year/body/engine/etc., see
+  // plateLookup.ts), kept separate from `result` (the VIN-only PPSR stolen/written-off/finance/
+  // odometer check) since they're genuinely different data sources that can each succeed, fail,
+  // or simply not have been asked for (no VIN entered) independently of the other.
+  const [plateResult, setPlateResult] = useState<PlateLookupResult | null>(null);
   // Set only when `result` came from a PAST paid check loaded off this vehicle's history entry
   // (see the load effect below), never from a check just run this instant -- lets the render
   // show an honest "last checked X ago" instead of implying a stale result just happened live.
@@ -61,6 +83,8 @@ export function RevCheckScreen() {
   // lands.
   const [providerConfigured, setProviderConfigured] = useState(false);
   useEffect(() => subscribeRevCheckProviderStatus(setProviderConfigured), []);
+  const [plateProviderConfigured, setPlateProviderConfigured] = useState(false);
+  useEffect(() => subscribePlateLookupProviderStatus(setPlateProviderConfigured), []);
 
   // Holds a purchase that has been PAID for but not yet delivered a successful check result --
   // see the header comment above. A ref (not just state) because it's read from inside the
@@ -74,29 +98,52 @@ export function RevCheckScreen() {
     async (purchase: Purchase | null, finishTransactionFn: (args: { purchase: Purchase; isConsumable: boolean }) => Promise<void>) => {
       const trimmedVin = vin.trim().toUpperCase();
       const trimmedPlate = plate.trim().toUpperCase();
-      if (!trimmedVin) return;
+      if (!trimmedPlate) return;
       setChecking(true);
       setPurchasing(false);
       setResult(null);
+      setPlateResult(null);
       setCachedResultAt(null);
       try {
-        await recordManualCheck(trimmedPlate, state, trimmedVin);
-        const outcome = await runRevCheck(trimmedVin);
-        setResult(outcome);
-        if (outcome.outcome === "success") {
+        await recordManualCheck(trimmedPlate, state, trimmedVin || null);
+
+        // Always runs -- the real plate+state lookup (make/model/year/etc.), per explicit
+        // request that a check work from just a plate. Independent of the VIN check below: one
+        // can succeed while the other fails/isn't asked for, and each is reported honestly on
+        // its own.
+        const plateOutcome = await runPlateLookup(trimmedPlate, state);
+        setPlateResult(plateOutcome);
+        if (plateOutcome.outcome === "success") {
+          await recordPlateLookupResult(trimmedPlate, { vehicle: plateOutcome.vehicle });
+        }
+
+        // Only runs when a VIN was actually entered -- stolen/written-off/finance/odometer stay
+        // real PPSR data, which genuinely requires a VIN (see revCheck.ts's own header), not a
+        // guess derived from the plate lookup above.
+        let vinOutcome: RevCheckResult | null = null;
+        if (trimmedVin) {
+          vinOutcome = await runRevCheck(trimmedVin);
+          setResult(vinOutcome);
+        }
+
+        const delivered = plateOutcome.outcome === "success" || vinOutcome?.outcome === "success";
+        if (vinOutcome?.outcome === "success") {
           await recordRevCheckResult(trimmedPlate, trimmedVin, {
-            vehicle: outcome.vehicle,
-            securedInterestCount: outcome.securedInterestCount,
-            certificateUrl: outcome.certificateUrl,
+            vehicle: vinOutcome.vehicle,
+            securedInterestCount: vinOutcome.securedInterestCount,
+            certificateUrl: vinOutcome.certificateUrl,
           });
-          // Value actually delivered -- now (and only now) is it honest to consume the purchase.
+        }
+        if (delivered) {
+          // Real value actually delivered (from either source) -- now (and only now) is it
+          // honest to consume the purchase.
           if (purchase) {
             await finishTransactionFn({ purchase, isConsumable: true });
           }
           pendingPurchaseRef.current = null;
           setHasPendingPaidRetry(false);
         } else if (purchase) {
-          // Paid, but the real check didn't deliver -- keep the transaction open so "Retry" can
+          // Paid, but neither real check delivered -- keep the transaction open so "Retry" can
           // reuse it for free instead of charging the driver again for a check that never ran.
           pendingPurchaseRef.current = purchase;
           setHasPendingPaidRetry(true);
@@ -114,9 +161,22 @@ export function RevCheckScreen() {
     },
     onPurchaseError: (error) => {
       setPurchasing(false);
-      if (error.code !== ErrorCode.UserCancelled) {
-        setResult({ outcome: "error", message: `Payment didn't go through: ${error.message}` });
+      if (error.code === ErrorCode.UserCancelled) return;
+      // Real, confirmed issue (not a code bug): SkuNotFound/ItemUnavailable means Apple's own
+      // App Store Connect doesn't yet have REV_CHECK_PRODUCT_ID (see iap.ts) as a live,
+      // purchasable in-app purchase for this app -- that's an App Store Connect configuration
+      // step (create the product, complete pricing/metadata, and the Paid Applications
+      // Agreement/banking+tax info must be active, or Apple blocks IAP entirely, sandbox
+      // included), not something fixable from this app's own code. Honest, distinct message so
+      // this doesn't read as a generic "your card was declined"-style failure.
+      if (error.code === ErrorCode.SkuNotFound || error.code === ErrorCode.ItemUnavailable) {
+        setResult({
+          outcome: "error",
+          message: "REV Check payments aren't set up yet on the App Store -- try again later.",
+        });
+        return;
       }
+      setResult({ outcome: "error", message: `Payment didn't go through: ${error.message}` });
     },
   });
 
@@ -127,6 +187,14 @@ export function RevCheckScreen() {
 
   const revCheckProduct = products.find((p) => p.id === REV_CHECK_PRODUCT_ID);
   const priceLabel = revCheckProduct?.displayPrice ?? REV_CHECK_FALLBACK_PRICE_LABEL;
+  // Real, confirmed gate: fetchProducts coming back with no match for REV_CHECK_PRODUCT_ID means
+  // Apple/Google's own store genuinely doesn't have this SKU live yet (see onPurchaseError's own
+  // comment) -- letting the button stay a normal-looking "Pay $14.99" tap that's guaranteed to
+  // fail with a cryptic native error is worse than being upfront that payment isn't ready yet.
+  // Only gates the PAID path -- the free "not connected" path (see onStart) never needed a real
+  // product to begin with.
+  const paymentRequired = providerConfigured || plateProviderConfigured;
+  const paymentReady = connected && !!revCheckProduct;
 
   // A real REV check costs real money (see the cost notice below) -- closing this screen (or the
   // driver just navigating away) must never lose a result they already paid for. Loads whatever
@@ -154,6 +222,9 @@ export function RevCheckScreen() {
         });
         setCachedResultAt(match.lastResult.checkedAt);
       }
+      if (match?.lastPlateLookup) {
+        setPlateResult({ outcome: "success", message: "Lookup complete.", vehicle: match.lastPlateLookup.vehicle });
+      }
     });
     return () => {
       cancelled = true;
@@ -173,7 +244,7 @@ export function RevCheckScreen() {
   }, [navigation]);
 
   const onStart = useCallback(async () => {
-    if (!vin.trim()) return;
+    if (!plate.trim()) return;
 
     // Already paid for a prior attempt that failed after payment -- retry the same real check
     // for free instead of buying it again.
@@ -182,10 +253,11 @@ export function RevCheckScreen() {
       return;
     }
 
-    // No provider connected at all means this can only ever return the honest "not connected"
-    // placeholder -- charging real money for a check that's guaranteed not to deliver real data
-    // would be dishonest, so this path never touches the purchase flow.
-    if (!providerConfigured) {
+    // Neither provider connected at all means this can only ever return the honest "not
+    // connected" placeholder from both sources -- charging real money for a check guaranteed
+    // not to deliver anything real would be dishonest, so this path never touches the purchase
+    // flow. Either one alone is enough to charge for, since it can still deliver real value.
+    if (!providerConfigured && !plateProviderConfigured) {
       runCheck(null, finishTransaction);
       return;
     }
@@ -201,35 +273,46 @@ export function RevCheckScreen() {
     } catch {
       setPurchasing(false);
     }
-  }, [vin, providerConfigured, requestPurchase, finishTransaction, runCheck]);
+  }, [plate, providerConfigured, plateProviderConfigured, requestPurchase, finishTransaction, runCheck]);
 
   const onOpenCertificate = useCallback((url: string) => {
     Linking.openURL(url).catch(() => {});
   }, []);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      // Real, confirmed gap: this screen had no keyboard-avoidance at all -- opening the
+      // keyboard for the plate/VIN fields could cover the state picker and the Run REV Check
+      // button below with no automatic scroll to bring them back into view, only a manual drag
+      // (easy to miss entirely while focused on typing a plate). automaticallyAdjustKeyboardInsets
+      // is RN's own real keyboard-aware inset + auto-scroll-to-focused-input behavior (iOS).
+      // keyboardShouldPersistTaps lets tapping a state chip or the close button register in one
+      // tap while the keyboard's still up, instead of the first tap only dismissing it.
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.headerRow}>
         <View style={styles.headerTextWrap}>
           <Text style={styles.title}>Vehicle REV Check</Text>
           <Text style={styles.subtitle}>
-            Stolen / written-off / money-owing status &amp; NEVDIS vehicle data -- Australia only,
-            searched by VIN.
+            Enter a plate + state for real model/spec data. Add a VIN too for stolen /
+            written-off / money-owing status -- Australia only.
           </Text>
         </View>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={onClose}
-          hitSlop={12}
           accessibilityLabel="Close REV check"
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
-        >
-          <Ionicons name="close" size={22} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       {hasVehicleSummary && (
         <View style={styles.summaryCard}>
-          <MaterialCommunityIcons name="car-info" size={20} color={colors.accent} />
+          <Icon name="car-info" size={20} color={colors.accent} />
           <View style={styles.summaryTextWrap}>
             <Text style={styles.summaryTitle}>From live AI detection</Text>
             <View style={styles.summaryRow}>
@@ -249,24 +332,16 @@ export function RevCheckScreen() {
       )}
 
       <View style={styles.formCard}>
-        <Text style={styles.fieldLabel}>VIN (required for a real check)</Text>
-        <TextInput
-          value={vin}
-          onChangeText={(t) => setVin(t.toUpperCase())}
-          placeholder="e.g. ZAM57YTA0T0000042"
-          placeholderTextColor={colors.textFaint}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={17}
-          style={styles.plateInput}
-        />
-        <Text style={styles.helperText}>
-          The 17-character chassis number -- on the rego papers, or the compliance plate visible
-          through the windshield. PPSR searches by VIN, not plate, since a plate can change on
-          re-registration.
-        </Text>
-
-        <Text style={styles.fieldLabel}>NUMBER PLATE (for your own records)</Text>
+        <View style={styles.fieldLabelRow}>
+          <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>NUMBER PLATE (required)</Text>
+          <Button
+            variant="secondary"
+            icon="camera-outline"
+            label="Scan plate"
+            onPress={() => navigation.navigate("DocumentScan", { mode: "plate" })}
+            accessibilityLabel="Scan plate with camera"
+          />
+        </View>
         <TextInput
           value={plate}
           onChangeText={(t) => setPlate(t.toUpperCase())}
@@ -275,6 +350,8 @@ export function RevCheckScreen() {
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={10}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
           style={styles.plateInput}
         />
 
@@ -283,72 +360,153 @@ export function RevCheckScreen() {
           {AU_STATES.map((s) => {
             const isSelected = state === s.code;
             return (
-              <Pressable
+              <Chip
+                label={s.code}
                 key={s.code}
                 onPress={() => setState(s.code)}
-                style={({ pressed }) => [
-                  styles.stateChip,
-                  isSelected && styles.stateChipSelected,
-                  pressed && { opacity: pressedOpacity },
-                ]}
                 accessibilityLabel={s.label}
-              >
-                <Text style={[styles.stateChipText, isSelected && styles.stateChipTextSelected]}>
-                  {s.code}
-                </Text>
-              </Pressable>
+                selected={isSelected}
+              />
             );
           })}
         </View>
         <Text style={styles.helperText}>
-          Kept with this record for your own reference -- not sent to the PPSR search itself,
-          which is a national (not state-based) register.
+          Real make/model/year/body/engine data comes back from just the plate + state above.
         </Text>
 
-        {providerConfigured && !hasPendingPaidRetry && (
+        <View style={styles.fieldLabelRow}>
+          <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
+          <Button
+            variant="secondary"
+            icon="camera-outline"
+            label="Scan VIN"
+            onPress={() => navigation.navigate("DocumentScan", { mode: "vin" })}
+            accessibilityLabel="Scan VIN with camera"
+          />
+        </View>
+        <TextInput
+          value={vin}
+          onChangeText={(t) => setVin(t.toUpperCase())}
+          placeholder="e.g. ZAM57YTA0T0000042"
+          placeholderTextColor={colors.textFaint}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={17}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
+          style={styles.plateInput}
+        />
+        <Text style={styles.helperText}>
+          The 17-character chassis number -- on the rego papers, or the compliance plate visible
+          through the windshield. Stolen/written-off/money-owing status only ever comes from a
+          real PPSR search, which searches by VIN, not plate (a plate can change on
+          re-registration) -- leave this blank to just see model/spec data from the plate above.
+        </Text>
+
+        {paymentRequired && !hasPendingPaidRetry && paymentReady && (
           <View style={styles.costNotice}>
-            <MaterialCommunityIcons name="currency-usd" size={14} color={colors.warning} />
+            <Icon name="currency-usd" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
               Running this check costs {priceLabel}, charged securely through the App Store.
             </Text>
           </View>
         )}
+        {/* Real, confirmed gate -- see paymentReady's own comment. Honest "not ready yet"
+            state instead of a normal-looking price notice for a purchase guaranteed to fail. */}
+        {paymentRequired && !hasPendingPaidRetry && !paymentReady && (
+          <View style={styles.costNotice}>
+            <Icon name="alert-circle-outline" size={14} color={colors.warning} />
+            <Text style={styles.costNoticeText}>
+              REV Check payments aren't available yet -- try again shortly.
+            </Text>
+          </View>
+        )}
         {hasPendingPaidRetry && (
           <View style={styles.costNotice}>
-            <MaterialCommunityIcons name="information-outline" size={14} color={colors.warning} />
+            <Icon name="information-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
               Your last check didn't complete after payment -- retrying is free, no second charge.
             </Text>
           </View>
         )}
 
-        <Pressable
+        <Button
+          variant="primary"
+          size="large"
+          fullWidth
+          label={
+            hasPendingPaidRetry
+              ? "Retry REV check (already paid)"
+              : paymentRequired
+                ? paymentReady
+                  ? `Pay ${priceLabel} and start REV check`
+                  : "Payments unavailable"
+                : "Start REV check"
+          }
+          loading={checking || purchasing}
           onPress={onStart}
-          disabled={!vin.trim() || checking || purchasing}
-          style={({ pressed }) => [
-            styles.startButton,
-            (!vin.trim() || checking || purchasing) && styles.startButtonDisabled,
-            pressed && !checking && !purchasing && vin.trim() && { opacity: pressedOpacity },
-          ]}
-        >
-          {checking || purchasing ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.startButtonText}>
-              {hasPendingPaidRetry
-                ? "Retry REV Check (already paid)"
-                : providerConfigured
-                  ? `Pay ${priceLabel} & Start REV Check`
-                  : "Start REV Check"}
+          disabled={!plate.trim() || checking || purchasing || (paymentRequired && !hasPendingPaidRetry && !paymentReady)}
+          style={{ marginTop: spacing.lg }}
+        />
+      </View>
+
+      {plateResult && plateResult.outcome === "success" && plateResult.vehicle && (
+        <View style={styles.successCard}>
+          <View style={styles.successHeader}>
+            <Icon name="car-info" size={20} color={colors.accent} />
+            <Text style={styles.successHeaderText}>Real vehicle data from plate + state</Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Vehicle</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.year, plateResult.vehicle.make, plateResult.vehicle.model]
+                .filter(Boolean)
+                .join(" ") || "—"}
+            </Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Body / engine</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.bodyType, plateResult.vehicle.engineSize].filter(Boolean).join(" · ") || "—"}
+            </Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Transmission / fuel</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.transmission, plateResult.vehicle.fuelType].filter(Boolean).join(" · ") || "—"}
+            </Text>
+          </View>
+          <View style={styles.detailRowLight}>
+            <Text style={styles.detailLabelLight}>Doors / seats</Text>
+            <Text style={styles.detailValueLight}>
+              {[plateResult.vehicle.numberOfDoors, plateResult.vehicle.numberOfSeats].filter(Boolean).join(" · ") || "—"}
+            </Text>
+          </View>
+          {!vin.trim() && (
+            <Text style={styles.helperText}>
+              Add a VIN above and run the check again for stolen/written-off/money-owing status too.
             </Text>
           )}
-        </Pressable>
-      </View>
+        </View>
+      )}
+
+      {plateResult && plateResult.outcome !== "success" && (
+        <View
+          style={[styles.resultCard, plateResult.outcome === "error" ? styles.resultCardError : styles.resultCardWarn]}
+        >
+          <Icon
+            name={plateResult.outcome === "error" ? "alert-circle-outline" : "information-outline"}
+            size={20}
+            color={plateResult.outcome === "error" ? colors.danger : colors.warning}
+          />
+          <Text style={styles.resultText}>{plateResult.message}</Text>
+        </View>
+      )}
 
       {result && result.outcome === "success" && (
         <View style={styles.successCard}>
           <View style={styles.successHeader}>
-            <MaterialCommunityIcons name="check-decagram" size={20} color={colors.accent} />
+            <Icon name="check-decagram" size={20} color={colors.accent} />
             <Text style={styles.successHeaderText}>
               {cachedResultAt ? `Last checked ${relativeTime(cachedResultAt)}` : "Real result from PPSR/NEVDIS"}
             </Text>
@@ -388,6 +546,33 @@ export function RevCheckScreen() {
                   {result.vehicle.writtenOff ? "YES" : "No"}
                 </Text>
               </View>
+
+              {/* Real readings when a connected provider actually returns them (none does today
+                  -- see RevCheckVehicle's own comment in revCheck.ts), never a guess. State-aware
+                  copy for the "no data" case since odometer coverage is genuinely fragmented by
+                  Australian state, not just a gap in this app -- NSW records it via annual
+                  roadworthy checks, several other states have no equivalent check to record it
+                  from at all. */}
+              <View style={styles.odometerSection}>
+                <Text style={styles.odometerSectionTitle}>Odometer history</Text>
+                {result.vehicle.odometerReadings && result.vehicle.odometerReadings.length > 0 ? (
+                  result.vehicle.odometerReadings.map((reading, i) => (
+                    <View key={`${reading.date}-${i}`} style={styles.detailRowLight}>
+                      <Text style={styles.detailLabelLight}>{reading.date}</Text>
+                      <Text style={styles.detailValueLight}>{reading.km.toLocaleString()} km</Text>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.odometerUnavailable}>
+                    <Icon name="information-outline" size={14} color={colors.textFaint} />
+                    <Text style={styles.odometerUnavailableText}>
+                      {state === "NSW"
+                        ? "Not returned by the connected provider yet. NSW itself records the last 3 annual roadworthy-check readings via Service NSW -- a future data source could surface them here."
+                        : `Odometer history isn't available for ${state} through any connected provider yet -- most states don't run a mandatory check that records it.`}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </>
           ) : (
             <Text style={styles.resultText}>
@@ -409,20 +594,19 @@ export function RevCheckScreen() {
           </View>
 
           {result.certificateUrl && (
-            <Pressable
+            <Button
+              variant="secondary"
+              icon="file-certificate-outline"
+              label="View PPSR certificate"
               onPress={() => onOpenCertificate(result.certificateUrl as string)}
-              style={({ pressed }) => [styles.certButton, pressed && { opacity: pressedOpacity }]}
-            >
-              <MaterialCommunityIcons name="file-certificate-outline" size={16} color={colors.accent} />
-              <Text style={styles.certButtonText}>View PPSR certificate</Text>
-            </Pressable>
+            />
           )}
         </View>
       )}
 
       {result && result.outcome !== "success" && (
         <View style={[styles.resultCard, result.outcome === "error" ? styles.resultCardError : styles.resultCardWarn]}>
-          <MaterialCommunityIcons
+          <Icon
             name={result.outcome === "error" ? "alert-circle-outline" : "information-outline"}
             size={20}
             color={result.outcome === "error" ? colors.danger : colors.warning}
@@ -432,10 +616,15 @@ export function RevCheckScreen() {
       )}
 
       <Pressable
-        onPress={() => navigation.navigate("Settings")}
+        onPress={() => {
+          // REV Check is a modal; Settings isn't, so it would open hidden behind it. Close the
+          // modal screens first (see navigation/modalStack.ts).
+          navigation.popToTop();
+          navigation.navigate("Settings", { category: "vehicleAI" });
+        }}
         style={({ pressed }) => [styles.settingsLink, pressed && { opacity: pressedOpacity }]}
       >
-        <MaterialCommunityIcons name="key-variant" size={16} color={colors.accent} />
+        <Icon name="key-variant" size={16} color={colors.accent} />
         <Text style={styles.settingsLinkText}>Manage REV check provider keys in Settings</Text>
       </Pressable>
     </ScrollView>
@@ -454,15 +643,6 @@ const styles = StyleSheet.create({
   headerTextWrap: { flex: 1, gap: spacing.xs },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
   subtitle: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
   summaryCard: {
     flexDirection: "row",
     gap: spacing.sm + 2,
@@ -499,6 +679,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: spacing.sm,
   },
+  fieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  // Real, confirmed bug (screenshot evidence: "Scan VIN" pushed almost entirely off the right
+  // edge of the screen): a Text with no flex/shrink of its own defaults to laying out at its
+  // full, unbroken single-line width in a row -- for a label this long ("VIN (OPTIONAL --
+  // UNLOCKS STOLEN/WRITTEN-OFF/FINANCE)"), that width alone already exceeds the card, leaving
+  // nothing for the button beside it and shoving it straight off-screen instead of the label
+  // actually wrapping. flex+shrink lets the label claim only the space actually left after the
+  // button, wrapping to 2 lines exactly like it already visually appeared to (the label WAS
+  // wrapping -- the button just wasn't getting any room to live inside the card at all).
+  fieldLabelWrap: {
+    flex: 1,
+    flexShrink: 1,
+  },
   plateInput: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
@@ -513,17 +711,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   stateGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs + 2 },
-  stateChip: {
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  stateChipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  stateChipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
-  stateChipTextSelected: { color: "#FFFFFF" },
   helperText: { fontSize: 12, color: colors.textFaint, lineHeight: 16 },
   costNotice: {
     flexDirection: "row",
@@ -536,17 +723,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   costNoticeText: { flex: 1, fontSize: 12, fontWeight: "600", color: "#92400E" },
-  startButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: spacing.sm,
-    ...shadow.low,
-  },
-  startButtonDisabled: { backgroundColor: colors.border },
-  startButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
   resultCard: {
     flexDirection: "row",
     gap: spacing.sm + 2,
@@ -582,17 +758,23 @@ const styles = StyleSheet.create({
   detailLabelLight: { fontSize: 13, color: colors.textMuted },
   detailValueLight: { fontSize: 13, fontWeight: "700", color: colors.text },
   detailValueDanger: { color: colors.danger },
-  certButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
+  odometerSection: { marginTop: spacing.sm },
+  odometerSectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
   },
-  certButtonText: { fontSize: 13, fontWeight: "700", color: colors.accent },
+  odometerUnavailable: {
+    flexDirection: "row",
+    gap: spacing.xs + 2,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+  },
+  odometerUnavailableText: { flex: 1, fontSize: 12, color: colors.textFaint, lineHeight: 16 },
   settingsLink: {
     flexDirection: "row",
     alignItems: "center",

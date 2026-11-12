@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { FloatingButton } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { StyleSheet, View } from "react-native";
 import Slider from "@react-native-community/slider";
-import { Ionicons } from "@expo/vector-icons";
 import { useSettings } from "@/context/SettingsContext";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 // How long the volume slider stays open after the last drag before it auto-collapses back
 // to just the icon -- long enough to actually adjust without a second tap, short enough
@@ -37,7 +38,7 @@ export function MuteButton() {
           volume of while muted, and hiding it then keeps that state's meaning unambiguous. */}
       {sliderOpen && voiceEnabled && (
         <View style={styles.sliderCard}>
-          <Ionicons name="volume-low" size={14} color={colors.textMuted} />
+          <Icon name="volume-low" size={14} color={colors.textMuted} />
           <Slider
             style={styles.slider}
             minimumValue={0}
@@ -49,10 +50,12 @@ export function MuteButton() {
             }}
             minimumTrackTintColor={colors.accent}
           />
-          <Ionicons name="volume-high" size={14} color={colors.textMuted} />
+          <Icon name="volume-high" size={14} color={colors.textMuted} />
         </View>
       )}
-      <Pressable
+      <FloatingButton
+        tone="map"
+        icon={voiceEnabled ? "volume-high" : "volume-mute"}
         onPress={() => {
           // Swallow the onPress that follows a long-press release -- see longPressTriggeredRef's
           // own comment above.
@@ -68,17 +71,12 @@ export function MuteButton() {
           setSliderOpen(true);
           scheduleAutoHide();
         }}
-        style={({ pressed }) => [styles.button, pressed && { opacity: pressedOpacity }]}
-        hitSlop={8}
-        accessibilityRole="button"
         accessibilityLabel={
           voiceEnabled
             ? "Mute voice guidance. Hold to adjust volume."
             : "Unmute voice guidance"
         }
-      >
-        <Ionicons name={voiceEnabled ? "volume-high" : "volume-mute"} size={26} color={colors.text} />
-      </Pressable>
+      />
     </View>
   );
 }
@@ -89,15 +87,6 @@ const styles = StyleSheet.create({
   },
   // Deliberately bigger than a standard 40px topRightControls circle -- explicit request to
   // make the volume control an easier, more obvious mid-drive target.
-  button: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
   sliderCard: {
     position: "absolute",
     right: 56,

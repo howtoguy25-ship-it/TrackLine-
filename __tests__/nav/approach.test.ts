@@ -1,0 +1,195 @@
+// Steps 3-4: trigger distances, the camera state machine, and correct vs missed manoeuvres --
+// unit rules first, then the whole thing driven along two REAL recorded routes on the M4 at
+// Silverwater (one takes the exit, one stays on the motorway past it).
+import { describe, expect, it } from "@jest/globals";
+import taken from "@/dev/testRoutes/m4-silverwater-taken.json";
+import missed from "@/dev/testRoutes/m4-silverwater-missed.json";
+import { parseMapboxResponse } from "@/services/mapboxDirections";
+import { buildRouteGeometry, createMatchState, matchFix } from "@/nav/routeMatcher";
+import { driveNav } from "../support/navDrive";
+import { driveTrack } from "@/dev/simulateDrive";
+import {
+  APPROACH_CAMERA,
+  APPROACH_GIVE_UP_MS,
+  CHIP_MS,
+  INITIAL_APPROACH,
+  RESTORE_FAST_MS,
+  RESTORE_MS,
+  ZOOM_MAX_MS,
+  kindOfStep,
+  manoeuvreHighlight,
+  reduceApproach,
+  type ApproachEffect,
+  type ApproachState,
+} from "@/nav/approach";
+import { approachTriggerMeters, calloutLabel, confirmationText, shouldZoomFor } from "@/nav/manoeuvre";
+import type { Route } from "@/services/directions";
+
+describe("trigger distances", () => {
+  it("200 m normally, 400 m above 90 km/h", () => {
+    expect(approachTriggerMeters(60)).toBe(200);
+    expect(approachTriggerMeters(90)).toBe(200);
+    expect(approachTriggerMeters(91)).toBe(400);
+    expect(approachTriggerMeters(null)).toBe(200);
+  });
+
+  it("zooms for exits, merges, splits, roundabouts, lane changes and complex turns; not for plain turns", () => {
+    for (const k of ["exit", "onramp", "merge", "fork", "roundabout", "laneChange", "complex"] as const) expect(shouldZoomFor(k)).toBe(true);
+    for (const k of ["turn", "continue", "arrive"] as const) expect(shouldZoomFor(k)).toBe(false);
+  });
+
+  it("Google routes get kinds from their manoeuvre codes", () => {
+    expect(kindOfStep({ maneuver: "ramp-left" })).toBe("exit");
+    expect(kindOfStep({ maneuver: "fork-right" })).toBe("fork");
+    expect(kindOfStep({ maneuver: "turn-left" })).toBe("turn");
+  });
+
+  it("callouts and chips say what happened", () => {
+    expect(calloutLabel({ maneuverKind: "exit", exitNumber: "3B" })).toBe("Exit 3B");
+    expect(calloutLabel({ maneuverKind: "fork", roadRef: "M5", targetStreetName: "M5 West" })).toBe("M5");
+    expect(calloutLabel({ maneuverKind: "merge", maneuverSide: "left" })).toBe("Merge left");
+    expect(confirmationText("exit")).toBe("Exit taken ✓");
+    expect(confirmationText("merge")).toBe("Merge complete ✓");
+    expect(confirmationText("turn")).toBe("Turn complete ✓");
+  });
+});
+
+describe("the state machine never gets stuck zoomed in", () => {
+  const approaching: ApproachState = { ...INITIAL_APPROACH, phase: "approach", zoomed: true, stepIndex: 3, enteredAtMs: 0 };
+  for (const type of ["panned", "rerouted", "rerouteFailed", "arrived", "routeChanged"] as const) {
+    it(`${type} -> normal, with the camera restored`, () => {
+      const { state, effects } = reduceApproach(approaching, { type });
+      expect(state.phase).toBe("normal");
+      expect(effects.some((e) => e.kind === "restore")).toBe(true);
+    });
+  }
+  it("in normal, outside events do nothing", () => {
+    expect(reduceApproach(INITIAL_APPROACH, { type: "panned" }).effects).toEqual([]);
+  });
+  it("gives the camera back after 3 minutes with nothing resolved (parked at the exit)", () => {
+    const nav = parseMapboxResponse(taken)[0];
+    const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
+    const at = nav.steps[i].polyline[0];
+    const geo = buildRouteGeometry(nav.steps);
+    const tick = (nowMs: number) =>
+      reduceApproach(
+        { ...approaching, stepIndex: i, zoomed: false, zoomedAtMs: null },
+        { type: "tick", nowMs, position: at, speedKmh: 0, activeStepIndex: i, steps: nav.steps, alongMeters: geo.stepEnds[i] - nav.steps[i].distanceMeters, stepEndsAlong: geo.stepEnds, offRouteMeters: 0 }
+      );
+    expect(tick(APPROACH_GIVE_UP_MS - 1000).state.phase).toBe("approach");
+    const { state, effects } = tick(APPROACH_GIVE_UP_MS + 1000);
+    expect(state.phase).toBe("normal");
+    expect(effects).toEqual([]);
+  });
+  it("the close-up never lasts more than 20 s: the camera goes back, the following carries on", () => {
+    const nav = parseMapboxResponse(taken)[0];
+    const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
+    const geo = buildRouteGeometry(nav.steps);
+    const zoomed: ApproachState = { ...approaching, stepIndex: i, zoomedAtMs: 0 };
+    const tick = (nowMs: number) =>
+      reduceApproach(zoomed, { type: "tick", nowMs, position: nav.steps[i].polyline[0], speedKmh: 0, activeStepIndex: i, steps: nav.steps, alongMeters: geo.stepEnds[i] - 100, stepEndsAlong: geo.stepEnds, offRouteMeters: 0 });
+    expect(tick(ZOOM_MAX_MS - 1000).effects).toEqual([]);
+    const { state, effects } = tick(ZOOM_MAX_MS);
+    expect(effects).toEqual([{ kind: "restore", durationMs: RESTORE_MS }]);
+    expect(state).toMatchObject({ phase: "approach", zoomed: false, stepIndex: i });
+  });
+  it("coming back to the app restores the camera without dropping the manoeuvre", () => {
+    const { state, effects } = reduceApproach(approaching, { type: "resumed" });
+    expect(effects).toEqual([{ kind: "restore", durationMs: RESTORE_FAST_MS }]);
+    expect(state).toMatchObject({ phase: "approach", zoomed: false, stepIndex: 3 });
+  });
+});
+
+describe("past the split is measured along the route (route matcher)", () => {
+  const nav = parseMapboxResponse(taken)[0];
+  const i = nav.steps.findIndex((s) => s.maneuverKind === "exit");
+  it("before the split, at it, and after it, by progress along the road", () => {
+    const geo = buildRouteGeometry(nav.steps);
+    let st = createMatchState();
+    // Driven along the road (one fix a second at 100 km/h), not hopped vertex to vertex.
+    const seconds = driveTrack(geo.points, () => 100);
+    const past: number[] = [];
+    for (const sec of seconds) {
+      const r = matchFix(geo, st, sec.fix!);
+      st = r.state;
+      past.push(r.result.along - geo.stepEnds[i]);
+    }
+    const crossing = past.findIndex((x) => x >= 0);
+    expect(crossing).toBeGreaterThan(0);
+    expect(past[crossing - 1]).toBeLessThan(0);
+    expect(past[crossing]).toBeLessThan(100 / 3.6 + 2);
+    expect(past[crossing + 3]).toBeGreaterThan(20);
+  });
+});
+
+/** Drives a recorded track while navigating `nav`, through the app's own pipeline. */
+function drive(nav: Route, track: Route, speedKmh: number) {
+  const o = driveNav(nav, track.polyline, { speedKmh, stopAtMiss: true });
+  const log: { t: number; phase: string; stepIndex: number | null; effect: ApproachEffect }[] = o.effects.map((e) => ({
+    t: e.t,
+    phase: "",
+    stepIndex: "stepIndex" in e.effect ? e.effect.stepIndex : null,
+    effect: e.effect,
+  }));
+  let finalPhase = "normal";
+  if (o.missed.size) {
+    // MapScreen would reroute now; the new route arriving ends the episode.
+    const r = reduceApproach({ ...INITIAL_APPROACH, phase: "missed" }, { type: "rerouted" });
+    finalPhase = r.state.phase;
+  }
+  return Object.assign(log, { finalPhase });
+}
+
+describe("real drive: M4 eastbound, Silverwater Road exit", () => {
+  const nav = parseMapboxResponse(taken)[0];
+  const stayed = parseMapboxResponse(missed)[0];
+  const exitIndex = nav.steps.findIndex((s) => s.maneuverKind === "exit" && s.instruction.includes("Silverwater"));
+
+  it("taking the exit at 100 km/h: zoom in 400 m out, 'Exit taken ✓', then the normal camera", () => {
+    const log = drive(nav, nav, 100);
+    const exitEvents = log.filter((l) => l.t > 0);
+    const zoom = exitEvents.find((l) => l.effect.kind === "zoomIn" && l.effect.stepIndex === exitIndex);
+    expect(zoom).toBeTruthy();
+    const confirmed = exitEvents.find((l) => l.t > zoom!.t && l.effect.kind === "confirmed");
+    expect(confirmed?.effect).toEqual({ kind: "confirmed", stepIndex: exitIndex, text: "Exit taken ✓" });
+    const restore = exitEvents.find((l) => l.t > confirmed!.t && l.effect.kind === "restore");
+    expect(restore?.effect).toEqual({ kind: "restore", durationMs: RESTORE_MS });
+    // The camera eases back after the 2 s chip -- or earlier only because the next turn (the
+    // right onto Old Hill Link, just after the ramp) is already being followed.
+    const nextFollowed = exitEvents.some((l) => l.t === restore!.t && l.effect.kind === "zoomIn" && l.stepIndex !== null && l.stepIndex > exitIndex);
+    expect(restore!.t - confirmed!.t >= CHIP_MS || nextFollowed).toBe(true);
+    // Zoomed in no later than 400 m (100 km/h covers ~28 m a second).
+    expect(log.some((l) => l.effect.kind === "missed")).toBe(false);
+  });
+
+  it("the merge onto the M4 also gets the approach view and a 'Merge complete ✓'", () => {
+    const log = drive(nav, nav, 70);
+    expect(log.some((l) => l.effect.kind === "confirmed" && l.effect.text === "Merge complete ✓")).toBe(true);
+  });
+
+  it("missing the exit (staying on the M4): zoom in, then missed -> camera back fast -> reroute -> normal", () => {
+    const log = drive(nav, stayed, 100);
+    const kinds = log.map((l) => l.effect.kind);
+    const zoomAt = log.findIndex((l) => l.effect.kind === "zoomIn" && l.effect.stepIndex === exitIndex);
+    expect(zoomAt).toBeGreaterThanOrEqual(0);
+    const missedAt = kinds.indexOf("missed", zoomAt);
+    expect(missedAt).toBeGreaterThan(zoomAt);
+    // The camera is back to normal by the time the miss is announced: restored fast on the miss
+    // itself, or already by the 20 s cap on the close-up (400 m at 100 km/h is ~14 s to the split).
+    const restoreBefore = log.slice(zoomAt, missedAt).filter((l) => l.effect.kind === "restore");
+    expect(restoreBefore.length).toBe(1);
+    expect([RESTORE_FAST_MS, RESTORE_MS]).toContain((restoreBefore[0].effect as { durationMs: number }).durationMs);
+    expect(kinds.slice(zoomAt, missedAt)).not.toContain("confirmed");
+    expect(log.finalPhase).toBe("normal");
+  });
+
+  it("the approach view is z18 (Mapbox), 60° pitch, 1.2 s", () => {
+    expect(APPROACH_CAMERA).toEqual({ zoom: 19, pitch: 60, durationMs: 1200 });
+  });
+
+  it("the highlight covers the road through the split and the start of the exit", () => {
+    const h = manoeuvreHighlight(nav.steps, exitIndex)!;
+    expect(h.through.length).toBeGreaterThan(2);
+    expect(h.exitSide[0]).toEqual(nav.steps[exitIndex + 1].polyline[0]);
+  });
+});

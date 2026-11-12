@@ -1,9 +1,10 @@
 import React, { forwardRef, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { View, Pressable, StyleSheet } from "react-native";
+import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { ALERT_COLORS, ALERT_LABELS, type AlertType } from "@/types/alert";
+import { ALERT_COLORS, ALERT_PIN, ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
@@ -48,21 +49,20 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
           <Text style={styles.title}>What do you see?</Text>
           {/* Swipe-down-to-close is easy to miss -- an explicit button next to the title so
               there's always a visible, tappable way out, not just a gesture on the handle. */}
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={onClose}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
         <View style={styles.grid}>
           {ALERT_TYPES.map((type) => (
             <Pressable
               key={type}
               onPress={() => onTypeSelected(type)}
-              style={({ pressed }) => [styles.typeButton, pressed && { opacity: pressedOpacity }]}
+              style={({ pressed }) => [styles.typeTile, pressed && { opacity: pressedOpacity }]}
             >
               {/* Same colored-circle pin treatment as the actual map marker for this alert
                   type (AlertMarker) -- previously this picker showed bare glyphs (a plain
@@ -70,7 +70,7 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
                   police/crash) with no shared visual language between them, and no visual tie
                   to what the alert actually looks like once placed on the map. */}
               <View style={[styles.typeIconWrap, { backgroundColor: ALERT_COLORS[type] }]}>
-                <AlertTypeGlyph type={type} size={24} color="#FFFFFF" />
+                <AlertTypeGlyph type={type} size={24} color={ALERT_PIN[type].glyph} />
               </View>
               <Text style={styles.typeLabel}>{ALERT_LABELS[type]}</Text>
             </Pressable>
@@ -108,20 +108,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
   },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.md,
   },
-  typeButton: {
+  typeTile: {
     width: "30%",
     aspectRatio: 1,
     borderRadius: radius.lg,

@@ -15,8 +15,22 @@ npm-debug.*
 *.tsbuildinfo
 /android/
 /ios/
+# Real local-module native build output (Gradle/Xcode build caches) -- generated fresh by any
+# real local verification build, same as the top-level /android//ios/ above, just for the
+# modules/*/android/, modules/*/ios/ native module source directories themselves, which DO stay
+# checked in (they're real source, not generated).
+modules/*/android/build/
+modules/*/android/.cxx/
+modules/*/ios/build/
 .metro-health-check*
 firebase-debug.log
 firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+.firebase/
 functions/node_modules/
 functions/lib/
+# Real emulator-only test secret for firebase/functions' defineSecret("MAPBOX_SERVER_TOKEN") --
+# never a real credential (see firebase/tests/README.md), but still never committed on principle.
+firebase/functions/.secret.local
+firebase/tests/node_modules/

@@ -1,0 +1,147 @@
+name: Deploy Firebase (functions, Firestore rules, Storage rules)
+
+# Real, explicit request -- manual-only deploy (workflow_dispatch), never on push, so a deploy
+# only ever happens when the project owner deliberately runs it from the GitHub app/web UI. This
+# environment has no Firebase CLI / no authenticated gcloud session at all, so this workflow is
+# the actual deploy path for everything server-side this session writes (Cloud Functions,
+# Firestore rules, Storage rules) -- see DEPLOY.md for the one-time service-account setup this
+# needs before it can run.
+#
+# The service account key is read ONLY from the FIREBASE_SERVICE_ACCOUNT secret below, written to a
+# short-lived temp file on the runner for this run alone, and never logged, echoed, or committed
+# anywhere. GitHub itself also redacts a secret's literal value from any step's log output.
+on:
+  workflow_dispatch:
+    inputs:
+      deployFunctions:
+        description: "Deploy Cloud Functions"
+        type: boolean
+        default: true
+      deployFirestoreRules:
+        description: "Deploy Firestore rules"
+        type: boolean
+        default: true
+      deployStorageRules:
+        description: "Deploy Storage rules"
+        type: boolean
+        default: true
+      updateApiKeys:
+        description: "Copy API keys from this repo's GitHub secrets into Firebase (tick after adding or changing one)"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install functions dependencies
+        working-directory: firebase/functions
+        run: npm ci
+
+      - name: Write service account key to a temp file
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Resolve Firebase project ID from the service account key
+        id: project
+        run: |
+          PROJECT_ID=$(node -e "console.log(require('$RUNNER_TEMP/firebase-service-account.json').project_id)")
+          echo "id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build the --only target list
+        id: targets
+        run: |
+          TARGETS=""
+          if [ "${{ inputs.deployFunctions }}" = "true" ]; then TARGETS="functions"; fi
+          if [ "${{ inputs.deployFirestoreRules }}" = "true" ]; then
+            TARGETS="${TARGETS:+$TARGETS,}firestore:rules"
+          fi
+          if [ "${{ inputs.deployStorageRules }}" = "true" ]; then
+            TARGETS="${TARGETS:+$TARGETS,}storage"
+          fi
+          if [ -z "$TARGETS" ]; then
+            echo "Nothing selected to deploy -- re-run with at least one target enabled." >&2
+            exit 1
+          fi
+          echo "list=$TARGETS" >> "$GITHUB_OUTPUT"
+
+      # API keys the Cloud Functions read as Firebase secrets.
+      #
+      # Each one can be supplied as a GitHub secret of the same name on this repo (Settings >
+      # Secrets and variables > Actions) and copied into Firebase by running this workflow with
+      # "Copy API keys" ticked. That's the whole process -- no command line needed.
+      #
+      #   MAPBOX_SERVER_TOKEN  required for road-snapped Trackys
+      #   ELEVENLABS_API_KEY   optional: unlocks the character voices
+      #   TFNSW_API_KEY        optional: unlocks live NSW traffic
+      #
+      # Firebase refuses to deploy a function whose secret doesn't exist at all. So for the two
+      # OPTIONAL keys, a placeholder value ("unset") is created if nothing is there yet -- the
+      # functions recognise it and report "not set up" instead of pretending to work. A real
+      # value is never overwritten by the placeholder.
+      #
+      # Values are passed through environment variables and piped to the CLI; they are never
+      # put on a command line or echoed, and GitHub redacts them from the log regardless.
+      - name: Sync API keys into Firebase secrets
+        if: ${{ inputs.deployFunctions }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+          PROJECT_ID: ${{ steps.project.outputs.id }}
+          UPDATE_KEYS: ${{ inputs.updateApiKeys }}
+          KEY_MAPBOX_SERVER_TOKEN: ${{ secrets.MAPBOX_SERVER_TOKEN }}
+          KEY_ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          KEY_TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
+        run: |
+          set -u
+          secret_exists() {
+            npx firebase-tools@latest functions:secrets:get "$1" --project "$PROJECT_ID" >/dev/null 2>&1
+          }
+          set_secret() {
+            # $1 = name, value on stdin
+            npx firebase-tools@latest functions:secrets:set "$1" --data-file - \
+              --project "$PROJECT_ID" --force >/dev/null
+          }
+          for NAME in MAPBOX_SERVER_TOKEN ELEVENLABS_API_KEY TFNSW_API_KEY; do
+            VAR="KEY_$NAME"
+            VALUE="${!VAR:-}"
+            if [ "$UPDATE_KEYS" = "true" ] && [ -n "$VALUE" ]; then
+              if printf '%s' "$VALUE" | set_secret "$NAME"; then
+                echo "$NAME: updated from the GitHub secret."
+              else
+                echo "::error::Could not set $NAME. The deploy service account needs the 'Secret Manager Admin' role -- see DEPLOY.md."
+                exit 1
+              fi
+            elif secret_exists "$NAME"; then
+              echo "$NAME: already set in Firebase, left as it is."
+            elif [ "$NAME" = "MAPBOX_SERVER_TOKEN" ]; then
+              echo "::warning::MAPBOX_SERVER_TOKEN is not set. Add it as a GitHub secret and re-run with 'Copy API keys' ticked, or the deploy below will fail -- see DEPLOY.md."
+            else
+              if printf 'unset' | set_secret "$NAME"; then
+                echo "$NAME: not provided -- created a placeholder so the deploy can proceed. The feature stays locked until a real key is added."
+              else
+                echo "::warning::Could not create a placeholder for $NAME (the service account may lack 'Secret Manager Admin'). The deploy below may fail -- see DEPLOY.md."
+              fi
+            fi
+          done
+
+      - name: Deploy
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+        run: |
+          npx firebase-tools@latest deploy \
+            --only "${{ steps.targets.outputs.list }}" \
+            --project "${{ steps.project.outputs.id }}" \
+            --non-interactive
+
+      - name: Clean up service account key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-service-account.json"

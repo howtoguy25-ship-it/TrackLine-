@@ -1,0 +1,407 @@
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, Pressable, StyleSheet, Image, ActivityIndicator, Linking, FlatList, Keyboard } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
+import { PlacesApiError, priceLevelText, type NearbyPlace, type PlaceDetails } from "@/services/places";
+import { searchNearbyOsmPlaces, searchOsmPlacesByText, isOsmPlaceId } from "@/services/osmPlaces";
+import type { LatLng } from "@/utils/polyline";
+import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { setActiveSearchFocus, isActiveSearchFocus, clearActiveSearchFocusIfOwner } from "@/utils/activeSearchFocus";
+
+const SEARCH_FOCUS_KEY = "hotels";
+
+interface Props {
+  location: LatLng | null;
+  // Explicit "Directions" action only now (routes straight there) -- the row's own tap opens
+  // the full detail view instead (see onViewDetails below), matching RestaurantsSheet.
+  onSelect: (place: PlaceDetails) => void;
+  // Real, confirmed request -- tapping a row (the photo/name/address area) now opens the full
+  // detail view (photos, rating, hours, phone, website, reviews -- see PlaceInfoSheet), which
+  // also has its own Directions button, instead of routing straight there with no way to
+  // actually see anything about the hotel first.
+  onViewDetails: (placeId: string) => void;
+  onSheetChange?: (index: number) => void;
+}
+
+function formatDistance(meters: number): string {
+  return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
+export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function HotelsSheet(
+  { location, onSelect, onViewDetails, onSheetChange },
+  ref
+) {
+  const insets = useSafeAreaInsets();
+  // Same fix as RestaurantsSheet -- capped to a shorter default, draggable up to a taller point.
+  const snapFractions: [number, number] = [0.5, 0.88];
+
+  // Same real bug fix/history as RestaurantsSheet -- see SimpleBottomSheet.tsx's own header
+  // comment and RestaurantsSheet.tsx's own comment for the full account of why this no longer
+  // uses @gorhom/bottom-sheet at all, and why keyboard-avoidance is now explicit in both
+  // directions (expand on focus below, collapse here) instead of relying on the library's own
+  // automatic behavior. Gated on isActiveSearchFocus (a scroll-reset bug caused by ANY of the
+  // three place sheets' keyboards hiding resnapping ALL of them, not just its own).
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      if (!isActiveSearchFocus(SEARCH_FOCUS_KEY)) return;
+      clearActiveSearchFocusIfOwner(SEARCH_FOCUS_KEY);
+      if (ref && typeof ref !== "function") ref.current?.snapToIndex(0);
+    });
+    return () => sub.remove();
+  }, [ref]);
+
+  const [query, setQuery] = useState("");
+  const [hotels, setHotels] = useState<NearbyPlace[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [fetchedFor, setFetchedFor] = useState<string | null>(null);
+  // Same real third fix as RestaurantsSheet -- see that file's own comment: refetching on every
+  // live GPS update (even a small drift crossing the 3-decimal rounding boundary) while this
+  // sheet is already open replaces `hotels` with a brand-new array mid-scroll, which reads
+  // exactly like a recoil. Gated to only ever refetch on first mount or a fresh reopen.
+  const [sheetIndex, setSheetIndex] = useState(-1);
+  const wasOpenRef = useRef(false);
+  // Real, explicit request -- "a clear error... with retry," not a dead end. Bumping this
+  // re-runs the fetch effect below even though location/sheetIndex haven't changed; fetchedFor
+  // stays null after a failed attempt (only ever set on real success), so the effect's own
+  // "already fetched this" guard doesn't block the retry.
+  const [retryTick, setRetryTick] = useState(0);
+
+  useEffect(() => {
+    if (!location) return;
+    const isOpen = sheetIndex >= 0;
+    const justOpened = isOpen && !wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+    if (fetchedFor !== null && !justOpened) return;
+    const key = `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}`;
+    if (key === fetchedFor) return;
+    setLoading(true);
+    setErrorText(null);
+    // Real, confirmed fix for "takes forever to load" -- see RestaurantsSheet.tsx's identical
+    // comment: shows each radius-widening round's real results the moment they land instead of
+    // only after every round finishes.
+    searchNearbyOsmPlaces(location, "hotel", (partial, isFinal) => {
+      if (partial.length > 0 || isFinal) {
+        setHotels(partial);
+        setLoading(false);
+      }
+    })
+      .then((results) => {
+        setHotels(results);
+        setFetchedFor(key);
+      })
+      .catch((err) => {
+        setErrorText(
+          err instanceof PlacesApiError
+            ? `Couldn't load nearby hotels (${err.status})`
+            : "Couldn't load nearby hotels -- check your connection"
+        );
+      })
+      .finally(() => setLoading(false));
+  }, [location, fetchedFor, sheetIndex, retryTick]);
+
+  // Real, explicit request: "everything they can think of they can search" -- same broadening as
+  // RestaurantsSheet (see its own comment for the full reasoning) so a specific hotel chain
+  // outside the up-to-60 nearest results already fetched is still reachable by name.
+  const TEXT_SEARCH_DEBOUNCE_MS = 450;
+  const [textSearchResults, setTextSearchResults] = useState<NearbyPlace[]>([]);
+  const [textSearching, setTextSearching] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2 || !location) {
+      setTextSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setTextSearching(true);
+      searchOsmPlacesByText(q, location, "hotel", (partial, isFinal) => {
+        if (partial.length > 0 || isFinal) {
+          setTextSearchResults(partial);
+          setTextSearching(false);
+        }
+      })
+        .then(setTextSearchResults)
+        .catch(() => {})
+        .finally(() => setTextSearching(false));
+    }, TEXT_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, location]);
+
+  const visibleHotels = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const source =
+      q && textSearchResults.length > 0
+        ? (() => {
+            const merged = new Map<string, NearbyPlace>();
+            for (const h of hotels) merged.set(h.placeId, h);
+            for (const h of textSearchResults) merged.set(h.placeId, h);
+            return Array.from(merged.values());
+          })()
+        : hotels;
+    // Real, confirmed fix: the price-sort (Cheapest/Priciest) and minimum-star-rating filter
+    // controls that used to live here both silently broke the moment this sheet moved off
+    // Google Places onto OpenStreetMap (see osmPlaces.ts) -- OSM has no price-level or star-
+    // rating data for any hotel at all, so every item's priceLevel/rating is always undefined
+    // now. The old star filter didn't just do nothing in that state, it actively hid every real
+    // result the instant a driver tapped anything above "Any" (every hotel's rating ?? 0 reads
+    // as 0, failing any real minStars check); the price sort degraded to a silent no-op. Both
+    // removed rather than left as controls that look real but can never work with this data
+    // source -- a genuinely different data source needed real, paid price/rating data (a hotel-
+    // booking API relationship) to bring either back honestly, not something this swap alone
+    // can provide.
+    const list = source
+      .filter((h) => !q || h.name.toLowerCase().includes(q) || h.vicinity.toLowerCase().includes(q))
+      .sort((a, b) => a.distanceMeters - b.distanceMeters);
+    return list;
+  }, [hotels, query, textSearchResults]);
+
+  return (
+    <SimpleBottomSheet
+      ref={ref}
+      snapFractions={snapFractions}
+      topInset={insets.top}
+      onChange={(index) => {
+        setSheetIndex(index);
+        onSheetChange?.(index);
+      }}
+    >
+      <View style={styles.content}>
+        {/* Same keyboard-dismiss-on-background-tap fix as RestaurantsSheet -- see its own
+            comment for why this deliberately stops before the list below instead of wrapping it
+            -- real, confirmed two-fingers-to-scroll bug otherwise. */}
+        <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Hotels nearby</Text>
+          {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss. */}
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
+            onPress={() => {
+              Keyboard.dismiss();
+              if (ref && typeof ref !== "function") ref.current?.close();
+            }}
+            accessibilityLabel="Close"
+          />
+        </View>
+        {/* Honest, per explicit request that nothing here be fake -- Google Places has real
+            names/photos/ratings/price LEVEL for every hotel below, but no live per-night price
+            or a real booking checkout (that needs an actual hotel-booking API relationship,
+            e.g. Booking.com/Expedia, not something this app fabricates). "Open in Maps" links
+            through to Google's own listing, which often does surface real booking links/prices
+            there -- this app just isn't the one hosting that data yet. */}
+        <View style={styles.noticeBox}>
+          <Icon name="information-circle-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.noticeText}>
+            Real listings, photos &amp; ratings from Google. Live prices and booking aren't connected yet --
+            tap "Open in Maps" on a hotel for booking options.
+          </Text>
+        </View>
+
+        <View style={styles.searchRow}>
+          <Icon name="search" size={16} color={colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search hotels…"
+            placeholderTextColor={colors.textFaint}
+            style={styles.searchInput}
+            autoCorrect={false}
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            onFocus={() => {
+              setActiveSearchFocus(SEARCH_FOCUS_KEY);
+              if (ref && typeof ref !== "function") ref.current?.snapToIndex(1);
+            }}
+          />
+          {query.length > 0 && (
+            <Button
+              variant="ghost"
+              icon="close-circle"
+              iconColor={colors.textFaint}
+              onPress={() => setQuery("")}
+              accessibilityLabel="Clear search"
+            />
+          )}
+        </View>
+
+        {loading && (
+          <View style={styles.centerRow}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.centerText}>Finding hotels nearby…</Text>
+          </View>
+        )}
+        {textSearching && !loading && (
+          <View style={styles.centerRow}>
+            <ActivityIndicator color={colors.accent} size="small" />
+            <Text style={styles.centerText}>Searching further afield…</Text>
+          </View>
+        )}
+        {errorText && !loading && (
+          <View style={styles.centerRow}>
+            <Icon name="alert-circle" size={18} color={colors.danger} />
+            <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
+            <Button
+              variant="ghost"
+              icon="refresh"
+              label="Retry"
+              onPress={() => setRetryTick((t) => t + 1)}
+              accessibilityLabel="Retry"
+            />
+          </View>
+        )}
+        {!loading && !errorText && visibleHotels.length === 0 && (
+          <View style={styles.centerRow}>
+            <Text style={styles.centerText}>{hotels.length === 0 ? "Nothing found nearby yet." : "No matches for this filter."}</Text>
+          </View>
+        )}
+        </Pressable>
+
+        {/* Plain, un-wrapped FlatList -- see SimpleBottomSheet.tsx's own header comment for why
+            this now has zero gesture composition with the sheet at all. */}
+        <FlatList
+          data={visibleHotels}
+          keyExtractor={(item) => item.placeId}
+          style={styles.listFlex}
+          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          // Real, explicit request -- Android-specific nested-scroll fix for a list living
+          // inside the sheet's own gesture-handler view hierarchy.
+          nestedScrollEnabled
+          renderItem={({ item }) => (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
+              // Real, confirmed complaint: unlike RestaurantsSheet's identical-looking row, this
+              // row had no tap handler of its own at all -- only the two small "Directions"/"Open
+              // in Maps" text buttons at the bottom responded, so tapping the photo/name/address
+              // area (the natural place to tap) silently did nothing. Whole row now opens the
+              // full detail view (photos/rating/hours/phone/reviews, with its own Directions
+              // button inside) -- the two explicit buttons below still work independently for
+              // anyone who wants a specific action without opening details first.
+              onPress={() => onViewDetails(item.placeId)}
+            >
+              {item.photoUrl ? (
+                <Image source={{ uri: item.photoUrl }} style={styles.photo} />
+              ) : (
+                <View style={[styles.photo, styles.photoFallback]}>
+                  <Icon name="bed-outline" size={22} color={colors.textFaint} />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                {/* Google's own `vicinity` field for a smaller/private lodging listing can come
+                    back as just the bare country name ("Australia") instead of a real street-
+                    level address -- a real value Google returned, not something this app
+                    generated wrong, but showing it as-is reads as broken/fake. Hidden whenever
+                    it doesn't look like a real street-level address (no digit and no comma),
+                    same "never show something misleading" principle as the rest of this sheet --
+                    the distance chip below still tells the driver how far it is either way. */}
+                {/^.*\d/.test(item.vicinity) || item.vicinity.includes(",") ? (
+                  <Text style={styles.vicinity} numberOfLines={1}>
+                    {item.vicinity}
+                  </Text>
+                ) : null}
+                <View style={styles.metaRow}>
+                  {item.rating !== undefined && (
+                    <View style={styles.metaChip}>
+                      <Icon name="star" size={11} color="#F59E0B" />
+                      <Text style={styles.metaChipText}>{item.rating.toFixed(1)}</Text>
+                    </View>
+                  )}
+                  {priceLevelText(item.priceLevel) && (
+                    <View style={styles.metaChip}>
+                      <Text style={styles.metaChipText}>{priceLevelText(item.priceLevel)}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.distanceText}>{formatDistance(item.distanceMeters)}</Text>
+                </View>
+                <View style={styles.actionRow}>
+                  <Button
+                    variant="secondary"
+                    icon="navigate-outline"
+                    label="Directions"
+                    onPress={() =>
+                      onSelect({ placeId: item.placeId, name: item.name, address: item.vicinity, location: item.location })
+                    }
+                  />
+                  <Button
+                    variant="secondary"
+                    icon="open-outline"
+                    label="Open in Maps"
+                    onPress={() => {
+                      // Real, confirmed fix: a Google `place_id:` deep link only ever works for
+                      // a real Google place_id -- OSM-sourced hotels (see osmPlaces.ts) carry an
+                      // "osm:type:id" id instead, which that link format can't resolve at all.
+                      // Opens OpenStreetMap's own real page for it instead, consistent with
+                      // where this data actually came from.
+                      const url = isOsmPlaceId(item.placeId)
+                        ? `https://www.openstreetmap.org/${item.placeId.split(":")[1]}/${item.placeId.split(":")[2]}`
+                        : `https://www.google.com/maps/place/?q=place_id:${item.placeId}`;
+                      Linking.openURL(url).catch(() => {});
+                    }}
+                  />
+                </View>
+              </View>
+            </Pressable>
+          )}
+        />
+      </View>
+    </SimpleBottomSheet>
+  );
+});
+
+const styles = StyleSheet.create({
+  content: { flex: 1, paddingHorizontal: spacing.lg },
+  // No longer flex:1 -- this now wraps only the static header (title/notice/search/filters),
+  // not the list, so it sizes to its own natural content height and leaves the list (its own
+  // flex:1 sibling, see listFlex) to fill the rest of the sheet.
+  pressableFill: {},
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  title: { fontSize: 17, fontWeight: "800", color: colors.text },
+  noticeBox: {
+    flexDirection: "row",
+    gap: spacing.xs + 2,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  noticeText: { flex: 1, fontSize: 11, color: colors.textMuted, lineHeight: 15 },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+    marginBottom: spacing.sm,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: colors.text },
+  centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
+  centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
+  listFlex: { flex: 1 },
+  listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
+  row: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  photo: { width: 64, height: 64, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  photoFallback: { alignItems: "center", justifyContent: "center" },
+  name: { fontSize: 15, fontWeight: "700", color: colors.text },
+  vicinity: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: 4 },
+  metaChip: { flexDirection: "row", alignItems: "center", gap: 3 },
+  metaChipText: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
+  distanceText: { fontSize: 12, color: colors.textFaint, marginLeft: "auto" },
+  actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs + 2 },
+});

@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, TextInput, Alert, ActivityIndicator } from "react-native";
+import { Button, Chip } from "@/components/ui/Button";
+import { TEST_DRIVE_LABELS, requestTestDrive, type TestDriveKind } from "@/dev/testDrives";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { View, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Alert, ActivityIndicator } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
+import { StatusBar } from "expo-status-bar";
 import Slider from "@react-native-community/slider";
 import Constants from "expo-constants";
 import * as Application from "expo-application";
@@ -8,13 +13,16 @@ import * as Crypto from "expo-crypto";
 import { GoogleSignin, statusCodes } from "@react-native-google-signin/google-signin";
 import { usePowerState } from "expo-battery";
 import { useIAP } from "react-native-iap";
-import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { syncVisibleRegionsToProfile } from "@/services/userProfile";
 import { setVoiceEnabled } from "@/services/voice";
+import { getVoiceDisplayName } from "@/services/voiceLabel";
+import { subscribeNswTraffic } from "@/services/trafficNsw";
+import { EMPTY_TRAFFIC_SNAPSHOT, type TrafficSnapshot } from "@/services/trafficNswModel";
 import {
   signOutUser,
   deleteAccount,
@@ -23,19 +31,41 @@ import {
   reauthenticateWithGoogleCredential,
 } from "@/services/firebase";
 import { env } from "@/config/env";
+import { Linking } from "react-native";
 import { Sentry } from "@/services/sentry";
 import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
+import { getPlateLookupProviderConfig, savePlateLookupProviderConfig } from "@/services/plateLookupAdmin";
+import { getPlateRecognizerProviderConfig, savePlateRecognizerProviderConfig } from "@/services/plateRecognizerAdmin";
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
-import { ALL_ALERT_TYPES } from "@/services/settings";
+import { ALL_ALERT_TYPES, type AppSettings, type VisibilityMode } from "@/services/settings";
+import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
+import { TouchDebuggerRow } from "@/debug/TouchDebuggerRow";
+import { getBuildStamp } from "@/config/getBuildStamp";
+import { CATEGORY_SECTIONS } from "@/screens/settingsCategories";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
-import { MAP_THEME_LABELS, type MapThemeKey } from "@/utils/mapStyle";
+import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
 import { NAV_CARD_THEME_LABELS, NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
+import { MAP_MARKER_STYLE_LABELS, MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { LinearGradient } from "expo-linear-gradient";
+import { shadeColor } from "@/utils/color";
+import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
+import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+
+// Real, explicit request (Waze-style redesign Phase 5) -- group this screen's 15 real sections
+// into Waze-style top-level categories instead of one long flat scroll. Deliberately NOT a
+// logic extraction into separate screen files (this screen's state/handlers are all genuinely
+// shared and interdependent -- splitting them into independent files would risk duplicating or
+// dropping a handler somewhere in a ~2000-line screen); instead this same screen renders either
+// every section (no category param -- every existing `navigation.navigate("Settings")` call
+// site keeps working exactly as before) or only the sections belonging to one category, via the
+// new SettingsCategoriesScreen's own list of category cards.
+export { SETTINGS_CATEGORY_LABELS, SETTINGS_CATEGORY_ICONS, type SettingsCategory } from "@/screens/settingsCategories";
 
 function sensitivityLabel(value: number): string {
   if (value <= 0.4) return "Low";
@@ -48,6 +78,16 @@ function sensitivityLabel(value: number): string {
 // uses as the real Firestore expiresAt for any alert this device reports, replacing the app's
 // own per-type default (types/alert.ts's ALERT_TTL_MS) for as long as it's set. "Default"
 // (null) reverts to that original per-type behavior.
+// Real, explicit request (Ghost mode + visibility control) -- same three choices and copy as
+// VisibilitySheet.tsx's own quick picker (opened by long-pressing the home map's Menu button),
+// kept here too since both read/write the exact same settings.visibility field and a driver
+// should see the identical choice wherever they land.
+const VISIBILITY_OPTIONS: { key: VisibilityMode; label: string; description: string }[] = [
+  { key: "everyone", label: "Visible to everyone", description: "Other drivers nearby can see your Tracky on the map while you're driving" },
+  { key: "friendsOnly", label: "Friends only", description: "Only drivers you've added as a friend can see you" },
+  { key: "ghost", label: "Ghost mode", description: "Invisible to everyone -- you can still see and report alerts" },
+];
+
 const EXPIRY_PRESETS: { label: string; ms: number | null }[] = [
   { label: "Default", ms: null },
   { label: "12 hours", ms: 12 * 60 * 60 * 1000 },
@@ -67,18 +107,73 @@ function formatExpiryMs(ms: number): string {
 
 // Small background/highway-accent pair per theme, just for the picker swatches below -- the
 // real, full styling lives in utils/mapStyle.ts; this is only a preview.
-const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow"];
+// Real, confirmed request -- black background for THIS screen specifically, not a global
+// dark-mode toggle. theme/tokens.ts stays a light palette for every other screen; this local
+// set replaces every color reference in this file's own StyleSheet only, so nothing else in
+// the app is affected by this screen going dark.
+const SETTINGS_BG = "#000000";
+const SETTINGS_SURFACE = "#111827";
+const SETTINGS_SURFACE_MUTED = "#1F2937";
+const SETTINGS_BORDER = "#374151";
+const SETTINGS_TEXT = "#F9FAFB";
+const SETTINGS_TEXT_MUTED = "#9CA3AF";
+const SETTINGS_TEXT_FAINT = "#6B7280";
+
+const MAP_VIEW_STYLE_ORDER: AppSettings["defaultMapViewStyle"][] = ["tilted3d", "flat", "satellite3d"];
+const MAP_VIEW_STYLE_LABELS: Record<AppSettings["defaultMapViewStyle"], string> = {
+  tilted3d: "3D tilted",
+  flat: "Overhead",
+  satellite3d: "Satellite 3D",
+};
+const MAP_VIEW_STYLE_ICONS: Record<AppSettings["defaultMapViewStyle"], IconName> = {
+  tilted3d: "layers-outline",
+  flat: "square-outline",
+  satellite3d: "globe-outline",
+};
+
+const MAP_THEME_ORDER: MapThemeKey[] = ["normal", "purpleBlue", "blueGrey", "greenYellow", "blue", "light", "dark"];
 const MAP_THEME_SWATCH_COLORS: Record<MapThemeKey, [string, string]> = {
   normal: ["#14201a", "#34d976"],
   purpleBlue: ["#1a1033", "#8b7cf6"],
   blueGrey: ["#232a35", "#5b9bf0"],
   greenYellow: ["#0f2417", "#facc15"],
+  blue: ["#0b1a33", "#3b9bff"],
+  light: ["#eef1f6", "#1d4ed8"],
+  dark: ["#1b1f27", "#3b82f6"],
+};
+const ROAD_THICKNESS_ORDER: RoadThicknessKey[] = ["thin", "normal", "bold", "extraBold"];
+// Real relative proportions, not arbitrary -- scaled off the same ROAD_THICKNESS_MULTIPLIERS
+// (0.55/1/1.4/1.85) mapStyle.ts actually applies to road weight, so this swatch is a genuine
+// preview of the real thickness difference, not just four visually-similar bars.
+const ROAD_THICKNESS_SWATCH_HEIGHTS: Record<RoadThicknessKey, number> = {
+  thin: 3,
+  normal: 5.5,
+  bold: 7.5,
+  extraBold: 10,
 };
 
-const NAV_CARD_THEME_ORDER: NavCardThemeKey[] = ["dark", "light", "aqua"];
+const NAV_CARD_THEME_ORDER: NavCardThemeKey[] = ["dark", "light", "transparentDark", "midnight", "sunset", "forest"];
+const MAP_MARKER_STYLE_ORDER: MapMarkerStyleKey[] = [
+  "default",
+  "car",
+  "taxi",
+  "policeCar",
+  "ambulance",
+  "fireTruck",
+  "bus",
+  "truck",
+  "motorbike",
+  "sportsCar",
+  "helicopter",
+  "tank",
+];
+const ALERT_ICON_THEME_ORDER: AlertIconThemeKey[] = ["default", "outline", "bold", "shield", "vivid", "night"];
+// A representative sample (not every AlertType) for the alert-icon-theme preview tiles below --
+// enough to show a pack's own distinct glyph/color identity without a 6-icon-wide tile.
+const ALERT_ICON_PREVIEW_TYPES: AlertType[] = ["police", "crash", "hazard", "traffic_light"];
 
 export function SettingsScreen() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, updateSettings, voiceIdentifier } = useSettings();
   const { user } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   // Every device is signed in anonymously from launch (see firebase.ts's ensureSignedIn) --
@@ -290,6 +385,41 @@ export function SettingsScreen() {
     (value: boolean) => updateSettings({ showLiveCameras: value }),
     [updateSettings]
   );
+  // Live Traffic NSW. Whether there's anything to show depends on the server having been given
+  // a Transport for NSW key, so the row says which state it's in rather than offering a switch
+  // that quietly does nothing.
+  const [trafficStatus, setTrafficStatus] = useState<TrafficSnapshot>(EMPTY_TRAFFIC_SNAPSHOT);
+  useEffect(() => subscribeNswTraffic(setTrafficStatus), []);
+  const trafficHelp = !trafficStatus.configured
+    ? "Not set up yet. This needs a free Transport for NSW key added on the server -- nothing is shown until then."
+    : trafficStatus.incidents.length === 0
+      ? "Connected to Transport for NSW. No current incidents reported."
+      : `Crashes, heavy traffic, roadworks, floods and fires reported by Transport for NSW -- ${trafficStatus.incidents.length} current across the state. Tap a pin for details. NSW only.`;
+
+  const onSpeedWarningChimeToggle = useCallback(
+    (value: boolean) => updateSettings({ speedWarningChimeEnabled: value }),
+    [updateSettings]
+  );
+
+  // Real, explicit request -- dev-only "GPS replay" test harness (see src/dev/gpsReplay.ts's
+  // own header for why no bundled "sample drive" ships with this: a fabricated GPX pretending
+  // to be a real recording would itself be fake data). The developer pastes their own real
+  // recorded GPX XML in directly -- no new native file-picker dependency needed for that.
+  const [gpxText, setGpxText] = useState("");
+  const [gpxReplayRunning, setGpxReplayRunning] = useState(isGpsReplayActive());
+  const onStartGpxReplay = useCallback(() => {
+    try {
+      const points = parseGpx(gpxText);
+      startGpsReplay(points, 1);
+      setGpxReplayRunning(true);
+    } catch (err) {
+      Alert.alert("Couldn't start replay", err instanceof Error ? err.message : String(err));
+    }
+  }, [gpxText]);
+  const onStopGpxReplay = useCallback(() => {
+    stopGpsReplay();
+    setGpxReplayRunning(false);
+  }, []);
 
   const onOsmRadiusChange = useCallback(
     (value: number) => updateSettings({ osmLayerRadiusKm: Math.round(value) }),
@@ -318,13 +448,54 @@ export function SettingsScreen() {
     [updateSettings]
   );
 
+  // Real, explicit request (Waze-style redesign, Phase 3) -- resolves the stored voiceIdentifier
+  // to its real display name for this row's subtitle, same real lookup SoundSheet.tsx already
+  // does for its own "Current voice" row. The actual picking/previewing UI now lives entirely
+  // in VoicePickerScreen.tsx.
+  const [currentVoiceLabel, setCurrentVoiceLabel] = useState("Device default");
+  const [voicesLoaded, setVoicesLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getVoiceDisplayName(voiceIdentifier, "Device default")
+      .then((label) => {
+        if (!cancelled) setCurrentVoiceLabel(label);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setVoicesLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [voiceIdentifier]);
+
   const onMapThemeSelect = useCallback(
     (theme: MapThemeKey) => updateSettings({ mapTheme: theme }),
     [updateSettings]
   );
 
+  const onMapViewStyleSelect = useCallback(
+    (style: AppSettings["defaultMapViewStyle"]) => updateSettings({ defaultMapViewStyle: style }),
+    [updateSettings]
+  );
+
+  const onRoadThicknessSelect = useCallback(
+    (thickness: RoadThicknessKey) => updateSettings({ roadThickness: thickness }),
+    [updateSettings]
+  );
+
   const onNavCardThemeSelect = useCallback(
     (theme: NavCardThemeKey) => updateSettings({ navCardTheme: theme }),
+    [updateSettings]
+  );
+
+  const onMapMarkerStyleSelect = useCallback(
+    (style: MapMarkerStyleKey) => updateSettings({ mapMarkerStyle: style }),
+    [updateSettings]
+  );
+
+  const onAlertIconThemeSelect = useCallback(
+    (theme: AlertIconThemeKey) => updateSettings({ alertIconTheme: theme }),
     [updateSettings]
   );
 
@@ -369,6 +540,80 @@ export function SettingsScreen() {
     }
   }, [ppsrKeyDraft, nevdisKeyDraft]);
 
+  // Same owner-only pattern as the PPSR/NEVDIS keys above, for the separate plate-based lookup
+  // provider (RegCheck/carregistrationapi.com.au -- see runPlateLookup in
+  // firebase/functions/index.js). Real self-serve signup: create a free/paid account at
+  // carregistrationapi.com.au to get this username.
+  const [plateLookupUsernameDraft, setPlateLookupUsernameDraft] = useState("");
+  const [plateLookupKeyLoaded, setPlateLookupKeyLoaded] = useState(false);
+  const [plateLookupKeySavedFlash, setPlateLookupKeySavedFlash] = useState(false);
+  const [savingPlateLookupKey, setSavingPlateLookupKey] = useState(false);
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    getPlateLookupProviderConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setPlateLookupUsernameDraft(config.username);
+      })
+      .catch((err) => console.warn("[settings] failed to load plate lookup provider config", err))
+      .finally(() => {
+        if (!cancelled) setPlateLookupKeyLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwner]);
+  const onSavePlateLookupKey = useCallback(async () => {
+    setSavingPlateLookupKey(true);
+    try {
+      await savePlateLookupProviderConfig({ username: plateLookupUsernameDraft });
+      setPlateLookupKeySavedFlash(true);
+      setTimeout(() => setPlateLookupKeySavedFlash(false), 2000);
+    } catch (err) {
+      Alert.alert("Couldn't save", err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingPlateLookupKey(false);
+    }
+  }, [plateLookupUsernameDraft]);
+
+  // Same owner-only pattern again, for the Plate Recognizer cloud OCR provider (see
+  // recognizePlate in firebase/functions/index.js) -- a real, paid account at
+  // platerecognizer.com, used as a cloud alternative to on-device plate reading in AI Vehicle
+  // Detection when connected (see plateRecognizer.ts's own comment for the on-device fallback).
+  const [plateRecognizerKeyDraft, setPlateRecognizerKeyDraft] = useState("");
+  const [plateRecognizerKeyLoaded, setPlateRecognizerKeyLoaded] = useState(false);
+  const [plateRecognizerKeySavedFlash, setPlateRecognizerKeySavedFlash] = useState(false);
+  const [savingPlateRecognizerKey, setSavingPlateRecognizerKey] = useState(false);
+  useEffect(() => {
+    if (!isOwner) return;
+    let cancelled = false;
+    getPlateRecognizerProviderConfig()
+      .then((config) => {
+        if (cancelled) return;
+        setPlateRecognizerKeyDraft(config.apiKey);
+      })
+      .catch((err) => console.warn("[settings] failed to load plate recognizer provider config", err))
+      .finally(() => {
+        if (!cancelled) setPlateRecognizerKeyLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwner]);
+  const onSavePlateRecognizerKey = useCallback(async () => {
+    setSavingPlateRecognizerKey(true);
+    try {
+      await savePlateRecognizerProviderConfig({ apiKey: plateRecognizerKeyDraft });
+      setPlateRecognizerKeySavedFlash(true);
+      setTimeout(() => setPlateRecognizerKeySavedFlash(false), 2000);
+    } catch (err) {
+      Alert.alert("Couldn't save", err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSavingPlateRecognizerKey(false);
+    }
+  }, [plateRecognizerKeyDraft]);
+
   // Real, live battery reading (not a static disclaimer) -- AI Vehicle Detection runs a real
   // camera + on-device AI analysis several times a second, which is genuinely one of the
   // heaviest things this app does. Both iOS and Android automatically slow the processor down
@@ -381,30 +626,33 @@ export function SettingsScreen() {
   const batteryLow = batteryPercent !== null && batteryPercent < 50;
   const [batteryInfoOpen, setBatteryInfoOpen] = useState(false);
 
+  // No category param (every pre-existing navigate("Settings") call site) shows every section,
+  // exactly the previous behavior -- only SettingsCategoriesScreen's own category cards pass one.
+  const settingsRoute = useRoute<RouteProp<RootStackParamList, "Settings">>();
+  const category = settingsRoute.params?.category;
+  const shouldShow = (sectionTitle: string) => !category || CATEGORY_SECTIONS[category].includes(sectionTitle);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Section title="Account">
+    <ScrollView keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.content}>
+      {/* Real, confirmed request -- black background for this screen. App.tsx's global
+          <StatusBar style="dark" /> assumes a light background everywhere else, which would
+          leave the status bar icons invisible against this screen's new black background --
+          this screen's own instance overrides it back to light icons while focused, and
+          expo-status-bar automatically restores the app-wide one the moment this unmounts. */}
+      <StatusBar style="light" />
+      <Section title="Account" visible={shouldShow("Account")}>
         {isSignedIn ? (
           <>
             <Text style={styles.rowLabel}>Signed in as {user.email ?? user.displayName ?? "you"}</Text>
-            <Pressable
-              style={({ pressed }) => [styles.signOutButton, pressed && { opacity: pressedOpacity }]}
-              onPress={() => signOutUser()}
-            >
-              <Text style={styles.signOutButtonText}>Sign out</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.deleteAccountButton, pressed && { opacity: pressedOpacity }]}
+            <Button variant="secondary" label="Sign out" onPress={() => signOutUser()} fullWidth />
+            <Button
+              variant="destructive"
+              label="Delete account"
               onPress={onDeleteAccount}
               disabled={deletingAccount}
               accessibilityLabel="Delete account"
-            >
-              {deletingAccount ? (
-                <ActivityIndicator size="small" color={colors.danger} />
-              ) : (
-                <Text style={styles.deleteAccountButtonText}>Delete account</Text>
-              )}
-            </Pressable>
+              fullWidth loading={deletingAccount}
+            />
           </>
         ) : (
           <>
@@ -412,41 +660,75 @@ export function SettingsScreen() {
               Not signed in -- everything still works. Sign in to make your reports and settings
               recoverable if you get a new phone.
             </Text>
-            <Pressable
-              style={({ pressed }) => [styles.signInButton, pressed && { opacity: pressedOpacity }]}
+            <Button
+              variant="primary"
+              label="Sign in"
               onPress={() => navigation.navigate("SignIn")}
-            >
-              <Text style={styles.signInButtonText}>Sign in</Text>
-            </Pressable>
+              fullWidth
+            />
           </>
         )}
       </Section>
 
-      <Section title="Purchases">
+      <Section title="Purchases" visible={shouldShow("Purchases")}>
         <Text style={styles.helperText}>
           Restore any in-app purchase tied to your App Store / Google account on this device.
         </Text>
-        <Pressable
-          style={({ pressed }) => [styles.signOutButton, pressed && { opacity: pressedOpacity }]}
+        <Button
+          variant="secondary"
+          label="Restore purchases"
           onPress={onRestorePurchases}
           disabled={restoringPurchases}
           accessibilityLabel="Restore purchases"
-        >
-          {restoringPurchases ? (
-            <ActivityIndicator size="small" color={colors.text} />
-          ) : (
-            <Text style={styles.restorePurchasesButtonText}>Restore purchases</Text>
-          )}
-        </Pressable>
+          fullWidth loading={restoringPurchases}
+        />
         {restoreMessage && <Text style={styles.helperText}>{restoreMessage}</Text>}
       </Section>
 
-      <Section title="Live alerts">
+      <Section title="Privacy" visible={shouldShow("Privacy")}>
+        <Text style={styles.helperText}>
+          TrackLine starts every driver in Ghost mode -- opt in here any time you&apos;d like
+          other nearby drivers to see your Tracky on the map while you&apos;re driving.
+        </Text>
+        {VISIBILITY_OPTIONS.map((option) => {
+          const selected = settings.visibility === option.key;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => updateSettings({ visibility: option.key })}
+              style={({ pressed }) => [styles.radioRow, pressed && { opacity: pressedOpacity }]}
+              accessibilityLabel={`${option.label}. ${option.description}`}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>{option.label}</Text>
+                <Text style={styles.helperText}>{option.description}</Text>
+              </View>
+              <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
+                {selected && <View style={styles.radioInner} />}
+              </View>
+            </Pressable>
+          );
+        })}
+
+        <Row label="Show my name on reports">
+          <Switch
+            value={settings.showNameOnReports}
+            onValueChange={(value) => updateSettings({ showNameOnReports: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          Off -- reports show as &quot;A Tracky&quot; instead of your real name, regardless of
+          your visibility above.
+        </Text>
+      </Section>
+
+      <Section title="Live alerts" visible={shouldShow("Live alerts")}>
         <Row label="Receive alerts">
           <Switch
             value={settings.alertsEnabled}
             onValueChange={onAlertsEnabledToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Text style={styles.helperText}>
@@ -466,7 +748,7 @@ export function SettingsScreen() {
                 value={settings.visibleRegions.includes(state.code as AuRegionCode)}
                 onValueChange={(value) => onRegionToggle(state.code as AuRegionCode, value)}
                 disabled={!settings.alertsEnabled}
-                trackColor={{ true: colors.accent, false: colors.border }}
+                trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
               />
             </View>
           ))}
@@ -480,7 +762,7 @@ export function SettingsScreen() {
                 value={settings.visibleAlertTypes.includes(type)}
                 onValueChange={(value) => onAlertTypeToggle(type, value)}
                 disabled={!settings.alertsEnabled}
-                trackColor={{ true: colors.accent, false: colors.border }}
+                trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
               />
             </View>
           ))}
@@ -501,33 +783,15 @@ export function SettingsScreen() {
           {EXPIRY_PRESETS.map((preset) => {
             const isSelected = settings.alertExpiryMs === preset.ms;
             return (
-              <Pressable
+              <Chip
+                label={preset.label}
                 key={preset.label}
                 onPress={() => onExpiryPresetSelect(preset.ms)}
-                style={({ pressed }) => [
-                  styles.expiryChip,
-                  isSelected && styles.expiryChipSelected,
-                  pressed && { opacity: pressedOpacity },
-                ]}
-              >
-                <Text style={[styles.expiryChipText, isSelected && styles.expiryChipTextSelected]}>
-                  {preset.label}
-                </Text>
-              </Pressable>
+                selected={isSelected}
+              />
             );
           })}
-          <Pressable
-            onPress={() => setCustomExpiryOpen((v) => !v)}
-            style={({ pressed }) => [
-              styles.expiryChip,
-              customExpiryOpen && styles.expiryChipSelected,
-              pressed && { opacity: pressedOpacity },
-            ]}
-          >
-            <Text style={[styles.expiryChipText, customExpiryOpen && styles.expiryChipTextSelected]}>
-              Custom
-            </Text>
-          </Pressable>
+          <Chip label="Custom" onPress={() => setCustomExpiryOpen((v) => !v)} selected={customExpiryOpen} />
         </View>
 
         {customExpiryOpen && (
@@ -536,7 +800,7 @@ export function SettingsScreen() {
               value={customHoursText}
               onChangeText={setCustomHoursText}
               placeholder="Hours"
-              placeholderTextColor={colors.textFaint}
+              placeholderTextColor={SETTINGS_TEXT_FAINT}
               keyboardType="number-pad"
               style={styles.customExpiryInput}
             />
@@ -544,7 +808,7 @@ export function SettingsScreen() {
               value={customMinutesText}
               onChangeText={setCustomMinutesText}
               placeholder="Minutes"
-              placeholderTextColor={colors.textFaint}
+              placeholderTextColor={SETTINGS_TEXT_FAINT}
               keyboardType="number-pad"
               style={styles.customExpiryInput}
             />
@@ -558,7 +822,72 @@ export function SettingsScreen() {
         )}
       </Section>
 
-      <Section title="Map appearance">
+      {/* The switches that used to be rows in the old "Map tools" panel on the map. */}
+      <Section title="Map view" visible={shouldShow("Map view")}>
+        <Row
+          label="Satellite view"
+          icon={<Icon name="earth-outline" size={18} color={settings.defaultMapViewStyle === "satellite3d" ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.defaultMapViewStyle === "satellite3d"}
+            onValueChange={(value) => updateSettings({ defaultMapViewStyle: value ? "satellite3d" : "tilted3d" })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Row
+          label="3D buildings"
+          icon={<Icon name="business-outline" size={18} color={settings.show3DBuildings ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.show3DBuildings}
+            onValueChange={(value) => updateSettings({ show3DBuildings: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Row
+          label="Alerts on the map"
+          icon={<Icon name="warning-outline" size={18} color={settings.alertsEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.alertsEnabled}
+            onValueChange={(value) => updateSettings({ alertsEnabled: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          The map opens in TrackLine Light. Satellite view swaps the drawn map for aerial imagery; 3D buildings
+          opens the photorealistic 3D view where your phone supports it.
+        </Text>
+      </Section>
+
+      <Section title="Map shortcuts" visible={shouldShow("Map shortcuts")}>
+        <Row
+          label="Compass"
+          icon={<Icon name="compass-outline" size={18} color={settings.showCompass ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.showCompass}
+            onValueChange={(value) => updateSettings({ showCompass: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Row
+          label="Audio player"
+          icon={<Icon name="musical-notes-outline" size={18} color={settings.showAudioPlayer ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.showAudioPlayer}
+            onValueChange={(value) => updateSettings({ showAudioPlayer: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          Audio player adds a music button to the map that opens your music app (Spotify, Apple Music or YouTube
+          Music). It opens the app -- it can&apos;t control what&apos;s playing from here.
+        </Text>
+      </Section>
+
+      <Section title="Map appearance" visible={shouldShow("Map appearance")}>
         <Text style={styles.helperText}>
           Recolors the whole map -- land, water, roads, and highways together -- not just a
           tint. Every theme keeps road labels high-contrast against the road surface so street
@@ -579,8 +908,10 @@ export function SettingsScreen() {
                 ]}
                 accessibilityLabel={`${MAP_THEME_LABELS[theme]} map theme`}
               >
-                <View style={[styles.themeSwatch, { backgroundColor: bg }]}>
-                  <View style={[styles.themeSwatchAccent, { backgroundColor: accent }]} />
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, { backgroundColor: bg }]}>
+                    <View style={[styles.themeSwatchAccent, { backgroundColor: accent }]} />
+                  </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {MAP_THEME_LABELS[theme]}
@@ -589,9 +920,82 @@ export function SettingsScreen() {
             );
           })}
         </View>
+
+        {/* Real, confirmed request -- a dedicated road-thickness/design picker, separate from
+            the color theme above (see mapStyle.ts's own getMapStyle -- thickness is a real
+            multiplier applied on top of whichever theme is picked, not baked into one fixed
+            theme). Each swatch draws an actual bar at that preset's real relative thickness
+            (see ROAD_THICKNESS_SWATCH_HEIGHTS below) rather than just a text label, so it's a
+            genuine preview of what the road network will look like, not a guess. */}
+        <Text style={[styles.helperText, { marginTop: spacing.md }]}>Road thickness</Text>
+        <View style={styles.themeGrid}>
+          {ROAD_THICKNESS_ORDER.map((thickness) => {
+            const isSelected = settings.roadThickness === thickness;
+            return (
+              <Pressable
+                key={thickness}
+                onPress={() => onRoadThicknessSelect(thickness)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${ROAD_THICKNESS_LABELS[thickness]} road thickness`}
+              >
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.roadThicknessSwatch]}>
+                    <View
+                      style={[
+                        styles.roadThicknessBar,
+                        { height: ROAD_THICKNESS_SWATCH_HEIGHTS[thickness] },
+                        isSelected && styles.roadThicknessBarSelected,
+                      ]}
+                    />
+                  </View>
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {ROAD_THICKNESS_LABELS[thickness]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Real, explicit request -- which camera pose the map opens into and starts
+            navigation in, applied with no flash of a different style first (see MapScreen.tsx's
+            own mapViewStyleAppliedRef/chase-cam effects). A live toggle (the existing 3D-
+            buildings/satellite FABs on the map) still works mid-session same as always -- this
+            only picks what it opens/starts into. */}
+        <Text style={[styles.helperText, { marginTop: spacing.md }]}>Default map view</Text>
+        <View style={styles.themeGrid}>
+          {MAP_VIEW_STYLE_ORDER.map((style) => {
+            const isSelected = settings.defaultMapViewStyle === style;
+            return (
+              <Pressable
+                key={style}
+                onPress={() => onMapViewStyleSelect(style)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${MAP_VIEW_STYLE_LABELS[style]} default map view`}
+              >
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.mapViewStyleSwatch]}>
+                    <Icon name={MAP_VIEW_STYLE_ICONS[style]} size={22} color={isSelected ? colors.accent : SETTINGS_TEXT_MUTED} />
+                  </View>
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {MAP_VIEW_STYLE_LABELS[style]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </Section>
 
-      <Section title="Navigation card colors">
+      <Section title="Navigation card colors" visible={shouldShow("Navigation card colors")}>
         <Text style={styles.helperText}>
           Colors for the turn-by-turn card during navigation only -- the map itself keeps
           whichever theme is picked above.
@@ -611,8 +1015,10 @@ export function SettingsScreen() {
                 ]}
                 accessibilityLabel={`${NAV_CARD_THEME_LABELS[theme]} navigation card theme`}
               >
-                <View style={[styles.themeSwatch, { backgroundColor: themeColors.background }]}>
-                  <Text style={[styles.navCardSwatchText, { color: themeColors.text }]}>Aa</Text>
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, { backgroundColor: themeColors.background }]}>
+                    <Text style={[styles.navCardSwatchText, { color: themeColors.text }]}>Aa</Text>
+                  </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
                   {NAV_CARD_THEME_LABELS[theme]}
@@ -623,7 +1029,103 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Map layers">
+      <Section title="Your map marker" visible={shouldShow("Your map marker")}>
+        <Text style={styles.helperText}>
+          How you appear on the map -- the arrow rotates live to show your direction of travel no
+          matter which one you pick.
+        </Text>
+        <View style={styles.themeGrid}>
+          {MAP_MARKER_STYLE_ORDER.map((style) => {
+            const isSelected = settings.mapMarkerStyle === style;
+            const iconSpec = style !== "default" ? MAP_MARKER_STYLE_ICONS[style] : null;
+            return (
+              <Pressable
+                key={style}
+                onPress={() => onMapMarkerStyleSelect(style)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${MAP_MARKER_STYLE_LABELS[style]} map marker`}
+              >
+                <View style={styles.themeSwatchShadowWrap}>
+                  {iconSpec ? (
+                    // Real, explicit request for a "more realistic, polished, professional"
+                    // marker look -- this preview now uses the exact same two-stop gradient fill
+                    // CarNavArrow itself renders with on the real map (see its own comment), so
+                    // what's picked here is a genuine preview of the actual badge, not a flatter
+                    // stand-in for it.
+                    <LinearGradient
+                      colors={[shadeColor(iconSpec.color, 0.28), iconSpec.color, shadeColor(iconSpec.color, -0.18)]}
+                      locations={[0, 0.55, 1]}
+                      style={[styles.themeSwatch, styles.iconSwatch]}
+                    >
+                      <MaterialCommunityIcons name={iconSpec.name as any} size={22} color="#FFFFFF" />
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.themeSwatch, styles.iconSwatch]}>
+                      <Icon name="navigate" size={22} color={colors.accent} />
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {MAP_MARKER_STYLE_LABELS[style]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Section>
+
+      <Section title="Alert icons" visible={shouldShow("Alert icons")}>
+        <Text style={styles.helperText}>
+          How police/crash/hazard/camera/traffic-light alerts look on the map -- every pack uses
+          real, distinct icons and colors, previewed below with a sample of the alert types.
+        </Text>
+        <View style={styles.themeGrid}>
+          {ALERT_ICON_THEME_ORDER.map((theme) => {
+            const isSelected = settings.alertIconTheme === theme;
+            return (
+              <Pressable
+                key={theme}
+                onPress={() => onAlertIconThemeSelect(theme)}
+                style={({ pressed }) => [
+                  styles.themeTile,
+                  isSelected && styles.themeTileSelected,
+                  pressed && { opacity: pressedOpacity },
+                ]}
+                accessibilityLabel={`${ALERT_ICON_THEME_LABELS[theme]} alert icon pack`}
+              >
+                <View style={styles.themeSwatchShadowWrap}>
+                  <View style={[styles.themeSwatch, styles.iconSwatch, styles.alertPreviewSwatch]}>
+                    {ALERT_ICON_PREVIEW_TYPES.map((type) => (
+                      <AlertTypeGlyph key={type} type={type} size={18} color={SETTINGS_TEXT} themeOverride={theme} />
+                    ))}
+                  </View>
+                </View>
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
+                  {ALERT_ICON_THEME_LABELS[theme]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Section>
+
+      <Section title="Map layers" visible={shouldShow("Map layers")}>
+        <Row label="Show Trackys" icon={<Icon name="happy-outline" size={18} color={settings.showTrackysOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}>
+          <Switch
+            value={settings.showTrackysOnMap}
+            onValueChange={(value) => updateSettings({ showTrackysOnMap: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          Shows other visible, currently-driving drivers&apos; Trackys on the map. Turning this
+          off only affects what you see -- it doesn&apos;t change your own visibility to others
+          (see Privacy above).
+        </Text>
         <Row
           label="Traffic lights"
           icon={<OsmLayerIcon marker={TRAFFIC_LIGHT_MARKER} enabled={settings.showTrafficLights} />}
@@ -631,7 +1133,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.showTrafficLights}
             onValueChange={onShowTrafficLightsToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Row
@@ -641,7 +1143,7 @@ export function SettingsScreen() {
           <Switch
             value={settings.showSpeedCameras}
             onValueChange={onShowSpeedCamerasToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Row label={`Traffic light & speed camera radius — ${settings.osmLayerRadiusKm} km`}>
@@ -667,13 +1169,26 @@ export function SettingsScreen() {
             of the same thing. */}
         <View style={styles.liveCameraBox}>
           <Row
+            label="Live traffic incidents (NSW)"
+            icon={<Icon name="warning-outline" size={18} color={settings.showLiveTraffic ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          >
+            <Switch
+              value={settings.showLiveTraffic}
+              onValueChange={(value) => updateSettings({ showLiveTraffic: value })}
+              trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            />
+          </Row>
+          <Text style={styles.helperText}>{trafficHelp}</Text>
+        </View>
+        <View style={styles.liveCameraBox}>
+          <Row
             label="Live traffic cameras (NSW)"
-            icon={<MaterialCommunityIcons name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : colors.textMuted} />}
+            icon={<Icon name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : SETTINGS_TEXT_MUTED} />}
           >
             <Switch
               value={settings.showLiveCameras}
               onValueChange={onShowLiveCamerasToggle}
-              trackColor={{ true: colors.accent, false: colors.border }}
+              trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
             />
           </Row>
           <Text style={styles.helperText}>
@@ -684,7 +1199,91 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="AI Vehicle Detection">
+      <Section title="Speed" visible={shouldShow("Speed")}>
+        <Row
+          label="Speed warning chime"
+          icon={<Icon name="volume-high" size={18} color={settings.speedWarningChimeEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.speedWarningChimeEnabled}
+            onValueChange={onSpeedWarningChimeToggle}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          A single soft chime when your live speed goes 3+ km/h over the posted limit, at most
+          once every 30 seconds. Shown alongside the live speedometer, bottom-left on the map.
+        </Text>
+      </Section>
+
+      {/* Dev-only -- stripped from a production build entirely (the whole block is gated on
+          __DEV__, not just hidden). Real, explicit request: a way to test the speedometer/speed
+          limits/off-route rerouting against a real recorded drive without actually driving.
+          Paste in your own real GPX export (any phone GPS logger, Strava, Google Maps Timeline,
+          etc) -- see src/dev/gpsReplay.ts's own header for why nothing is bundled here. */}
+      {__DEV__ && (
+        <Section title="Touch debugger (dev only)" visible={shouldShow("Touch debugger (dev only)")}>
+          <Text style={styles.helperText} selectable>
+            Running: {getBuildStamp()}
+          </Text>
+          <TouchDebuggerRow />
+          <Text style={styles.helperText}>
+            Test drives: a recorded drive onto the M4 and off at the Silverwater Road exit, to check lane guidance, the
+            approach zoom, the confirmation chip and rerouting.
+          </Text>
+          {(Object.keys(TEST_DRIVE_LABELS) as TestDriveKind[]).map((kind) => (
+            <Button
+              key={kind}
+              variant="secondary"
+              fullWidth
+              label={TEST_DRIVE_LABELS[kind]}
+              onPress={() => {
+                navigation.navigate("Map");
+                // After the map is back in front.
+                setTimeout(() => requestTestDrive(kind), 300);
+              }}
+              style={{ marginTop: 8 }}
+            />
+          ))}
+        </Section>
+      )}
+      {__DEV__ && (
+        <Section title="GPS replay (dev only)" visible={shouldShow("GPS replay (dev only)")}>
+          <Text style={styles.helperText}>
+            Paste a real recorded drive's GPX XML below, then Start -- every screen that reads
+            live location (this map, the speedometer, off-route rerouting) will play it back as
+            if it were your real GPS, at the file's own real recorded pace.
+          </Text>
+          <TextInput
+            value={gpxText}
+            onChangeText={setGpxText}
+            placeholder="<gpx>...<trkpt lat=... lon=...>...</gpx>"
+            placeholderTextColor={SETTINGS_TEXT_MUTED}
+            multiline
+            style={styles.gpxInput}
+            editable={!gpxReplayRunning}
+          />
+          <View style={styles.gpxButtonRow}>
+            <Button
+              variant="secondary"
+              label="Start replay"
+              onPress={onStartGpxReplay}
+              disabled={gpxReplayRunning || !gpxText.trim()}
+              style={{ flex: 1 }}
+            />
+            <Button
+              variant="secondary"
+              label="Stop replay"
+              onPress={onStopGpxReplay}
+              disabled={!gpxReplayRunning}
+              style={{ flex: 1 }}
+            />
+          </View>
+          {gpxReplayRunning && <Text style={styles.helperText}>Replay running -- real GPS is ignored until stopped.</Text>}
+        </Section>
+      )}
+
+      <Section title="AI Vehicle Detection" visible={shouldShow("AI Vehicle Detection")}>
         <Pressable
           onPress={() => setBatteryInfoOpen(true)}
           style={({ pressed }) => [
@@ -693,21 +1292,52 @@ export function SettingsScreen() {
           ]}
           accessibilityLabel="Why battery level matters for AI Vehicle Detection"
         >
-          <MaterialCommunityIcons
+          <Icon
             name={batteryLow ? "battery-alert" : "battery-heart-variant"}
             size={18}
-            color={batteryLow ? colors.warning : colors.textMuted}
+            color={batteryLow ? colors.warning : SETTINGS_TEXT_MUTED}
           />
           <Text style={batteryLow ? styles.warningText : styles.infoText}>
             {batteryPercent !== null
               ? `Battery is at ${batteryPercent}%${lowPowerMode ? " (Low Power Mode on)" : ""} — AI Vehicle Detection works best above 50%.`
               : "AI Vehicle Detection works best with your battery above 50%."}
           </Text>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textMuted} />
+          <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
+
+        {/* Real, explicit request: night processing (a brightened frame fed to the model, plus
+            lowered detection thresholds -- see VehicleDetectionScreen.tsx) that switches itself
+            on/off by a real computed sunset/sunrise at wherever the driver actually is (see
+            utils/sunTimes.ts), not a fixed clock time. Auto is the default; On/Off are an
+            explicit manual override for a driver who wants it regardless of the real sun. */}
+        <Text style={[styles.rowLabel, { marginTop: spacing.md }]}>Night mode</Text>
+        <Text style={styles.helperText}>
+          Brightens the camera feed and loosens detection thresholds for real low-light
+          conditions. "Auto" turns on 10 minutes after sunset and off at sunrise, calculated for
+          your own real current location -- never a fixed clock time.
+        </Text>
+        <View style={styles.expiryChipRow}>
+          {(
+            [
+              { value: "auto", label: "Auto" },
+              { value: "on", label: "Always on" },
+              { value: "off", label: "Always off" },
+            ] as const
+          ).map((option) => {
+            const isSelected = settings.nightModePreference === option.value;
+            return (
+              <Chip
+                label={option.label}
+                key={option.value}
+                onPress={() => updateSettings({ nightModePreference: option.value })}
+                selected={isSelected}
+              />
+            );
+          })}
+        </View>
       </Section>
 
-      <Section title="Vehicle REV Checks">
+      <Section title="Vehicle REV Checks" visible={shouldShow("Vehicle REV Checks")}>
         <Text style={styles.helperText}>
           Look up a vehicle's 5-year registration &amp; odometer history and stolen/written-off/
           money-owing status -- Australia only. Vehicles the AI detector fully identifies (a
@@ -718,9 +1348,9 @@ export function SettingsScreen() {
           onPress={() => navigation.navigate("VehicleHistory")}
           style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
         >
-          <MaterialCommunityIcons name="car-search" size={20} color={colors.accent} />
+          <Icon name="car-search" size={20} color={colors.accent} />
           <Text style={styles.revCheckLinkText}>View vehicle history & run a REV check</Text>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textMuted} />
+          <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
 
         {/* Owner-only, per explicit request -- a real, paid business API credential, not
@@ -729,7 +1359,21 @@ export function SettingsScreen() {
             instead of a per-device local setting -- see revCheckAdmin.ts's own header. */}
         {isOwner && (
           <>
-            <Text style={styles.rowLabel}>Provider keys (owner only)</Text>
+            {/* Real, live usage stats (installs/active-now/logged-in accounts) plus the real
+                "send a push notification to every device" button -- see OwnerDashboardScreen.tsx.
+                Its own underlying Firestore reads/writes are owner-gated independently
+                (firestore.rules' isAdmin()), this is just the entry point. */}
+            <Pressable
+              onPress={() => navigation.navigate("OwnerDashboard")}
+              style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
+            >
+              <Icon name="view-dashboard" size={20} color={colors.accent} />
+              <Text style={styles.revCheckLinkText}>Owner dashboard — users & notifications</Text>
+              <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+            </Pressable>
+
+
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>Provider keys (owner only)</Text>
             <Text style={styles.helperText}>
               Real vehicle history isn't free -- PPSR (stolen/written-off/money-owing) and NEVDIS
               (registration + odometer history) both require your own signed-up broker account.
@@ -739,14 +1383,14 @@ export function SettingsScreen() {
               account or the server-side check function -- no other user's device can read it.
             </Text>
             {!keysLoaded ? (
-              <ActivityIndicator size="small" color={colors.textMuted} />
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
             ) : (
               <>
                 <TextInput
                   value={ppsrKeyDraft}
                   onChangeText={setPpsrKeyDraft}
                   placeholder="PPSR provider API key"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -756,7 +1400,7 @@ export function SettingsScreen() {
                   value={nevdisKeyDraft}
                   onChangeText={setNevdisKeyDraft}
                   placeholder="NEVDIS provider API key"
-                  placeholderTextColor={colors.textFaint}
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
@@ -779,6 +1423,102 @@ export function SettingsScreen() {
                 </Pressable>
               </>
             )}
+
+            {/* Real, separate provider -- searches by PLATE + STATE instead of VIN (make/model/
+                year/body/engine/etc. only, no stolen/written-off/finance/odometer -- see
+                runPlateLookup's own comment in firebase/functions/index.js for why that split is
+                real, not arbitrary). Sign up for a real account at carregistrationapi.com.au to
+                get this username. */}
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>
+              Plate lookup provider (owner only)
+            </Text>
+            <Text style={styles.helperText}>
+              Real make/model/year/body/engine data by plate + state alone -- a different,
+              separate provider from PPSR/NEVDIS above (carregistrationapi.com.au). Sign up there
+              for a real account, then paste the username it gives you below.
+            </Text>
+            {!plateLookupKeyLoaded ? (
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
+            ) : (
+              <>
+                <TextInput
+                  value={plateLookupUsernameDraft}
+                  onChangeText={setPlateLookupUsernameDraft}
+                  placeholder="Plate lookup provider username"
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  style={styles.customExpiryInput}
+                />
+                <Pressable
+                  onPress={onSavePlateLookupKey}
+                  disabled={savingPlateLookupKey}
+                  style={({ pressed }) => [
+                    styles.customExpiryApply,
+                    { alignItems: "center" },
+                    pressed && !savingPlateLookupKey && { opacity: pressedOpacity },
+                  ]}
+                >
+                  {savingPlateLookupKey ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.customExpiryApplyText}>
+                      {plateLookupKeySavedFlash ? "Saved" : "Save username"}
+                    </Text>
+                  )}
+                </Pressable>
+              </>
+            )}
+
+            {/* Real, separate provider again -- Plate Recognizer (platerecognizer.com), a cloud
+                OCR alternative to AI Vehicle Detection's own on-device plate reader. Connecting
+                this sends cropped plate images to Plate Recognizer's servers when a plate is
+                being read -- a genuine privacy trade-off from the fully on-device default,
+                disclosed in the app's own camera-usage description. Register a real, paid
+                account at platerecognizer.com, then paste the apiKey it gives you below. */}
+            <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>
+              Plate recognition provider (owner only)
+            </Text>
+            <Text style={styles.helperText}>
+              Cloud OCR for AI Vehicle Detection's plate reads via Plate Recognizer -- a separate
+              provider from the ones above. When connected, cropped plate images are sent to
+              platerecognizer.com's own servers instead of staying fully on-device. Sign up there
+              for a real account, then paste the apiKey it gives you below.
+            </Text>
+            {!plateRecognizerKeyLoaded ? (
+              <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
+            ) : (
+              <>
+                <TextInput
+                  value={plateRecognizerKeyDraft}
+                  onChangeText={setPlateRecognizerKeyDraft}
+                  placeholder="Plate Recognizer API key"
+                  placeholderTextColor={SETTINGS_TEXT_FAINT}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  style={styles.customExpiryInput}
+                />
+                <Pressable
+                  onPress={onSavePlateRecognizerKey}
+                  disabled={savingPlateRecognizerKey}
+                  style={({ pressed }) => [
+                    styles.customExpiryApply,
+                    { alignItems: "center" },
+                    pressed && !savingPlateRecognizerKey && { opacity: pressedOpacity },
+                  ]}
+                >
+                  {savingPlateRecognizerKey ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.customExpiryApplyText}>
+                      {plateRecognizerKeySavedFlash ? "Saved" : "Save key"}
+                    </Text>
+                  )}
+                </Pressable>
+              </>
+            )}
           </>
         )}
       </Section>
@@ -795,13 +1535,13 @@ export function SettingsScreen() {
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Why battery matters here</Text>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="close"
+                iconColor={SETTINGS_TEXT_MUTED}
                 onPress={() => setBatteryInfoOpen(false)}
-                hitSlop={12}
                 accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={22} color={colors.textMuted} />
-              </Pressable>
+              />
             </View>
             <Text style={styles.modalBody}>
               AI Vehicle Detection runs a real, live camera feed through on-device AI several
@@ -825,9 +1565,9 @@ export function SettingsScreen() {
         </Pressable>
       </Modal>
 
-      <Section title="Public transit">
+      <Section title="Public transit" visible={shouldShow("Public transit")}>
         <View style={styles.warningBox}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.warning} />
+          <Icon name="alert-circle-outline" size={18} color={colors.warning} />
           <Text style={styles.warningText}>
             Live, real-time bus/train tracking is limited to NSW, Australia.
           </Text>
@@ -840,12 +1580,12 @@ export function SettingsScreen() {
         </Text>
       </Section>
 
-      <Section title="EV Radar (siren detection)">
+      <Section title="EV Radar (siren detection)" visible={shouldShow("EV Radar (siren detection)")}>
         <Row label="Auto-share detections">
           <Switch
             value={settings.autoShareDetections}
             onValueChange={onAutoShareToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
         <Text style={styles.helperText}>
@@ -867,7 +1607,7 @@ export function SettingsScreen() {
             value={settings.sirenSensitivity}
             onSlidingComplete={onSensitivityChange}
             minimumTrackTintColor={colors.accent}
-            maximumTrackTintColor={colors.border}
+            maximumTrackTintColor={SETTINGS_BORDER}
           />
           <View style={styles.sliderEndLabels}>
             <Text style={styles.sliderEndLabelText}>Low</Text>
@@ -876,14 +1616,30 @@ export function SettingsScreen() {
         </Row>
       </Section>
 
-      <Section title="Voice guidance">
+      <Section title="Voice guidance" visible={shouldShow("Voice guidance")}>
         <Row label="Voice guidance on by default">
           <Switch
             value={settings.defaultVoiceEnabled}
             onValueChange={onDefaultVoiceToggle}
-            trackColor={{ true: colors.accent, false: colors.border }}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
+
+        {/* Real, explicit request (Waze-style redesign, Phase 3) -- "Current voice" now opens
+            the dedicated picker screen (search, Recommended/My recorded voices/All languages,
+            consent modal, persona voices) instead of this inline pill list. */}
+        <Pressable
+          onPress={() => navigation.navigate("VoicePicker")}
+          style={({ pressed }) => [styles.revCheckLinkRow, { marginTop: spacing.md }, pressed && { opacity: pressedOpacity }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowLabel}>Current voice</Text>
+            <Text style={styles.helperText}>
+              {!voicesLoaded ? "Loading…" : currentVoiceLabel}
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+        </Pressable>
       </Section>
 
       <View style={styles.about}>
@@ -902,16 +1658,50 @@ export function SettingsScreen() {
           Version {Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "1.0.0"}
           {Application.nativeBuildVersion ? ` (build ${Application.nativeBuildVersion})` : ""}
         </Text>
+        {/* Exactly which code is running: version, git commit, build date (and where the
+            JavaScript came from). See config/buildStamp.ts. */}
+        <Text style={styles.aboutMeta} selectable testID="build-stamp">
+          Build {getBuildStamp()}
+        </Text>
         {BUSINESS_INFO.businessName ? (
           <Text style={styles.aboutMeta}>{BUSINESS_INFO.businessName}</Text>
         ) : null}
         {BUSINESS_INFO.abn ? <Text style={styles.aboutMeta}>ABN {BUSINESS_INFO.abn}</Text> : null}
+        {/* Real, explicit request (Copyright/trademark safety audit, Part 4) -- "Add
+            About>'Licences & attributions' screen." See LicensesScreen.tsx. */}
+        <Pressable
+          onPress={() => navigation.navigate("Licenses")}
+          style={({ pressed }) => [styles.licensesLink, pressed && { opacity: pressedOpacity }]}
+        >
+          <Text style={styles.licensesLinkText}>Licences &amp; attributions</Text>
+        </Pressable>
+        {/* The same privacy policy that's on the website (web/public/privacy.html, Firebase
+            Hosting), so what the app says it does and what it does stay in one place. */}
+        {env.firebase.projectId ? (
+          <Pressable
+            onPress={() => Linking.openURL(`https://${env.firebase.projectId}.web.app/privacy.html`).catch(() => {})}
+            style={({ pressed }) => [styles.licensesLink, pressed && { opacity: pressedOpacity }]}
+            accessibilityRole="link"
+            testID="privacy-policy-link"
+          >
+            <Text style={styles.licensesLinkText}>Privacy policy</Text>
+          </Pressable>
+        ) : null}
       </View>
     </ScrollView>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  visible = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  visible?: boolean;
+}) {
+  if (!visible) return null;
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -953,15 +1743,15 @@ function OsmLayerIcon({
   const glyphSize = size * (marker.glyphSize / marker.badgeSize);
   // Real, second confirmed cause (beyond the size floor above): the glyph was hardcoded white
   // regardless of enabled state, which is fine against the marker's own real color when ON but
-  // near-invisible white-on-light-grey against colors.border when OFF -- not just small, actually
+  // near-invisible white-on-light-grey against SETTINGS_BORDER when OFF -- not just small, actually
   // low enough contrast to read as a blank circle. Dark when off, matching the same "muted until
   // enabled" intent the background color already has.
-  const glyphColor = enabled ? "#FFFFFF" : colors.textMuted;
+  const glyphColor = enabled ? "#FFFFFF" : SETTINGS_TEXT_MUTED;
   return (
     <View
       style={[
         styles.rowIconBadge,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : colors.border },
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : SETTINGS_BORDER },
       ]}
     >
       <MaterialCommunityIcons name={marker.icon as any} size={glyphSize} color={glyphColor} />
@@ -970,10 +1760,10 @@ function OsmLayerIcon({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surfaceMuted },
+  container: { flex: 1, backgroundColor: SETTINGS_BG },
   content: { padding: spacing.xl, gap: spacing.xxl },
   section: {
-    backgroundColor: colors.surface,
+    backgroundColor: SETTINGS_SURFACE,
     borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.md + 2,
@@ -982,7 +1772,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -1001,7 +1791,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 15,
     fontWeight: "500",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   sliderEndLabels: {
     flexDirection: "row",
@@ -1011,20 +1801,38 @@ const styles = StyleSheet.create({
   sliderEndLabelText: {
     fontSize: 11,
     fontWeight: "600",
-    color: colors.textFaint,
+    color: SETTINGS_TEXT_FAINT,
   },
   liveCameraBox: {
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: SETTINGS_BORDER,
     borderRadius: radius.lg,
     padding: spacing.md,
     gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
   },
   helperText: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     lineHeight: 17,
+  },
+  gpxInput: {
+    minHeight: 90,
+    maxHeight: 160,
+    borderWidth: 1,
+    borderColor: SETTINGS_BORDER,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    color: SETTINGS_TEXT,
+    fontSize: 12,
+    fontFamily: "Courier",
+    textAlignVertical: "top",
+    marginTop: spacing.sm,
+  },
+  gpxButtonRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   warningBox: {
     flexDirection: "row",
@@ -1046,7 +1854,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
     borderRadius: radius.md,
     padding: spacing.md,
   },
@@ -1054,7 +1862,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: "500",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     lineHeight: 18,
   },
   modalBackdrop: {
@@ -1067,7 +1875,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 420,
-    backgroundColor: colors.surface,
+    backgroundColor: SETTINGS_SURFACE,
     borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.md,
@@ -1083,23 +1891,23 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: "700",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   modalBody: {
     fontSize: 13,
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
     lineHeight: 19,
   },
   modalMeta: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   revCheckLinkRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
     borderRadius: radius.md,
     padding: spacing.md,
   },
@@ -1107,43 +1915,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: "600",
-    color: colors.text,
-  },
-  signInButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md - 2,
-    alignItems: "center",
-  },
-  signInButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  signOutButton: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md - 2,
-    alignItems: "center",
-  },
-  signOutButtonText: {
-    color: colors.danger,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  restorePurchasesButtonText: {
-    color: colors.text,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  deleteAccountButton: {
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-  },
-  deleteAccountButtonText: {
-    color: colors.danger,
-    fontWeight: "600",
-    fontSize: 13,
+    color: SETTINGS_TEXT,
   },
   themeGrid: {
     flexDirection: "row",
@@ -1161,7 +1933,17 @@ const styles = StyleSheet.create({
   },
   themeTileSelected: {
     borderColor: colors.accent,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+  },
+  // Real elevation, per explicit request for a "more realistic" picker -- a plain flat-color
+  // swatch read as a cheap placeholder rather than a genuine preview of the actual marker/card
+  // it represents. Wrapped in its own View (see the render call sites) since the swatch itself
+  // has overflow:hidden (needed to clip the icon/accent bar to its rounded corners), and RN
+  // shadows don't render through a clipped parent.
+  themeSwatchShadowWrap: {
+    width: "100%",
+    borderRadius: radius.sm,
+    ...shadow.medium,
   },
   themeSwatch: {
     width: "100%",
@@ -1169,6 +1951,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     overflow: "hidden",
     justifyContent: "flex-end",
+  },
+  iconSwatch: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+  },
+  alertPreviewSwatch: {
+    flexDirection: "row",
+    gap: spacing.xs + 2,
   },
   themeSwatchAccent: {
     height: 12,
@@ -1185,11 +1976,29 @@ const styles = StyleSheet.create({
   themeTileLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.textMuted,
+    color: SETTINGS_TEXT_MUTED,
   },
   themeTileLabelSelected: {
     color: colors.accent,
     fontWeight: "700",
+  },
+  roadThicknessSwatch: {
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mapViewStyleSwatch: {
+    backgroundColor: SETTINGS_SURFACE_MUTED,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roadThicknessBar: {
+    width: "70%",
+    borderRadius: 6,
+    backgroundColor: SETTINGS_TEXT_MUTED,
+  },
+  roadThicknessBarSelected: {
+    backgroundColor: colors.accent,
   },
   alertTypeGrid: {
     gap: spacing.sm,
@@ -1202,32 +2011,12 @@ const styles = StyleSheet.create({
   },
   alertTypeLabel: {
     fontSize: 14,
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   expiryChipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.xs + 2,
-  },
-  expiryChip: {
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  expiryChipSelected: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  expiryChipText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.textMuted,
-  },
-  expiryChipTextSelected: {
-    color: "#FFFFFF",
   },
   customExpiryRow: {
     flexDirection: "row",
@@ -1237,12 +2026,12 @@ const styles = StyleSheet.create({
   customExpiryInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: SETTINGS_BORDER,
     borderRadius: radius.md,
     paddingVertical: spacing.sm - 2,
     paddingHorizontal: spacing.sm + 2,
     fontSize: 14,
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   customExpiryApply: {
     backgroundColor: colors.accent,
@@ -1270,14 +2059,46 @@ const styles = StyleSheet.create({
   aboutName: {
     fontSize: 14,
     fontWeight: "700",
-    color: colors.text,
+    color: SETTINGS_TEXT,
   },
   aboutVersion: {
     fontSize: 12,
-    color: colors.textFaint,
+    color: SETTINGS_TEXT_FAINT,
   },
   aboutMeta: {
     fontSize: 12,
-    color: colors.textFaint,
+    color: SETTINGS_TEXT_FAINT,
+  },
+  licensesLink: {
+    marginTop: spacing.sm,
+  },
+  licensesLinkText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.accent,
+  },
+  radioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.md,
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: SETTINGS_BORDER,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioOuterSelected: {
+    borderColor: colors.accent,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
   },
 });

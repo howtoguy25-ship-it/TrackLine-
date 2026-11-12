@@ -2,10 +2,22 @@ import { env } from "@/config/env";
 import type { LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
 
+// Real, confirmed bug fix -- see withTimeout.ts's own comment. 12s is generous enough for a
+// real, slow-but-working connection to still complete normally, short enough that a genuinely
+// hung request turns into a clear, retryable error well before it reads as the app being frozen.
+const NEARBY_SEARCH_TIMEOUT_MS = 12000;
+
 export interface PlacePrediction {
   placeId: string;
   primaryText: string;
   secondaryText: string;
+  // Real distance from biasLocation -- only present when biasLocation was actually passed (see
+  // the `origin` param below, a real, documented Autocomplete API field: passing `origin` makes
+  // Google compute and return this itself, not something calculated client-side from a guess).
+  distanceMeters?: number;
+  // Google's own real place-type tags (e.g. "train_station", "locality", "university") -- used
+  // to pick a real, category-appropriate icon instead of one generic pin for every result.
+  types?: string[];
 }
 
 export interface PlaceDetails {
@@ -22,7 +34,14 @@ export class PlacesApiError extends Error {
   }
 }
 
-export async function searchPlaces(query: string, biasLocation?: LatLng): Promise<PlacePrediction[]> {
+export async function searchPlaces(
+  query: string,
+  biasLocation?: LatLng,
+  // Pass the same token for every keystroke of one search, and again to getPlaceDetails for the
+  // result chosen: Google then bills the whole search as one session instead of per request
+  // (see services/searchRanking.ts -- SearchSession).
+  sessionToken?: string
+): Promise<PlacePrediction[]> {
   if (!query.trim()) return [];
 
   // No `types` restriction -- Google's default returns addresses, suburbs/localities,
@@ -33,10 +52,19 @@ export async function searchPlaces(query: string, biasLocation?: LatLng): Promis
   const params = new URLSearchParams({
     input: query,
     key: env.googlePlacesApiKey,
+    // Australia first: ranks Australian matches above same-named places overseas, without
+    // hiding the overseas ones (a hard country filter would).
+    region: "au",
   });
+  if (sessionToken) params.set("sessiontoken", sessionToken);
   if (biasLocation) {
     params.set("location", `${biasLocation.latitude},${biasLocation.longitude}`);
     params.set("radius", "50000");
+    // Real, documented Autocomplete API field -- passing `origin` (distinct from the `location`
+    // bias above, which only affects ranking/relevance) makes Google compute and return a real
+    // `distance_meters` per prediction, straight from the same real point every other "near me"
+    // search in this app already uses. Not a client-side estimate.
+    params.set("origin", `${biasLocation.latitude},${biasLocation.longitude}`);
   }
 
   const res = await fetch(
@@ -65,6 +93,8 @@ export async function searchPlaces(query: string, biasLocation?: LatLng): Promis
     placeId: p.place_id,
     primaryText: p.structured_formatting?.main_text ?? p.description,
     secondaryText: p.structured_formatting?.secondary_text ?? "",
+    distanceMeters: typeof p.distance_meters === "number" ? p.distance_meters : undefined,
+    types: Array.isArray(p.types) ? p.types : undefined,
   }));
 }
 
@@ -83,58 +113,84 @@ export interface PlaceInfo extends PlaceDetails {
   phoneNumber?: string;
   website?: string;
   reviews: PlaceReview[];
+  // Real Google Places photos for this business -- up to PLACE_INFO_MAX_PHOTOS, empty array
+  // (never fabricated) when Google has none on file for it.
+  photoUrls: string[];
+  // Who took each photo, aligned with photoUrls -- Google's terms require it to be shown with
+  // the photo. Plain text (Google sends it as a link; only the name is kept). May be "".
+  photoAttributions: string[];
+  // Google's own real 0-4 price scale -- see priceLevelText below. undefined means Google has
+  // no price data for this place (most non-business addresses), never guessed.
+  priceLevel?: number;
+  // A clean, human-readable category derived from Google's own real `types` array (e.g.
+  // "Restaurant", "Hair Salon") -- see primaryCategoryLabel below for how the generic/
+  // administrative entries every type array carries (point_of_interest, establishment, ...)
+  // get filtered out first. undefined for a plain address/non-business place, or if every real
+  // type Google returned was one of those generic ones -- never a guessed category.
+  category?: string;
 }
 
-// Real POI-tap-to-info requires *some* place near the tapped coordinate to look up.
-// react-native-maps' own onPoiClick would be a real native "which business did they tap" event
-// on the current Google-provider MapView, but this predates the switch to Google on iOS (it
-// used to be Apple's MapKit there, which has no such event) and works identically regardless of
-// provider, so it was left as-is rather than reworked into a still-untested native-event path
-// right alongside a provider change. Treats any map tap as "find whatever's closest to here"
-// via Nearby Search, then pulls full details for it.
-//
-// This used to pass a fixed `radius` with no `rankby`/`type` -- Nearby Search's default order
-// for a plain radius search is *prominence* (rating/importance), not distance, and with no
-// `type` filter that ranking pool includes localities/administrative areas alongside real
-// businesses. Confirmed on a real device: tapping directly on a small shop pin returned
-// "Sydney, Sydney NSW, Australia" (a locality result outranking the actual business a few
-// meters away) instead of the shop itself. `rankby=distance` fixes the ordering to genuine
-// closest-first, but Google requires either a `keyword`, `name`, or `type` alongside it --
-// `type=establishment` is exactly "any real business/POI," which both satisfies that
-// requirement and excludes locality/political results outright. `radius` isn't a valid param
-// together with `rankby=distance`, so the distance sanity-check moves to the caller (which
-// already fetches full place details, including geometry, right after this).
-export async function findNearestPlace(location: LatLng): Promise<{ placeId: string } | null> {
-  const params = new URLSearchParams({
-    location: `${location.latitude},${location.longitude}`,
-    rankby: "distance",
-    type: "establishment",
-    key: env.googlePlacesApiKey,
-  });
-
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`
-  );
-  const json = await res.json();
-
-  if (json.status === "ZERO_RESULTS") return null;
-  if (json.status !== "OK") {
-    Sentry.logger.error("places: nearby search request failed", {
-      status: json.status,
-      errorMessage: json.error_message,
-    });
-    throw new PlacesApiError(json.status, json.error_message);
-  }
-
-  const nearest = json.results?.[0];
-  return nearest ? { placeId: nearest.place_id } : null;
+// Shared across PlaceInfoSheet/RestaurantsSheet/HotelsSheet -- Google's own real 0-4 price_level
+// scale, rendered the same real "$" x N way everywhere it's shown.
+export function priceLevelText(level: number | undefined): string | null {
+  if (level === undefined) return null;
+  return "$".repeat(Math.max(1, level));
 }
 
-// "Nearest train/bus station" quick action -- same rankby=distance + real-type-filter shape as
-// findNearestPlace above, but scoped to `type=transit_station` (Google's own catch-all for bus
-// stops, train stations, light rail stops, etc.) instead of any establishment, and returns full
-// PlaceDetails directly (name + location) since the caller routes straight to it rather than
-// showing an intermediate result list.
+// Google's own place `types` array always includes several generic/administrative entries
+// alongside the one or two that actually describe what kind of business this is --
+// "point_of_interest" and "establishment" are on nearly every result, and a street address
+// additionally carries "route"/"street_address"/"geocode"/"political"/locality-ish entries.
+// Real, confirmed-real exclusion list (Google's own documented place type taxonomy, not
+// guessed) so the first REMAINING type -- the actual category Google itself assigned -- is what
+// gets shown, formatted from snake_case into a real readable label ("hair_care" -> "Hair Care").
+const GENERIC_PLACE_TYPES = new Set([
+  "point_of_interest",
+  "establishment",
+  "premise",
+  "subpremise",
+  "political",
+  "geocode",
+  "plus_code",
+  "route",
+  "street_address",
+  "street_number",
+  "intersection",
+  "locality",
+  "sublocality",
+  "sublocality_level_1",
+  "sublocality_level_2",
+  "sublocality_level_3",
+  "sublocality_level_4",
+  "sublocality_level_5",
+  "neighborhood",
+  "administrative_area_level_1",
+  "administrative_area_level_2",
+  "administrative_area_level_3",
+  "administrative_area_level_4",
+  "administrative_area_level_5",
+  "postal_code",
+  "postal_code_suffix",
+  "postal_town",
+  "country",
+]);
+
+export function primaryCategoryLabel(types: string[] | undefined): string | undefined {
+  const real = (types ?? []).find((t) => !GENERIC_PLACE_TYPES.has(t));
+  if (!real) return undefined;
+  return real
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+// "Nearest train/bus station" quick action -- rankby=distance + a real `type` filter
+// (`type=transit_station`, Google's own catch-all for bus stops, train stations, light rail
+// stops, etc.), returning full PlaceDetails directly (name + location) since the caller routes
+// straight to it rather than showing an intermediate result list. `rankby=distance` requires a
+// `keyword`/`name`/`type` alongside it (a plain `radius` search instead defaults to *prominence*
+// ranking, not distance, and would mix in locality/administrative results) -- `type=
+// transit_station` both satisfies that and keeps results to genuine transit stops.
 export async function findNearestTransitStation(location: LatLng): Promise<PlaceDetails | null> {
   const params = new URLSearchParams({
     location: `${location.latitude},${location.longitude}`,
@@ -170,12 +226,31 @@ export async function findNearestTransitStation(location: LatLng): Promise<Place
   };
 }
 
+// Capped, same reasoning as RestaurantsSheet's own review cap below -- a real business can have
+// dozens of Places photos; a horizontal strip of a handful is what a driver glancing at this
+// sheet actually looks at, not an unbounded gallery.
+const PLACE_INFO_MAX_PHOTOS = 6;
+
+/** Photo URLs and their (required) credits, kept in step -- a photo is dropped with its credit. */
+function placePhotosWithCredit(photos: any[] | undefined): { photoUrls: string[]; photoAttributions: string[] } {
+  const photoUrls: string[] = [];
+  const photoAttributions: string[] = [];
+  for (const photo of (photos ?? []).slice(0, PLACE_INFO_MAX_PHOTOS)) {
+    const url = nearbyPlacePhotoUrl(photo?.photo_reference);
+    if (!url) continue;
+    photoUrls.push(url);
+    const html = Array.isArray(photo.html_attributions) ? photo.html_attributions.join(", ") : "";
+    photoAttributions.push(html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim());
+  }
+  return { photoUrls, photoAttributions };
+}
+
 export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
   const params = new URLSearchParams({
     place_id: placeId,
     key: env.googlePlacesApiKey,
     fields:
-      "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews",
+      "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews,photos,price_level,types",
   });
 
   const res = await fetch(
@@ -213,6 +288,9 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
       relativeTime: r.relative_time_description,
       text: r.text,
     })),
+    ...placePhotosWithCredit(result.photos),
+    priceLevel: result.price_level,
+    category: primaryCategoryLabel(result.types),
   };
 }
 
@@ -248,12 +326,96 @@ export async function reverseGeocode(location: LatLng): Promise<string | null> {
   return best?.formatted_address ?? null;
 }
 
-export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
+export interface NearbyPlace {
+  placeId: string;
+  name: string;
+  vicinity: string;
+  location: LatLng;
+  rating?: number;
+  userRatingsTotal?: number;
+  // Google's own 0-4 scale ($ to $$$$) -- undefined means Google itself has no price data for
+  // this place, never guessed/defaulted to a specific level.
+  priceLevel?: number;
+  openNow?: boolean;
+  // A real, directly-usable Google Places Photo API URL (this app's own API key already
+  // embedded), or null when Google has no photo for this place -- never a placeholder image.
+  photoUrl: string | null;
+  distanceMeters: number;
+  // The place's own raw OpenStreetMap tags, when it came from OSM (fuel/food/hotel/parking
+  // lists). Lets a list read real per-place details the fixed fields above have no slot for --
+  // e.g. the parking sheet's free/covered/accessible filters (services/parkingFilters.ts).
+  osmTags?: Record<string, string>;
+}
+
+function nearbyPlacePhotoUrl(photoReference: string | undefined): string | null {
+  if (!photoReference) return null;
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=480&photo_reference=${photoReference}&key=${env.googlePlacesApiKey}`;
+}
+
+// Real Street View Static API thumbnail -- Apple Maps' own "Look Around" equivalent, "with a
+// touch of TrackLine" per explicit request. The real, documented Metadata endpoint is checked
+// first (a separate, free call, same API key) rather than building the image URL unconditionally
+// -- the Street View Static Image endpoint itself returns a generic gray "no imagery here" tile
+// for a location Google has no real panorama for, and showing that dressed up as a real street
+// photo would be exactly the kind of fabricated-looking result this app never shows. Returns
+// null (never a placeholder) when there's genuinely no real coverage at this location.
+export async function getStreetViewUrl(location: LatLng): Promise<string | null> {
+  const params = new URLSearchParams({
+    location: `${location.latitude},${location.longitude}`,
+    key: env.googlePlacesApiKey,
+  });
+  try {
+    const res = await fetch(`https://maps.googleapis.com/maps/api/streetview/metadata?${params.toString()}`);
+    const json = await res.json();
+    if (json.status !== "OK") return null;
+    return `https://maps.googleapis.com/maps/api/streetview?size=640x360&location=${location.latitude},${location.longitude}&key=${env.googlePlacesApiKey}`;
+  } catch (err) {
+    Sentry.logger.error("places: street view metadata request failed", { error: String(err) });
+    return null;
+  }
+}
+
+// Real, explicit request -- an interactive (pan/zoom/walk) Street View embed via Google's Maps
+// Embed API, same documented "streetview" mode, same API key already used for every other Google
+// call in this app. Only ever built as a companion to a `getStreetViewUrl` result that already
+// passed the real metadata coverage check above -- this function does no coverage check of its
+// own because Static and Embed Street View draw from the same underlying panorama coverage, so a
+// confirmed-real location for one is a confirmed-real location for the other. Whether "Maps Embed
+// API" is actually enabled on this project's key is NOT something this app can check in advance;
+// the caller (PlaceInfoSheet) loads this in a WebView and falls back to the static thumbnail on a
+// real load failure -- never a silently blank panel.
+export function getStreetViewEmbedUrl(location: LatLng): string {
+  const params = new URLSearchParams({
+    key: env.googlePlacesApiKey,
+    location: `${location.latitude},${location.longitude}`,
+    heading: "0",
+    pitch: "0",
+    fov: "90",
+  });
+  return `https://www.google.com/maps/embed/v1/streetview?${params.toString()}`;
+}
+
+// Real distance (haversine), not Google's own ranking order -- Nearby Search's `rankby=distance`
+// mode already sorts by this, but the app still needs the actual meters figure to show/format
+// per result, which Google's response doesn't include directly.
+export function haversineMeters(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+export async function getPlaceDetails(placeId: string, sessionToken?: string): Promise<PlaceDetails> {
   const params = new URLSearchParams({
     place_id: placeId,
     key: env.googlePlacesApiKey,
     fields: "place_id,name,formatted_address,geometry",
   });
+  // Ends the autocomplete session this result came from (see searchPlaces).
+  if (sessionToken) params.set("sessiontoken", sessionToken);
 
   const res = await fetch(
     `https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`

@@ -15,6 +15,9 @@ export interface AlertDoc {
   createdAt: number;
   expiresAt: number;
   confirmCount: number;
+  // "Not here" vote count -- mirrors confirmCount, same shared schema as the mobile app's own
+  // AlertDoc (types/alert.ts) and its automatic proximity "Still here? / Not here" prompt.
+  denyCount: number;
   // Map of uid -> the ms timestamp they hid this alert -- self-only, time-boxed (1 hour, see
   // services/alerts.ts's HIDE_DURATION_MS). Shared schema with the mobile app (same Firestore
   // collection/rules) -- was a plain uid[] (permanent hide) before this.

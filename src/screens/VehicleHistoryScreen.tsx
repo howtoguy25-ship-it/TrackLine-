@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, FlatList, Alert } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, Pressable, StyleSheet, FlatList, Alert, Image } from "react-native";
+import { Text } from "@/components/AppText";
+import { Swipeable } from "react-native-gesture-handler";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -40,6 +43,13 @@ export function VehicleHistoryScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [entries, setEntries] = useState<VehicleHistoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Real, explicit request: a "Select" mode toggle (checkboxes per row, Select All/Deselect
+  // All, and a bulk "Delete Selected" with a confirm dialog) alongside the existing single-item
+  // paths (swipe-to-delete below, and long-press) -- these are three genuinely different real
+  // actions, not the same one relabeled: swipe/long-press are for "I know exactly which one I
+  // want gone right now", select mode is for "let me pick several, then commit once".
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPlates, setSelectedPlates] = useState<Set<string>>(new Set());
 
   const reload = useCallback(() => {
     getVehicleHistory().then((list) => {
@@ -51,6 +61,14 @@ export function VehicleHistoryScreen() {
   // Refreshes every time this screen comes back into focus -- e.g. after running a REV check
   // (which records a manual entry) and tapping back, so the list is never stale.
   useFocusEffect(reload);
+
+  // Leaving select mode (either by toggling it off, or the list becoming empty out from under
+  // it) always clears whatever was checked -- a stale selection surviving into a fresh session
+  // of picking rows would be a real, confusing bug (deleting something the driver never
+  // actually re-checked this time around).
+  useEffect(() => {
+    if (!selectMode) setSelectedPlates(new Set());
+  }, [selectMode]);
 
   const onOpenRevCheck = useCallback(
     (entry: VehicleHistoryEntry) => {
@@ -69,18 +87,18 @@ export function VehicleHistoryScreen() {
     [navigation]
   );
 
-  const onRemove = useCallback(
+  const onRemove = useCallback((plate: string) => {
+    removeVehicleHistoryEntry(plate).then(setEntries);
+  }, []);
+
+  const onLongPressRemove = useCallback(
     (plate: string) => {
       Alert.alert("Remove from history?", plate, [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: () => removeVehicleHistoryEntry(plate).then(setEntries),
-        },
+        { text: "Remove", style: "destructive", onPress: () => onRemove(plate) },
       ]);
     },
-    []
+    [onRemove]
   );
 
   const onClearAll = useCallback(() => {
@@ -95,19 +113,102 @@ export function VehicleHistoryScreen() {
     ]);
   }, [entries.length]);
 
+  const toggleSelected = useCallback((plate: string) => {
+    setSelectedPlates((prev) => {
+      const next = new Set(prev);
+      if (next.has(plate)) next.delete(plate);
+      else next.add(plate);
+      return next;
+    });
+  }, []);
+
+  const allSelected = entries.length > 0 && selectedPlates.size === entries.length;
+  const onToggleSelectAll = useCallback(() => {
+    setSelectedPlates(allSelected ? new Set() : new Set(entries.map((e) => e.plate)));
+  }, [allSelected, entries]);
+
+  const onDeleteSelected = useCallback(() => {
+    const count = selectedPlates.size;
+    if (count === 0) return;
+    Alert.alert(
+      `Delete ${count} vehicle${count === 1 ? "" : "s"}?`,
+      "This removes the selected entries from this device.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            let remaining = entries;
+            for (const plate of selectedPlates) {
+              remaining = await removeVehicleHistoryEntry(plate);
+            }
+            setEntries(remaining);
+            setSelectMode(false);
+          },
+        },
+      ]
+    );
+  }, [entries, selectedPlates]);
+
+  // Real per-row swipe-to-delete (react-native-gesture-handler's own Swipeable, already a real
+  // dependency/used throughout the app) -- deliberately no confirm dialog, unlike long-press and
+  // the bulk delete above: the swipe gesture itself is the deliberate "I want this one gone"
+  // action, the same convention iOS Mail/Reminders use, so a confirm on top of it would just be
+  // a redundant extra tap for the one-at-a-time case this exists to make quick.
+  const renderRightActions = useCallback(
+    (plate: string) => (
+      <Pressable onPress={() => onRemove(plate)} style={styles.swipeDeleteAction}>
+        <Icon name="trash" size={20} color="#FFFFFF" />
+        <Text style={styles.swipeDeleteText}>Delete</Text>
+      </Pressable>
+    ),
+    [onRemove]
+  );
+
+  const headerRight = useMemo(() => {
+    if (!selectMode) {
+      return entries.length > 0 ? (
+        <Pressable onPress={() => setSelectMode(true)} style={({ pressed }) => pressed && { opacity: pressedOpacity }}>
+          <Text style={styles.selectToggleText}>Select</Text>
+        </Pressable>
+      ) : null;
+    }
+    return (
+      <Pressable onPress={() => setSelectMode(false)} style={({ pressed }) => pressed && { opacity: pressedOpacity }}>
+        <Text style={styles.selectToggleText}>Cancel</Text>
+      </Pressable>
+    );
+  }, [selectMode, entries.length]);
+
   return (
     <View style={styles.container}>
-      <Pressable
-        onPress={() => navigation.navigate("RevCheck", undefined)}
-        style={({ pressed }) => [styles.addButton, pressed && { opacity: pressedOpacity }]}
-      >
-        <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-        <Text style={styles.addButtonText}>Enter a plate manually</Text>
-      </Pressable>
+      <View style={styles.topRow}>
+        <Button
+          variant="primary"
+          icon="add-circle"
+          label="Enter a plate manually"
+          onPress={() => navigation.navigate("RevCheck", undefined)}
+          fullWidth
+        />
+        {headerRight}
+      </View>
+
+      {selectMode && (
+        <View style={styles.selectBar}>
+          <Button
+            variant="ghost"
+            icon={allSelected ? "checkbox" : "square-outline"}
+            label={allSelected ? "Deselect all" : "Select all"}
+            onPress={onToggleSelectAll}
+          />
+          <Text style={styles.selectCountText}>{selectedPlates.size} selected</Text>
+        </View>
+      )}
 
       {loaded && entries.length === 0 ? (
         <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="car-search-outline" size={40} color={colors.textFaint} />
+          <Icon name="car-search-outline" size={40} color={colors.textFaint} />
           <Text style={styles.emptyTitle}>No vehicles yet</Text>
           <Text style={styles.emptyText}>
             Vehicles the AI detector fully identifies (a confirmed number plate read) are
@@ -115,19 +216,43 @@ export function VehicleHistoryScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <FlatList keyboardShouldPersistTaps="handled"
           data={entries}
           keyExtractor={(item) => item.plate}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, selectMode && { paddingBottom: spacing.xxl + 64 }]}
           renderItem={({ item }) => {
             const speed = speedLabel(item);
             const isSyntheticVinKey = item.plate.startsWith("VIN:");
-            return (
+            const isChecked = selectedPlates.has(item.plate);
+
+            const row = (
               <Pressable
-                onPress={() => onOpenRevCheck(item)}
-                onLongPress={() => onRemove(item.plate)}
+                onPress={() =>
+                  selectMode ? toggleSelected(item.plate) : onOpenRevCheck(item)
+                }
+                onLongPress={() => (selectMode ? undefined : onLongPressRemove(item.plate))}
                 style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
               >
+                {selectMode && (
+                  <Icon
+                    name={isChecked ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={isChecked ? colors.accent : colors.textFaint}
+                  />
+                )}
+                {/* Real, explicit request: a saved thumbnail per row, cropped on-device from the
+                    same photo the live plate OCR already captured (see
+                    services/vehicleThumbnail.ts) -- null whenever no thumbnail was available to
+                    save (a manual entry with no camera capture behind it, or a crop that failed),
+                    in which case the row just falls back to the plate badge alone, same as
+                    before this existed. */}
+                {item.thumbnailUri ? (
+                  <Image source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
+                ) : (
+                  <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+                    <Icon name="car" size={22} color={colors.textFaint} />
+                  </View>
+                )}
                 <View style={styles.plateBadge}>
                   <Text style={styles.plateBadgeText}>
                     {isSyntheticVinKey ? item.vin ?? item.plate : item.plate}
@@ -146,20 +271,37 @@ export function VehicleHistoryScreen() {
                     {!isSyntheticVinKey && item.vin ? ` · VIN saved` : ""}
                   </Text>
                 </View>
-                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textMuted} />
+                {!selectMode && <Icon name="chevron-right" size={20} color={colors.textMuted} />}
               </Pressable>
+            );
+
+            // Swipe-to-delete only makes sense outside select mode -- inside it, the row's own
+            // tap already toggles a checkbox, and a rogue horizontal swipe mid-selection
+            // shouldn't be able to delete something the driver hasn't confirmed via Delete
+            // Selected yet.
+            return selectMode ? (
+              row
+            ) : (
+              <Swipeable renderRightActions={() => renderRightActions(item.plate)} overshootRight={false}>
+                {row}
+              </Swipeable>
             );
           }}
         />
       )}
 
-      {entries.length > 0 && (
-        <Pressable
-          onPress={onClearAll}
-          style={({ pressed }) => [styles.clearButton, pressed && { opacity: pressedOpacity }]}
-        >
-          <Text style={styles.clearButtonText}>Clear all history</Text>
-        </Pressable>
+      {selectMode ? (
+        <Button
+          variant="destructive"
+          icon="trash"
+          label={`Delete selected (${selectedPlates.size})`}
+          onPress={onDeleteSelected}
+          disabled={selectedPlates.size === 0}
+        />
+      ) : (
+        entries.length > 0 && (
+          <Button variant="destructive" label="Clear all history" onPress={onClearAll} />
+        )
       )}
     </View>
   );
@@ -167,17 +309,15 @@ export function VehicleHistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceMuted, padding: spacing.xl, gap: spacing.md },
-  addButton: {
+  topRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  selectToggleText: { color: colors.accent, fontWeight: "700", fontSize: 14 },
+  selectBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs + 2,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 48,
-    ...shadow.low,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.xs,
   },
-  addButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
+  selectCountText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
   list: { gap: spacing.sm, paddingBottom: spacing.xxl },
   row: {
     flexDirection: "row",
@@ -187,6 +327,29 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
     ...shadow.low,
+  },
+  // Matches the row's own height/radius/margin so the revealed action reads as "part of this
+  // row sliding open", not a separate floating element -- Swipeable renders this as a sibling
+  // of the row content, not wrapped inside the row's own View, so it needs its own layout here.
+  swipeDeleteAction: {
+    backgroundColor: colors.danger,
+    borderRadius: radius.lg,
+    marginLeft: spacing.sm,
+    width: 76,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  swipeDeleteText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12 },
+  thumbnail: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  thumbnailPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   plateBadge: {
     backgroundColor: colors.dark,
@@ -207,6 +370,4 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.xl },
   emptyTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
   emptyText: { fontSize: 13, color: colors.textMuted, textAlign: "center", lineHeight: 18 },
-  clearButton: { alignItems: "center", paddingVertical: spacing.sm },
-  clearButtonText: { fontSize: 13, fontWeight: "600", color: colors.danger },
 });

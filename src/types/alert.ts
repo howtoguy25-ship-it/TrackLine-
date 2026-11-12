@@ -1,3 +1,5 @@
+import { EMERGENCY_PIN, REPORTS, TRAFFIC_LIGHT_PIN, type ReportColour } from "@/theme/colors";
+
 export type AlertType = "police" | "emergency_vehicle" | "hazard" | "camera" | "crash" | "traffic_light";
 
 export interface AlertDoc {
@@ -15,6 +17,10 @@ export interface AlertDoc {
   createdAt: number; // ms epoch
   expiresAt: number; // ms epoch
   confirmCount: number;
+  // "Not here" vote count -- mirrors confirmCount exactly (see services/alerts.ts's denyAlert),
+  // for the automatic proximity "Still here? / Not here" prompt (MapScreen's AlertStillHereCard).
+  // Purely a counter, same as confirmCount -- nothing currently reads it to auto-expire an alert.
+  denyCount: number;
   // Map of uid -> the ms timestamp they hid this alert -- self-only (never affects any other
   // user's own view) and time-boxed, per explicit request: services/alerts.ts's
   // isHiddenForUser treats an entry older than its own HIDE_DURATION_MS (1 hour) as expired, so
@@ -71,11 +77,21 @@ export const ALERT_ICONS: Record<AlertType, string> = {
   traffic_light: "traffic-light",
 };
 
+/** Each alert type's pin colour and the glyph colour that reads on it (theme/colors.ts). */
+export const ALERT_PIN: Record<AlertType, ReportColour> = {
+  police: REPORTS.police,
+  emergency_vehicle: EMERGENCY_PIN,
+  hazard: REPORTS.hazard,
+  camera: REPORTS.camera,
+  crash: REPORTS.crash,
+  traffic_light: TRAFFIC_LIGHT_PIN,
+};
+
 export const ALERT_COLORS: Record<AlertType, string> = {
-  police: "#2563EB",
-  emergency_vehicle: "#DC2626",
-  hazard: "#F59E0B",
-  camera: "#7C3AED",
-  crash: "#EA580C",
-  traffic_light: "#0D9488",
+  police: ALERT_PIN.police.fill,
+  emergency_vehicle: ALERT_PIN.emergency_vehicle.fill,
+  hazard: ALERT_PIN.hazard.fill,
+  camera: ALERT_PIN.camera.fill,
+  crash: ALERT_PIN.crash.fill,
+  traffic_light: ALERT_PIN.traffic_light.fill,
 };

@@ -12,35 +12,108 @@ const googleSigninPlugins = process.env.GOOGLE_IOS_URL_SCHEME
   : [];
 
 /** @type {import('@expo/config-types').ExpoConfig} */
+// Which code this build (or this dev-server session) is running, shown in Settings > About so
+// it can be checked on the phone. EAS sets EAS_BUILD_GIT_COMMIT_HASH on its build machines;
+// anywhere else (a computer running `npx expo start`) it's read from git directly.
+function gitShortHash() {
+  if (process.env.EAS_BUILD_GIT_COMMIT_HASH) return process.env.EAS_BUILD_GIT_COMMIT_HASH.slice(0, 7);
+  try {
+    return require("child_process").execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
+const BUILD_STAMP = { commit: gitShortHash(), builtAt: new Date().toISOString() };
+
 module.exports = {
   expo: {
     name: "TrackLine",
     slug: "trackline",
+    // Lets a shared "drive to this place" link open the app straight onto that destination
+    // (trackline://drive?... -- see src/services/driveLink.ts). Takes effect in the next build.
+    scheme: "trackline",
     // The user-facing marketing version (CFBundleShortVersionString) -- separate from the
     // internal build number, which EAS auto-increments remotely on every submit
     // (eas.json's appVersionSource: "remote" + production.autoIncrement) and never lives here.
     // Bumped from 1.0.0 now that REV checks + real IAP monetization landed -- a genuine feature
-    // milestone, not just an internal TestFlight build tick.
-    version: "1.1.0",
-    orientation: "portrait",
+    // milestone, not just an internal TestFlight build tick. Bumped again to 1.2.0 for the new
+    // expo-notifications native module (Owner Dashboard broadcast push) -- a real NEW native
+    // build is required for this (see that plugin's own comment below), and runtimeVersion's
+    // "appVersion" policy uses this field to keep OTA updates scoped to the native binary that
+    // actually has the matching native code, so this bump is what stops this update from ever
+    // being offered to an existing 1.1.0 install that has no expo-notifications module compiled
+    // in at all -- that would be a guaranteed crash on load, not a real fix.
+    // Bumped again to 1.3.0 for the Waze-style redesign (Phases 1-5): new native modules
+    // (expo-contacts, expo-calendar) need a real new native build for the same runtimeVersion
+    // reason as the 1.2.0 bump above.
+    version: "1.3.0",
+    // "default" (was "portrait") -- a portrait-only native Info.plist blocks ANY runtime
+    // rotation regardless of JS calls, no matter what expo-screen-orientation does. The app
+    // itself still only ever JS-locks to portrait everywhere except the AI Detection screen
+    // (see App.tsx's own lockAsync(PORTRAIT_UP) on mount, and VehicleDetectionScreen's own
+    // unlockAsync while it's open) -- this just gives the native layer permission to allow
+    // that one screen's rotation at all.
+    orientation: "default",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
     assetBundlePatterns: ["**/*"],
+    // Real OTA updates via EAS Update -- lets a JS-only change (most of what this app ships day
+    // to day: threshold tuning, UI fixes, copy) reach TestFlight users in seconds instead of a
+    // full ~10-15 minute EAS build + App Store processing cycle, and doesn't spend a build
+    // credit. "appVersion" runtimeVersion policy ties compatible updates to the `version` field
+    // above -- an update only ever gets offered to a build whose native code (via that version
+    // bump) is actually compatible with it, never silently applied against a mismatched native
+    // build. A change to native code itself (a new native module, an Info.plist key, anything
+    // outside pure JS) still needs a real EAS build either way -- OTA can only ever replace the
+    // JS bundle, not the native shell around it.
+    updates: {
+      url: "https://u.expo.dev/dd1665d0-24fa-41ce-99d8-d94adf93788d",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     ios: {
       // Phone-only -- TrackLine is a live driving/navigation app, not something meant to run
       // on an iPad mounted somewhere, and this avoids App Store Connect requiring a whole
       // separate set of iPad screenshots for a form factor the app isn't really designed for.
       supportsTablet: false,
       bundleIdentifier: "com.trackline.navigate",
+      // Required by @bacons/apple-targets (see the targets/liveActivity plugin below) to
+      // resolve code signing for the new widget-extension target during prebuild/EAS Build.
+      appleTeamId: "9C85Z8Z8BD",
       infoPlist: {
+        // The home map's optional "Audio player" button opens the driver's music app. iOS only
+        // answers "is this app installed?" for URL schemes listed here.
+        LSApplicationQueriesSchemes: ["spotify", "music", "youtubemusic"],
+        // Real, required Info.plist key for Live Activities -- per Apple's own docs, without
+        // this on the MAIN app's Info.plist (not the widget extension's), Activity.request()
+        // silently fails to start anything at all, no error surfaced anywhere.
+        NSSupportsLiveActivities: true,
         NSLocationWhenInUseUsageDescription:
           "TrackLine uses your location to show your position on the map and provide turn-by-turn navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
           "TrackLine can track your location in the background to keep navigation and nearby-alert notifications accurate.",
+        // Real, confirmed fix -- see the matching expo-audio plugin option below for why this
+        // no longer says audio "is never recorded or stored" (Phase 3's "Record your own
+        // voice" feature genuinely does, only when the driver explicitly starts a recording).
         NSMicrophoneUsageDescription:
-          "TrackLine listens for emergency vehicle sirens near you. Audio is analyzed on-device in real time and is never recorded or stored.",
+          "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+        // Updated to honestly disclose the new, opt-in cloud plate-OCR path (Plate Recognizer,
+        // see plateRecognizer.ts) -- when that provider is connected, a small cropped image of
+        // a detected plate is sent to Plate Recognizer's own servers for reading, unlike the
+        // fully on-device default. The live camera feed/video itself is still never recorded or
+        // stored either way -- this doesn't change.
         NSCameraUsageDescription:
-          "TrackLine uses your camera for live AI Vehicle Detection, analyzed on-device in real time. Video is never recorded or stored.",
+          "TrackLine uses your camera for live AI Vehicle Detection, analyzed on-device in real time. Video is never recorded or stored. A cropped image of a detected number plate may be sent to a third-party plate-recognition service when that feature is enabled.",
+        // Real, explicit request (Phase 4 main menu's "Drive to friends & family via Contacts"
+        // row) -- only ever reads a contact's name/address when the driver explicitly picks one
+        // to navigate to, nothing synced/stored/uploaded.
+        NSContactsUsageDescription:
+          "TrackLine can look up a contact's address so you can get directions to them.",
+        // Real, explicit request (Phase 4 main menu's calendar-events row) -- only reads event
+        // titles/times/locations to show upcoming drives, never writes/modifies calendar data.
+        NSCalendarsUsageDescription:
+          "TrackLine can read your calendar to show upcoming events with a location, so you can plan a drive to them.",
         UIBackgroundModes: ["audio", "location", "fetch"],
         // App only uses standard HTTPS/TLS (Firebase, Google Maps, AdMob) -- no custom
         // encryption -- so it qualifies as exempt. Declaring this here answers Apple's
@@ -62,6 +135,8 @@ module.exports = {
         "RECORD_AUDIO",
         "CAMERA",
         "FOREGROUND_SERVICE",
+        "READ_CONTACTS",
+        "READ_CALENDAR",
       ],
       config: {
         googleMaps: {
@@ -70,6 +145,14 @@ module.exports = {
       },
     },
     plugins: [
+      [
+        // EAS builds this app with Xcode 27 (confirmed from the build log: the
+        // macos-tahoe-26.6-xcode-27.1 image). The iOS 27 SDK requires apps to adopt the UIKit
+        // scene lifecycle; on Expo SDK 57 that's opt-in through this one property (it needs
+        // expo 57.0.23+). SDK 58 does it by default -- remove this when upgrading.
+        "expo-build-properties",
+        { ios: { enableSceneSupport: true } },
+      ],
       "expo-font",
       "expo-asset",
       "expo-tracking-transparency",
@@ -91,20 +174,6 @@ module.exports = {
         },
       ],
       "expo-status-bar",
-      // Deliberately using react-native-maps' own config plugin here instead of the old
-      // `ios.config.googleMapsApiKey` field -- that field triggers a legacy, unmaintained
-      // plugin bundled in @expo/config-plugins (node_modules/@expo/config-plugins/build/
-      // ios/Maps.js) that injects `pod 'react-native-google-maps', ...` into the Podfile, a
-      // pod name that hasn't existed since old react-native-maps versions -- current
-      // react-native-maps (1.x) ships its own plugin that correctly adds
-      // `pod 'react-native-maps/Google', ...` (a real subspec) instead. Real error this was
-      // causing: "[!] No podspec found for `react-native-google-maps`" failing `pod install`.
-      [
-        "react-native-maps",
-        {
-          iosGoogleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
-        },
-      ],
       [
         "expo-location",
         {
@@ -115,8 +184,37 @@ module.exports = {
       [
         "expo-audio",
         {
+          // Real, confirmed fix -- this string used to say siren audio "is never recorded or
+          // stored," which became factually false the moment Phase 3's real "Record your own
+          // voice" feature shipped (it genuinely does record and store a clip, locally and in
+          // Firebase Storage, only when the driver explicitly starts a recording). Siren
+          // listening itself is unchanged -- still real-time, on-device only, never saved.
           microphonePermission:
-            "TrackLine listens for emergency vehicle sirens near you. Audio is analyzed on-device only and is never recorded or stored.",
+            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+        },
+      ],
+      [
+        // Place page "Add photo": picks one existing photo from the library. The camera is
+        // never opened, so no camera permission is asked for here.
+        "expo-image-picker",
+        {
+          photosPermission:
+            "TrackLine lets you choose a photo to add to a place's page. Photos are reviewed before anyone else sees them.",
+          cameraPermission: false,
+          microphonePermission: false,
+        },
+      ],
+      [
+        // Voice search: tapping the microphone in "Where to?" turns what's said into the search
+        // text. Speech recognition is a separate iOS permission from the microphone itself, so
+        // it gets its own prompt and its own explanation. The microphone string is repeated
+        // here, identical to expo-audio's above, so whichever plugin runs last writes the same.
+        "expo-speech-recognition",
+        {
+          microphonePermission:
+            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
+          speechRecognitionPermission:
+            "TrackLine turns what you say into a destination search when you tap the microphone. Nothing is listened to until you tap it.",
         },
       ],
       // Switched from expo-camera to react-native-vision-camera for Live Vehicle Detection --
@@ -147,6 +245,45 @@ module.exports = {
       // too), which just adds app size/build weight with nothing an AU plate would ever use.
       ["rn-mlkit-ocr", { ocrModels: ["latin"], ocrUseBundled: true }],
       [
+        "expo-contacts",
+        {
+          contactsPermission: "TrackLine can look up a contact's address so you can get directions to them.",
+        },
+      ],
+      [
+        "expo-calendar",
+        {
+          calendarPermission:
+            "TrackLine can read your calendar to show upcoming events with a location, so you can plan a drive to them.",
+        },
+      ],
+      // Real, confirmed Android build fix for react-native-webview (added for the place-card's
+      // interactive Street View embed) -- see plugins/withAndroidWebviewGradleFix.js for the
+      // actual root cause (a missing `ext.webkitVersion` Gradle property its own build.gradle
+      // reads with no fallback).
+      "./plugins/withAndroidWebviewGradleFix.js",
+      // Real, confirmed Android build fix for react-native-google-mobile-ads -- see
+      // plugins/withAndroidKotlinGradlePluginVersion.js for the actual root cause (this
+      // project's unversioned root Kotlin Gradle Plugin classpath entry resolves to a compiler
+      // too old to read play-services-ads 25.4.0's own newer Kotlin metadata) and the real,
+      // verified-via-a-local-build fix.
+      "./plugins/withAndroidKotlinGradlePluginVersion.js",
+      // Waze-style redesign's map engine -- deliberately CONDITIONAL, included only once a real
+      // RNMAPBOX_MAPS_DOWNLOAD_TOKEN actually exists. That token authenticates fetching Mapbox's
+      // own native SDK at BUILD time (CocoaPods/Gradle) -- without it, Mapbox's own install step
+      // has no way to fetch the SDK at all, which would fail EVERY build (iOS and Android,
+      // including the existing Google-Maps-based app this project ships today), not just
+      // degrade gracefully at runtime. Keeping this out of the plugins array entirely until a
+      // real token is set is what keeps "never break existing features" true while Mapbox is
+      // still being wired up -- see NOTES.md.
+      //
+      // No RNMapboxMapsDownloadToken plugin option passed -- confirmed via a real local prebuild
+      // that this installed plugin version (10.3.17) now reads RNMAPBOX_MAPS_DOWNLOAD_TOKEN
+      // directly from the environment itself and warns that passing it as a plugin option is
+      // deprecated. The `process.env` check below still does real, necessary work: it's this
+      // project's OWN conditional gate deciding whether the plugin entry is in the array at all.
+      ...(process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN ? ["@rnmapbox/maps"] : []),
+      [
         "./modules/map3d/plugin/withMap3D.js",
         {
           androidApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY,
@@ -154,6 +291,11 @@ module.exports = {
         },
       ],
       "./modules/map3d/plugin/withGoogleMaps3DSignatureFix.js",
+      // Generates the real iOS widget-extension target (targets/liveActivity) that hosts
+      // TrackLine's background navigation Live Activity -- see that target's own
+      // expo-target.config.js and modules/liveActivity for the real ActivityKit code this
+      // wires in. No-op on Android (there's no Android build here to affect).
+      "@bacons/apple-targets",
       "expo-apple-authentication",
       ...googleSigninPlugins,
       // Only uploads debug symbols/source maps during EAS builds once org/project/authToken
@@ -166,6 +308,18 @@ module.exports = {
           organization: process.env.SENTRY_ORG,
           project: process.env.SENTRY_PROJECT,
           authToken: process.env.SENTRY_AUTH_TOKEN,
+        },
+      ],
+      // Real push notifications backing the Owner Dashboard's broadcast feature (see
+      // src/services/pushNotifications.ts/deviceSession.ts) -- a genuine native module (device
+      // push tokens, OS permission prompt, APNs/FCM delivery via Expo's push service), not
+      // something OTA JS alone can add; a build that doesn't include this plugin has no way to
+      // register for or receive a real push at all.
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/icon.png",
+          color: "#1D4ED8",
         },
       ],
       [
@@ -207,6 +361,20 @@ module.exports = {
       // the app works fine without it (Transit mode already shows real timetable-based ETAs
       // via Google Directions either way, see the "Public transit" note in Settings).
       nswTransportApiKey: process.env.NSW_TRANSPORT_API_KEY,
+      // Waze-style redesign's map engine (@rnmapbox/maps) -- genuinely optional for now, same
+      // "build the feature anyway, show an honest state" treatment as every other optional key
+      // here. See src/map/mapboxAvailability.ts for the real, non-fabricated "is Mapbox actually
+      // usable right now" check this backs, and NOTES.md for the full story.
+      // Read at runtime by the Mapbox map (src/map-v2/mapbox.ts). EXPO_PUBLIC_MAPBOX_TOKEN first;
+      // MAPBOX_PUBLIC_TOKEN is the name already stored in EAS.
+      mapboxPublicToken: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN,
+      buildStamp: BUILD_STAMP,
+      // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
+      // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
+      // false (never fabricated) when this is unset, so auto-mood just skips that one signal.
+      // OpenWeatherMap's free-tier Current Weather API is the real, documented target this is
+      // written against.
+      openWeatherApiKey: process.env.OPENWEATHER_API_KEY,
       sentryDsn: process.env.SENTRY_DSN,
       eas: {
         // Not a secret -- EAS project IDs are meant to live directly in config, which is

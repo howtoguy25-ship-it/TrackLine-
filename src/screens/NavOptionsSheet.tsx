@@ -1,14 +1,20 @@
 import React, { forwardRef } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { View, Pressable, StyleSheet } from "react-native";
+import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
   onReportAlert: () => void;
   onShareEta: () => void;
   onOpenDetection: () => void;
+  // Satellite, 3D buildings, alerts and the nearby-place lists while driving. The round "Map
+  // tools" button that used to float over the map is gone; this row is how that panel is
+  // reached during a trip (on the home map its contents live in the Menu and Settings instead).
+  onOpenMapTools: () => void;
   onEndNavigation: () => void;
   onClose: () => void;
   onSheetChange?: (index: number) => void;
@@ -24,7 +30,7 @@ interface Props {
 // tab (ETA/road/Add Stop/options) rather than a wide row of icons competing with the turn
 // instructions for space.
 export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOptionsSheet(
-  { onReportAlert, onShareEta, onOpenDetection, onEndNavigation, onClose, onSheetChange, detectionBatteryLow },
+  { onReportAlert, onShareEta, onOpenDetection, onOpenMapTools, onEndNavigation, onClose, onSheetChange, detectionBatteryLow },
   ref
 ) {
   const insets = useSafeAreaInsets();
@@ -42,30 +48,44 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
           <Text style={styles.title}>Trip options</Text>
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={onClose}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
 
         <OptionRow icon="warning" iconBg="#F59E0B" iconColor="#111827" label="Report an incident" onPress={onReportAlert} />
-        <OptionRow icon="share-outline" iconBg={colors.surfaceMuted} iconColor={colors.text} label="Share ETA" onPress={onShareEta} />
+        <OptionRow icon="share-outline" iconBg="#DBEAFE" iconColor="#1D4ED8" label="Share ETA" onPress={onShareEta} />
         <OptionRow
           icon="videocam-outline"
-          iconBg={colors.surfaceMuted}
-          iconColor={colors.text}
+          iconBg="#EDE9FE"
+          iconColor="#7C3AED"
           label="AI Vehicle Detection"
           subtitle={detectionBatteryLow ? "Battery below 50% -- still works, may run slower" : undefined}
           onPress={onOpenDetection}
         />
+        <OptionRow
+          icon="layers-outline"
+          iconBg="#E1F1FD"
+          iconColor="#0A84E0"
+          label="Map tools"
+          subtitle="Satellite, 3D buildings, alerts, fuel and food nearby"
+          onPress={onOpenMapTools}
+        />
 
         <View style={styles.divider} />
 
-        <OptionRow icon="close-circle" iconBg="#FEE2E2" iconColor="#DC2626" label="End navigation" labelColor="#DC2626" onPress={onEndNavigation} />
+        <Button
+          variant="destructive"
+          icon="close-circle"
+          label="End navigation"
+          onPress={onEndNavigation}
+          accessibilityLabel="End navigation"
+          fullWidth
+        />
       </BottomSheetView>
     </BottomSheet>
   );
@@ -82,7 +102,7 @@ function OptionRow({
   subtitle,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   iconBg: string;
   iconColor: string;
   label: string;
@@ -99,13 +119,13 @@ function OptionRow({
       accessibilityLabel={subtitle ? `${label} -- ${subtitle}` : label}
     >
       <View style={[styles.rowIconWrap, { backgroundColor: iconBg }]}>
-        <Ionicons name={icon} size={20} color={iconColor} />
+        <Icon name={icon} size={20} color={iconColor} />
       </View>
       <View style={styles.rowTextWrap}>
         <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
         {subtitle && <Text style={styles.rowSubtitle}>{subtitle}</Text>}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -135,26 +155,19 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.text,
   },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm + 4,
   },
   rowIconWrap: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+    ...shadow.low,
   },
   rowTextWrap: {
     flex: 1,
@@ -172,6 +185,9 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: colors.surfaceMuted,
-    marginVertical: spacing.sm,
+    marginVertical: spacing.md,
   },
+  // Real, explicit request for a more polished look -- End navigation is a destructive, trip-
+  // ending action, not just another row in the list, so it now reads as its own clear, full-
+  // width button instead of blending in with Report/Share/AI Detection's identical row shape.
 });

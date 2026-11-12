@@ -44,6 +44,7 @@ function toAlertDoc(id: string, data: any): AlertDoc {
     createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : data.createdAt,
     expiresAt: data.expiresAt instanceof Timestamp ? data.expiresAt.toMillis() : data.expiresAt,
     confirmCount: data.confirmCount ?? 0,
+    denyCount: data.denyCount ?? 0,
     // Pre-migration docs could briefly still have the old plain-array shape -- treated as
     // "nobody's hidden it yet" rather than crashing on the shape mismatch (short-lived alerts,
     // all pruned by the scheduled cleanup function well within a day).
@@ -85,6 +86,7 @@ export async function reportAlert(
     createdAt: serverTimestamp(),
     expiresAt: Timestamp.fromMillis(now + ttlMs),
     confirmCount: 0,
+    denyCount: 0,
     hiddenBy: {},
     ...(safeComment ? { comment: safeComment } : {}),
   });

@@ -23,6 +23,7 @@ import {
   type User,
 } from "@firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 // From "@firebase/functions" (not the "firebase/functions" wrapper) -- this repo's OWN Cloud
 // Functions source lives at ./firebase/functions (see firebase.json), which collides with that
 // wrapper subpath under this project's own baseUrl-relative module resolution (tsconfig.json
@@ -69,6 +70,10 @@ export const auth = DIAGNOSTIC_DISABLE_ASYNC_STORAGE_PERSISTENCE
     });
 
 export const db = getFirestore(firebaseApp);
+// Backs recordedVoices.ts' real upload of a driver's own "Record your own voice" clips, to
+// their own private voiceRecordings/{uid}/ folder -- see firebase/storage.rules for the real
+// owner-only access rule.
+export const storage = getStorage(firebaseApp);
 // Backs runRevCheck (see src/services/revCheck.ts) -- the real PPSR provider key lives only in
 // firebase/functions/index.js's own Admin SDK read, never shipped to or reachable from this
 // client at all.

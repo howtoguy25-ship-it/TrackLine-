@@ -1,9 +1,11 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Image, Animated } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, StyleSheet, Animated } from "react-native";
+import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { refreshLiveCameraImageUrl, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
 
 interface Props {
@@ -38,7 +40,6 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
   // the next real frame landed instead of counting up live.
   const [, setClockTick] = useState(0);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const livePulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (!camera) return;
@@ -67,16 +68,7 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
     Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
   }, [imageLoaded, fadeAnim]);
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(livePulse, { toValue: 0.35, duration: 700, useNativeDriver: true }),
-        Animated.timing(livePulse, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [livePulse]);
+  // The LIVE dot is steady: nothing on screen loops except the Go now fill and Tracky's idle bob.
 
   const updatedSecondsAgo = lastUpdatedAt ? Math.max(0, Math.floor((Date.now() - lastUpdatedAt) / 1000)) : null;
   const updatedText =
@@ -97,17 +89,16 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
           <>
             <View style={styles.header}>
               <View style={styles.titleRow}>
-                <Ionicons name="videocam" size={20} color={colors.text} />
+                <Icon name="videocam" size={20} color={colors.text} />
                 <Text style={styles.title}>{camera.title}</Text>
               </View>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="close"
+                iconColor={colors.textMuted}
                 onPress={onClose}
-                hitSlop={12}
-                style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
                 accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </Pressable>
+              />
             </View>
             {(camera.view || camera.direction) && (
               <Text style={styles.subtitle}>
@@ -126,12 +117,12 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
                 onError={() => setLoadError(true)}
               />
               <View style={styles.liveBadge}>
-                <Animated.View style={[styles.liveDot, { opacity: livePulse }]} />
+                <View style={styles.liveDot} />
                 <Text style={styles.liveBadgeText}>LIVE</Text>
               </View>
               {loadError && (
                 <View style={[StyleSheet.absoluteFill, styles.errorOverlay]} pointerEvents="none">
-                  <Ionicons name="cloud-offline-outline" size={22} color="#FFFFFF" />
+                  <Icon name="cloud-offline-outline" size={22} color="#FFFFFF" />
                   <Text style={styles.errorOverlayText}>Camera feed unavailable -- retrying…</Text>
                 </View>
               )}
@@ -181,14 +172,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
     flexShrink: 1,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
   },
   subtitle: {
     fontSize: 13,

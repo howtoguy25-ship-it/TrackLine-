@@ -1,0 +1,425 @@
+import { useLocation } from "@/context/LocationContext";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { subscribeNearbyPresence, type PresenceDoc } from "@/services/presence";
+import { metersBetween } from "@/map/homeMapLogic";
+import React, { useEffect, useState } from "react";
+import { View, Pressable, StyleSheet, ScrollView, Share, Alert, ActivityIndicator } from "react-native";
+import { Text } from "@/components/AppText";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/context/SettingsContext";
+import type { RootStackParamList } from "@/navigation/RootNavigator";
+import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { Tracky } from "@/components/trackys/Tracky";
+import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
+import { subscribeVisibleAlerts, getInboxLastViewedAt } from "@/services/alerts";
+import type { AlertDoc } from "@/types/alert";
+import {
+  getUpcomingEventsWithLocation,
+  getCalendarPermissionStatus,
+  requestCalendarAccess,
+  type UpcomingDriveEvent,
+} from "@/services/calendarEvents";
+import { searchPlaces, getPlaceDetails } from "@/services/places";
+
+// Waze-style main menu, opened from the Menu button on the home map (see MapScreen.tsx). The
+// full designed panel per Phase 4: a real Tracky mascot greeting, a "Plan a drive" card, real
+// upcoming calendar events with a location, a real Inbox row with an unread badge, Invite a
+// friend (native Share), and Help -- alongside the already-existing Sign in/Account and
+// Settings rows.
+// "Nearby" for the menu's Trackys count.
+const TRACKYS_NEARBY_RADIUS_M = 25_000;
+
+export function MainMenuScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { user } = useAuth();
+  const { settings } = useSettings();
+  const isSignedIn = !!user && !user.isAnonymous;
+  const isGhostMode = settings.visibility === "ghost";
+  const appearance = useTrackyAppearance(isGhostMode);
+  const firstName = (user?.displayName ?? "").split(" ")[0];
+
+  // Other visible drivers near here, from the live presence feed (the same one that draws them
+  // on the map). Not listened to at all when the driver has switched Trackys off.
+  const { location } = useLocation();
+  const [presences, setPresences] = useState<PresenceDoc[]>([]);
+  const presenceUid = user?.uid ?? null;
+  useEffect(() => {
+    if (!presenceUid || !settings.showTrackysOnMap) return;
+    return subscribeNearbyPresence(presenceUid, setPresences);
+  }, [presenceUid, settings.showTrackysOnMap]);
+  const here = location?.coords;
+  const trackysNearby =
+    here && settings.showTrackysOnMap
+      ? presences.filter(
+          (p) => p.uid !== presenceUid && metersBetween(here.latitude, here.longitude, p.lat, p.lng) <= TRACKYS_NEARBY_RADIUS_M
+        ).length
+      : 0;
+
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    let lastViewedAt = 0;
+    getInboxLastViewedAt().then((v) => (lastViewedAt = v));
+    return subscribeVisibleAlerts(settings.visibleRegions, user.uid, (alerts: AlertDoc[]) => {
+      setUnreadCount(alerts.filter((a) => a.createdAt > lastViewedAt).length);
+    });
+  }, [user, settings.visibleRegions]);
+
+  const [calendarStatus, setCalendarStatus] = useState<"granted" | "denied" | "undetermined" | null>(null);
+  const [events, setEvents] = useState<UpcomingDriveEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  useEffect(() => {
+    getCalendarPermissionStatus().then((status) => {
+      setCalendarStatus(status);
+      if (status === "granted") {
+        setEventsLoading(true);
+        getUpcomingEventsWithLocation()
+          .then(setEvents)
+          .finally(() => setEventsLoading(false));
+      }
+    });
+  }, []);
+
+  const onConnectCalendar = async () => {
+    const granted = await requestCalendarAccess();
+    setCalendarStatus(granted ? "granted" : "denied");
+    if (granted) {
+      setEventsLoading(true);
+      getUpcomingEventsWithLocation()
+        .then(setEvents)
+        .finally(() => setEventsLoading(false));
+    }
+  };
+
+  const [drivingToEventId, setDrivingToEventId] = useState<string | null>(null);
+  const onDriveToEvent = async (event: UpcomingDriveEvent) => {
+    setDrivingToEventId(event.id);
+    try {
+      const predictions = await searchPlaces(event.location);
+      if (predictions.length === 0) {
+        Alert.alert("Couldn't find that address", `No match found for "${event.location}".`);
+        return;
+      }
+      const place = await getPlaceDetails(predictions[0].placeId);
+      navigation.navigate("Map", { planADriveDestination: place });
+    } catch {
+      Alert.alert("Couldn't look up that address", "Check your connection and try again.");
+    } finally {
+      setDrivingToEventId(null);
+    }
+  };
+
+  const onInviteFriend = () => {
+    Share.share({
+      message: "Drive smarter with TrackLine -- real-time police, hazard and camera alerts from other drivers. Get it here: https://tracklinemaps.com",
+    }).catch(() => {});
+  };
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Menu</Text>
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
+          onPress={() => navigation.goBack()}
+          accessibilityLabel="Close menu"
+        />
+      </View>
+
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={styles.mascotRow}>
+          {appearance.mode === "custom" ? (
+            <Tracky customization={appearance.customization} size={96} />
+          ) : (
+            <Tracky mood={appearance.displayMood} size={96} />
+          )}
+          <View style={styles.speechBubble}>
+            <View style={styles.speechBubbleTail} />
+            <Text style={styles.mascotGreeting}>{firstName ? `Hey ${firstName}!` : "Hey there!"}</Text>
+            <Pressable onPress={() => navigation.navigate("TrackyProfile")} hitSlop={6}>
+              <Text style={styles.viewProfileLink}>View profile</Text>
+            </Pressable>
+            {/* The real number of visible drivers within 25km right now. Shown only when there
+                is at least one -- with nobody around (or before the presence service has been
+                deployed) there's simply no line, never a "0" or an invented figure. */}
+            {trackysNearby > 0 && (
+              <Text style={styles.trackysNearby}>
+                {trackysNearby === 1 ? "1 Tracky online nearby" : `${trackysNearby} Trackys online nearby`}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Real, explicit request -- "Pill on Menu header ... 'Visible to other drivers' <->
+            'Ghost mode'." Tapping it jumps straight to the full Privacy picker (same one the
+            Menu button's own long-press sheet offers) rather than duplicating a quick-toggle
+            here too. */}
+        <Chip
+          icon={isGhostMode ? "eye-off" : "eye"}
+          label={isGhostMode ? "Ghost mode" : "Visible to other drivers"}
+          // Green says "visible"; grey says hidden.
+          leading={<View style={[styles.visibilityDot, { backgroundColor: isGhostMode ? colors.textFaint : colors.good }]} />}
+          onPress={() => navigation.navigate("Settings", { category: "privacy" })}
+          accessibilityLabel={isGhostMode ? "Ghost mode. Tap to change" : "Visible to other drivers. Tap to change"}
+          style={styles.visibilityChip}
+        />
+
+        <Pressable
+          style={({ pressed }) => [styles.planCard, pressed && { opacity: pressedOpacity }]}
+          onPress={() => navigation.navigate("PlanADrive")}
+          accessibilityLabel="Plan a drive"
+        >
+          <View style={styles.planCardIconWrap}>
+            <Icon name="calendar" size={22} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.planCardTitle}>Plan a drive</Text>
+            <Text style={styles.planCardSubtitle}>Pick a destination and check your ETA</Text>
+          </View>
+          <Icon name="chevron-forward" size={18} color="#FFFFFF" />
+        </Pressable>
+
+        <MenuRow
+          icon="person-circle-outline"
+          label={isSignedIn ? `Signed in as ${user!.email ?? user!.displayName ?? "you"}` : "Sign in"}
+          onPress={() => (isSignedIn ? navigation.navigate("Settings", { category: "account" }) : navigation.navigate("SignIn"))}
+        />
+        <MenuRow
+          icon="mail-outline"
+          label="Inbox"
+          badge={unreadCount > 0 ? unreadCount : undefined}
+          onPress={() => navigation.navigate("Inbox")}
+        />
+        {/* Moved here from the old "Map tools" panel on the map. */}
+        <MenuRow
+          icon="videocam-outline"
+          label="Dashcam (AI vehicle detection)"
+          onPress={() => navigation.navigate("VehicleDetection")}
+        />
+        <MenuRow
+          icon="map-outline"
+          label="Map display"
+          onPress={() => navigation.navigate("Settings", { category: "mapDisplay" })}
+        />
+        <MenuRow icon="settings-outline" label="Settings" onPress={() => navigation.navigate("SettingsCategories")} />
+        <MenuRow icon="person-add-outline" label="Invite a friend" onPress={onInviteFriend} />
+        <MenuRow icon="help-circle-outline" label="Help" onPress={() => navigation.navigate("Help")} />
+
+        <Text style={styles.sectionLabel}>Upcoming events</Text>
+        {calendarStatus !== "granted" ? (
+          <Pressable
+            style={({ pressed }) => [styles.connectCalendarRow, pressed && { opacity: pressedOpacity }]}
+            onPress={onConnectCalendar}
+          >
+            <Icon name="calendar-outline" size={18} color={colors.accent} />
+            <Text style={styles.connectCalendarText}>Connect your calendar to see events with a location here</Text>
+          </Pressable>
+        ) : eventsLoading ? (
+          <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.sm }} />
+        ) : events.length === 0 ? (
+          <Text style={styles.emptyEventsText}>No upcoming events with a location in the next 7 days.</Text>
+        ) : (
+          events.map((event) => (
+            <Pressable
+              key={event.id}
+              style={({ pressed }) => [styles.eventRow, pressed && { opacity: pressedOpacity }]}
+              onPress={() => onDriveToEvent(event)}
+              disabled={drivingToEventId === event.id}
+            >
+              <View style={styles.eventIconWrap}>
+                <Icon name="location" size={16} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.eventTitle} numberOfLines={1}>
+                  {event.title}
+                </Text>
+                <Text style={styles.eventLocation} numberOfLines={1}>
+                  {event.location}
+                </Text>
+              </View>
+              {drivingToEventId === event.id ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Icon name="navigate-outline" size={18} color={colors.accent} />
+              )}
+            </Pressable>
+          ))
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+function MenuRow({
+  icon,
+  label,
+  onPress,
+  badge,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  badge?: number;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
+      accessibilityLabel={label}
+    >
+      <View style={styles.rowIconWrap}>
+        <Icon name={icon} size={20} color={colors.accent} />
+      </View>
+      <Text style={styles.rowLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      {!!badge && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
+        </View>
+      )}
+      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.lg,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  mascotRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  speechBubble: {
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    position: "relative",
+  },
+  speechBubbleTail: {
+    position: "absolute",
+    left: -6,
+    top: "50%",
+    marginTop: -6,
+    width: 0,
+    height: 0,
+    borderTopWidth: 6,
+    borderBottomWidth: 6,
+    borderRightWidth: 8,
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    borderRightColor: colors.surfaceMuted,
+  },
+  mascotGreeting: { fontSize: 15, fontWeight: "800", color: colors.text },
+  trackysNearby: { fontSize: 12, fontWeight: "500", color: colors.textMuted, marginTop: 4 },
+  viewProfileLink: { fontSize: 12, fontWeight: "700", color: colors.accent, marginTop: 2 },
+  visibilityChip: { alignSelf: "flex-start", marginBottom: spacing.md },
+  visibilityDot: { width: 8, height: 8, borderRadius: 4 },
+  planCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.accent,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadow.medium,
+  },
+  planCardIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  planCardTitle: { fontSize: 15, fontWeight: "800", color: "#FFFFFF" },
+  planCardSubtitle: { fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 1 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  rowIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadow.low,
+  },
+  rowLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  badge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: { fontSize: 11, fontWeight: "800", color: "#FFFFFF" },
+  sectionLabel: { fontSize: 12, fontWeight: "700", color: colors.textMuted, marginTop: spacing.lg, marginBottom: spacing.xs },
+  connectCalendarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  connectCalendarText: { flex: 1, fontSize: 13, color: colors.textMuted },
+  emptyEventsText: { fontSize: 13, color: colors.textFaint, paddingVertical: spacing.sm },
+  eventRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  eventIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventTitle: { fontSize: 14, fontWeight: "700", color: colors.text },
+  eventLocation: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+});

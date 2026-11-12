@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, LayoutChangeEvent } from "react-native";
+import { Button, Chip, FloatingButton } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+  LayoutChangeEvent,
+  useWindowDimensions,
+  ActionSheetIOS,
+} from "react-native";
+import { Text } from "@/components/AppText";
 import {
   Camera,
   useCameraDevice,
@@ -9,24 +20,29 @@ import {
   type PhotoFile,
 } from "react-native-vision-camera";
 import { useResizePlugin } from "vision-camera-resize-plugin";
+import Slider from "@react-native-community/slider";
 import { useSharedValue, useRunOnJS } from "react-native-worklets-core";
 import type { BoxedHybridObject } from "react-native-nitro-modules";
 import type { TensorflowModel } from "react-native-fast-tflite";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { decodePhotoForDetection } from "@/services/vehicleDetection";
+import { decodePhotoForLightbarSampling } from "@/services/vehicleDetection";
 import { loadBoxedTFLiteModel, TFLITE_INPUT_SIZE } from "@/services/tfliteVehicleModel";
 import { sampleLightbarActivity, pruneLightbarTracks } from "@/utils/lightbarDetector";
 import { createSpeedTracker, type TrackedBox } from "@/utils/speedTracker";
 import { locatePlateRegion, type PlateRegion } from "@/utils/plateLocator";
-import { readPlateText } from "@/services/plateOcr";
+import { readPlateTextSmart, subscribePlateRecognizerProviderStatus } from "@/services/plateRecognizer";
 import { useLocation } from "@/context/LocationContext";
+import { useSettings } from "@/context/SettingsContext";
+import { isNightTime } from "@/utils/sunTimes";
 import { upsertDetectedVehicle } from "@/services/vehicleHistory";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { saveVehicleThumbnail } from "@/services/vehicleThumbnail";
+import { refineBoxTrim, type BoxTrim } from "@/utils/boxRefine";
+import { formatDistance } from "@/utils/navFormat";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -46,14 +62,114 @@ import { Sentry } from "@/services/sentry";
 // never cleared the bar to start being tracked at all). Same real trade as before: a few more
 // false positives for meaningfully fewer real, partially-visible vehicles going undetected.
 const MIN_DETECTION_SCORE = 0.3;
-// This model's own fixed TFLite_Detection_PostProcess output size (see
-// assets/models/tflite_ssd_mobilenet_v1) -- it never returns more than this many candidate
-// detections per frame, regardless of how many are actually above MIN_DETECTION_SCORE.
-const MAX_MODEL_DETECTIONS = 10;
+// See this constant's own call site (the Frame Processor's brightness boost / detection-score
+// loosening) for the full reasoning -- both apply only while night mode is active, either
+// switched on automatically by the real sunset/sunrise calculation or a manual Settings
+// override.
+const NIGHT_BRIGHTNESS_GAIN = 1.6;
+const NIGHT_DETECTION_SCORE_REDUCTION = 0.08;
+// Real, explicit request for an occupant-count estimate per vehicle -- see speedTracker.ts's
+// own OCCUPANT_CABIN_HEIGHT_FRACTION comment for the full accuracy caveat (this is a best-effort
+// estimate, never a certified count). classId 0 is "person" in the v2 labelmap this model
+// already ships with -- no separate model or extra inference cost. Held to a higher bar than
+// MIN_DETECTION_SCORE: a wrong "person" read directly inflates an occupant count someone might
+// actually rely on, which is a costlier mistake than a slightly-late vehicle box.
+const MIN_PERSON_DETECTION_SCORE = 0.5;
+// Real, confirmed complaint (new screenshot evidence): boxes barely clearing MIN_DETECTION_SCORE
+// (a "Vehicle 30%" that's mostly roof/sky, a "Vehicle 33%" that's mostly trees) were being drawn
+// on screen looking like a broken/misfit box, even though tracking them internally at that low a
+// bar is still genuinely useful (keeps a partial vehicle's track alive through TRACK_GRACE_MS
+// once it does clear a real detection -- see MIN_DETECTION_SCORE's own comment). Separating "good
+// enough to track" from "good enough to actually draw" fixes the visible symptom without undoing
+// that earlier fix: a track can exist and keep its speed estimate warm below this bar, it just
+// doesn't render a box the user has to look at until the read is solid enough to trust the shape.
+// Raised 0.45 -> 0.55 after real evidence of loose/misfit boxes getting through at 0.45, then
+// brought back down to 0.45 per explicit request after 0.55 was confirmed to be filtering out
+// genuine background/distant vehicles too aggressively -- a real, acknowledged trade: some
+// borderline boxes may come back too, in exchange for detecting more real vehicles further away.
+// A track can still exist and keep its speed estimate warm well below this (MIN_DETECTION_SCORE),
+// it just has to clear this bar before its box is something the user has to look at.
+const MIN_RENDER_SCORE = 0.45;
+// Real, confirmed complaint: a low-confidence detection box spanning almost the entire frame
+// (a misclassified shadow/road surface/dashboard reflection, not an actual close-up vehicle)
+// rendered as a giant box "covering the whole screen" instead of locking to the real car body.
+// A genuinely huge box IS possible at very close range (a phone mounted right next to traffic, or
+// a near-collision) -- so this doesn't reject big boxes outright, it just requires a much higher
+// score to accept one that large, same principle as MIN_DETECTION_SCORE but scaled to how much
+// of the frame the box claims to cover. Tightened AGAIN (0.6/0.8 -> 0.5/0.88) after the previous
+// tightening still let a "Heavy Vehicle 69%" box sprawled across two parked cars, a shed, and
+// open sky through -- 69% cleared the old 0.8 bar's near-miss zone often enough in practice, and
+// the old 0.6 frame-fraction trigger only caught boxes covering more than 60% of the frame, not
+// the merely-loose-but-still-clearly-wrong medium-large boxes also being reported. Both the size
+// trigger and the score bar it has to clear went up again; a real close-range vehicle still gets
+// through since it'll score much higher than 88% once actually filling that much of the frame.
+// Explicit values requested after further testing: frame-fraction trigger moved back up to
+// 0.65 (from an intermediate 0.5 that was starting to flag genuinely close-range vehicles too),
+// while the score required to trust a box that large went up to 0.9 -- a real net tightening
+// overall (a 0.69-score box, the exact prior complaint, clears neither the old 0.8 nor this 0.9
+// bar).
+const OVERSIZED_BOX_FRAME_FRACTION = 0.65;
+const MIN_SCORE_FOR_OVERSIZED_BOX = 0.9;
+// See this constant's own call site in the Frame Processor below (the raw-detection aspect-ratio
+// sanity check) for the full reasoning -- a raw detection narrower than this (width:height) is
+// rejected outright unless it clears HIGH_CONFIDENCE_ASPECT_OVERRIDE.
+const MIN_ASPECT_RATIO_FOR_LOW_CONFIDENCE = 0.9;
+const HIGH_CONFIDENCE_ASPECT_OVERRIDE = 0.75;
+// Belt-and-suspenders on top of the score gate above -- caps how much of the screen the drawn
+// box is ever allowed to visually cover, applied at render time (see its call site). Catches the
+// same "box covering the whole screen" complaint even for a detection that did clear the score
+// gate above, without needing to guess the exact right score cutoff. Lowered alongside the gate
+// above (0.82 -> 0.7) for the same reason.
+const MAX_BOX_RENDER_FRACTION = 0.7;
+// Matches MIN_BOX_ASPECT_RATIO in speedTracker.ts exactly -- see this constant's own call site
+// (the box render below) for why the same floor needs re-applying a second time here, display-
+// side, on top of the one speedTracker.ts already applies to box.bbox itself.
+const MIN_DISPLAY_ASPECT_RATIO = 1.4;
+// "Make the boxes a bit bigger" -- real, explicit request (screenshot evidence: small, hard-to-
+// read boxes on genuinely close vehicles). Floors the on-screen box size only when the box has
+// SOME real on-screen area -- see hasOnScreenArea at the render call site -- so a box clipped
+// entirely off-screen never gets inflated into a fake box hovering at the edge.
+const MIN_BOX_RENDER_PX = 92;
+// Real, confirmed bug (screenshot/video evidence): a vehicle mostly outside the frame -- only a
+// sliver of it actually crossing into view -- was still getting the MIN_BOX_RENDER_PX floor
+// above applied to that sliver, inflating a barely-visible edge clip into a full-looking box
+// with a full type/speed tag floating at the very edge of the screen, disconnected from
+// anything a driver could actually see -- exactly the "pops up on random sides" complaint. This
+// is the gate that gets checked BEFORE that floor: below this fraction of the box's own true,
+// unclamped area actually on-screen, the box isn't rendered at all rather than being inflated
+// into something that reads as a real, complete detection. Tracking itself is unaffected (this
+// is a render-only skip, same as MIN_RENDER_SCORE) -- the vehicle keeps its speed estimate warm
+// and will render normally the moment enough of it is actually in frame.
+const MIN_ON_SCREEN_AREA_FRACTION = 0.3;
+// Zoom slider (zoomSliderWrap below) occupies a real, fixed strip along the right edge of the
+// screen. Box positioning previously had zero awareness of it, so a vehicle detected near the
+// right side of frame drew its lock box, type/speed tag, and plate readout directly underneath
+// the slider control -- real, confirmed via 3 screenshots with the "Vehic-le" tag wrapping
+// mid-word and "0 KMH" printed over the slider track/thumb. Covers the slider's own footprint
+// (44) + its right margin (spacing.sm) + buffer room for the small type/speed text pills
+// anchored to a box's own top-left/bottom-right corners, which aren't independently width-
+// clamped to the box itself.
+const ZOOM_SLIDER_RESERVED_WIDTH_PX = 44 + spacing.sm + 70;
+// This model's own real TFLite_Detection_PostProcess output size -- confirmed directly this
+// session by loading assets/models/tflite_ssd_mobilenet_v2/model.tflite's actual FlatBuffer and
+// reading its output tensor shapes (ai-edge-litert's own get_output_details()): all four outputs
+// are sized for 20 detections ([1,20,4] boxes, [1,20] classes, [1,20] scores), not 10. This
+// constant was left at 10 across the v1->v2 model swap under the wrong assumption that it merely
+// needed to be "at or below" the model's real cap -- real, confirmed bug (screenshot evidence: a
+// busy multi-lane scene with well over 10 real vehicles in frame, several with no box at all)
+// showed that capping below the model's own true output size silently throws away genuine
+// candidate detections the model already computed, before MIN_DETECTION_SCORE or the vehicle-
+// class filter even get a chance to look at them. Matches the model's real limit exactly now.
+const MAX_MODEL_DETECTIONS = 20;
 // Frame Processor throttle -- unlike the old JS-thread cadence, this no longer has to leave
 // headroom for touch handling (it's not competing with the JS thread at all), so it can run
-// much more often; capped mainly for battery/thermal, not responsiveness.
-const FRAME_PROCESSOR_THROTTLE_MS = 300;
+// much more often; capped mainly for battery/thermal, not responsiveness. Lowered 300 -> 200
+// (~3.3 -> 5 real inference passes/sec) per explicit "connects quicker" request -- headroom for
+// this exists specifically because tfliteVehicleModel.ts now requests the Core ML delegate,
+// moving the actual forward pass off plain CPU, so a tighter throttle doesn't mean stacking up
+// more CPU-thread work than before it. Still a real, honest battery/thermal trade -- watch for
+// that if this ever needs tuning back up.
+const FRAME_PROCESSOR_THROTTLE_MS = 200;
 
 // Attempts (each tied to one side-capture pass) before giving up on a persistently unreadable
 // plate for a given track -- caps total OCR work per vehicle instead of retrying forever on one
@@ -127,7 +243,13 @@ function boxIoU(a: [number, number, number, number], b: [number, number, number,
 // unreadable). This is a second, cross-class NMS pass over the already-remapped Vehicle/Heavy
 // Vehicle list: greedy, highest score first, discarding any lower-score box that overlaps an
 // already-kept one past IOU_SUPPRESS_THRESHOLD, regardless of which raw class either came from.
-const IOU_SUPPRESS_THRESHOLD = 0.35;
+// Lowered from 0.35 -- real, confirmed evidence (screenshot: two overlapping green boxes/labels
+// both drawn on the one real parked car, visible through a window) that 0.35 still wasn't
+// aggressive enough to catch every real duplicate pair -- a genuine ~35%+ box overlap between
+// two DIFFERENT-class detections (e.g. car vs. truck) of the one vehicle is already a strong
+// enough signal on its own that they're the same real object, without needing them to overlap
+// nearly as much as two same-class NMS candidates normally would.
+const IOU_SUPPRESS_THRESHOLD = 0.25;
 
 function suppressOverlappingDetections(detections: RawDetection[]): RawDetection[] {
   const sorted = [...detections].sort((a, b) => b.score - a.score);
@@ -139,36 +261,44 @@ function suppressOverlappingDetections(detections: RawDetection[]): RawDetection
   return kept;
 }
 
-// Four corner brackets instead of a plain solid rectangle -- reads as a real targeting
-// lock (the same visual language as a camera's autofocus/tracking reticle) rather than a
-// generic selection outline, per explicit request for the box to look "professionally
-// placed/locked." Purely cosmetic on top of the same real bbox math below -- the actual
-// detected region a bracket set outlines is unchanged.
+// Plain thin rectangle outline, per explicit request matching a real reference screenshot of
+// the exact look wanted -- a clean, tight box hugging the vehicle's own visible silhouette, not
+// the four-corner-bracket "camera focus reticle" style this used to be (that was itself an
+// earlier explicit request, since superseded by this one). Kept as its own named component
+// (not inlined at each call site) since it's still shared by both the vehicle box and the plate
+// frame below, just simplified to a single bordered rect instead of four separate corner pieces.
 function TargetCorners({ width, height, color }: { width: number; height: number; color: string }) {
-  const len = Math.max(10, Math.min(22, Math.min(width, height) * 0.3));
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={[styles.corner, styles.cornerTL, { width: len, height: len, borderColor: color }]} />
-      <View style={[styles.corner, styles.cornerTR, { width: len, height: len, borderColor: color }]} />
-      <View style={[styles.corner, styles.cornerBL, { width: len, height: len, borderColor: color }]} />
-      <View style={[styles.corner, styles.cornerBR, { width: len, height: len, borderColor: color }]} />
-    </View>
+    <View
+      pointerEvents="none"
+      style={[styles.targetRect, { width, height, borderColor: color }]}
+    />
   );
 }
 
-// Color-codes the lock/target box by the vehicle's own real road speed -- green under 60 km/h,
-// amber 60-100, red over 100, matching real fixed-camera traffic-radar convention (a driver
-// glances at a color, not a number, to gauge how fast someone's going). Only applied to a real
-// "absolute" road-speed reading (a genuine ego-GPS-combined estimate, or a Place & Play stationary
-// camera's own closing rate -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate
-// (no ego GPS available, phone being driven around) isn't a real speed measurement and stays the
-// neutral default amber rather than implying a threshold it can't actually back up.
+// Color-codes the lock/target box by the vehicle's own real road speed, per explicit request
+// (exact hex values requested): under 60 km/h green (#22C55E), 100+ red (#EF4444), and yellow
+// (#EAB308) for the confirmed-cruise band in between -- the request itself only named 70-90 as
+// "yellow", leaving 60-70 and 90-100 as gaps; filled here by extending yellow to cover both,
+// the natural reading of a three-tier green/yellow/red system with those crossover points.
+// Matches real fixed-camera traffic-radar convention (a driver glances at a color, not a number,
+// to gauge how fast someone's going). Only applied to a real "absolute" road-speed reading (a
+// genuine ego-GPS-combined estimate, or a stationary/mounted camera's own closing rate treated as
+// the target's real speed -- see speedTracker.ts's combineWithEgoSpeed); a plain "closing" rate
+// (no GPS fix at all yet, so whether the camera itself is moving is genuinely unknown) isn't a
+// confirmed speed measurement, and neither is a parked vehicle's speed -- both stay a distinct
+// neutral amber (#F59E0B, deliberately different from the confirmed-cruise yellow above) so
+// "parked/uncertain" is never visually confused with "confirmed doing 60-100".
+const SPEED_COLOR_GREEN = "#22C55E";
+const SPEED_COLOR_YELLOW = "#EAB308";
+const SPEED_COLOR_RED = "#EF4444";
+const SPEED_COLOR_NEUTRAL = "#F59E0B";
 function speedLockColor(box: TrackedBox): string {
-  if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return "#F59E0B";
+  if (box.state === "parked" || box.speedKmh === null || box.speedKind !== "absolute") return SPEED_COLOR_NEUTRAL;
   const abs = Math.abs(box.speedKmh);
-  if (abs > 100) return "#DC2626";
-  if (abs >= 60) return "#F59E0B";
-  return "#22C55E";
+  if (abs >= 100) return SPEED_COLOR_RED;
+  if (abs < 60) return SPEED_COLOR_GREEN;
+  return SPEED_COLOR_YELLOW;
 }
 
 // Maps a box from the Frame Processor's UPRIGHT coordinate space (frameWidth x frameHeight,
@@ -256,64 +386,81 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // can report how long the native camera session genuinely took to come up.
   const mountTimeRef = useRef(Date.now());
   const insets = useSafeAreaInsets();
+  // Landscape add-on only -- pure layout signal for the HUD reflow below (banner/detail panel
+  // side-anchored instead of spanning full-width, safe-area padding on both sides). Updates
+  // live as the device physically rotates, same as any other window-size-driven layout in RN.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscapeLayout = windowWidth > windowHeight;
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice("back");
-  // photoResolution raised again, to real 4K (3840x2160) -- per explicit request for a
-  // meaningfully clearer source image for the plate/lightbar side capture loop
-  // (captureForPlateAndLightbar below). That loop's plate crop reads straight off this still
-  // photo via native, hardware-accelerated cropping (expo-image-manipulator, see plateOcr.ts) --
-  // not through the JS-thread JPEG decode -- so the full 4K detail genuinely reaches OCR on
-  // whatever small plate-sized region gets cropped out of it, real, meaningfully more pixels to
-  // read a plate from at real driving distance than 1280x720 gave.
+  // Real, confirmed regression from the earlier 4K (3840x2160) bump: real-device lag, caused by
+  // decodePhotoForDetection's pure-JS jpeg-js decode (used for lightbar flash sampling) churning
+  // through the ENTIRE still photo every ~0.9-1.4s cadence tick -- a real, continuous cost for as
+  // long as this screen stays open, not a one-off. Brought down to 1080p to fix that, then raised
+  // to this 2560x1440 middle ground per explicit request after 1080p felt like a bigger plate-
+  // detail step down than wanted -- roughly half the raw pixel count of full 4K (meaningfully
+  // less JS-decode cost than the version that caused the lag) while still giving the plate crop
+  // (native, hardware-accelerated cropping, see plateOcr.ts -- unaffected by the JS decode cost)
+  // more real detail than 1080p did. Genuinely untested on-device at this exact value yet -- real
+  // evidence from here decides whether it needs to move again in either direction.
   //
   // videoResolution deliberately NOT raised to match -- unlike the still-photo path above, the
   // Frame Processor's video stream feeds the live TFLite model, which the resize plugin always
   // downsamples to a FIXED 300x300 input (see TFLITE_INPUT_SIZE) no matter what the source
-  // resolution is. A 4K video buffer would mean the resize plugin (and the continuous native
-  // capture pipeline behind it) doing meaningfully more GPU/battery/thermal work on every single
-  // frame at the Frame Processor's own ~3fps cadence, for a fixed-size model input that can't
-  // use any of those extra pixels -- real, ongoing cost for zero detection-accuracy benefit.
-  // 1280x720 already gives the model everything it can actually use.
-  //
-  // Real, honest tradeoff on the photo side: a 4K still photo is a meaningfully bigger file for
-  // decodePhotoForDetection's pure-JS jpeg-js decode (used for lightbar flash sampling, not the
-  // plate crop) to churn through every ~0.9-1.4s cadence tick -- SIDE_DECODE_TIMEOUT_MS already
-  // bounds a slow decode to a graceful retry rather than a hang, but this genuinely needs a real
-  // device test pass (not just a simulator) to confirm it doesn't introduce visible stutter on
-  // older/lower-end hardware before treating it as final.
+  // resolution is. A higher-res video buffer would mean the resize plugin (and the continuous
+  // native capture pipeline behind it) doing meaningfully more GPU/battery/thermal work on every
+  // single frame at the Frame Processor's own ~3fps cadence, for a fixed-size model input that
+  // can't use any of those extra pixels -- real, ongoing cost for zero detection-accuracy
+  // benefit. 1280x720 already gives the model everything it can actually use.
+  // Real, confirmed complaint: distant/small vehicles weren't registering at all -- the fixed
+  // 1.3x zoom bump below (this screen's previous approach) put only marginally more pixels on a
+  // far-away car than bare 1x. vision-camera's `zoom` prop narrows the actual native capture
+  // session's field of view (not a digital crop after the fact), so a genuinely far vehicle that
+  // was too small for the model to register at 1x can become detectable once the driver zooms
+  // in on it -- a fixed small bump can't help with that the way a real, user-controlled range
+  // can. photoResolution raised to true 4K (3840x2160, the still-photo/plate-crop path only --
+  // see the comment on videoResolution below for why that one stays untouched) so the picture
+  // stays genuinely sharp at 3x instead of visibly softening once it's cropped in that far.
   const format = useCameraFormat(device, [
     { photoResolution: { width: 3840, height: 2160 } },
     { videoResolution: { width: 1280, height: 720 } },
   ]);
   // Real camera zoom -- vision-camera's `zoom` prop drives the actual native capture session
   // (AVCaptureDevice/CameraX), not just the on-screen preview, so both takePhoto() and the Frame
-  // Processor's own video stream genuinely see the zoomed-in frame. Simplified to a single
-  // normal/5x toggle (previously a +/- fine control) per explicit request -- two clear, known-
-  // good states instead of a range that could land somewhere between them with no real benefit.
-  // 5x is capped to the device's own maxZoom for devices that can't reach it (rare, but a real
-  // possible value on some older/budget hardware) -- never higher, since digital zoom well past
-  // what the sensor can really resolve just produces a blurrier, less detectable frame, the
-  // opposite of the point. Starts at the device's own neutralZoom (1x on a single-camera device;
-  // the wide-angle "normal" zoom on a multi-camera one -- never the ultra-wide fish-eye lens,
-  // which would distort vehicles and hurt detection, not help it).
-  const ZOOM_5X = 5;
-  const [is5xZoom, setIs5xZoom] = useState(false);
-  const [normalZoomFactor, setNormalZoomFactor] = useState(1);
+  // Processor's own video stream genuinely see the zoomed-in frame; a distant vehicle too small
+  // to register at 1x can move above MIN_DETECTION_SCORE once zoomed in on. Real, explicit
+  // request: a real 1x-3x slider the driver drags themselves, not a single fixed bump -- 3x
+  // (not the old 5x toggle) since 5x was already confirmed too aggressive/blurry to leave
+  // reachable at all in an earlier round. minZoomFactor/maxZoomFactor are the device's own
+  // neutralZoom (1x on a single-camera device; the wide-angle "normal" zoom on a multi-camera
+  // one -- never the ultra-wide fish-eye lens, which would distort vehicles and hurt detection,
+  // not help it) and neutralZoom*3 clamped to the device's own real maxZoom, so the slider's own
+  // range can never ask the camera for a zoom level it doesn't actually support.
+  const [zoomFactor, setZoomFactor] = useState(1);
+  const minZoomFactor = device && Number.isFinite(device.neutralZoom) && device.neutralZoom > 0 ? device.neutralZoom : 1;
+  const maxZoomFactor =
+    device && Number.isFinite(device.maxZoom) && device.maxZoom > 0
+      ? Math.max(Math.min(minZoomFactor * 3, device.maxZoom), minZoomFactor)
+      : minZoomFactor;
   useEffect(() => {
-    if (device) setNormalZoomFactor(device.neutralZoom);
+    if (!device) return;
+    // Seeds the slider at plain 1x (the device's own neutral zoom) once it's known -- same
+    // explicit finite/positive validation as the fixed-bump version this replaced, so a device
+    // that ever reports an invalid neutralZoom still falls back to a safe, real 1.0 instead of
+    // feeding the camera an unvalidated number.
+    setZoomFactor(Number.isFinite(device.neutralZoom) && device.neutralZoom > 0 ? device.neutralZoom : 1);
   }, [device]);
-  const zoomFactor = is5xZoom ? Math.min(ZOOM_5X, device?.maxZoom ?? ZOOM_5X) : normalZoomFactor;
+  // Real measured height of the vertical zoom slider's own track area -- see its render site's
+  // own comment for why this can't be a guessed constant. 220 is just a reasonable first-paint
+  // fallback before the real onLayout measurement lands.
+  const [zoomTrackHeight, setZoomTrackHeight] = useState(220);
   // Same ref pattern as egoSpeedRef below -- onDetections runs from the Frame Processor bridge,
   // not a normal re-render, so it needs a ref (always current by the time the next frame lands)
   // rather than closing over the zoomFactor value from whenever it was first created. Feeds
   // speedTracker.ts's update() so parked-vehicle detection and distance/speed estimates both
-  // account for the real, current zoom -- see that file's own comments for why zoom-unaware math
-  // there was misreading handheld shake at 5x zoom as a moving vehicle.
+  // account for the real, current zoom.
   const zoomFactorRef = useRef(1);
   zoomFactorRef.current = zoomFactor;
-  const toggleZoom = useCallback(() => {
-    setIs5xZoom((v) => !v);
-  }, []);
   // Real ego GPS speed for turning a tracked vehicle's closing/receding rate into its own
   // actual road speed -- see speedTracker.ts's combineWithEgoSpeed. Reuses the SAME
   // app-wide location watcher LocationProvider already runs (App.tsx) rather than starting a
@@ -321,16 +468,49 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const { location } = useLocation();
   const egoSpeedRef = useRef<number | null>(null);
   egoSpeedRef.current = location?.coords.speed ?? null;
-  // "Place & Play" -- the phone is deliberately propped up stationary facing traffic (a
-  // tripod/mount/dashboard, portrait like the rest of the app -- not held while driving) instead
-  // of the app's default "carried in a moving vehicle" assumption. Detection/tracking itself
-  // needs no change (every vehicle in frame is already tracked and boxed simultaneously, not
-  // just one at a time) -- the one real difference is that speed math should treat the camera as
-  // having zero ego motion (see speedTracker.ts's stationary param) rather than trying to combine
-  // a moving-vehicle GPS speed that doesn't apply to a stationary mount.
-  const [placeAndPlayMode, setPlaceAndPlayMode] = useState(false);
-  const placeAndPlayModeRef = useRef(false);
-  placeAndPlayModeRef.current = placeAndPlayMode;
+  // Real, explicit request: a night-processing mode (brightened frame fed to the model, plus
+  // lowered detection thresholds -- see the Frame Processor and render filter below) that
+  // switches itself on/off using a real computed sunset/sunrise at the driver's own current
+  // location (utils/sunTimes.ts) when set to "auto" in Settings, or a manual on/off override.
+  // Recomputed on every real location update (already flowing in regardless, from the same GPS
+  // watcher egoSpeedRef reads above) plus a periodic timer as a safety net for a long session
+  // that happens to sit still enough not to get many location updates right around sunset/
+  // sunrise itself.
+  const { settings } = useSettings();
+  const [isNightActive, setIsNightActive] = useState(false);
+  useEffect(() => {
+    function recompute() {
+      if (settings.nightModePreference === "on") {
+        setIsNightActive(true);
+        return;
+      }
+      if (settings.nightModePreference === "off") {
+        setIsNightActive(false);
+        return;
+      }
+      if (location) {
+        setIsNightActive(isNightTime(new Date(), location.coords.latitude, location.coords.longitude));
+      }
+    }
+    recompute();
+    const interval = setInterval(recompute, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [settings.nightModePreference, location]);
+  // Bridges the JS-side isNightActive boolean above into the Frame Processor's own worklet
+  // Runtime -- a plain ref (like zoomFactorRef above) isn't visible from inside "worklet" code,
+  // only a real SharedValue is (same reason lastFrameProcessedMs/stableFrameOrientation below
+  // are SharedValues too, not plain refs).
+  const isNightActiveShared = useSharedValue(false);
+  isNightActiveShared.value = isNightActive;
+  // Real cloud OCR alternative (Plate Recognizer, platerecognizer.com) to this screen's own
+  // on-device plate reader, per explicit request -- see readPlateTextSmart's own comment for why
+  // this stays a graceful fallback rather than a hard requirement. Same ref pattern as
+  // egoSpeedRef/zoomFactorRef above: captureForPlateAndLightbar runs from a stable useCallback,
+  // not a normal re-render, so it needs a ref to always see the current value.
+  const [plateRecognizerConfigured, setPlateRecognizerConfigured] = useState(false);
+  useEffect(() => subscribePlateRecognizerProviderStatus(setPlateRecognizerConfigured), []);
+  const plateRecognizerConfiguredRef = useRef(false);
+  plateRecognizerConfiguredRef.current = plateRecognizerConfigured;
   // No "error" state -- see the model-load effect and the two capture paths' catch blocks
   // below. Every failure mode here now auto-recovers on its own instead of ever stopping and
   // waiting on a manual tap.
@@ -349,6 +529,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // from before this rewrite -- it's still just "the pixel space the boxes are in."
   const [photoSize, setPhotoSize] = useState<{ width: number; height: number } | null>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
+  // Landscape add-on only -- see the box-render loop's own comment below for why this exists.
+  // frame.orientation/width/height (the RAW, pre-upright-rotation sensor dimensions -- see the
+  // Frame Processor's own comment on frame.width/height) are only ever READ here, never fed
+  // into detection/tracking itself, so nothing about how a vehicle actually gets detected,
+  // tracked, or speed-estimated changes -- this is purely about where the already-correct boxes
+  // get DRAWN once the device is physically rotated.
+  const [rawFrameInfo, setRawFrameInfo] = useState<{
+    width: number;
+    height: number;
+    orientation: string;
+  } | null>(null);
   // Plate text (plus the real estimated region it was actually cropped from -- see
   // plateLocator.ts -- so the on-screen frame can be sized/positioned to the real plate instead
   // of a generic floating label) is display-only -- keyed by track id, never written anywhere
@@ -379,6 +570,55 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const [savedTrackIds, setSavedTrackIds] = useState<Set<number>>(new Set());
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
+  // Shared by both the detail panel's own "Save" button and the plate action sheet below --
+  // same real write (vehicleHistory.ts's upsertDetectedVehicle) either path takes, so this is
+  // the one place that logic lives instead of being duplicated twice.
+  const savePlateToHistory = useCallback((trackId: number, label: string, plateText: string, box: TrackedBox) => {
+    upsertDetectedVehicle(plateText, {
+      label: label as "Vehicle" | "Heavy Vehicle",
+      speedKmh: box.state === "parked" ? 0 : box.speedKmh,
+      speedKind: box.state === "parked" ? "absolute" : box.speedKind,
+    }).catch((err) => {
+      Sentry.logger.error("vehicle-detection: manual save failed", { error: String(err) });
+    });
+    setSavedTrackIds((prev) => (prev.has(trackId) ? prev : new Set(prev).add(trackId)));
+  }, []);
+
+  // Real, explicit request: tapping a confirmed plate opens a native action sheet instead of
+  // jumping straight to REV Check. "PPSR Search", "VIN Search", and "REV Check" are deliberately
+  // ONE option here, not three -- in this app they're the exact same real backend flow
+  // (RevCheckScreen's runRevCheck, a real PPSR/NEVDIS search keyed on VIN -- see revCheck.ts's
+  // own header), just entered from different starting fields. Presenting them as three separate
+  // buttons that all do the identical thing would be misleading UI, not three real integrations.
+  // "Save to History" stays a real, distinct, idempotent action even though a confirmed plate is
+  // already auto-saved the instant it's read (see captureForPlateAndLightbar) -- tapping it here
+  // is a deliberate, visible confirmation of that save, same write savePlateToHistory above does
+  // for the detail panel's own button.
+  const onPlateAction = useCallback(
+    (box: TrackedBox, plateText: string) => {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: plateText,
+          options: ["Run REV check", "Save to History", "Cancel"],
+          cancelButtonIndex: 2,
+        },
+        (index) => {
+          if (index === 0) {
+            navigation.navigate("RevCheck", {
+              plate: plateText,
+              vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
+              speedKmh: box.state === "parked" ? 0 : box.speedKmh,
+              speedKind: box.state === "parked" ? "absolute" : box.speedKind,
+            });
+          } else if (index === 1) {
+            savePlateToHistory(box.id, box.label, plateText, box);
+          }
+        }
+      );
+    },
+    [navigation, savePlateToHistory]
+  );
+
   const cameraRef = useRef<Camera>(null);
   const sideIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sideCapturingRef = useRef(false);
@@ -392,6 +632,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       unmountedRef.current = true;
     };
   }, []);
+  // Real, confirmed bug: manually calling expo-screen-orientation's unlockAsync()/lockAsync()
+  // here never actually worked on a real device (confirmed via screen recording) -- this screen
+  // is presented via a real navigator route now (see RootNavigator's own VehicleDetection screen
+  // and its `orientation: "all"` option), which is what actually lets it rotate while every
+  // other screen stays portrait-only; see RootNavigator.tsx's header comment on
+  // VehicleDetectionRoute for the full root-cause explanation (a documented conflict between
+  // expo-screen-orientation and react-native-screens, which native-stack uses under the hood).
   const speedTrackerRef = useRef(createSpeedTracker());
   // Mirrors `boxes` state so the side capture loop (a stable, empty-deps useCallback) can read
   // the latest tracked vehicles without depending on the state itself -- same reasoning as
@@ -410,6 +657,12 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // state itself -- keeps it referentially stable (empty deps), so the capture interval effect
   // below doesn't tear down and rebuild every time a plate read resolves.
   const plateTextsRef = useRef(new Map<number, { text: string; region: PlateRegion }>());
+  // Real, explicit request: how much to trim a track's own rendered box inward on each side (see
+  // boxRefine.ts's own header for the full reasoning) -- refreshed by the side loop below every
+  // ~1s cycle, applied purely at render time (box.render below), never touching box.bbox itself
+  // or anything speed/distance math reads. A track with no entry here yet (or one that's never
+  // found a real color boundary) renders completely untrimmed, same as before this existed.
+  const boxTrimRef = useRef<Map<number, BoxTrim>>(new Map());
   const consecutiveFailuresRef = useRef(0);
 
   const [infoDismissed, setInfoDismissed] = useState(false);
@@ -436,6 +689,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // object doesn't fall into either category and isn't guaranteed to reflect updates correctly
   // from inside the separate worklet Runtime.
   const boxedModelShared = useSharedValue<BoxedHybridObject<TensorflowModel> | null>(null);
+  // Real, confirmed lag contributor: this SharedValue kept holding its reference to the boxed
+  // TFLite model (and the GPU/NPU delegate context that comes with it) after the screen closed --
+  // nothing ever cleared it back to null on unmount. tfliteVehicleModel.ts's own module-level
+  // cache is deliberately kept alive across opens for a fast reopen (see its own comment) and is
+  // NOT touched here -- this only drops this one screen instance's own worklet-visible handle
+  // into that cache, so the underlying delegate/thread work it was keeping warm doesn't have to
+  // keep running once there's no camera left to feed it frames.
+  useEffect(() => {
+    return () => {
+      boxedModelShared.value = null;
+    };
+  }, [boxedModelShared]);
 
   // Auto-retries forever with a capped backoff instead of ever dead-ending on a manual "tap
   // Retry" button -- a transient hiccup (a slow first disk read, a momentary GC pause) resolves
@@ -483,10 +748,19 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // plate OCR or lightbar sampling here -- see captureForPlateAndLightbar's own comment for why
   // those stay on the separate, slower side loop.
   const onDetections = useRunOnJS(
-    (detections: RawDetection[], frameWidth: number, frameHeight: number) => {
+    (
+      detections: RawDetection[],
+      personBoxes: [number, number, number, number][],
+      frameWidth: number,
+      frameHeight: number,
+      rawWidth: number,
+      rawHeight: number,
+      orientation: string
+    ) => {
       if (unmountedRef.current) return;
       setPhotoSize({ width: frameWidth, height: frameHeight });
       frameSizeRef.current = { width: frameWidth, height: frameHeight };
+      setRawFrameInfo({ width: rawWidth, height: rawHeight, orientation });
       const suppressed = suppressOverlappingDetections(detections);
       const tracked = speedTrackerRef.current.update(
         suppressed,
@@ -494,7 +768,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         Date.now(),
         egoSpeedRef.current,
         zoomFactorRef.current,
-        placeAndPlayModeRef.current
+        personBoxes
       );
       boxesRef.current = tracked;
       setBoxes(tracked);
@@ -511,6 +785,9 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       }
       for (const id of plateCandidatesRef.current.keys()) {
         if (!liveIds.has(id)) plateCandidatesRef.current.delete(id);
+      }
+      for (const id of boxTrimRef.current.keys()) {
+        if (!liveIds.has(id)) boxTrimRef.current.delete(id);
       }
       let pruned = false;
       for (const id of plateTextsRef.current.keys()) {
@@ -535,6 +812,21 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
 
   const { resize } = useResizePlugin();
   const lastFrameProcessedMs = useSharedValue(0);
+  // Real, confirmed root cause of an otherwise-obvious, close vehicle sometimes not detecting at
+  // all: frame.orientation is a raw, per-tick gravity-derived sensor reading, and iOS's own
+  // gravity sensing genuinely gets ambiguous/noisy at a near-flat dashboard mount angle -- a
+  // single momentary misread here (e.g. reporting "landscape-right" for one tick on a phone
+  // that's actually sitting in portrait the whole time) would rotate that tick's frame the WRONG
+  // way before it ever reaches the model, feeding it a sideways car shape the model was never
+  // trained to recognize -- a real, direct cause of a clean miss on an obvious vehicle, not a
+  // confidence-threshold issue. Debounced via SharedValues (persist across worklet calls, same
+  // pattern as lastFrameProcessedMs above) so a momentary flip has to hold for several
+  // consecutive ticks before the model-feeding rotation actually changes -- filters the sensor
+  // noise without meaningfully lagging behind a real physical rotation (under ~1.2s at this
+  // throttle).
+  const stableFrameOrientation = useSharedValue<string>("portrait");
+  const orientationStreak = useSharedValue(0);
+  const ORIENTATION_DEBOUNCE_TICKS = 4;
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -544,6 +836,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       const now = Date.now();
       if (now - lastFrameProcessedMs.value < FRAME_PROCESSOR_THROTTLE_MS) return;
       lastFrameProcessedMs.value = now;
+
+      if (frame.orientation === stableFrameOrientation.value) {
+        orientationStreak.value = 0;
+      } else {
+        orientationStreak.value += 1;
+        if (orientationStreak.value >= ORIENTATION_DEBOUNCE_TICKS) {
+          stableFrameOrientation.value = frame.orientation;
+          orientationStreak.value = 0;
+        }
+      }
+      const stableOrientation = stableFrameOrientation.value;
 
       // frame.width/frame.height are the RAW camera sensor buffer's dimensions (confirmed from
       // react-native-vision-camera's own native source -- CVPixelBufferGetWidth/Height on the
@@ -560,16 +863,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // read as fake motion), and the missing plate detection (locatePlateRegion estimating a
       // crop off the wrong box). Rotating here to upright before the model ever sees pixels
       // fixes the root cause once, instead of patching each downstream symptom separately.
+      // Reads the DEBOUNCED orientation above, not frame.orientation directly -- see its own
+      // comment for why.
       let rotation: "0deg" | "90deg" | "180deg" | "270deg" = "0deg";
       let uprightWidth = frame.width;
       let uprightHeight = frame.height;
-      if (frame.orientation === "portrait-upside-down") {
+      if (stableOrientation === "portrait-upside-down") {
         rotation = "180deg";
-      } else if (frame.orientation === "landscape-right") {
+      } else if (stableOrientation === "landscape-right") {
         rotation = "90deg";
         uprightWidth = frame.height;
         uprightHeight = frame.width;
-      } else if (frame.orientation === "landscape-left") {
+      } else if (stableOrientation === "landscape-left") {
         rotation = "270deg";
         uprightWidth = frame.height;
         uprightHeight = frame.width;
@@ -586,6 +891,22 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         rotation,
       });
 
+      // Real, explicit request: night mode brightens the frame the model actually sees, before
+      // inference ever runs -- the bundled model was trained overwhelmingly on well-lit daytime
+      // images, so a genuinely dark frame hands it far less real signal to work with than the
+      // same scene would in daylight. A plain per-byte gain (multiply + clamp) on the already-
+      // resized RGB buffer is cheap enough to run on every tick even at this throttle -- 270,000
+      // bytes (300x300x3) of simple arithmetic, not a real cost next to the model's own forward
+      // pass. isNightActiveShared is set from the real sunset/sunrise calculation (or a manual
+      // Settings override) -- see its own declaration above.
+      if (isNightActiveShared.value) {
+        const pixels = new Uint8Array(resized.buffer as ArrayBuffer);
+        for (let i = 0; i < pixels.length; i++) {
+          const boosted = pixels[i] * NIGHT_BRIGHTNESS_GAIN;
+          pixels[i] = boosted > 255 ? 255 : boosted;
+        }
+      }
+
       // unbox() re-materializes the real TfliteModel HybridObject inside this worklet's own
       // Runtime -- see tfliteVehicleModel.ts's own comment on why box()/unbox() is needed here
       // at all. runSync() is the actual native forward pass, blocking this worklet (never the
@@ -596,11 +917,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // This model's standard TFLite_Detection_PostProcess output: 4 tensors, all float32
       // regardless of the quantized input -- [0] normalized [ymin,xmin,ymax,xmax] boxes,
       // [1] class ids, [2] scores, [3] a single-element detection count. See
-      // assets/models/tflite_ssd_mobilenet_v1/labelmap.txt for the full class list; this model
-      // was converted with the background class already excluded from its outputs, so labelmap
-      // line N (1-indexed) corresponds to output class id N-1. Since the frame fed to the model
-      // was already rotated upright above, these normalized coordinates are already in that
-      // same upright space -- scale against uprightWidth/uprightHeight, not the raw sideways
+      // assets/models/tflite_ssd_mobilenet_v2/labelmap.txt for the full class list. Real,
+      // confirmed DIFFERENT indexing than the v1 model this replaced: v1's labelmap excluded the
+      // background class from its outputs (line N, 1-indexed, was output class id N-1); this
+      // Coral-distributed v2 model's raw output class ids match labelmap.txt's own printed
+      // numbers directly, RAW, no offset -- confirmed against Coral's own official pycoral
+      // example (detect_image.py: `labels.get(obj.id, obj.id)`, i.e. the raw model output id is
+      // used as the labelmap lookup key as-is), not assumed. Since the frame fed to the model was
+      // already rotated upright above, these normalized coordinates are already in that same
+      // upright space -- scale against uprightWidth/uprightHeight, not the raw sideways
       // frame.width/frame.height.
       const boxesArr = new Float32Array(outputs[0]);
       const classesArr = new Float32Array(outputs[1]);
@@ -608,15 +933,44 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       const countArr = new Float32Array(outputs[3]);
       const count = Math.min(Math.round(countArr[0] ?? 0), MAX_MODEL_DETECTIONS);
 
+      // Real night-mode threshold relief: a genuinely dark scene still gives the model less
+      // confident signal than daylight even after the brightness boost above, so a real vehicle
+      // that would clear 0.3 in daylight can legitimately land a bit under it at night. Only
+      // loosened while isNightActiveShared is actually true -- daytime detection is completely
+      // unaffected.
+      const minDetectionScore = isNightActiveShared.value
+        ? MIN_DETECTION_SCORE - NIGHT_DETECTION_SCORE_REDUCTION
+        : MIN_DETECTION_SCORE;
+
       const detections: RawDetection[] = [];
+      // Real occupant-count input -- see MIN_PERSON_DETECTION_SCORE's own comment and
+      // speedTracker.ts's OCCUPANT_CABIN_HEIGHT_FRACTION for how these get correlated to a
+      // vehicle box. Collected in this same pass since it's the same model output, at zero
+      // extra inference cost -- just a separate classId branch below.
+      const personBoxes: [number, number, number, number][] = [];
       for (let i = 0; i < count; i++) {
         const score = scoresArr[i];
-        if (score < MIN_DETECTION_SCORE) continue;
         const classId = Math.round(classesArr[i]);
-        // car=3, motorcycle=4, bus=6, truck=8 -- see labelmap.txt.
+
+        if (classId === 0) {
+          if (score < MIN_PERSON_DETECTION_SCORE) continue;
+          const ymin = boxesArr[i * 4 + 0];
+          const xmin = boxesArr[i * 4 + 1];
+          const ymax = boxesArr[i * 4 + 2];
+          const xmax = boxesArr[i * 4 + 3];
+          const w = (xmax - xmin) * uprightWidth;
+          const h = (ymax - ymin) * uprightHeight;
+          if (w <= 0 || h <= 0) continue;
+          personBoxes.push([xmin * uprightWidth, ymin * uprightHeight, w, h]);
+          continue;
+        }
+
+        if (score < minDetectionScore) continue;
+        // car=2, motorcycle=3, bus=5, truck=7 -- see labelmap.txt (raw ids, no offset -- see
+        // this block's own comment above for why that differs from the old v1 model).
         let label: "Vehicle" | "Heavy Vehicle" | null = null;
-        if (classId === 3 || classId === 4) label = "Vehicle";
-        else if (classId === 6 || classId === 8) label = "Heavy Vehicle";
+        if (classId === 2 || classId === 3) label = "Vehicle";
+        else if (classId === 5 || classId === 7) label = "Heavy Vehicle";
         if (!label) continue;
 
         const ymin = boxesArr[i * 4 + 0];
@@ -626,13 +980,36 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         const w = (xmax - xmin) * uprightWidth;
         const h = (ymax - ymin) * uprightHeight;
         if (w <= 0 || h <= 0) continue;
+        // See OVERSIZED_BOX_FRAME_FRACTION's own comment -- a near-full-frame box needs a much
+        // higher score than an ordinary one to be trusted as a real close-up vehicle rather than
+        // a low-confidence misdetection sprawled across most of the screen.
+        const isOversized = xmax - xmin > OVERSIZED_BOX_FRAME_FRACTION || ymax - ymin > OVERSIZED_BOX_FRAME_FRACTION;
+        if (isOversized && score < MIN_SCORE_FOR_OVERSIZED_BOX) continue;
+        // Real, explicit request (screenshot evidence: boxes locking onto static background --
+        // fences, palm fronds, brick walls): an additional sanity check beyond
+        // enforceMinAspectRatio in speedTracker.ts, which only RESHAPES an already-accepted box
+        // after the fact -- it never rejects one outright. A real vehicle viewed from behind/
+        // front/side (the overwhelming common dashcam angle) is never actually taller than it is
+        // wide; a near-square or portrait-shaped raw detection is much more consistent with a
+        // random repeating texture patch (a section of vertical fencing, a clump of foliage) than
+        // any real vehicle silhouette. Rejected outright unless the model's own confidence is
+        // unusually high -- still lets a genuine unusual case (e.g. a real vehicle mostly
+        // occluded down to an odd shape) through, just requires much stronger evidence for it.
+        const aspectRatio = w / h;
+        if (aspectRatio < MIN_ASPECT_RATIO_FOR_LOW_CONFIDENCE && score < HIGH_CONFIDENCE_ASPECT_OVERRIDE) continue;
         detections.push({ label, score, bbox: [xmin * uprightWidth, ymin * uprightHeight, w, h] });
       }
 
       // Only the parsed, tiny result array (plus the upright frame dimensions the boxes are
       // relative to) crosses back to JS here -- never the raw frame or the raw output tensors,
-      // per the explicit Phase 2 spec this rewrite followed.
-      onDetections(detections, uprightWidth, uprightHeight);
+      // per the explicit Phase 2 spec this rewrite followed. frame.width/height (the RAW,
+      // pre-rotation sensor info -- see this worklet's own comment above) also cross over now,
+      // landscape add-on only -- see rawFrameInfo's own comment for why the render side needs
+      // them. Reports the DEBOUNCED orientation (stableOrientation), not frame.orientation
+      // directly, so the render-side remap decision always matches whatever orientation the
+      // model itself actually rotated against this tick -- reporting the raw, possibly-noisier
+      // reading here would let the two sides disagree about which one is "true" for this frame.
+      onDetections(detections, personBoxes, uprightWidth, uprightHeight, frame.width, frame.height, stableOrientation);
     },
     [resize, onDetections]
   );
@@ -659,14 +1036,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       );
       if (!photoFile || unmountedRef.current) return;
       const photo = { uri: toFileUri(photoFile.path), width: photoFile.width, height: photoFile.height };
-      const decoded = await withTimeout(
-        decodePhotoForDetection(photo.uri),
+      // Real, confirmed regression already hit once at full 4K (see photoResolution's own
+      // comment above) -- decoding the FULL still photo in pure JS on every tick doesn't scale
+      // with photoResolution. Only the lightbar sampler actually needs decoded pixels at all;
+      // it gets its own small, natively-resized decode (see LIGHTBAR_SAMPLE_WIDTH's own comment
+      // in vehicleDetection.ts) instead of the full-size one this used to share with the
+      // plate-crop coordinate math below -- that math only ever needed the photo's known
+      // width/height, already available from photoFile itself with no decode at all.
+      const lightbarPhotoPromise = withTimeout(
+        decodePhotoForLightbarSampling(photo.uri),
         SIDE_DECODE_TIMEOUT_MS,
-        "decodePhotoForDetection"
+        "decodePhotoForLightbarSampling"
       );
-      if (unmountedRef.current) return;
-      consecutiveFailuresRef.current = 0;
-      setRecovering(false);
 
       // The vehicle box (box.bbox) is in the Frame Processor's own UPRIGHT coordinate space
       // (frameSizeRef, corrected -- see the Frame Processor's own comment on frame.orientation).
@@ -676,12 +1057,12 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       // landscape-left") and from expo-image-manipulator's own crop implementation (its bounds
       // check compares against the EXIF-corrected UIImage.size, but the actual crop runs
       // against the raw, PRE-rotation CGImage buffer -- so the rect it needs is really in that
-      // raw space, not the upright one the size check implies). decodePhotoForDetection's JPEG
-      // decode (used for lightbar sampling below) reads that same raw, pre-rotation buffer too.
-      // mapUprightBoxToRawPhoto (below) does the same rotation the Frame Processor's own
-      // resize() call does, just inverted -- upright box -> raw photo pixel space -- so both
-      // the lightbar sampler and the plate crop end up reading the actual pixels they're meant
-      // to, not an axis-swapped or rotated region.
+      // raw space, not the upright one the size check implies). mapUprightBoxToRawPhoto (below)
+      // does the same rotation the Frame Processor's own resize() call does, just inverted --
+      // upright box -> raw photo pixel space -- against photo.width/height (PhotoFile's own
+      // known metadata, matching the ACTUAL full-resolution capture the plate crop reads from),
+      // so the plate crop ends up reading the actual pixels it's meant to, not an axis-swapped
+      // or rotated region.
       const frameSize = frameSizeRef.current;
       const photoOrientation = photoFile.orientation;
 
@@ -690,21 +1071,45 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       const nextEmergencyIds = new Set<number>();
       const plateReadPromises: Promise<void>[] = [];
 
+      // Awaited once, up front, rather than inline in the loop below -- every tracked box in
+      // this tick's frame needs the SAME decoded small photo for its own lightbar sample, so
+      // there's no reason to re-await (or, worse, re-trigger) it per box. Checked for unmount
+      // AFTER awaiting (same as the original single-decode version this replaced), since that's
+      // the point real time has actually passed and the component could have gone away.
+      const lightbarPhoto = await lightbarPhotoPromise;
+      if (unmountedRef.current) return;
+      consecutiveFailuresRef.current = 0;
+      setRecovering(false);
+      // Scales a rawBbox (already mapped into the FULL photo's raw pixel space, matching
+      // photo.width/height) down into the lightbar sampler's own smaller decoded space --
+      // decodePhotoForLightbarSampling resizes width-only, preserving aspect ratio, so a single
+      // uniform scale factor (not two independent ones) is always correct here.
+      const lightbarScale = photo.width > 0 ? lightbarPhoto.width / photo.width : 1;
+
       for (const box of boxesRef.current) {
         const rawBbox = frameSize
-          ? mapUprightBoxToRawPhoto(
-              box.bbox,
-              frameSize.width,
-              frameSize.height,
-              decoded.width,
-              decoded.height,
-              photoOrientation
-            )
+          ? mapUprightBoxToRawPhoto(box.bbox, frameSize.width, frameSize.height, photo.width, photo.height, photoOrientation)
           : box.bbox;
+        const lightbarBbox: [number, number, number, number] = [
+          rawBbox[0] * lightbarScale,
+          rawBbox[1] * lightbarScale,
+          rawBbox[2] * lightbarScale,
+          rawBbox[3] * lightbarScale,
+        ];
 
-        if (sampleLightbarActivity(decoded, box.id, rawBbox, nowMs)) {
+        if (sampleLightbarActivity(lightbarPhoto, box.id, lightbarBbox, nowMs)) {
           nextEmergencyIds.add(box.id);
         }
+
+        // Real, explicit request: tighten this track's rendered box against real decoded pixel
+        // content -- see boxRefine.ts's own header. Reuses the exact same lightbarPhoto/
+        // lightbarBbox already computed above for the lightbar sample, so this adds no extra
+        // capture/decode work on top of what the side loop already does every cycle. Trim
+        // fractions (not absolute pixels) so they apply correctly regardless of which coordinate
+        // space the box is actually rendered in -- see its own call site in the render loop.
+        const trim = refineBoxTrim(lightbarPhoto, lightbarBbox);
+        if (trim) boxTrimRef.current.set(box.id, trim);
+        else boxTrimRef.current.delete(box.id);
 
         if (plateTextsRef.current.has(box.id) || platesReadingRef.current.has(box.id)) continue;
         const attempts = plateAttemptsRef.current.get(box.id) ?? 0;
@@ -722,8 +1127,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               [region.x, region.y, region.w, region.h],
               frameSize.width,
               frameSize.height,
-              decoded.width,
-              decoded.height,
+              photo.width,
+              photo.height,
               photoOrientation
             )
           : [region.x, region.y, region.w, region.h];
@@ -738,8 +1143,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         platesReadingRef.current.add(box.id);
         const trackId = box.id;
         plateReadPromises.push(
-          readPlateText(photo.uri, rawRegion)
-            .then((text) => {
+          readPlateTextSmart(photo.uri, rawRegion, plateRecognizerConfiguredRef.current)
+            .then(async (text) => {
               if (!text || unmountedRef.current) return;
               // Confirm before ever showing anything -- see PLATE_CANDIDATE_WINDOW's own
               // comment. A single successful read (even one that matched the plate-shaped
@@ -771,11 +1176,23 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               // vehicle's own speed last updated still saves the freshest number available.
               const trackedBox = boxesRef.current.find((b) => b.id === trackId);
               if (trackedBox) {
-                upsertDetectedVehicle(confirmedText, {
-                  label: trackedBox.label as "Vehicle" | "Heavy Vehicle",
-                  speedKmh: trackedBox.state === "parked" ? 0 : trackedBox.speedKmh,
-                  speedKind: trackedBox.state === "parked" ? "absolute" : trackedBox.speedKind,
-                }).catch((err) => {
+                // Real, explicit request: a saved thumbnail per history entry. Cropped from THIS
+                // tick's already-captured photo (rawBbox, computed above in this same loop
+                // iteration) -- awaited here, before this .then() resolves, since photo.uri gets
+                // deleted the instant every plateReadPromises entry for this tick settles (see
+                // the cleanup right after this loop). Best-effort: saveVehicleThumbnail never
+                // throws, so a crop failure here can't take the real plate-confirm/history-save
+                // below down with it.
+                const thumbnailUri = await saveVehicleThumbnail(photo.uri, rawBbox, `${confirmedText}`);
+                upsertDetectedVehicle(
+                  confirmedText,
+                  {
+                    label: trackedBox.label as "Vehicle" | "Heavy Vehicle",
+                    speedKmh: trackedBox.state === "parked" ? 0 : trackedBox.speedKmh,
+                    speedKind: trackedBox.state === "parked" ? "absolute" : trackedBox.speedKind,
+                  },
+                  thumbnailUri
+                ).catch((err) => {
                   Sentry.logger.error("vehicle-detection: history save failed", { error: String(err) });
                 });
                 setSavedTrackIds((prev) => (prev.has(trackId) ? prev : new Set(prev).add(trackId)));
@@ -855,9 +1272,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         <Text style={styles.permissionText}>
           TrackLine needs camera access to detect vehicles in view.
         </Text>
-        <Pressable style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant camera access</Text>
-        </Pressable>
+        <Button variant="primary" label="Grant camera access" onPress={requestPermission} />
         <Pressable onPress={onClose}>
           <Text style={styles.closeLink}>Close</Text>
         </Pressable>
@@ -880,12 +1295,49 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     );
   }
 
+  // Went through two wrong single-answer theories this session before landing on this -- worth
+  // recording both, since real screenshot evidence (a mounted/near-flat phone: status bar and
+  // "X"/zoom buttons all still in their normal PORTRAIT positions, while the actual scene content
+  // -- including a real "AKAI" label visible in one of the reports -- is rotated 90°) disproved
+  // BOTH of them on their own:
+  //   1. "The preview always shows the RAW sensor orientation" (the original assumption) --
+  //      wrong whenever the interface genuinely does rotate (actively turning the phone by hand),
+  //      where vision-camera's own preview auto-rotates via `previewOrientation` (confirmed from
+  //      its source, Camera.tsx's onPreviewOrientationChanged/RotationHelper.ts) and remapping on
+  //      top of that double-rotates the box.
+  //   2. "The preview always auto-rotates to match the physical device" (this session's first
+  //      fix) -- wrong for a phone mounted close to flat (a dashboard/window-sill dashcam mount,
+  //      the actual real-world case a driving app hits constantly): iOS's own interface
+  //      orientation is gravity-derived and a shallow mount angle often never confidently commits
+  //      to landscape at all, so nothing ever tells vision-camera's preview to rotate -- it's
+  //      still showing the raw, un-rotated sensor buffer, exactly like the screenshots show.
+  // The real signal isn't "is the phone physically landscape" (rawFrameInfo.orientation) OR
+  // "did the interface visually rotate" (isLandscapeLayout, from useWindowDimensions) in
+  // isolation -- it's whether the two AGREE. frame.orientation is read directly off the camera's
+  // own sensor/motion signal (unaffected by whether the app's interface ever actually rotates --
+  // it's already proven reliable for the Frame Processor's own model-feeding rotation above, no
+  // complaints there), while isLandscapeLayout only flips once iOS's interface genuinely commits.
+  // They match whenever the preview really did auto-rotate (case 1) -- no remap needed, box.bbox
+  // already lines up. They DISAGREE exactly in the flat-mount case (2) -- sensor says landscape,
+  // interface never moved, so the preview is still raw -- and that's exactly when the remap is
+  // needed, same math as the still-photo capture path already uses for its own separate raw
+  // buffer below.
+  // frame.orientation reported here is already the Frame Processor worklet's own DEBOUNCED
+  // value (see stableFrameOrientation/orientationStreak in the worklet above) -- filtered at the
+  // source, not re-smoothed again here, so this always matches whatever orientation the model
+  // itself actually rotated against for the tick that produced these boxes.
+  const isLandscapeFrame =
+    rawFrameInfo?.orientation === "landscape-left" || rawFrameInfo?.orientation === "landscape-right";
+  const previewLikelyUnrotated = isLandscapeFrame && !isLandscapeLayout;
+  const displaySize =
+    previewLikelyUnrotated && rawFrameInfo ? { width: rawFrameInfo.width, height: rawFrameInfo.height } : photoSize;
+
   const scale =
-    photoSize && containerSize
-      ? Math.max(containerSize.width / photoSize.width, containerSize.height / photoSize.height)
+    displaySize && containerSize
+      ? Math.max(containerSize.width / displaySize.width, containerSize.height / displaySize.height)
       : 1;
-  const offsetX = photoSize && containerSize ? (containerSize.width - photoSize.width * scale) / 2 : 0;
-  const offsetY = photoSize && containerSize ? (containerSize.height - photoSize.height * scale) / 2 : 0;
+  const offsetX = displaySize && containerSize ? (containerSize.width - displaySize.width * scale) / 2 : 0;
+  const offsetY = displaySize && containerSize ? (containerSize.height - displaySize.height * scale) / 2 : 0;
 
   // Tapping a locked box opens this detail panel -- every field below is read straight off
   // that vehicle's own live tracked state (the same `boxes`/`plateTexts`/`emergencyTrackIds`
@@ -902,8 +1354,19 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           everything else) on Close, so there's no separate "pause the session" state needed
           here. pixelFormat="yuv" is the efficient native default for Frame Processors --
           vision-camera-resize-plugin (used inside frameProcessor above) handles the
-          YUV->RGB conversion this model needs entirely on its own thread. */}
+          YUV->RGB conversion this model needs entirely on its own thread.
+          Landscape add-on only -- key'd on orientation so React fully unmounts and remounts a
+          fresh native preview view across a rotation instead of trying to resize the existing
+          one in place. Real, confirmed reason this is here: the native preview layer
+          (AVCaptureVideoPreviewLayer, always "cover"/resizeAspectFill -- it doesn't letterbox by
+          itself) can end up keeping a stale frame from before the rotation, rendering only in
+          whatever small region its old layout still remembers with the rest of the screen just
+          black, rather than picking up the container's new post-rotation size. A fresh mount
+          guarantees a fresh, correctly-sized layout every time; the brief black flash during the
+          remount is a small, expected cost for a real physical rotation, not a stuck/broken
+          state like the one this fixes. */}
       <Camera
+        key={isLandscapeLayout ? "landscape" : "portrait"}
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
@@ -936,54 +1399,105 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         }
       />
 
-      {/* Real zoom -- changes the actual native capture session (see zoomFactor's own comment
-          above), so this isn't just a cosmetic preview crop: both the Frame Processor and
-          takePhoto() genuinely see the zoomed-in frame, giving the detector more real pixels on
-          a distant vehicle. A single normal/5x toggle, not a fine +/- control -- two clear,
-          always-good states rather than a range that could land somewhere in between with no
-          real benefit. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.zoomToggle,
-          { top: insets.top + spacing.md + 140 },
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={toggleZoom}
-        accessibilityLabel={is5xZoom ? "Switch to normal view" : "Switch to 5x zoom view"}
-        hitSlop={8}
-      >
-        <Text style={styles.zoomToggleText}>{is5xZoom ? "5x" : "1x"}</Text>
-      </Pressable>
+      {/* Real, live indicator -- tied directly to the same isNightActive state that actually
+          drives the frame processor's brightness boost and loosened thresholds above, never a
+          static/decorative element. Only rendered while genuinely active (real sunset+10min
+          calculation, or an explicit manual "Always on" override in Settings -- see
+          sunTimes.ts/SettingsScreen.tsx), so its presence on screen is itself proof the real
+          night-processing path is running, not just configured. */}
+      {isNightActive && (
+        <View
+          pointerEvents="none"
+          style={[styles.nightModeBadge, { top: insets.top + spacing.sm }]}
+        >
+          <Icon name="moon" size={14} color="#0B1220" />
+          <Text style={styles.nightModeBadgeText}>Night mode</Text>
+        </View>
+      )}
 
-      {/* "Place & Play" -- a separate mode switch, per explicit request, not a replacement for
-          the existing handheld/driving detection above. Mount the phone (portrait, same as the
-          rest of the app) facing traffic and every vehicle already gets boxed and tracked
-          simultaneously the same way it always has; this just tells the speed math the camera
-          itself is standing still (see speedTracker.ts's stationary param) instead of trying to
-          combine a moving-vehicle GPS speed that doesn't apply to a stationary mount. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.placeAndPlayToggle,
-          { top: insets.top + spacing.md + 196 },
-          placeAndPlayMode && styles.placeAndPlayToggleActive,
-          pressed && { opacity: pressedOpacity },
-        ]}
-        onPress={() => setPlaceAndPlayMode((v) => !v)}
-        accessibilityLabel={
-          placeAndPlayMode ? "Exit Place & Play mode" : "Enable Place & Play mode -- mount the phone facing traffic"
-        }
-        hitSlop={8}
-      >
-        <Ionicons name="scan-outline" size={16} color={placeAndPlayMode ? "#111827" : "#FFFFFF"} />
-        <Text style={[styles.placeAndPlayToggleText, placeAndPlayMode && styles.placeAndPlayToggleTextActive]}>
-          Place & Play
-        </Text>
-      </Pressable>
+      {/* Real, explicit request: a real, user-draggable 1x-3x zoom slider (see zoomFactor's own
+          comment above for why a fixed bump wasn't enough) -- vertical, right-edge-anchored so
+          it sits naturally under the driver's thumb without covering the live vehicle boxes in
+          the center of frame. Only shown once the device's real zoom range is known and actually
+          offers something to drag between; a device stuck at a single zoom level (min===max)
+          would just show a slider that visibly does nothing. */}
+      {maxZoomFactor > minZoomFactor && (
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.zoomSliderWrap,
+            {
+              top: insets.top + spacing.xl * 3,
+              bottom: insets.bottom + spacing.xl * 3,
+              // insets.right is always 0 in portrait (a no-op there) -- turning the phone to
+              // landscape can put a notch/Dynamic Island's safe area on this same right edge, so
+              // this keeps the slider clear of it instead of rendering partly underneath.
+              right: insets.right + spacing.sm,
+            },
+          ]}
+        >
+          <Text style={styles.zoomSliderLabel}>{(maxZoomFactor / minZoomFactor).toFixed(0)}x</Text>
+          {/* @react-native-community/slider is horizontal-only -- rotated -90deg to read as a
+              vertical zoom dial (matching real camera-app convention). Its `width` becomes the
+              rotated control's visual LENGTH, so it has to equal the wrap's own real measured
+              height, not a guessed constant -- onLayout below feeds that back in since the wrap
+              area is genuinely different heights across devices/orientations (insets vary). */}
+          <View style={styles.zoomSliderTrack} onLayout={(e) => setZoomTrackHeight(e.nativeEvent.layout.height)}>
+            <Slider
+              style={[styles.zoomSlider, { width: zoomTrackHeight }]}
+              minimumValue={minZoomFactor}
+              maximumValue={maxZoomFactor}
+              value={zoomFactor}
+              onValueChange={setZoomFactor}
+              minimumTrackTintColor="#FFFFFF"
+              maximumTrackTintColor="rgba(255,255,255,0.35)"
+              thumbTintColor="#FFFFFF"
+            />
+          </View>
+          <View style={styles.zoomReadout}>
+            <Text style={styles.zoomReadoutText}>{(zoomFactor / minZoomFactor).toFixed(1)}x</Text>
+          </View>
+        </View>
+      )}
 
       {photoSize &&
         containerSize &&
-        boxes.map((box) => {
-          const [x, y, w, h] = box.bbox;
+        boxes
+          // Tracking (speedTrackerRef, above) still runs against the full MIN_DETECTION_SCORE
+          // bar -- only what actually gets DRAWN is held to the higher MIN_RENDER_SCORE, so a
+          // weak read never disappears from tracking, it just doesn't put a shaky box on screen
+          // until it's a read worth trusting.
+          // Same real night relief as MIN_DETECTION_SCORE above, applied to the render bar too --
+          // otherwise a track that legitimately survives night's loosened detection floor would
+          // still get silently hidden on screen by the higher render floor.
+          .filter((box) => box.score >= (isNightActive ? MIN_RENDER_SCORE - NIGHT_DETECTION_SCORE_REDUCTION : MIN_RENDER_SCORE))
+          .map((box) => {
+          // See the scale/offsetX/offsetY comment above -- only remapped into raw-sensor space
+          // when the preview is confirmed likely un-rotated (sensor landscape, interface never
+          // moved); otherwise box.bbox already matches what the auto-rotated preview shows.
+          const displayBbox = previewLikelyUnrotated
+            ? mapUprightBoxToRawPhoto(
+                box.bbox,
+                photoSize.width,
+                photoSize.height,
+                displaySize!.width,
+                displaySize!.height,
+                rawFrameInfo!.orientation
+              )
+            : box.bbox;
+          const [rawX, rawY, rawW, rawH] = displayBbox;
+          // Real, explicit request: tighten the rendered box against real decoded pixel content
+          // (see boxRefine.ts's own header) -- applied here, as fractions of the box's own
+          // width/height, so it's correct in whatever coordinate space displayBbox is actually
+          // in (this remap runs BEFORE any of the edge-clamping/min-size logic below, so that
+          // logic always sees the already-tightened box). Display-only: box.bbox itself (read by
+          // distance/speed math elsewhere) is never touched by this, only this render's own
+          // local x/y/w/h.
+          const trim = boxTrimRef.current.get(box.id);
+          const x = trim ? rawX + rawW * trim.left : rawX;
+          const y = trim ? rawY + rawH * trim.top : rawY;
+          const w = trim ? rawW * (1 - trim.left - trim.right) : rawW;
+          const h = trim ? rawH * (1 - trim.top - trim.bottom) : rawH;
           const isEmergency = emergencyTrackIds.has(box.id);
           const isSelected = selectedTrackId === box.id;
           const plateInfo = plateTexts.get(box.id);
@@ -994,16 +1508,57 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // with an explicit arrow (never presented as the vehicle's real speed) so it isn't
           // mistaken for the same thing. Never a fabricated number either way -- null shows
           // nothing at all.
-          const speedLabel =
-            box.state === "parked"
-              ? "0 km/h"
+          // Format matches the exact reference design: plain "N KMH" (uppercase, no icon, no
+          // colored pill) -- real, confirmed request to replace the old icon+pill badge with
+          // small plain text in the box's bottom-right corner. Still the exact same live
+          // speedKmh/speedKind values the tracker computed, just displayed more plainly.
+          // Real, explicit request: a stale/ghost track (no fresh detection matched it THIS
+          // frame -- box.coasting, re-emitted from speedTracker.ts's own short grace period)
+          // shows no speed at all rather than holding the last real number frozen on screen,
+          // which could otherwise read as a live, currently-true reading for a vehicle that
+          // might already be gone. The box/type tag still holds through the grace period
+          // (deliberately, so a single missed frame doesn't flicker the whole lock off) -- only
+          // the speed text itself is gated on a genuinely current match.
+          // Real, confirmed bug this fixes: combineWithEgoSpeed's "absolute" combination
+          // (ego GPS speed minus the closing rate -- see its own comment in speedTracker.ts) is
+          // only physically valid under its own stated assumption, a vehicle ahead traveling the
+          // SAME direction -- and comes back NEGATIVE exactly when that assumption has silently
+          // broken down (a crossing/oncoming vehicle, or a bad track match), never because the
+          // other vehicle is somehow moving backwards. `Math.max(0, ...)` used to floor that
+          // impossible negative result to a confident-looking "0 KMH" on a vehicle that could
+          // genuinely be moving fast -- the exact "0 on a clearly moving car" complaint. A
+          // negative absolute estimate now hides the label entirely instead of showing a number
+          // the model has no real basis for, same "hide rather than fabricate" rule the rest of
+          // this label already follows for coasting/parked/unknown.
+          const speedLabel = box.coasting
+            ? null
+            : box.state === "parked"
+              ? "PARKED"
               : box.speedKmh === null
                 ? null
                 : box.speedKind === "absolute"
-                  ? `${Math.max(0, Math.round(box.speedKmh))} km/h`
+                  ? box.speedKmh < 0
+                    ? null
+                    : `${Math.round(box.speedKmh)} KMH`
                   : Math.abs(box.speedKmh) < 3
-                    ? "steady"
-                    : `${box.speedKmh > 0 ? "▲" : "▼"} ${Math.round(Math.abs(box.speedKmh))} km/h`;
+                    ? "STEADY"
+                    : `${box.speedKmh > 0 ? "▲" : "▼"} ${Math.round(Math.abs(box.speedKmh))} KMH`;
+          // Real, explicit request for an occupant-count estimate per vehicle. "(est.)" is
+          // never dropped from this label -- see speedTracker.ts's OCCUPANT_CABIN_HEIGHT_
+          // FRACTION comment for exactly why this is a best-effort spatial correlation, not a
+          // certified count, and must never be presented as one. null (box.occupantCount, from
+          // the tracker) shows nothing at all, same "never fabricate a number" rule as speedLabel.
+          const occupantLabel =
+            box.occupantCount === null
+              ? null
+              : `${box.occupantCount} occupant${box.occupantCount === 1 ? "" : "s"} (est.)`;
+          // Real, explicit request for a live distance readout per vehicle, "radar style" --
+          // the same smoothed pinhole-model estimate already computed for the speed math (see
+          // speedTracker.ts's own DISTANCE_SMOOTHING/distanceM comments for the accuracy
+          // caveat), just surfaced on screen now. Shown for every locked box regardless of
+          // moving/parked state -- unlike speed, "how far away is it" stays a meaningful, live
+          // number even for a parked vehicle.
+          const distanceLabel = formatDistance(box.distanceM);
           // Clamped to the visible container -- a close vehicle at 5x zoom (or just one that
           // fills most of the frame at 1x) very plausibly has a real box bigger than the screen
           // itself, with its edges landing well off-screen in every direction. Previously the
@@ -1018,10 +1573,106 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           const rawTopPx = y * scale + offsetY;
           const rawRightPx = rawLeftPx + w * scale;
           const rawBottomPx = rawTopPx + h * scale;
-          const boxLeftPx = Math.max(0, Math.min(rawLeftPx, containerSize.width));
-          const boxTopPx = Math.max(0, Math.min(rawTopPx, containerSize.height));
-          const boxWidthPx = Math.max(0, Math.min(rawRightPx, containerSize.width) - boxLeftPx);
-          const boxHeightPx = Math.max(0, Math.min(rawBottomPx, containerSize.height) - boxTopPx);
+          // Floored/ceilinged at insets.left/insets.right (not 0/containerSize.width) for the same
+          // reason as the insets.top floor below -- in portrait these are always 0 (see the
+          // explainer-banner comment elsewhere in this file), so this is a no-op there, but turning
+          // the phone to landscape moves the notch/Dynamic Island and home-indicator safe areas to
+          // the screen's LEFT or RIGHT edge instead, and without this a box near either landscape
+          // side edge (and its type/speed tag, anchored to it) could render partly underneath one --
+          // real, direct fix for "ensure the box fits the screen" when rotated.
+          const edgeClampedLeftPx = Math.max(insets.left, Math.min(rawLeftPx, containerSize.width - insets.right));
+          // Floored at insets.top (not 0) -- a near-full-frame box's top edge otherwise clamped
+          // straight to the physical top of the full-bleed camera preview, which put the
+          // type/confidence label (rendered 6px inside the box's own top edge, see labelAboveBox
+          // below) directly under the status bar/TestFlight banner instead of below it -- the
+          // real cause of the label text reading as jumbled into "TestFlight" in testing
+          // screenshots.
+          const edgeClampedTopPx = Math.max(insets.top, Math.min(rawTopPx, containerSize.height));
+          const edgeClampedWidthPx = Math.max(
+            0,
+            Math.min(rawRightPx, containerSize.width - insets.right) - edgeClampedLeftPx
+          );
+          const edgeClampedHeightPx = Math.max(0, Math.min(rawBottomPx, containerSize.height) - edgeClampedTopPx);
+          // Second, purely visual safety net on top of the frame-processor's own oversized-box
+          // score gate (see OVERSIZED_BOX_FRAME_FRACTION above) -- caps how much of the screen
+          // the drawn lock box itself is ever allowed to cover, re-centered on the box's own true
+          // center rather than the container's, so a real close-up vehicle still reads as
+          // "locked on tight" instead of a rectangle swallowing the whole preview. Display-only,
+          // same principle as enforceMinAspectRatio in speedTracker.ts -- it never touches
+          // box.bbox itself, so the actual distance/speed estimate (which reads the raw detection
+          // width directly) can't be corrupted by this.
+          const maxBoxWidthPx = containerSize.width * MAX_BOX_RENDER_FRACTION;
+          const maxBoxHeightPx = containerSize.height * MAX_BOX_RENDER_FRACTION;
+          const boxCenterXPx = edgeClampedLeftPx + edgeClampedWidthPx / 2;
+          const boxCenterYPx = edgeClampedTopPx + edgeClampedHeightPx / 2;
+          const clampedWidthPx = Math.min(edgeClampedWidthPx, maxBoxWidthPx);
+          const clampedHeightPx = Math.min(edgeClampedHeightPx, maxBoxHeightPx);
+          // A box clipped entirely off-screen (fully past an edge) must stay at its true, zero
+          // clamped size -- only a box with SOME genuine on-screen area gets the MIN_BOX_RENDER_PX
+          // floor below, otherwise a detection nobody can actually see would render as a fake box
+          // hovering at the container's edge.
+          const hasOnScreenArea = edgeClampedWidthPx > 0 && edgeClampedHeightPx > 0;
+          // See MIN_ON_SCREEN_AREA_FRACTION's own comment -- compares the real on-screen area
+          // against the box's own TRUE, unclamped area (w*scale by h*scale, before any edge
+          // clamping), so this is a genuine "how much of the real vehicle is actually visible"
+          // ratio, not something that can be gamed by a box that's already been clamped down.
+          const trueAreaPx = Math.max(1, w * scale) * Math.max(1, h * scale);
+          const onScreenAreaFraction = hasOnScreenArea ? (edgeClampedWidthPx * edgeClampedHeightPx) / trueAreaPx : 0;
+          if (onScreenAreaFraction < MIN_ON_SCREEN_AREA_FRACTION) return null;
+          // Final display-only safety net, same MIN_BOX_ASPECT_RATIO floor and shrink-height
+          // (never widen) approach as enforceMinAspectRatio in speedTracker.ts -- see that
+          // function's own comment for why shrinking height, not widening width, is the right
+          // correction. box.bbox itself already goes through that exact same floor before it
+          // ever gets here, so in the ordinary case this is a no-op. It stops mattering here
+          // ONLY when displayBbox (above) came out of the previewLikelyUnrotated remap instead
+          // of box.bbox directly -- real, confirmed case (screenshot evidence: a stationary
+          // indoor test, phone held tilted down at a low-to-the-floor object) where
+          // frame.orientation's gravity reading genuinely can't be trusted to rule out a false
+          // "landscape" read for a physical hold angle that's neither fully flat (the dashboard
+          // case this remap is really for) nor fully upright. When that happens, the Frame
+          // Processor rotates the model's own INPUT frame by the same wrong 90 degrees, so the
+          // detector sees a real tall/narrow object (like this chair leg) appearing wide/short in
+          // its rotated input, draws a box that already satisfies the aspect floor THERE, and the
+          // later remap -- applying the same (wrong, but internally self-consistent) rotation
+          // back -- turns that wide/short box tall/narrow again on screen, silently passing the
+          // first floor entirely. Re-applying it here, after any remap and after the
+          // MAX_BOX_RENDER_FRACTION clamp above, is the one place guaranteed to see the box's
+          // final on-screen shape no matter which upstream step actually introduced the
+          // distortion -- this doesn't need to know why, only that a real vehicle's box should
+          // never render taller than it is wide by this much.
+          const boxWidthPx = hasOnScreenArea ? Math.max(clampedWidthPx, MIN_BOX_RENDER_PX) : clampedWidthPx;
+          const boxHeightPx = hasOnScreenArea
+            ? Math.max(
+                MIN_BOX_RENDER_PX / MIN_DISPLAY_ASPECT_RATIO,
+                clampedHeightPx <= 0 || boxWidthPx / clampedHeightPx < MIN_DISPLAY_ASPECT_RATIO
+                  ? boxWidthPx / MIN_DISPLAY_ASPECT_RATIO
+                  : clampedHeightPx
+              )
+            : clampedHeightPx;
+          // Reserves the zoom slider's own screen strip (see ZOOM_SLIDER_RESERVED_WIDTH_PX above)
+          // so the box -- and everything anchored to it (type/speed tag, plate readout) -- never
+          // renders underneath it. Only reserved when the box's own vertical range actually
+          // overlaps the slider's (insets.top/insets.bottom + spacing.xl * 3, matching the
+          // slider's own JSX positioning below) -- a box near the very top or bottom of frame has
+          // no real collision to avoid. The +/-40 buffer accounts for the type tag (rendered above
+          // or inside the box's own top edge) and the speed text (rendered just below the box's
+          // bottom edge) extending past the box's raw top/bottom.
+          const sliderTopPx = insets.top + spacing.xl * 3;
+          const sliderBottomPx = containerSize.height - (insets.bottom + spacing.xl * 3);
+          const boxOverlapsSliderZone =
+            edgeClampedTopPx < sliderBottomPx + 40 && edgeClampedTopPx + edgeClampedHeightPx > sliderTopPx - 40;
+          // + insets.right -- the slider itself shifts left by insets.right in landscape (see its
+          // own JSX below), so the reserved zone has to shift with it or a box could still land
+          // directly under a landscape notch/Dynamic Island sitting to the right of the slider.
+          const rightReservePx = boxOverlapsSliderZone ? ZOOM_SLIDER_RESERVED_WIDTH_PX + insets.right : 0;
+          const boxLeftPx = Math.max(
+            insets.left,
+            Math.min(boxCenterXPx - boxWidthPx / 2, containerSize.width - insets.right - rightReservePx - boxWidthPx)
+          );
+          const boxTopPx = Math.max(
+            insets.top,
+            Math.min(boxCenterYPx - boxHeightPx / 2, containerSize.height - boxHeightPx)
+          );
           const lockColor = isEmergency ? "#DC2626" : isSelected ? "#22D3EE" : speedLockColor(box);
           // Keeps the type/speed labels fully on-screen even when the detected box itself
           // extends past an edge -- a vehicle filling most of the frame very plausibly has its
@@ -1043,7 +1694,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                 hitSlop={16}
                 style={[
                   styles.box,
-                  isEmergency && styles.boxEmergency,
+                  // Emergency coloring is carried entirely by lockColor (fed into targetRect
+                  // below) now that box itself has no border of its own to separately color.
                   isSelected && styles.boxSelected,
                   {
                     left: boxLeftPx,
@@ -1054,30 +1706,62 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                 ]}
               >
                 <TargetCorners width={boxWidthPx} height={boxHeightPx} color={lockColor} />
-                <Text
-                  style={[
-                    styles.boxLabel,
-                    isEmergency && styles.boxLabelEmergency,
-                    { left: labelLeftPx, top: labelAboveBox ? -24 : 6 },
-                  ]}
+                {/* Real, confirmed rebuild matching an exact reference design: the vehicle type
+                    (and, once confirmed, the plate -- see the tag row below) now renders as a
+                    small plain white/black-border TAG attached to the box's own top-left
+                    corner, not a colored bar spanning the box's top edge with a confidence
+                    percentage baked in -- score still gates whether a box renders at all
+                    (MIN_RENDER_SCORE above), it's just no longer printed on screen. Emergency
+                    stays a real, distinct visual (red border + text) since that's a genuine
+                    safety signal, not cosmetic. */}
+                <View
+                  style={[styles.tagRow, { left: labelLeftPx, top: labelAboveBox ? -30 : 6 }]}
+                  pointerEvents="none"
                 >
-                  {isEmergency ? `${box.label} — lights active` : `${box.label} ${Math.round(box.score * 100)}%`}
-                </Text>
-                {/* Top-center, just outside the box edge -- separate from the type/
-                    confidence label at top-left so it never overlaps, and updates live every
-                    frame the tracker emits a speed (at the Frame Processor's own detection
-                    cadence, see FRAME_PROCESSOR_THROTTLE_MS above). */}
-                {speedLabel && (
-                  <View
-                    style={[styles.speedLabelWrap, { top: labelAboveBox ? -24 : 6 }]}
-                    pointerEvents="none"
-                  >
-                    <Text
-                      style={[styles.speedLabel, box.state === "parked" && styles.speedLabelParked]}
-                    >
-                      {speedLabel}
+                  <View style={[styles.vehicleTag, isEmergency && styles.vehicleTagEmergency]}>
+                    <Text style={[styles.vehicleTagText, isEmergency && styles.vehicleTagTextEmergency]}>
+                      {isEmergency ? `${box.label} — lights active` : box.label}
                     </Text>
                   </View>
+                  {plateInfo && (
+                    <View style={styles.vehicleTag}>
+                      <Text style={styles.vehicleTagText}>- {plateInfo.text} -</Text>
+                    </View>
+                  )}
+                  {/* Real, explicit request: a live distance readout alongside type/plate --
+                      see distanceLabel's own comment above for the real estimate this reflects. */}
+                  <View style={styles.vehicleTag}>
+                    <Text style={styles.vehicleTagText}>{distanceLabel}</Text>
+                  </View>
+                </View>
+                {/* Real, explicit request: immediately adjacent to the box's own right edge,
+                    vertically centered -- not stacked below the type/plate tag row. Plain small
+                    text, no icon, no colored pill background. Never a guessed number -- this is
+                    the exact same live speedLabel value the tracker just computed for this
+                    frame, and null (see speedLabel's own comment) for any track without a
+                    genuinely current match this frame. */}
+                {speedLabel && (
+                  <Text
+                    style={[styles.speedTextRight, { top: boxHeightPx / 2 - 8 }]}
+                    pointerEvents="none"
+                  >
+                    {speedLabel}
+                  </Text>
+                )}
+                {/* Stacked directly under the speed text, same right-edge anchor -- see
+                    occupantLabel's own comment above for why "(est.)" always stays in the
+                    text itself, not just a tooltip/footnote a driver could miss. */}
+                {occupantLabel && (
+                  <Text
+                    style={[
+                      styles.speedTextRight,
+                      styles.occupantTextRight,
+                      { top: boxHeightPx / 2 - 8 + (speedLabel ? 18 : 0) },
+                    ]}
+                    pointerEvents="none"
+                  >
+                    {occupantLabel}
+                  </Text>
                 )}
                 {/* Tap a box to lock visual focus on it when several vehicles are in frame --
                     a this-screen, this-session UI aid only (like tapping to focus a camera).
@@ -1085,73 +1769,63 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                     moment the vehicle leaves frame or this screen closes. */}
                 {isSelected && (
                   <View style={styles.selectedBadge} pointerEvents="none">
-                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    <Icon name="checkmark" size={14} color="#FFFFFF" />
                   </View>
                 )}
-              </Pressable>
-              {/* Plate text only ever appears once on-device OCR actually confirms a real read
-                  (see plateOcr.ts) -- never a location guess with nothing behind it. Once
-                  confirmed it's also automatically written to the on-device vehicle history log
-                  (never sent off-device -- see vehicleHistory.ts and the small "Saved" badge
-                  below), not just held in this screen's own session state anymore. The frame
-                  itself is the *real* estimated plate rectangle (plateLocator.ts's region, the
-                  same crop OCR actually read from) in its own real position, not a generic label
-                  floating under the vehicle box -- rendered as a sibling of the vehicle box (not
-                  nested in it) since the plate region has its own independent coordinates in the
-                  source photo. */}
-              {plateInfo &&
-                (() => {
-                  // Same off-screen-edge clamp as the vehicle box above -- a plate region is
-                  // normally a small sub-crop well inside the vehicle box, but on a vehicle box
-                  // that's itself mostly off-screen (a close vehicle at 5x zoom) the plate region
-                  // can still start off-screen too.
-                  const rawPlateLeftPx = plateInfo.region.x * scale + offsetX;
-                  const rawPlateTopPx = plateInfo.region.y * scale + offsetY;
-                  const rawPlateRightPx = rawPlateLeftPx + plateInfo.region.w * scale;
-                  const rawPlateBottomPx = rawPlateTopPx + plateInfo.region.h * scale;
-                  const plateLeftPx = Math.max(0, Math.min(rawPlateLeftPx, containerSize.width));
-                  const plateTopPx = Math.max(0, Math.min(rawPlateTopPx, containerSize.height));
-                  const plateWidthPx = Math.max(0, Math.min(rawPlateRightPx, containerSize.width) - plateLeftPx);
-                  const plateHeightPx = Math.max(0, Math.min(rawPlateBottomPx, containerSize.height) - plateTopPx);
-                  const plateLabelLeftPx = Math.max(0, -plateLeftPx);
-                  const plateLabelAbove = plateTopPx - 26 >= insets.top + spacing.xs;
-                  const isSaved = savedTrackIds.has(box.id);
-                  return (
-                    <View
-                      pointerEvents="none"
-                      style={[
-                        styles.plateFrame,
-                        { left: plateLeftPx, top: plateTopPx, width: plateWidthPx, height: plateHeightPx },
-                      ]}
-                    >
-                      <TargetCorners width={plateWidthPx} height={plateHeightPx} color="#22D3EE" />
+                {/* Real, confirmed rebuild matching an exact reference design: the confirmed
+                    plate text now shows directly in the tag row above (next to the vehicle
+                    type tag), not as a separate frame drawn around the actual plate's location
+                    in the image -- simpler, and matches the reference exactly. Rev Check + the
+                    "Saved" badge (real, on-device history write -- see vehicleHistory.ts) still
+                    render, just anchored below the tag row instead of below the old plate
+                    frame. Nested INSIDE the box's own Pressable (not a Fragment sibling like the
+                    old plate-region frame was) since labelLeftPx/labelAboveBox are offsets
+                    relative to the box's own local frame, not full container-relative pixels. */}
+                {plateInfo &&
+                  (() => {
+                    const isSaved = savedTrackIds.has(box.id);
+                    return (
                       <View
-                        style={[
-                          styles.plateFrameLabelWrap,
-                          { left: plateLabelLeftPx, top: plateLabelAbove ? -26 : 6 },
-                        ]}
+                        pointerEvents="box-none"
+                        style={[styles.plateActionsWrap, { left: labelLeftPx, top: (labelAboveBox ? -30 : 6) + 32 }]}
                       >
-                        <Text style={styles.plateFrameLabelText} numberOfLines={1}>
-                          {plateInfo.text}
-                        </Text>
-                      </View>
-                      {isSaved && (
-                        <View style={styles.savedBadge} pointerEvents="none">
-                          <View style={styles.savedBadgeInner}>
-                            <Ionicons name="checkmark-circle" size={12} color="#22C55E" />
+                        <Chip
+                          icon="ellipsis-horizontal"
+                          label="Actions"
+                          onPress={() => onPlateAction(box, plateInfo.text)}
+                          onMap
+                        />
+                        {isSaved && (
+                          <View style={styles.savedBadgeInner} pointerEvents="none">
+                            <Icon name="checkmark-circle" size={12} color="#22C55E" />
                             <Text style={styles.savedBadgeText}>Saved</Text>
                           </View>
-                        </View>
-                      )}
-                    </View>
-                  );
-                })()}
+                        )}
+                      </View>
+                    );
+                  })()}
+              </Pressable>
             </React.Fragment>
           );
         })}
 
       {(status !== "running" || !infoDismissed) && (
-      <View style={[styles.banner, { top: insets.top + spacing.md }]}>
+      <View
+        style={[
+          styles.banner,
+          isLandscapeLayout && styles.bannerLandscape,
+          {
+            top: insets.top + spacing.md,
+            // Side-anchored (right, capped width) instead of spanning the full width once
+            // landscape -- a full-width explainer banner would otherwise stretch across almost
+            // the entire wide frame, covering far more of the live camera view than it needs to.
+            // insets.right/left are always 0 in portrait, so the portrait case is unchanged.
+            ...(isLandscapeLayout
+              ? { right: insets.right + spacing.lg }
+              : { left: insets.left + spacing.lg, right: insets.right + spacing.lg }),
+          },
+        ]}
+      >
         {status === "loading-model" && (
           <>
             <ActivityIndicator color="#fff" />
@@ -1181,13 +1855,18 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               "0 km/h" once a vehicle has been still for a couple of seconds. A plate number
               only appears once the same on-device text read comes back at least twice in a
               row — it's never stored or sent anywhere, just shown live while that vehicle
-              stays in view. Tap any box for its full details. Use the 1x/5x button on the right
-              to zoom in on a distant vehicle — this zooms the real camera capture, not just the
-              preview, so it can genuinely help detect something too far away to register at 1x.
+              stays in view. Tap any box for its full details. Drag the zoom slider on the right
+              (1x-3x) to zoom in on a distant vehicle — this zooms the real camera capture, not
+              just the preview, so it can genuinely help detect something too far away to
+              register at 1x.
             </Text>
-            <Pressable onPress={dismissInfo} hitSlop={12} accessibilityLabel="Dismiss">
-              <Ionicons name="close" size={20} color="#fff" />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor="#fff"
+              onPress={dismissInfo}
+              accessibilityLabel="Dismiss"
+            />
           </>
         )}
       </View>
@@ -1211,24 +1890,50 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           Tapping the same box again (or its own close) clears the selection, same as tapping
           it once already does for the on-box highlight. */}
       {selectedBox && (
-        <View style={[styles.detailPanel, { bottom: insets.bottom + spacing.xl + 64 }]}>
+        <View
+          style={[
+            styles.detailPanel,
+            isLandscapeLayout && styles.detailPanelLandscape,
+            {
+              bottom: insets.bottom + spacing.xl + 64,
+              // Side-anchored (right, capped width) instead of spanning the full width once
+              // landscape, same reasoning as the explainer banner above. insets.right/left are
+              // always 0 in portrait, so that case is unchanged.
+              ...(isLandscapeLayout
+                ? { right: insets.right + spacing.lg }
+                : { left: insets.left + spacing.lg, right: insets.right + spacing.lg }),
+            },
+          ]}
+        >
           <View style={styles.detailPanelHeader}>
             <Text style={styles.detailPanelTitle}>{selectedBox.label}</Text>
-            <Pressable onPress={() => setSelectedTrackId(null)} hitSlop={10} accessibilityLabel="Close vehicle details">
-              <Ionicons name="close" size={18} color="#9CA3AF" />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor="#9CA3AF"
+              onPress={() => setSelectedTrackId(null)}
+              accessibilityLabel="Close vehicle details"
+            />
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Speed</Text>
-            <Text style={styles.detailValue}>
-              {selectedBox.state === "parked"
-                ? "0 km/h"
-                : selectedBox.speedKmh === null
-                  ? "—"
-                  : selectedBox.speedKind === "absolute"
-                    ? `${Math.max(0, Math.round(selectedBox.speedKmh))} km/h`
-                    : `${Math.round(Math.abs(selectedBox.speedKmh))} km/h closing`}
-            </Text>
+            {/* Bright, colored speed pill (same thresholds as the on-box lock color -- under 50
+                amber, 50-70 green, over 70 red) instead of plain white text, per explicit
+                request -- the color itself reads as fast/normal/slow at a glance, the same way
+                the box's own lock color already does. */}
+            <View style={[styles.speedPill, { backgroundColor: speedLockColor(selectedBox) }]}>
+              {/* Red is dark/saturated enough that white text reads far better on it than the
+                  dark text amber/green (both bright, light colors) need instead. */}
+              <Text style={[styles.speedPillText, speedLockColor(selectedBox) === "#DC2626" && styles.speedPillTextOnRed]}>
+                {selectedBox.state === "parked"
+                  ? "Parked"
+                  : selectedBox.speedKmh === null
+                    ? "—"
+                    : selectedBox.speedKind === "absolute"
+                      ? `${Math.max(0, Math.round(selectedBox.speedKmh))} km/h`
+                      : `${Math.round(Math.abs(selectedBox.speedKmh))} km/h closing`}
+              </Text>
+            </View>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Plate</Text>
@@ -1245,44 +1950,25 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               captureForPlateAndLightbar's plate-confirm callback), but that happens silently in
               the background with only a small badge on the plate frame as feedback. This gives
               a direct, visible action + confirmation for the exact same save, same gating as
-              "Run REV Check" (a real plate is the vehicle's only stable identity to save under). */}
-          <Pressable
+              "Run REV check" (a real plate is the vehicle's only stable identity to save under). */}
+          <Button
+            variant="secondary"
+            icon={selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "checkmark-circle" : "download-outline"}
+            label={!selectedPlate ? "Waiting for plate to save…" : selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "Saved to vehicle history" : "Save capture"}
             onPress={() => {
               if (!selectedPlate || selectedTrackId === null) return;
-              upsertDetectedVehicle(selectedPlate.text, {
-                label: selectedBox.label as "Vehicle" | "Heavy Vehicle",
-                speedKmh: selectedBox.state === "parked" ? 0 : selectedBox.speedKmh,
-                speedKind: selectedBox.state === "parked" ? "absolute" : selectedBox.speedKind,
-              }).catch((err) => {
-                Sentry.logger.error("vehicle-detection: manual save failed", { error: String(err) });
-              });
-              setSavedTrackIds((prev) => (prev.has(selectedTrackId) ? prev : new Set(prev).add(selectedTrackId)));
+              savePlateToHistory(selectedTrackId, selectedBox.label, selectedPlate.text, selectedBox);
             }}
             disabled={!selectedPlate}
-            style={({ pressed }) => [
-              styles.saveButton,
-              !selectedPlate && styles.saveButtonDisabled,
-              pressed && !!selectedPlate && { opacity: pressedOpacity },
-            ]}
-          >
-            <Ionicons
-              name={selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "checkmark-circle" : "download-outline"}
-              size={16}
-              color={selectedPlate ? colors.accent : "#9CA3AF"}
-            />
-            <Text style={[styles.saveButtonText, !selectedPlate && styles.saveButtonTextDisabled]}>
-              {!selectedPlate
-                ? "Waiting for plate to save…"
-                : selectedTrackId !== null && savedTrackIds.has(selectedTrackId)
-                  ? "Saved to vehicle history"
-                  : "Save capture"}
-            </Text>
-          </Pressable>
+            style={{ flex: 1 }}
+          />
           {/* Only enabled once there's an actual confirmed plate to check -- a REV check needs a
               real plate number, not a guess, same rule the plate label itself follows. Navigates
               straight into the same RevCheckScreen a saved history entry opens, prefilled with
               this vehicle's live label/speed/plate (see RevCheckScreen's own summary card). */}
-          <Pressable
+          <Button
+            variant="primary"
+            label={selectedPlate ? "Run REV check" : "Waiting for plate read…"}
             onPress={() =>
               selectedPlate &&
               navigation.navigate("RevCheck", {
@@ -1293,16 +1979,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               })
             }
             disabled={!selectedPlate}
-            style={({ pressed }) => [
-              styles.revCheckButton,
-              !selectedPlate && styles.revCheckButtonDisabled,
-              pressed && !!selectedPlate && { opacity: pressedOpacity },
-            ]}
-          >
-            <Text style={styles.revCheckButtonText}>
-              {selectedPlate ? "Run REV Check" : "Waiting for plate read…"}
-            </Text>
-          </Pressable>
+            style={{ flex: 1 }}
+          />
         </View>
       )}
 
@@ -1311,18 +1989,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           A transparent circular X (not a solid white pill) so it reads as a real camera-
           overlay exit control rather than a floating opaque button competing with the actual
           vehicle boxes for attention. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.closeButton,
-          { bottom: insets.bottom + spacing.xl },
-          pressed && { opacity: pressedOpacity },
-        ]}
+      <FloatingButton
+        tone="map"
+        icon="close"
         onPress={onClose}
         accessibilityLabel="Close vehicle detection"
-        hitSlop={12}
-      >
-        <Ionicons name="close" size={26} color="#FFFFFF" />
-      </Pressable>
+        style={[styles.closeSpot, { bottom: insets.bottom + spacing.xl }]}
+      />
     </View>
   );
 }
@@ -1345,40 +2018,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
-  permissionButton: {
-    backgroundColor: "#2563EB",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  permissionButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
   closeLink: {
     color: "#9CA3AF",
     marginTop: 8,
   },
+  // No border of its own -- targetRect (rendered as this box's child) is the single, correctly
+  // colored outline now, matching the plain thin rectangle in the reference screenshots. This
+  // used to also carry its own faint static border (from the old four-corner-bracket look,
+  // which needed a separate "always visible" outline connecting the brackets) -- redundant now
+  // that targetRect is a full rectangle already, and it fought with targetRect's own sharper
+  // corners at the edges.
   box: {
     position: "absolute",
-    borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.35)",
-    // Rounded lock outline (a "rounded square," per explicit request) instead of a sharp
-    // rectangle -- the corner brackets below are rounded to match (borderTopLeftRadius etc.)
-    // so they read as one continuous rounded lock frame around the vehicle, not brackets
-    // floating over a square edge.
-    borderRadius: 14,
   },
-  corner: {
+  // Thin, tight rectangle -- see TargetCorners' own comment for why this replaced the old
+  // four-corner-bracket style. 1.5px keeps it reading as a clean tracking outline, not a bulky
+  // block that eats into the vehicle it's supposed to be hugging.
+  targetRect: {
     position: "absolute",
-    borderColor: "#F59E0B",
-  },
-  cornerTL: { top: -1, left: -1, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 12 },
-  cornerTR: { top: -1, right: -1, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 12 },
-  cornerBL: { bottom: -1, left: -1, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 12 },
-  cornerBR: { bottom: -1, right: -1, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 12 },
-  boxEmergency: {
-    borderColor: "#DC2626",
+    top: 0,
+    left: 0,
+    borderWidth: 1.5,
+    borderRadius: 2,
   },
   boxSelected: {
     borderColor: "#22D3EE",
@@ -1395,84 +2056,64 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  boxLabel: {
+  // Real, confirmed rebuild matching an exact reference design -- a plain white/black-border
+  // tag attached to the box's own top-left corner (row so a confirmed plate tag can sit right
+  // next to the vehicle-type tag), replacing the old colored bar-with-percentage label.
+  tagRow: {
     position: "absolute",
-    top: -22,
-    left: 0,
-    backgroundColor: "#F59E0B",
-    color: "#111827",
-    fontSize: 11,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    ...shadow.low,
+    flexDirection: "row",
+    gap: 4,
   },
-  boxLabelEmergency: {
-    backgroundColor: "#DC2626",
-    color: "#fff",
+  // Real, confirmed request -- no background/border, smaller and tighter than the earlier
+  // white-tag version. A text shadow (not a solid background) is what keeps this legible
+  // against whatever's actually behind it in the live camera feed -- sky, road, a light wall --
+  // without the bulky boxed-label look.
+  vehicleTag: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
-  speedLabelWrap: {
-    position: "absolute",
-    top: -22,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  speedLabel: {
-    backgroundColor: "#111827",
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    ...shadow.low,
-  },
-  speedLabelParked: {
-    backgroundColor: "#4B5563",
-  },
-  // Sized/positioned to the real estimated plate rectangle (see the render call site) -- an
-  // exact frame around the actual plate, not a generic fixed-size badge floating near it.
-  plateFrame: {
-    position: "absolute",
-    borderWidth: 2,
-    borderColor: "#22D3EE",
-    borderRadius: 3,
-  },
-  // On top of the plate's own target rectangle (not below it) -- reads as a real label
-  // tagging the locked-on plate, per explicit request.
-  plateFrameLabelWrap: {
-    position: "absolute",
-    top: -24,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  plateFrameLabelText: {
-    backgroundColor: "#22D3EE",
-    color: "#111827",
+  vehicleTagText: {
+    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
-    fontFamily: "monospace",
-    letterSpacing: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    ...shadow.low,
+    textShadowColor: "rgba(0, 0, 0, 0.9)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  savedBadge: {
+  // Emergency stays a real, distinct visual (not cosmetic -- a genuine confirmed lightbar
+  // signature, see lightbarDetector.ts) even without a solid background to color.
+  vehicleTagEmergency: {},
+  vehicleTagTextEmergency: {
+    color: "#FF5C5C",
+  },
+  // Real, explicit request: renders immediately adjacent to the box's own RIGHT edge, not
+  // stacked below the type/plate tag row -- left: "100%" (rather than right: 0, which anchors
+  // INSIDE the box's own right edge) plus a small marginLeft puts this just outside it. Vertical
+  // centering is done at the call site (an inline `top` override, since it depends on this box's
+  // own real height).
+  speedTextRight: {
     position: "absolute",
-    bottom: -20,
-    left: 0,
-    right: 0,
+    left: "100%",
+    marginLeft: spacing.xs + 2,
+    // Real, explicit request -- was a plain neutral grey, changed to a real, visible blue for
+    // the live km/h readout specifically.
+    color: "#3B82F6",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  // Deliberately a plain, less urgent grey/smaller size than speedTextRight -- this is a
+  // best-effort estimate (see occupantLabel's own comment), not a live safety-relevant reading
+  // like speed, and shouldn't visually compete with it for a driver's glance.
+  occupantTextRight: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  plateActionsWrap: {
+    position: "absolute",
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    gap: 3,
+    gap: 6,
   },
   savedBadgeInner: {
     flexDirection: "row",
@@ -1490,14 +2131,20 @@ const styles = StyleSheet.create({
   },
   banner: {
     position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
+    // left/right deliberately NOT set here -- always supplied inline at the call site (which
+    // differs between portrait, full-width, and landscape, side-anchored-only) so there's never
+    // a stale value from this base style left un-overridden.
     backgroundColor: "rgba(17, 24, 39, 0.85)",
     borderRadius: radius.md,
     padding: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm + 2,
+  },
+  // Landscape add-on only -- see the call site's own comment.
+  bannerLandscape: {
+    width: "48%",
+    maxWidth: 420,
   },
   bannerText: {
     color: "#fff",
@@ -1522,12 +2169,21 @@ const styles = StyleSheet.create({
   },
   detailPanel: {
     position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
-    backgroundColor: "rgba(17, 24, 39, 0.94)",
+    // left/right deliberately NOT set here -- see banner's own comment, same reasoning.
+    // Lightened way down from a near-opaque slab (was rgba(...,0.94)) per explicit request for
+    // a more professional look that doesn't just block out the camera feed behind it -- the
+    // subtle border (rather than a heavy fill) is what now gives the panel its shape/definition.
+    backgroundColor: "rgba(17, 24, 39, 0.45)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.18)",
     borderRadius: radius.lg,
     padding: spacing.md,
     ...shadow.high,
+  },
+  // Landscape add-on only -- see the call site's own comment.
+  detailPanelLandscape: {
+    width: "46%",
+    maxWidth: 380,
   },
   detailPanelHeader: {
     flexDirection: "row",
@@ -1558,91 +2214,72 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
+  speedPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  speedPillText: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  speedPillTextOnRed: {
+    color: "#FFFFFF",
+  },
   detailValueAlert: {
     color: "#F87171",
   },
-  saveButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs + 2,
-    marginTop: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    paddingVertical: spacing.sm,
-  },
-  saveButtonDisabled: {
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-  saveButtonText: {
-    color: colors.accent,
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  saveButtonTextDisabled: {
-    color: "#9CA3AF",
-  },
-  revCheckButton: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm + 2,
-    alignItems: "center",
-  },
-  revCheckButtonDisabled: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  revCheckButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  closeButton: {
+  closeSpot: { position: "absolute", alignSelf: "center" },
+  zoomSliderWrap: {
     position: "absolute",
-    alignSelf: "center",
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "rgba(17, 24, 39, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  zoomToggle: {
-    position: "absolute",
-    right: spacing.md,
+    right: spacing.sm,
     width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(17, 24, 39, 0.55)",
+    alignItems: "center",
+  },
+  zoomSliderLabel: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: spacing.xs,
+  },
+  zoomSliderTrack: {
+    flex: 1,
+    width: 40,
     alignItems: "center",
     justifyContent: "center",
   },
-  zoomToggleText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
+  zoomSlider: {
+    height: 40,
+    transform: [{ rotate: "-90deg" }],
   },
-  placeAndPlayToggle: {
-    position: "absolute",
-    right: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.sm + 2,
-    height: 32,
-    borderRadius: 16,
+  zoomReadout: {
+    marginTop: spacing.xs,
     backgroundColor: "rgba(17, 24, 39, 0.55)",
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
   },
-  placeAndPlayToggleActive: {
-    backgroundColor: "#F59E0B",
-  },
-  placeAndPlayToggleText: {
+  zoomReadoutText: {
     color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
   },
-  placeAndPlayToggleTextActive: {
-    color: "#111827",
+  nightModeBadge: {
+    position: "absolute",
+    left: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FBBF24",
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    ...shadow.low,
+  },
+  nightModeBadgeText: {
+    color: "#0B1220",
+    fontSize: 12,
+    fontWeight: "800",
   },
 });

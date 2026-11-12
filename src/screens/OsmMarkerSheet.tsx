@@ -1,11 +1,14 @@
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator } from "react-native";
+import { Button, FloatingButton } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, StyleSheet, Image, ActivityIndicator } from "react-native";
+import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { env } from "@/config/env";
 import type { LatLng } from "@/utils/polyline";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 
 export type OsmMarkerKind = "traffic_light" | "speed_camera";
@@ -136,14 +139,13 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
                 <MaterialCommunityIcons name={ICON_NAMES[kind] as any} size={20} color={colors.text} />
                 <Text style={styles.title}>{LABELS[kind]}</Text>
               </View>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="close"
+                iconColor={colors.textMuted}
                 onPress={onClose}
-                hitSlop={12}
-                style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
                 accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </Pressable>
+              />
             </View>
             <Text style={styles.subtitle}>
               {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
@@ -164,7 +166,7 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
                 )}
                 {imageStatus === "error" && (
                   <View style={styles.imageOverlay}>
-                    <Ionicons name="image-outline" size={22} color={colors.textMuted} />
+                    <Icon name="image-outline" size={22} color={colors.textMuted} />
                     <Text style={styles.imageErrorText}>Street View image unavailable right now</Text>
                   </View>
                 )}
@@ -172,29 +174,23 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
                     tryAnotherAngle's own comment. Not shown while the image itself is still
                     loading/erroring so it never sits on top of that state's own UI. */}
                 {imageStatus === "loaded" && (
-                  <Pressable
+                  <FloatingButton
+                    icon="sync"
+                    size={44}
                     onPress={tryAnotherAngle}
                     disabled={findingAngle}
-                    hitSlop={10}
-                    style={({ pressed }) => [
-                      styles.angleButton,
-                      pressed && !findingAngle && { opacity: pressedOpacity },
-                    ]}
                     accessibilityLabel="Try another angle if this image is blocked"
+                    style={styles.angleSpot}
                   >
-                    {findingAngle ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Ionicons name="sync" size={16} color="#FFFFFF" />
-                    )}
-                  </Pressable>
+                    {findingAngle ? <ActivityIndicator size="small" color={colors.text} /> : undefined}
+                  </FloatingButton>
                 )}
               </View>
             )}
             <Text style={styles.caption}>
               Real Google Street View imagery of this spot -- location from OpenStreetMap
               community data. If the shot is blocked (e.g. by a passing truck), tap{" "}
-              <Ionicons name="sync" size={11} color={colors.textMuted} /> on the photo to try a
+              <Icon name="sync" size={11} color={colors.textMuted} /> on the photo to try a
               different real angle or a nearby capture.
             </Text>
           </>
@@ -235,14 +231,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
   },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   subtitle: {
     fontSize: 13,
     color: colors.textMuted,
@@ -277,17 +265,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: spacing.lg,
   },
-  angleButton: {
-    position: "absolute",
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(17, 24, 39, 0.6)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  angleSpot: { position: "absolute", top: spacing.sm, right: spacing.sm },
   caption: {
     fontSize: 12,
     color: colors.textMuted,

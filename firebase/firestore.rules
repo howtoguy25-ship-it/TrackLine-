@@ -25,6 +25,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.confirmCount == 0
+        && request.resource.data.denyCount == 0
         && request.resource.data.hiddenBy == {}
         && request.resource.data.type in ['police', 'emergency_vehicle', 'hazard', 'camera', 'crash', 'traffic_light']
         && request.resource.data.expiresAt is timestamp
@@ -38,33 +39,42 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.createdBy);
 
       // Anyone signed in can update — but only to set their OWN key in hiddenBy (a real,
-      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly) or bump confirmCount by exactly
-      // 1; every other field, including anyone else's hiddenBy entry, must stay untouched. This
-      // is what keeps "Hide" a per-user, non-destructive, self-only action -- "other users who
-      // hide them can only be hidden for themselves."
+      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly), or bump confirmCount or
+      // denyCount by exactly 1 (the automatic proximity "Still here? / Not here" prompt -- see
+      // MapScreen's AlertStillHereCard); every other field, including anyone else's hiddenBy
+      // entry, must stay untouched. This is what keeps "Hide" a per-user, non-destructive,
+      // self-only action -- "other users who hide them can only be hidden for themselves."
       allow update: if isSignedIn()
-        && onlyHideOrConfirmChanged()
-        && (hiddenByAddsSelfOnly() || confirmCountIncrementedByOne());
+        && onlyHideOrVoteChanged()
+        && (hiddenByAddsSelfOnly() || confirmCountIncrementedByOne() || denyCountIncrementedByOne());
     }
 
-    function onlyHideOrConfirmChanged() {
+    function onlyHideOrVoteChanged() {
       // affectedKeys() already only contains keys whose value actually changed, so
-      // restricting it to these two fields guarantees every other field is untouched.
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenBy', 'confirmCount']);
+      // restricting it to these three fields guarantees every other field is untouched.
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenBy', 'confirmCount', 'denyCount']);
     }
 
     // hiddenBy is a map of uid -> the ms timestamp they hid it (see types/alert.ts) -- this only
     // ever allows a write that changes THE CALLER'S OWN key within that map (setting or
-    // refreshing their own hide), never anyone else's, and never touches confirmCount in the
-    // same write.
+    // refreshing their own hide), never anyone else's, and never touches confirmCount/denyCount
+    // in the same write.
     function hiddenByAddsSelfOnly() {
       return request.resource.data.hiddenBy.diff(resource.data.hiddenBy).affectedKeys().hasOnly([request.auth.uid])
         && request.resource.data.hiddenBy[request.auth.uid] is number
-        && request.resource.data.confirmCount == resource.data.confirmCount;
+        && request.resource.data.confirmCount == resource.data.confirmCount
+        && request.resource.data.denyCount == resource.data.denyCount;
     }
 
     function confirmCountIncrementedByOne() {
       return request.resource.data.confirmCount == resource.data.confirmCount + 1
+        && request.resource.data.denyCount == resource.data.denyCount
+        && request.resource.data.hiddenBy == resource.data.hiddenBy;
+    }
+
+    function denyCountIncrementedByOne() {
+      return request.resource.data.denyCount == resource.data.denyCount + 1
+        && request.resource.data.confirmCount == resource.data.confirmCount
         && request.resource.data.hiddenBy == resource.data.hiddenBy;
     }
 
@@ -110,6 +120,130 @@ service cloud.firestore {
       allow write: if isSignedIn() && request.auth.uid == uid;
     }
 
+    // Real, explicit request (Ghost mode + visibility control, Part 3) -- "Position written to
+    // Firestore presence/{uid} via Cloud Function ONLY." Every client write is rejected outright
+    // (updatePresence/clearPresence in firebase/functions/index.js use the Admin SDK, which
+    // bypasses these rules entirely) -- this is what actually enforces "ONLY", not a convention
+    // this app merely expects clients to follow. Any signed-in driver can read/list the
+    // collection (Part 3's own client needs this to show nearby Trackys), which is safe because
+    // the Cloud Function itself never writes a raw or current GPS fix, only road-snapped points
+    // that are already at least 60s old (see presencePending below). What a reader can learn
+    // is a property of what's IN each doc, not something a read-time rule could filter
+    // per-field anyway (Firestore security rules operate per-document, not per-field). One doc
+    // per uid, overwritten every update and trimmed to a few minutes of path, is also what
+    // makes "no uid-history queries" true: there's no history collection to query.
+    match /presence/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ADD-ON Part B -- the server-side "60s privacy delay" buffer. Holds a driver's most
+    // recent, NOT-yet-old-enough-to-show points; updatePresence (Admin SDK) is the only thing
+    // that ever touches it. No client can read it, including the driver's own -- if any client
+    // could, the delay would only be a convention.
+    match /presencePending/{uid} {
+      allow read, write: if false;
+    }
+
+    // Real, explicit request -- "[Wave 👋] rate-limited 1/10min/blockable." This per-sender-
+    // per-target rate-limit doc is read/written only by sendWave (Admin SDK) -- a client could
+    // otherwise just delete its own cooldown doc to bypass the rate limit entirely.
+    match /waves/{waveId} {
+      allow read, write: if false;
+    }
+
+    // Character voices: how many new sentences each driver has had synthesized today. Written
+    // only by synthesizePersonaSpeech (Admin SDK) -- a client that could write its own count
+    // could simply reset it and spend the ElevenLabs quota without limit.
+    match /personaUsage/{uid} {
+      allow read, write: if false;
+    }
+
+    // Live Traffic NSW: one shared snapshot of current road incidents, written every few
+    // minutes by refreshNswTraffic (Admin SDK). It's public road information, so any signed-in
+    // driver may read it; nobody can write it from a phone.
+    match /trafficNsw/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Real, explicit request -- "Block/report from card." A block is the BLOCKING driver's own
+    // list of who THEY'VE blocked -- safe to let them write directly (same self-only-write
+    // reasoning as alerts.ts's own hiddenBy map), and only they can read it back (e.g. a future
+    // "blocked drivers" management list). sendWave/presence reads it server-side via the Admin
+    // SDK regardless of this read restriction.
+    match /blocks/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Real, explicit request -- the other half of "Block/report from card." A report is a
+    // simple, safe, self-attributed create: reportedBy must be the caller's own uid and
+    // reportedUid must be a different real uid, enforced right here rather than needing a
+    // dedicated Cloud Function the way sendWave's rate-limit/block logic does. No client read
+    // or update/delete at all -- only the admin can review reports (same convention as the
+    // `broadcasts` collection), and a report can never be edited or withdrawn once filed.
+    // Photos drivers add to a place page. Created "pending" by the uploader; only the project
+    // owner can approve (or reject) one. Other drivers can read a photo only once approved --
+    // the app's query asks for approved ones, which these rules allow.
+    match /placePhotos/{photoId} {
+      allow read: if isSignedIn()
+        && (resource.data.status == "approved" || resource.data.uploaderUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.uploaderUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.placeId is string
+        && request.resource.data.placeId.size() > 0
+        && request.resource.data.placeId.size() <= 300
+        && request.resource.data.storagePath == "placePhotos/" + request.auth.uid + "/" + photoId + ".jpg";
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.uploaderUid == request.auth.uid);
+    }
+
+    // "This place is wrong" reports from the place page. Self-attributed, read only by the
+    // project owner, never edited.
+    match /placeReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.placeId is string
+        && request.resource.data.reason in ["wrong_location", "closed", "wrong_name", "other"];
+      allow update, delete: if false;
+    }
+
+    match /userReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.reportedUid is string
+        && request.resource.data.reportedUid != request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Real, owner-only install/activity tracking for the mobile Owner Dashboard -- one doc per
+    // device, written by EVERY session (including the app's default anonymous one, unlike
+    // users/{uid} above which only ever gets a doc for a real sign-in). This is what makes
+    // "total installs" and "active right now" real numbers instead of only covering accounts
+    // that actually signed in. A device's own uid can only ever write its OWN doc (own install
+    // record, own heartbeat, own push token); only the admin can list the whole collection to
+    // compute real counts.
+    match /deviceSessions/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Real send-history log for the owner's broadcast-notification button (see
+    // broadcastNotification in firebase/functions/index.js, which is the only thing that ever
+    // writes here -- via the Admin SDK, bypassing these rules -- after a real send actually
+    // completes). Owner-only read so the dashboard can show real past sends, not a fabricated
+    // list; no client write at all, including the owner's own device, since a fake row here
+    // would misrepresent a broadcast that never actually went out.
+    match /broadcasts/{broadcastId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Real vehicle REV check (PPSR) provider credentials -- split into two docs so the raw
     // secret key and its own "is a real provider actually connected" status can have
     // genuinely different read rules (Firestore rules are per-document, not per-field).
@@ -129,6 +263,32 @@ service cloud.firestore {
       // "not connected" and skip the paid purchase flow entirely when nothing's configured,
       // without ever needing the real key to make that call. Only the owner can flip it, and
       // only ever alongside actually saving/clearing the real key above (see SettingsScreen.tsx).
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Same two-doc split as config/revCheckProvider/revCheckStatus above, for the second,
+    // plate-based vehicle-lookup provider (RegCheck/carregistrationapi.com.au -- see
+    // runPlateLookup in firebase/functions/index.js). A real, separate paid credential from the
+    // PPSR key above, so it gets its own admin-only doc rather than being folded into
+    // config/revCheckProvider.
+    match /config/plateLookupProvider {
+      allow read, write: if isAdmin();
+    }
+
+    match /config/plateLookupStatus {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Same two-doc split again, for the Plate Recognizer cloud OCR provider (see recognizePlate
+    // in firebase/functions/index.js) -- a real, paid platerecognizer.com account, used as a
+    // cloud alternative to VehicleDetectionScreen's own on-device plate reader when connected.
+    match /config/plateRecognizerProvider {
+      allow read, write: if isAdmin();
+    }
+
+    match /config/plateRecognizerStatus {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }

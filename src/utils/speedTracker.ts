@@ -34,6 +34,23 @@ export interface TrackedBox {
   // informational for callers that want it; the box itself renders identically either way, per
   // explicit request that this read as one continuous, strong lock, not a flicker.
   coasting: boolean;
+  // Real, explicit request for an occupant count per vehicle -- see OCCUPANT_CONFIRM_FRAMES'
+  // own comment for what this actually is: a spatial correlation between this model's own
+  // "person" class detections and each vehicle's cabin region, confirmed-frame-smoothed the
+  // same way confirmCount gates a brand-new vehicle track. null until a vehicle has been
+  // tracked long enough to produce a first confirmed read. This is a coarse, best-effort
+  // ESTIMATE, not a certified count -- a person detector was never trained or validated against
+  // "someone visible through a windshield/side window from an external moving camera," and
+  // tint/glare/occlusion/angle all genuinely degrade it. Never use this for any enforcement or
+  // compliance decision without real-world validation first.
+  occupantCount: number | null;
+  // Real, explicit request for a live distance readout per vehicle, same "radar style" idea as
+  // the speed/plate labels -- this is the exact same smoothed pinhole-model estimate
+  // (DISTANCE_SMOOTHING) already computed internally for the speed math above, just surfaced to
+  // callers now instead of staying internal-only. Same accuracy caveat as speed itself (see this
+  // file's own header): a real but rough estimate from assumed vehicle width + FOV, not a
+  // radar/lidar-grade reading.
+  distanceM: number;
 }
 
 interface InternalTrack {
@@ -57,10 +74,31 @@ interface InternalTrack {
   // vehicle parked, instead of one still frame (a red light, momentary occlusion) suppressing
   // its speed.
   lowMovementSinceMs: number | null;
+  // Smoothed (MOVEMENT_SMOOTHING), not the raw per-frame centroid displacement -- see that
+  // constant's own comment for the real, confirmed bug this fixes (a genuinely parked vehicle
+  // stuck perpetually reading "0 KMH" instead of ever settling to "PARKED").
+  smoothedMovementRatio: number;
   // Consecutive frames of above-threshold movement seen *while parked* -- requires a few in a
   // row before resuming live speed, so a single noisy frame (camera shake) doesn't flicker a
   // truly parked car back to a fake speed reading.
   aboveThresholdStreak: number;
+  // Real, explicit request: a brand-new track must be independently re-detected on
+  // CONFIRM_FRAMES_REQUIRED consecutive frames before it's ever handed to a caller to render --
+  // see that constant's own comment for why this specifically targets one-off spurious
+  // detections (a lucky match on a fence/foliage texture pattern that doesn't repeat) without
+  // meaningfully delaying a real vehicle, which keeps getting re-detected every tick by
+  // definition. Counts real matches only -- never incremented by a grace-period re-emission.
+  confirmCount: number;
+  // The most recent raw (unconfirmed) occupant-count read for this track -- compared against
+  // each new tick's raw read so a SUSTAINED run of the same number (not one single read) is
+  // what actually moves occupantCount. -1 is a real sentinel ("no raw read yet"), never a
+  // legitimate count, so a brand-new track's first-ever read always starts its own fresh streak
+  // rather than accidentally matching this placeholder.
+  occupantCandidate: number;
+  occupantCandidateStreak: number;
+  // The actual CONFIRMED, displayed count -- see TrackedBox.occupantCount's own comment. null
+  // until occupantCandidateStreak first clears OCCUPANT_CONFIRM_FRAMES.
+  occupantCount: number | null;
 }
 
 // A parked car's box still jitters a pixel or two frame-to-frame from detector noise alone --
@@ -74,8 +112,26 @@ interface InternalTrack {
 // each call site below: the threshold widens with zoom so the same real-world tremor doesn't
 // register as more motion just because the frame is more zoomed in.
 const NOISE_THRESHOLD_RATIO = 0.015;
+// Real, confirmed bug (screenshot evidence: a plainly parked car reading a stuck "0 KMH" instead
+// of ever settling to "PARKED"): the moving/parked state machine below used the RAW, single-frame
+// centroid displacement directly against NOISE_THRESHOLD_RATIO -- any one frame's jitter clearing
+// that bar (a raw detector box that isn't perfectly stable frame to frame, especially one loosely
+// bound against an adjacent textured background like foliage) reset lowMovementSinceMs straight
+// back to null, so the sustained PARKED_AFTER_MS streak this needs could never accumulate even
+// though the vehicle was never actually moving -- it just kept re-computing a near-zero "closing
+// rate" out of pure jitter forever, the same way DISTANCE_SMOOTHING already exists to tame
+// equivalent jitter in the distance/speed signal itself. Smoothing the movement ratio the same
+// way (an EMA, not the raw per-frame value) means one noisy frame nudges it up without resetting
+// the whole streak, while genuinely sustained real movement still clearly clears the threshold
+// within a tick or two.
+const MOVEMENT_SMOOTHING = 0.35;
 const PARKED_AFTER_MS = 2500;
-const RESUME_AFTER_FRAMES = 3;
+// Lowered from 3 -- per explicit request that a car pulling away from a stop picks its speed
+// back up immediately, not after a noticeably longer pause than PARKED_AFTER_MS took to settle
+// on "parked" in the first place. 2 consecutive above-threshold frames (at the ~300ms Frame
+// Processor throttle, ~600ms) is still enough of a real, sustained streak to reject a single
+// noisy frame -- see this constant's own use below -- just not a third one on top of that.
+const RESUME_AFTER_FRAMES = 2;
 
 // How long a track survives a missed detection before its identity is given up on -- a
 // partially-visible or edge-of-frame vehicle can easily fail to detect for a single frame
@@ -92,6 +148,76 @@ const RESUME_AFTER_FRAMES = 3;
 // This alone doesn't fix that -- see the grace-period loop's own comment for the actual fix --
 // but a slightly longer window gives handheld camera shake more real margin to resolve within.
 const TRACK_GRACE_MS = 900;
+// Real, explicit request (screenshot evidence: boxes locking onto static background -- fences,
+// palm fronds, brick walls -- indefinitely): a brand-new track's very first detection is exactly
+// as likely to be a one-off spurious high-confidence misread on a repeating texture as a real
+// vehicle just entering frame -- there was previously nothing here distinguishing the two before
+// rendering a box the driver has to look at. A real vehicle keeps getting independently
+// re-detected on the very next tick, by definition (it's still there, still driving); a lucky
+// false spike on a fence/foliage pattern usually doesn't repeat identically. Requiring 2
+// consecutive REAL matches (not a grace-period carry-forward -- see confirmCount's own comment)
+// before a track is ever included in `result` below filters out one-off spikes with essentially
+// no added latency for a genuine vehicle (one extra ~200ms Frame Processor tick).
+const CONFIRM_FRAMES_REQUIRED = 2;
+
+// Real, explicit request: an occupant count per tracked vehicle. This correlates the SAME
+// already-bundled model's own "person" class detections (see VehicleDetectionScreen.tsx's
+// frame processor -- classId 0 in the v2 labelmap) against each vehicle's own box, spatially --
+// no separate model, no extra inference cost. Stated plainly because accuracy claims here carry
+// real weight: this model was trained and validated on ordinary COCO pedestrian photos, never
+// on "a person visible through a windshield/side window from an external moving camera," which
+// is a materially harder case (glass tint/glare/reflection, partial occlusion by pillars/
+// headrests, small apparent size at normal driving distance). Treat every number this produces
+// as a best-effort ESTIMATE, not a verified count -- never a basis for any enforcement or
+// compliance decision without real-world validation against ground truth first.
+//
+// A person-box only counts toward a vehicle if its center falls inside this fraction of the
+// vehicle box's own height, measured down from the top -- approximating "the cabin/glass area"
+// rather than the bonnet/bumper/wheels, so a pedestrian merely standing or walking near a
+// vehicle's lower half at ground level doesn't get counted as an occupant.
+const OCCUPANT_CABIN_HEIGHT_FRACTION = 0.85;
+// Same "sustained, not a single reading" principle as CONFIRM_FRAMES_REQUIRED/RESUME_AFTER_
+// FRAMES elsewhere in this file -- a person detection flickering in/out for one frame (glare,
+// motion blur, a head momentarily behind a pillar) shouldn't flip the displayed count; only a
+// run of identical raw reads this long does.
+const OCCUPANT_CONFIRM_FRAMES = 3;
+// A real sanity ceiling, not a tuned accuracy bound -- guards against a pathological frame (a
+// crowd of pedestrians genuinely standing right behind/beside a parked vehicle, all spatially
+// within its cabin band) producing an obviously-not-real "12 occupants" instead of something at
+// least physically plausible for a normal passenger vehicle.
+const OCCUPANT_COUNT_MAX = 8;
+
+function countOccupantCandidates(
+  vehicleBbox: [number, number, number, number],
+  personBoxes: [number, number, number, number][]
+): number {
+  const [vx, vy, vw, vh] = vehicleBbox;
+  const cabinBottom = vy + vh * OCCUPANT_CABIN_HEIGHT_FRACTION;
+  let count = 0;
+  for (const p of personBoxes) {
+    const px = p[0] + p[2] / 2;
+    const py = p[1] + p[3] / 2;
+    if (px >= vx && px <= vx + vw && py >= vy && py <= cabinBottom) count++;
+  }
+  return Math.min(count, OCCUPANT_COUNT_MAX);
+}
+
+/** Shared confirm-frame smoothing for the occupant count, reused identically across the
+ *  matched/new-track/grace-period branches below -- see OCCUPANT_CONFIRM_FRAMES' own comment.
+ *  prevCandidate: -1 (the real "no prior raw read" sentinel) for a brand-new track. */
+function updateOccupantEstimate(
+  vehicleBbox: [number, number, number, number],
+  personBoxes: [number, number, number, number][],
+  prevCandidate: number,
+  prevStreak: number,
+  prevConfirmed: number | null
+): { candidate: number; streak: number; confirmed: number | null } {
+  const raw = countOccupantCandidates(vehicleBbox, personBoxes);
+  const streak = raw === prevCandidate ? prevStreak + 1 : 1;
+  const confirmed = streak >= OCCUPANT_CONFIRM_FRAMES ? raw : prevConfirmed;
+  return { candidate: raw, streak, confirmed };
+}
+
 // How far (relative to the larger of the incoming detection's and the candidate track's own
 // box size) a detection's center may drift from a track's last known center and still count as
 // the same vehicle. 1.2x (the previous, detection-size-only value) was tight enough that an
@@ -123,46 +249,116 @@ const DISTANCE_SMOOTHING = 0.35;
 // impossible jump.
 const MAX_ACCEL_KMH_PER_SEC = 25;
 
+// Real, confirmed false-positive this directly fixes: a clearly parked/stationary vehicle
+// reading a small nonzero "closing" speed (e.g. 14 km/h at 5x zoom) purely from box-width
+// detector jitter, not any real motion. Scaled by zoom the same way NOISE_THRESHOLD_RATIO is,
+// since the same pixel-level width jitter maps to a bigger apparent distance swing at higher
+// zoom. See its own call site below for how it's applied.
+const CLOSING_RATE_DEADZONE_KMH = 8;
+
 // Below this ego speed, GPS's own noise floor makes combining it with the closing-rate signal
 // less reliable than just showing the closing rate honestly on its own -- and at very low
 // speed (e.g. stopped at lights) the "vehicle ahead, same direction of travel" assumption this
 // combination relies on holds much less often (cross traffic, pedestrians, a car turning).
 const EGO_SPEED_MIN_MPS = 1.5; // ~5.4 km/h
 
+// Real, confirmed false-positive this directly fixes: the whole speed model (see this file's own
+// header) only holds for a vehicle traveling roughly ALONG the camera's own sightline -- toward
+// or away from it. A vehicle genuinely crossing in front (an intersection, oncoming traffic
+// turning across, a car in an adjacent lane cutting across) barely changes DISTANCE from the
+// camera over a brief sampling window even while clearly, visibly moving, which the closing-rate
+// math alone reads as "not moving relative to camera" -- producing a confident-looking but false
+// "0 KMH"/"STEADY" on an obviously moving car, exactly the reported bug. The one signal this
+// model can actually check without a depth sensor: a vehicle sweeping sideways across the frame
+// (its box center moving horizontally fast relative to its own box size) is a real, physical
+// sign the sightline-closing assumption doesn't hold right now, regardless of what the distance
+// math says -- so the fix is to suppress (hide) the speed reading for exactly as long as that's
+// true, not report a number the model has no real basis for. Recovers immediately once the
+// vehicle's apparent horizontal motion settles back down (e.g. it straightens out ahead of you).
+// 1.5 box-widths of pure horizontal travel per second is a deliberately generous bar -- ordinary
+// camera shake/minor heading changes shouldn't trip it, a vehicle actually sweeping across the
+// frame does.
+const LATERAL_SWEEP_WIDTHS_PER_SEC = 1.5;
+
 /** Real relative-velocity kinematics, not a guess: for a vehicle ahead of the camera traveling
  *  the same direction (the actual, overwhelmingly common case for a forward-facing phone
  *  mounted while driving -- this is not claimed to hold for a vehicle crossing at an angle or
  *  genuinely oncoming, which this app has no way to distinguish from vision alone), the target
  *  vehicle's own road speed = ego's GPS speed minus the closing rate between them (closing
- *  rate positive while approaching). Falls back to reporting the closing rate itself,
- *  correctly labeled as such rather than as the target's real speed, whenever ego GPS speed
- *  isn't available or the phone itself is too close to stationary for the combination to be
- *  trustworthy -- see EGO_SPEED_MIN_MPS. Never fabricates a number either way. */
+ *  rate positive while approaching).
+ *
+ *  Auto-detects the "camera itself isn't moving" (formerly the manual "Place & Play" toggle)
+ *  case instead of requiring it to be switched on by hand -- per explicit request, vehicle
+ *  detection now always behaves this way automatically the moment it has a real (even if
+ *  near-zero) GPS reading, rather than needing a separate mode. Whenever ego GPS speed is
+ *  confidently known to be low (a phone that's mounted/propped/handheld and not being driven
+ *  around), the closing/receding rate between the camera and the target vehicle genuinely IS
+ *  that vehicle's own real road speed (same "traveling roughly along the camera's own sightline"
+ *  caveat as the driving case above), not just a proxy for it -- so it's reported as a real
+ *  "absolute" speed. Only falls back to the honestly-labeled, un-combined "closing" rate when
+ *  ego speed isn't known AT ALL yet (no GPS fix), since that's the one case where whether the
+ *  camera itself is moving is genuinely unknown, not just low. Never fabricates a number either
+ *  way. */
 function combineWithEgoSpeed(
   closingKmh: number | null,
   state: "moving" | "parked",
-  egoSpeedMps: number | null | undefined,
-  // True for "Place & Play" mode -- the phone is deliberately mounted stationary (propped up
-  // facing traffic), not carried in a moving vehicle. This is exactly the case the doc comment
-  // above already calls out: with zero ego motion, the closing/receding rate between the camera
-  // and the target vehicle genuinely IS that vehicle's real road speed (for the same "traveling
-  // roughly along the camera's own sightline, not crossing at a sharp angle" caveat as the
-  // driving case above), not just a proxy for it -- so it's correctly labeled "absolute" here,
-  // not "closing", regardless of whatever egoSpeedMps GPS noise reports for a phone sitting
-  // still.
-  stationary: boolean
+  egoSpeedMps: number | null | undefined
 ): { speedKmh: number | null; speedKind: "absolute" | "closing" | null } {
   if (state === "parked" || closingKmh === null) return { speedKmh: null, speedKind: null };
-  if (stationary) return { speedKmh: closingKmh, speedKind: "absolute" };
   if (egoSpeedMps != null && egoSpeedMps > EGO_SPEED_MIN_MPS) {
     const egoKmh = egoSpeedMps * 3.6;
     return { speedKmh: egoKmh - closingKmh, speedKind: "absolute" };
+  }
+  if (egoSpeedMps != null) {
+    return { speedKmh: closingKmh, speedKind: "absolute" };
   }
   return { speedKmh: closingKmh, speedKind: "closing" };
 }
 
 function boxCenter(bbox: [number, number, number, number]): [number, number] {
   return [bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2];
+}
+
+function boxIoU(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const [ax, ay, aw, ah] = a;
+  const [bx, by, bw, bh] = b;
+  const interLeft = Math.max(ax, bx);
+  const interTop = Math.max(ay, by);
+  const interRight = Math.min(ax + aw, bx + bw);
+  const interBottom = Math.min(ay + ah, by + bh);
+  const interW = Math.max(0, interRight - interLeft);
+  const interH = Math.max(0, interBottom - interTop);
+  const interArea = interW * interH;
+  if (interArea <= 0) return 0;
+  const unionArea = aw * ah + bw * bh - interArea;
+  return unionArea > 0 ? interArea / unionArea : 0;
+}
+
+// Real, confirmed gap this closes: VehicleDetectionScreen.tsx's own suppressOverlappingDetections
+// dedupes RAW, per-tick detections before they ever reach the tracker -- but it runs once, on
+// that tick's raw boxes, before any matching/smoothing happens. It has no way to catch two
+// already-CONFIRMED, separately-tracked boxes that end up overlapping heavily after the fact (a
+// transient mismatch spawning a second track for the same real vehicle a tick or two after the
+// first one already locked on) -- which is exactly what "duplicate labels on the one real
+// vehicle" looks like once it's past the raw-detection stage. A second, same-shaped dedup pass
+// over this function's own final `result` (confirmed/smoothed tracks, not raw detections) catches
+// that case specifically. Threshold set a bit higher than the raw pass's 0.25 -- these are
+// smoothed, confirmed boxes, not jittery raw ones, so two genuinely separate vehicles parked/
+// driving close together are less likely to overlap this much than two tracks actually describing
+// the same real vehicle are.
+const TRACK_DEDUP_IOU_THRESHOLD = 0.4;
+
+function dedupeOverlappingTracks(result: TrackedBox[]): TrackedBox[] {
+  if (result.length < 2) return result;
+  // Highest score first, same greedy-NMS-style priority as the raw-detection pass -- the
+  // stronger read of the (likely) one real vehicle is kept, the weaker duplicate is dropped.
+  const sorted = [...result].sort((a, b) => b.score - a.score);
+  const kept: TrackedBox[] = [];
+  for (const box of sorted) {
+    if (kept.some((k) => boxIoU(k.bbox, box.bbox) > TRACK_DEDUP_IOU_THRESHOLD)) continue;
+    kept.push(box);
+  }
+  return kept;
 }
 
 function smoothBbox(
@@ -213,14 +409,32 @@ function clampShrink(
 // into estimateDistanceM/speed, which read the raw detection's own width directly, so this can't
 // corrupt the physics-based speed estimate the way inflating the tracked box's width naively
 // would if distance were derived from it after the fact.
-const MIN_BOX_ASPECT_RATIO = 1.15;
+// Raised (1.15 -> 1.4) -- real, confirmed evidence (screenshot of a boat-on-trailer misclassified
+// as "Heavy Vehicle") showed 1.15 clearing the floor but still reading as a tall, narrow box, not
+// a real vehicle's actual proportions -- 1.15 is barely wider than square, not enough margin for
+// a typical vehicle's real width:height ratio from behind/front (closer to 1.4-1.8:1 for most
+// cars/SUVs at typical dashcam distance).
+const MIN_BOX_ASPECT_RATIO = 1.4;
 
+// Real, confirmed bug (screenshot evidence): this used to always fix a too-narrow-for-its-height
+// box by WIDENING width to match that height. But the height is very often the axis the detector
+// actually got wrong -- a box bleeding into background (a fence, a shed roof, open sky) above/
+// below the real vehicle -- and widening based on an already-oversized height just made the box
+// even bigger, not tighter. Confirmed exactly this on a real vehicle box spanning nearly the full
+// frame height while barely wider than the car itself. Shrinks height down to match width
+// instead: width is generally the more trustworthy axis for a side/rear vehicle view (a car's
+// left/right edges are usually genuinely in-frame and contrasty against the road, while its top
+// edge blurs into whatever's directly behind/above it). Stays symmetric around the box's own
+// original vertical center, so this never drifts the box off the real vehicle -- display-only,
+// same principle as before: box.bbox itself (fed to estimateDistanceM/speed) is never touched by
+// a naive inflation.
 function enforceMinAspectRatio(bbox: [number, number, number, number]): [number, number, number, number] {
   const [x, y, w, h] = bbox;
   const minW = h * MIN_BOX_ASPECT_RATIO;
   if (w >= minW) return bbox;
-  const cx = x + w / 2;
-  return [cx - minW / 2, y, minW, h];
+  const maxH = w / MIN_BOX_ASPECT_RATIO;
+  const cy = y + h / 2;
+  return [x, cy - maxH / 2, w, maxH];
 }
 
 // Zooming in narrows the real field of view, which is exactly equivalent (in this pinhole
@@ -251,15 +465,19 @@ export function createSpeedTracker() {
     // pass null/undefined and every box still gets a real (just differently-labeled) speed
     // reading -- see combineWithEgoSpeed.
     egoSpeedMps?: number | null,
-    // The camera's actual current zoom factor (1 = normal/neutral, 5 = the app's 5x toggle) --
-    // see estimateDistanceM's and NOISE_THRESHOLD_RATIO's own comments for why both the distance
-    // estimate and the parked-vehicle noise floor need to know this. Defaults to 1 (normal zoom)
-    // so existing callers that don't pass it keep their previous behavior exactly.
+    // The camera's actual current zoom factor (1 = normal/neutral, up to 3 = the app's real
+    // 1x-3x zoom slider, fully continuous, not just fixed steps) --
+    // see estimateDistanceM's, NOISE_THRESHOLD_RATIO's, and CLOSING_RATE_DEADZONE_KMH's own
+    // comments for why the distance estimate, the parked-vehicle noise floor, AND the closing-
+    // rate noise floor all need to know this. Defaults to 1 (normal zoom) so existing callers
+    // that don't pass it keep their previous behavior exactly.
     zoomFactor = 1,
-    // True in "Place & Play" mode -- see combineWithEgoSpeed's own comment for why a genuinely
-    // stationary, mounted phone gets the closing rate labeled "absolute" speed directly instead
-    // of going through the ego-GPS-speed combination meant for a phone being driven around.
-    stationary = false
+    // This tick's raw "person" class detections (classId 0 in the v2 labelmap -- see
+    // VehicleDetectionScreen.tsx's frame processor), in the SAME coordinate space as
+    // `detections` above. Optional/defaults to empty so existing callers that don't pass it
+    // keep their previous behavior exactly -- occupantCount just stays null for everyone. See
+    // OCCUPANT_CABIN_HEIGHT_FRACTION's own comment for how these get correlated to a vehicle.
+    personBoxes: [number, number, number, number][] = []
   ): TrackedBox[] {
     const unmatched = new Set(tracks.map((t) => t.id));
     const result: TrackedBox[] = [];
@@ -294,7 +512,11 @@ export function createSpeedTracker() {
         matchedIds.add(best.id);
 
         const dispRatio = Math.hypot(cx - best.center[0], cy - best.center[1]) / imageWidthPx;
-        const movingNow = dispRatio >= NOISE_THRESHOLD_RATIO * Math.max(zoomFactor, 1);
+        // See MOVEMENT_SMOOTHING's own comment -- an EMA of the per-frame displacement, not the
+        // raw value itself, is what the moving/parked decision below actually reacts to.
+        const smoothedMovementRatio =
+          best.smoothedMovementRatio + (dispRatio - best.smoothedMovementRatio) * MOVEMENT_SMOOTHING;
+        const movingNow = smoothedMovementRatio >= NOISE_THRESHOLD_RATIO * Math.max(zoomFactor, 1);
 
         let state = best.state;
         let lowMovementSinceMs = best.lowMovementSinceMs;
@@ -323,9 +545,26 @@ export function createSpeedTracker() {
         const distanceM = best.distanceM + (rawDistanceM - best.distanceM) * DISTANCE_SMOOTHING;
 
         const dtSec = (nowMs - best.lastSeenMs) / 1000;
+        // See LATERAL_SWEEP_WIDTHS_PER_SEC's own comment -- a real, physical sign the sightline-
+        // closing assumption doesn't hold right now, independent of whatever the distance/closing
+        // math below computes. Uses the track's own last known width (not this tick's bbox, not
+        // computed yet) -- close enough for a ratio check, and avoids ordering this after bbox.
+        const lateralPxPerSec = dtSec > 0 ? Math.abs(cx - best.center[0]) / dtSec : 0;
+        const isLateralCrossing = lateralPxPerSec > best.bbox[2] * LATERAL_SWEEP_WIDTHS_PER_SEC;
         if (state === "moving" && dtSec > 0.15) {
           const closingMPerSec = (best.distanceM - distanceM) / dtSec;
           let rawKmh = closingMPerSec * 3.6;
+          // Real, confirmed false-positive: a genuinely stationary vehicle (parked, or just not
+          // yet held steady long enough to trip the centroid-based PARKED_AFTER_MS state above)
+          // still showed a small but nonzero "closing" speed purely from box-width detector
+          // jitter -- worse at high zoom, where estimateDistanceM's own zoom-scaled focal length
+          // means the same few pixels of width noise maps to a proportionally bigger swing in
+          // estimated distance. Snapping small readings to exactly 0 here (before they ever reach
+          // the smoothing/acceleration-clamp below) stops that jitter from ever settling into a
+          // stable-looking but fake nonzero number -- while a real vehicle pulling away still
+          // clears this floor within a tick or two and picks up its speed immediately, same as
+          // MAX_ACCEL_KMH_PER_SEC already allows for the upper end.
+          if (Math.abs(rawKmh) < CLOSING_RATE_DEADZONE_KMH * Math.max(zoomFactor, 1)) rawKmh = 0;
           if (best.speedKmh !== null) {
             // Clamp to a physically plausible acceleration -- see MAX_ACCEL_KMH_PER_SEC.
             const maxDeltaKmh = MAX_ACCEL_KMH_PER_SEC * dtSec;
@@ -341,12 +580,34 @@ export function createSpeedTracker() {
         }
 
         const bbox = enforceMinAspectRatio(clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING)));
+        // Capped, not left to grow unbounded -- only ever compared against CONFIRM_FRAMES_REQUIRED,
+        // so there's no reason for this to keep climbing for the lifetime of a long-tracked
+        // vehicle.
+        const confirmCount = Math.min(best.confirmCount + 1, CONFIRM_FRAMES_REQUIRED);
+        const {
+          candidate: occupantCandidate,
+          streak: occupantCandidateStreak,
+          confirmed: occupantCount,
+        } = updateOccupantEstimate(
+          bbox,
+          personBoxes,
+          best.occupantCandidate,
+          best.occupantCandidateStreak,
+          best.occupantCount
+        );
         // `speedKmh` above (fed back into the track for next frame's smoothing) always stays
         // the closing/receding rate -- that's the real underlying signal being smoothed frame
         // to frame. The OTHER vehicle's actual road speed (what a driver actually wants to
         // know) is a separate, one-shot combination with the ego vehicle's own GPS speed,
         // computed fresh here for `result` only -- see combineWithEgoSpeed's own comment.
-        const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(speedKmh, state, egoSpeedMps, stationary);
+        const combined = combineWithEgoSpeed(speedKmh, state, egoSpeedMps);
+        // See LATERAL_SWEEP_WIDTHS_PER_SEC's own comment -- only suppresses this tick's OUTPUT
+        // reading (what the UI shows); the internal closing-rate/distance smoothing above keeps
+        // running unaffected, so a real speed reading resumes immediately once the sweep settles,
+        // with no re-acquisition delay.
+        const { speedKmh: outputSpeedKmh, speedKind } = isLateralCrossing
+          ? { speedKmh: null, speedKind: null }
+          : combined;
         nextTracks.push({
           id: best.id,
           bbox,
@@ -359,19 +620,31 @@ export function createSpeedTracker() {
           center: [cx, cy],
           state,
           lowMovementSinceMs,
+          smoothedMovementRatio,
           aboveThresholdStreak,
+          confirmCount,
+          occupantCandidate,
+          occupantCandidateStreak,
+          occupantCount,
         });
-        result.push({
-          id: best.id,
-          bbox,
-          score: det.score,
-          label: det.label,
-          confidence: det.confidence,
-          speedKmh: outputSpeedKmh,
-          speedKind,
-          state,
-          coasting: false,
-        });
+        // See CONFIRM_FRAMES_REQUIRED's own comment -- a track that hasn't yet been
+        // independently re-detected enough times isn't handed to the caller to render at all,
+        // even though it's already being matched/tracked internally above.
+        if (confirmCount >= CONFIRM_FRAMES_REQUIRED) {
+          result.push({
+            id: best.id,
+            bbox,
+            score: det.score,
+            label: det.label,
+            confidence: det.confidence,
+            speedKmh: outputSpeedKmh,
+            speedKind,
+            state,
+            coasting: false,
+            occupantCount,
+            distanceM,
+          });
+        }
       } else {
         const id = nextId++;
         // Same aspect-ratio floor as the matched-track path -- a brand new track's very first
@@ -379,6 +652,21 @@ export function createSpeedTracker() {
         // and starting the track off already corrected means every subsequent smoothBbox() call
         // eases from a realistic shape instead of a narrow one.
         const bbox = enforceMinAspectRatio(det.bbox);
+        // First-ever raw read for this track -- no prior candidate/streak to compare against,
+        // so this always starts its own fresh streak (see updateOccupantEstimate's own -1
+        // sentinel comment). Not confirmed yet either way (confirmed stays null), same
+        // "unconfirmed on a brand-new track" principle as confirmCount's own 1-but-not-rendered
+        // state just below.
+        const { candidate: occupantCandidate, streak: occupantCandidateStreak } = updateOccupantEstimate(
+          bbox,
+          personBoxes,
+          -1,
+          0,
+          null
+        );
+        // Never pushed to `result` here -- see CONFIRM_FRAMES_REQUIRED's own comment. A brand
+        // new track's very first detection is tracked internally from this tick on (so it CAN be
+        // matched and confirmed next tick) but isn't rendered until it clears that bar.
         nextTracks.push({
           id,
           bbox,
@@ -391,19 +679,15 @@ export function createSpeedTracker() {
           center: [cx, cy],
           state: "moving",
           lowMovementSinceMs: null,
+          smoothedMovementRatio: 0,
           aboveThresholdStreak: 0,
+          confirmCount: 1,
+          occupantCandidate,
+          occupantCandidateStreak,
+          occupantCount: null,
         });
-        result.push({
-          id,
-          bbox,
-          score: det.score,
-          label: det.label,
-          confidence: det.confidence,
-          speedKmh: null,
-          speedKind: null,
-          state: "moving",
-          coasting: false,
-        });
+        // Deliberately no result.push here -- see CONFIRM_FRAMES_REQUIRED's own comment. This
+        // track needs at least one more real match before it's ever handed to a caller to render.
       }
     }
 
@@ -423,8 +707,22 @@ export function createSpeedTracker() {
     for (const t of tracks) {
       if (matchedIds.has(t.id)) continue;
       if (nowMs - t.lastSeenMs >= TRACK_GRACE_MS) continue;
-      nextTracks.push(t);
-      const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps, stationary);
+      // The vehicle box itself didn't get a fresh detection this tick, but a person near it
+      // genuinely can appear/disappear between ticks independent of that -- still re-correlate
+      // against this tick's personBoxes (against the track's own last known, unchanged bbox)
+      // rather than freezing the occupant read for the whole grace period.
+      const {
+        candidate: occupantCandidate,
+        streak: occupantCandidateStreak,
+        confirmed: occupantCount,
+      } = updateOccupantEstimate(t.bbox, personBoxes, t.occupantCandidate, t.occupantCandidateStreak, t.occupantCount);
+      nextTracks.push({ ...t, occupantCandidate, occupantCandidateStreak, occupantCount });
+      // Same confirmation gate as the matched-track path above -- a track that was never
+      // confirmed before it started missing detections (its one and only real match could
+      // easily have been the same kind of one-off spurious spike CONFIRM_FRAMES_REQUIRED exists
+      // to filter) shouldn't get a free pass into `result` just by surviving its own grace period.
+      if (t.confirmCount < CONFIRM_FRAMES_REQUIRED) continue;
+      const { speedKmh: outputSpeedKmh, speedKind } = combineWithEgoSpeed(t.speedKmh, t.state, egoSpeedMps);
       result.push({
         id: t.id,
         bbox: t.bbox,
@@ -435,11 +733,13 @@ export function createSpeedTracker() {
         speedKind,
         state: t.state,
         coasting: true,
+        occupantCount,
+        distanceM: t.distanceM,
       });
     }
 
     tracks = nextTracks;
-    return result;
+    return dedupeOverlappingTracks(result);
   }
 
   // Every id currently held onto internally, including ones mid-grace-period that didn't
