@@ -1,9 +1,10 @@
 import React, { forwardRef } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, Switch } from "react-native";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useSettings } from "@/context/SettingsContext";
 import type { VisibilityMode } from "@/services/settings";
 import { Tracky } from "@/components/trackys/Tracky";
@@ -49,14 +50,13 @@ export const VisibilitySheet = forwardRef<BottomSheet, Props>(function Visibilit
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
           <Text style={styles.title}>Your visibility</Text>
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={onClose}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
 
         <View style={styles.bigToggleRow}>
@@ -108,7 +108,7 @@ export const VisibilitySheet = forwardRef<BottomSheet, Props>(function Visibilit
             <Text style={styles.radioLabel}>More privacy settings</Text>
             <Text style={styles.radioDescription}>Show my name on reports, auto-ghost behaviour</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          <Icon name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
       </BottomSheetView>
     </BottomSheet>
@@ -139,14 +139,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "800",
     color: colors.text,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
   },
   bigToggleRow: {
     flexDirection: "row",

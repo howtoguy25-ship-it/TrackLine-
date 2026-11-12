@@ -1,8 +1,9 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, Image, ActivityIndicator, Linking, FlatList, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { PlacesApiError, priceLevelText, type NearbyPlace, type PlaceDetails } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText, isOsmPlaceId } from "@/services/osmPlaces";
@@ -175,17 +176,16 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
         <View style={styles.titleRow}>
           <Text style={styles.title}>Hotels nearby</Text>
           {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss. */}
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={() => {
               Keyboard.dismiss();
               if (ref && typeof ref !== "function") ref.current?.close();
             }}
-            hitSlop={10}
             accessibilityLabel="Close"
-            style={styles.closeButton}
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
         {/* Honest, per explicit request that nothing here be fake -- Google Places has real
             names/photos/ratings/price LEVEL for every hotel below, but no live per-night price
@@ -194,7 +194,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
             through to Google's own listing, which often does surface real booking links/prices
             there -- this app just isn't the one hosting that data yet. */}
         <View style={styles.noticeBox}>
-          <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+          <Icon name="information-circle-outline" size={14} color={colors.textMuted} />
           <Text style={styles.noticeText}>
             Real listings, photos &amp; ratings from Google. Live prices and booking aren't connected yet --
             tap "Open in Maps" on a hotel for booking options.
@@ -202,7 +202,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
         </View>
 
         <View style={styles.searchRow}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
+          <Icon name="search" size={16} color={colors.textMuted} />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -218,9 +218,13 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
             }}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={18} color={colors.textFaint} />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close-circle"
+              iconColor={colors.textFaint}
+              onPress={() => setQuery("")}
+              accessibilityLabel="Clear search"
+            />
           )}
         </View>
 
@@ -238,17 +242,15 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
         )}
         {errorText && !loading && (
           <View style={styles.centerRow}>
-            <Ionicons name="alert-circle" size={18} color={colors.danger} />
+            <Icon name="alert-circle" size={18} color={colors.danger} />
             <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
-            <Pressable
+            <Button
+              variant="ghost"
+              icon="refresh"
+              label="Retry"
               onPress={() => setRetryTick((t) => t + 1)}
-              hitSlop={10}
-              style={styles.retryButton}
               accessibilityLabel="Retry"
-            >
-              <Ionicons name="refresh" size={14} color={colors.accent} />
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
+            />
           </View>
         )}
         {!loading && !errorText && visibleHotels.length === 0 && (
@@ -286,7 +288,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
                 <Image source={{ uri: item.photoUrl }} style={styles.photo} />
               ) : (
                 <View style={[styles.photo, styles.photoFallback]}>
-                  <Ionicons name="bed-outline" size={22} color={colors.textFaint} />
+                  <Icon name="bed-outline" size={22} color={colors.textFaint} />
                 </View>
               )}
               <View style={{ flex: 1 }}>
@@ -308,7 +310,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
                 <View style={styles.metaRow}>
                   {item.rating !== undefined && (
                     <View style={styles.metaChip}>
-                      <Ionicons name="star" size={11} color="#F59E0B" />
+                      <Icon name="star" size={11} color="#F59E0B" />
                       <Text style={styles.metaChipText}>{item.rating.toFixed(1)}</Text>
                     </View>
                   )}
@@ -320,17 +322,18 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
                   <Text style={styles.distanceText}>{formatDistance(item.distanceMeters)}</Text>
                 </View>
                 <View style={styles.actionRow}>
-                  <Pressable
-                    style={({ pressed }) => [styles.actionButton, pressed && { opacity: pressedOpacity }]}
+                  <Button
+                    variant="secondary"
+                    icon="navigate-outline"
+                    label="Directions"
                     onPress={() =>
                       onSelect({ placeId: item.placeId, name: item.name, address: item.vicinity, location: item.location })
                     }
-                  >
-                    <Ionicons name="navigate-outline" size={13} color={colors.accent} />
-                    <Text style={styles.actionButtonText}>Directions</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.actionButton, pressed && { opacity: pressedOpacity }]}
+                  />
+                  <Button
+                    variant="secondary"
+                    icon="open-outline"
+                    label="Open in Maps"
                     onPress={() => {
                       // Real, confirmed fix: a Google `place_id:` deep link only ever works for
                       // a real Google place_id -- OSM-sourced hotels (see osmPlaces.ts) carry an
@@ -342,10 +345,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
                         : `https://www.google.com/maps/place/?q=place_id:${item.placeId}`;
                       Linking.openURL(url).catch(() => {});
                     }}
-                  >
-                    <Ionicons name="open-outline" size={13} color={colors.accent} />
-                    <Text style={styles.actionButtonText}>Open in Maps</Text>
-                  </Pressable>
+                  />
                 </View>
               </View>
             </Pressable>
@@ -364,14 +364,6 @@ const styles = StyleSheet.create({
   pressableFill: {},
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   title: { fontSize: 17, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
-  },
   noticeBox: {
     flexDirection: "row",
     gap: spacing.xs + 2,
@@ -392,31 +384,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
-  filterRow: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.xs, flexWrap: "wrap" },
-  filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  filterChipActive: { backgroundColor: colors.accent },
-  filterChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
-  filterChipTextActive: { color: "#FFFFFF" },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-  },
-  retryButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
   row: {
@@ -435,6 +404,4 @@ const styles = StyleSheet.create({
   metaChipText: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
   distanceText: { fontSize: 12, color: colors.textFaint, marginLeft: "auto" },
   actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs + 2 },
-  actionButton: { flexDirection: "row", alignItems: "center", gap: 4 },
-  actionButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
 });

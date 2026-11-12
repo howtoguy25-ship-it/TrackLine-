@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Chip, FloatingButton } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import {
   View,
   Pressable,
@@ -22,7 +24,6 @@ import Slider from "@react-native-community/slider";
 import { useSharedValue, useRunOnJS } from "react-native-worklets-core";
 import type { BoxedHybridObject } from "react-native-nitro-modules";
 import type { TensorflowModel } from "react-native-fast-tflite";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
@@ -41,7 +42,7 @@ import { upsertDetectedVehicle } from "@/services/vehicleHistory";
 import { saveVehicleThumbnail } from "@/services/vehicleThumbnail";
 import { refineBoxTrim, type BoxTrim } from "@/utils/boxRefine";
 import { formatDistance } from "@/utils/navFormat";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { radius, shadow, spacing } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -598,7 +599,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       ActionSheetIOS.showActionSheetWithOptions(
         {
           title: plateText,
-          options: ["Run REV Check", "Save to History", "Cancel"],
+          options: ["Run REV check", "Save to History", "Cancel"],
           cancelButtonIndex: 2,
         },
         (index) => {
@@ -1271,9 +1272,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         <Text style={styles.permissionText}>
           TrackLine needs camera access to detect vehicles in view.
         </Text>
-        <Pressable style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant camera access</Text>
-        </Pressable>
+        <Button variant="primary" label="Grant camera access" onPress={requestPermission} />
         <Pressable onPress={onClose}>
           <Text style={styles.closeLink}>Close</Text>
         </Pressable>
@@ -1411,7 +1410,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           pointerEvents="none"
           style={[styles.nightModeBadge, { top: insets.top + spacing.sm }]}
         >
-          <Ionicons name="moon" size={14} color="#0B1220" />
+          <Icon name="moon" size={14} color="#0B1220" />
           <Text style={styles.nightModeBadgeText}>Night mode</Text>
         </View>
       )}
@@ -1770,7 +1769,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                     moment the vehicle leaves frame or this screen closes. */}
                 {isSelected && (
                   <View style={styles.selectedBadge} pointerEvents="none">
-                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    <Icon name="checkmark" size={14} color="#FFFFFF" />
                   </View>
                 )}
                 {/* Real, confirmed rebuild matching an exact reference design: the confirmed
@@ -1790,17 +1789,15 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
                         pointerEvents="box-none"
                         style={[styles.plateActionsWrap, { left: labelLeftPx, top: (labelAboveBox ? -30 : 6) + 32 }]}
                       >
-                        <Pressable
+                        <Chip
+                          icon="ellipsis-horizontal"
+                          label="Actions"
                           onPress={() => onPlateAction(box, plateInfo.text)}
-                          hitSlop={8}
-                          style={({ pressed }) => [styles.plateRevCheckPill, pressed && { opacity: pressedOpacity }]}
-                        >
-                          <Ionicons name="ellipsis-horizontal" size={10} color="#FFFFFF" />
-                          <Text style={styles.plateRevCheckPillText}>Actions</Text>
-                        </Pressable>
+                          onMap
+                        />
                         {isSaved && (
                           <View style={styles.savedBadgeInner} pointerEvents="none">
-                            <Ionicons name="checkmark-circle" size={12} color="#22C55E" />
+                            <Icon name="checkmark-circle" size={12} color="#22C55E" />
                             <Text style={styles.savedBadgeText}>Saved</Text>
                           </View>
                         )}
@@ -1863,9 +1860,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               just the preview, so it can genuinely help detect something too far away to
               register at 1x.
             </Text>
-            <Pressable onPress={dismissInfo} hitSlop={12} accessibilityLabel="Dismiss">
-              <Ionicons name="close" size={20} color="#fff" />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor="#fff"
+              onPress={dismissInfo}
+              accessibilityLabel="Dismiss"
+            />
           </>
         )}
       </View>
@@ -1906,9 +1907,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         >
           <View style={styles.detailPanelHeader}>
             <Text style={styles.detailPanelTitle}>{selectedBox.label}</Text>
-            <Pressable onPress={() => setSelectedTrackId(null)} hitSlop={10} accessibilityLabel="Close vehicle details">
-              <Ionicons name="close" size={18} color="#9CA3AF" />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor="#9CA3AF"
+              onPress={() => setSelectedTrackId(null)}
+              accessibilityLabel="Close vehicle details"
+            />
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Speed</Text>
@@ -1945,37 +1950,25 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               captureForPlateAndLightbar's plate-confirm callback), but that happens silently in
               the background with only a small badge on the plate frame as feedback. This gives
               a direct, visible action + confirmation for the exact same save, same gating as
-              "Run REV Check" (a real plate is the vehicle's only stable identity to save under). */}
-          <Pressable
+              "Run REV check" (a real plate is the vehicle's only stable identity to save under). */}
+          <Button
+            variant="secondary"
+            icon={selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "checkmark-circle" : "download-outline"}
+            label={!selectedPlate ? "Waiting for plate to save…" : selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "Saved to vehicle history" : "Save capture"}
             onPress={() => {
               if (!selectedPlate || selectedTrackId === null) return;
               savePlateToHistory(selectedTrackId, selectedBox.label, selectedPlate.text, selectedBox);
             }}
             disabled={!selectedPlate}
-            style={({ pressed }) => [
-              styles.saveButton,
-              !selectedPlate && styles.saveButtonDisabled,
-              pressed && !!selectedPlate && { opacity: pressedOpacity },
-            ]}
-          >
-            <Ionicons
-              name={selectedTrackId !== null && savedTrackIds.has(selectedTrackId) ? "checkmark-circle" : "download-outline"}
-              size={16}
-              color={selectedPlate ? colors.accent : "#9CA3AF"}
-            />
-            <Text style={[styles.saveButtonText, !selectedPlate && styles.saveButtonTextDisabled]}>
-              {!selectedPlate
-                ? "Waiting for plate to save…"
-                : selectedTrackId !== null && savedTrackIds.has(selectedTrackId)
-                  ? "Saved to vehicle history"
-                  : "Save capture"}
-            </Text>
-          </Pressable>
+            style={{ flex: 1 }}
+          />
           {/* Only enabled once there's an actual confirmed plate to check -- a REV check needs a
               real plate number, not a guess, same rule the plate label itself follows. Navigates
               straight into the same RevCheckScreen a saved history entry opens, prefilled with
               this vehicle's live label/speed/plate (see RevCheckScreen's own summary card). */}
-          <Pressable
+          <Button
+            variant="primary"
+            label={selectedPlate ? "Run REV check" : "Waiting for plate read…"}
             onPress={() =>
               selectedPlate &&
               navigation.navigate("RevCheck", {
@@ -1986,16 +1979,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
               })
             }
             disabled={!selectedPlate}
-            style={({ pressed }) => [
-              styles.revCheckButton,
-              !selectedPlate && styles.revCheckButtonDisabled,
-              pressed && !!selectedPlate && { opacity: pressedOpacity },
-            ]}
-          >
-            <Text style={styles.revCheckButtonText}>
-              {selectedPlate ? "Run REV Check" : "Waiting for plate read…"}
-            </Text>
-          </Pressable>
+            style={{ flex: 1 }}
+          />
         </View>
       )}
 
@@ -2004,18 +1989,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           A transparent circular X (not a solid white pill) so it reads as a real camera-
           overlay exit control rather than a floating opaque button competing with the actual
           vehicle boxes for attention. */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.closeButton,
-          { bottom: insets.bottom + spacing.xl },
-          pressed && { opacity: pressedOpacity },
-        ]}
+      <FloatingButton
+        tone="map"
+        icon="close"
         onPress={onClose}
         accessibilityLabel="Close vehicle detection"
-        hitSlop={12}
-      >
-        <Ionicons name="close" size={26} color="#FFFFFF" />
-      </Pressable>
+        style={[styles.closeSpot, { bottom: insets.bottom + spacing.xl }]}
+      />
     </View>
   );
 }
@@ -2037,16 +2017,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     textAlign: "center",
-  },
-  permissionButton: {
-    backgroundColor: "#1D4ED8",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  permissionButtonText: {
-    color: "#fff",
-    fontWeight: "700",
   },
   closeLink: {
     color: "#9CA3AF",
@@ -2144,22 +2114,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-  },
-  plateRevCheckPill: {
-    // No longer position:absolute -- now a plain flex-row sibling inside plateActionsWrap
-    // (which owns the absolute positioning below the tag row) alongside the Saved badge.
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#1D4ED8",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  plateRevCheckPillText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
   },
   savedBadgeInner: {
     flexDirection: "row",
@@ -2276,53 +2230,7 @@ const styles = StyleSheet.create({
   detailValueAlert: {
     color: "#F87171",
   },
-  saveButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs + 2,
-    marginTop: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    paddingVertical: spacing.sm,
-  },
-  saveButtonDisabled: {
-    borderColor: "rgba(255,255,255,0.16)",
-  },
-  saveButtonText: {
-    color: colors.accent,
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  saveButtonTextDisabled: {
-    color: "#9CA3AF",
-  },
-  revCheckButton: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm + 2,
-    alignItems: "center",
-  },
-  revCheckButtonDisabled: {
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  revCheckButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  closeButton: {
-    position: "absolute",
-    alignSelf: "center",
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "rgba(17, 24, 39, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  closeSpot: { position: "absolute", alignSelf: "center" },
   zoomSliderWrap: {
     position: "absolute",
     right: spacing.sm,

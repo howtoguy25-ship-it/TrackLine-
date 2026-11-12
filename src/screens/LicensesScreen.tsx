@@ -1,8 +1,8 @@
 import React from "react";
+import { Button } from "@/components/ui/Button";
 import { View, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
@@ -97,14 +97,13 @@ export function LicensesScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Licences &amp; attributions</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
@@ -136,14 +135,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   title: { fontSize: 20, fontWeight: "800", color: colors.text, flex: 1, marginRight: spacing.sm },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   intro: { fontSize: 13, color: colors.textMuted, lineHeight: 19, marginBottom: spacing.lg },
   entry: {
     backgroundColor: colors.surfaceMuted,

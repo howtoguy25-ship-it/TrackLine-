@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, StyleSheet, Pressable, Animated, type LayoutChangeEvent } from "react-native";
 import { Text } from "@/components/AppText";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RouteStep } from "@/services/directions";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
@@ -18,7 +19,7 @@ import { radius, spacing, shadow, pressedOpacity } from "@/theme/tokens";
 // real spelling mismatch is Google's "uturn-left"/"uturn-right" (no hyphen before "turn") vs. the
 // icon font's "u-turn-left"/"u-turn-right" (hyphenated) -- mapped explicitly below for exactly
 // that reason.
-export const MANEUVER_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
+export const MANEUVER_ICONS: Record<string, IconName> = {
   "turn-left": "turn-left",
   "turn-right": "turn-right",
   "turn-slight-left": "turn-slight-left",
@@ -198,9 +199,9 @@ export function NavigationInstructionCard({
                 accessibilityLabel="Repeat spoken instruction"
               >
                 {isFinalStep ? (
-                  <MaterialIcons name="flag" size={collapsed ? 22 : 34} color={theme.iconColor} />
+                  <Icon name="flag" size={collapsed ? 22 : 34} color={theme.iconColor} />
                 ) : (
-                  <MaterialIcons name={icon} size={collapsed ? 22 : 34} color={theme.iconColor} />
+                  <Icon name={icon} size={collapsed ? 22 : 34} color={theme.iconColor} />
                 )}
                 {roundaboutExit != null && (
                   <View style={[styles.exitBadge, { backgroundColor: theme.exitButtonBg }]}>
@@ -211,9 +212,9 @@ export function NavigationInstructionCard({
             ) : (
               <View style={[styles.iconWrap, collapsed && styles.iconWrapCollapsed, { backgroundColor: theme.iconWrapBg }]}>
                 {isFinalStep ? (
-                  <MaterialIcons name="flag" size={collapsed ? 22 : 34} color={theme.iconColor} />
+                  <Icon name="flag" size={collapsed ? 22 : 34} color={theme.iconColor} />
                 ) : (
-                  <MaterialIcons name={icon} size={collapsed ? 22 : 34} color={theme.iconColor} />
+                  <Icon name={icon} size={collapsed ? 22 : 34} color={theme.iconColor} />
                 )}
                 {roundaboutExit != null && (
                   <View style={[styles.exitBadge, { backgroundColor: theme.exitButtonBg }]}>
@@ -288,38 +289,27 @@ export function NavigationInstructionCard({
         </Pressable>
         {/* Small circle transparency toggle -- blue (accent) fill only while active, so its own
             color is the "this is on" signal, independent of the card's own selected theme. */}
-        <Pressable
+        <Button
+          variant="ghost"
+          icon={transparent ? "eye-outline" : "eye-off-outline"}
           onPress={() => setTransparent((v) => !v)}
-          hitSlop={12}
-          style={({ pressed }) => [
-            styles.toggleButton,
-            { backgroundColor: transparent ? "#1D4ED8" : theme.toggleBg },
-            pressed && { opacity: pressedOpacity },
-          ]}
           accessibilityLabel={transparent ? "Switch card to solid background" : "Switch card to transparent background"}
-        >
-          <Ionicons
-            name={transparent ? "eye-outline" : "eye-off-outline"}
-            size={16}
-            color={transparent ? "#FFFFFF" : theme.toggleIcon}
-          />
-        </Pressable>
-        <Pressable
+          iconColor={theme.toggleIcon} accessibilityState={{ selected: transparent }}
+        />
+        <Button
+          variant="ghost"
+          icon={collapsed ? "chevron-down" : "chevron-up"}
           onPress={() => setCollapsed((v) => !v)}
-          hitSlop={12}
-          style={({ pressed }) => [styles.toggleButton, { backgroundColor: theme.toggleBg }, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel={collapsed ? "Expand navigation card" : "Collapse navigation card"}
-        >
-          <Ionicons name={collapsed ? "chevron-down" : "chevron-up"} size={18} color={theme.toggleIcon} />
-        </Pressable>
-        <Pressable
+          iconColor={theme.toggleIcon}
+        />
+        <Button
+          variant="ghost"
+          icon="close"
           onPress={onExit}
-          hitSlop={12}
-          style={({ pressed }) => [styles.exitButton, { backgroundColor: theme.exitButtonBg }, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Exit navigation"
-        >
-          <Ionicons name="close" size={20} color={theme.exitButtonIcon} />
-        </Pressable>
+          iconColor={theme.exitButtonIcon}
+        />
       </View>
 
       {/* Current road (not the next turn's road -- that's step.instruction above), from the
@@ -332,7 +322,7 @@ export function NavigationInstructionCard({
           guess), and stays visible even collapsed since it's one compact row. */}
       {roadName && (
         <View style={styles.roadRow}>
-          <Ionicons name="navigate" size={11} color={theme.actionText} style={{ transform: [{ rotate: "90deg" }] }} />
+          <Icon name="navigate" size={11} color={theme.actionText} style={{ transform: [{ rotate: "90deg" }] }} />
           <Text style={[styles.roadName, { color: theme.text }, textShadow]} numberOfLines={1}>
             {roadName}
           </Text>
@@ -345,7 +335,7 @@ export function NavigationInstructionCard({
       {showThenChip && (
         <View style={styles.thenChip}>
           <Text style={styles.thenChipText}>Then</Text>
-          <MaterialIcons
+          <Icon
             name={(nextStep!.maneuver && MANEUVER_ICONS[nextStep!.maneuver!]) || "straight"}
             size={14}
             color="#FFFFFF"
@@ -465,20 +455,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     letterSpacing: 0.2,
-  },
-  toggleButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  exitButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
   },
   // Real roundabout exit-number badge, drawn over the bottom-right corner of the maneuver icon
   // -- see extractRoundaboutExitNumber's own comment for where this real number comes from.

@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Alert, ActivityIndicator } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { StatusBar } from "expo-status-bar";
@@ -10,7 +12,7 @@ import * as Crypto from "expo-crypto";
 import { GoogleSignin, statusCodes } from "@react-native-google-signin/google-signin";
 import { usePowerState } from "expo-battery";
 import { useIAP } from "react-native-iap";
-import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSettings } from "@/context/SettingsContext";
@@ -121,7 +123,7 @@ const MAP_VIEW_STYLE_LABELS: Record<AppSettings["defaultMapViewStyle"], string> 
   flat: "Overhead",
   satellite3d: "Satellite 3D",
 };
-const MAP_VIEW_STYLE_ICONS: Record<AppSettings["defaultMapViewStyle"], keyof typeof Ionicons.glyphMap> = {
+const MAP_VIEW_STYLE_ICONS: Record<AppSettings["defaultMapViewStyle"], IconName> = {
   tilted3d: "layers-outline",
   flat: "square-outline",
   satellite3d: "globe-outline",
@@ -640,24 +642,15 @@ export function SettingsScreen() {
         {isSignedIn ? (
           <>
             <Text style={styles.rowLabel}>Signed in as {user.email ?? user.displayName ?? "you"}</Text>
-            <Pressable
-              style={({ pressed }) => [styles.signOutButton, pressed && { opacity: pressedOpacity }]}
-              onPress={() => signOutUser()}
-            >
-              <Text style={styles.signOutButtonText}>Sign out</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.deleteAccountButton, pressed && { opacity: pressedOpacity }]}
+            <Button variant="secondary" label="Sign out" onPress={() => signOutUser()} fullWidth />
+            <Button
+              variant="destructive"
+              label="Delete account"
               onPress={onDeleteAccount}
               disabled={deletingAccount}
               accessibilityLabel="Delete account"
-            >
-              {deletingAccount ? (
-                <ActivityIndicator size="small" color={colors.danger} />
-              ) : (
-                <Text style={styles.deleteAccountButtonText}>Delete account</Text>
-              )}
-            </Pressable>
+              fullWidth loading={deletingAccount}
+            />
           </>
         ) : (
           <>
@@ -665,12 +658,12 @@ export function SettingsScreen() {
               Not signed in -- everything still works. Sign in to make your reports and settings
               recoverable if you get a new phone.
             </Text>
-            <Pressable
-              style={({ pressed }) => [styles.signInButton, pressed && { opacity: pressedOpacity }]}
+            <Button
+              variant="primary"
+              label="Sign in"
               onPress={() => navigation.navigate("SignIn")}
-            >
-              <Text style={styles.signInButtonText}>Sign in</Text>
-            </Pressable>
+              fullWidth
+            />
           </>
         )}
       </Section>
@@ -679,18 +672,14 @@ export function SettingsScreen() {
         <Text style={styles.helperText}>
           Restore any in-app purchase tied to your App Store / Google account on this device.
         </Text>
-        <Pressable
-          style={({ pressed }) => [styles.signOutButton, pressed && { opacity: pressedOpacity }]}
+        <Button
+          variant="secondary"
+          label="Restore purchases"
           onPress={onRestorePurchases}
           disabled={restoringPurchases}
           accessibilityLabel="Restore purchases"
-        >
-          {restoringPurchases ? (
-            <ActivityIndicator size="small" color={SETTINGS_TEXT} />
-          ) : (
-            <Text style={styles.restorePurchasesButtonText}>Restore purchases</Text>
-          )}
-        </Pressable>
+          fullWidth loading={restoringPurchases}
+        />
         {restoreMessage && <Text style={styles.helperText}>{restoreMessage}</Text>}
       </Section>
 
@@ -792,33 +781,15 @@ export function SettingsScreen() {
           {EXPIRY_PRESETS.map((preset) => {
             const isSelected = settings.alertExpiryMs === preset.ms;
             return (
-              <Pressable
+              <Chip
+                label={preset.label}
                 key={preset.label}
                 onPress={() => onExpiryPresetSelect(preset.ms)}
-                style={({ pressed }) => [
-                  styles.expiryChip,
-                  isSelected && styles.expiryChipSelected,
-                  pressed && { opacity: pressedOpacity },
-                ]}
-              >
-                <Text style={[styles.expiryChipText, isSelected && styles.expiryChipTextSelected]}>
-                  {preset.label}
-                </Text>
-              </Pressable>
+                selected={isSelected}
+              />
             );
           })}
-          <Pressable
-            onPress={() => setCustomExpiryOpen((v) => !v)}
-            style={({ pressed }) => [
-              styles.expiryChip,
-              customExpiryOpen && styles.expiryChipSelected,
-              pressed && { opacity: pressedOpacity },
-            ]}
-          >
-            <Text style={[styles.expiryChipText, customExpiryOpen && styles.expiryChipTextSelected]}>
-              Custom
-            </Text>
-          </Pressable>
+          <Chip label="Custom" onPress={() => setCustomExpiryOpen((v) => !v)} selected={customExpiryOpen} />
         </View>
 
         {customExpiryOpen && (
@@ -853,7 +824,7 @@ export function SettingsScreen() {
       <Section title="Map view" visible={shouldShow("Map view")}>
         <Row
           label="Satellite view"
-          icon={<Ionicons name="earth-outline" size={18} color={settings.defaultMapViewStyle === "satellite3d" ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          icon={<Icon name="earth-outline" size={18} color={settings.defaultMapViewStyle === "satellite3d" ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.defaultMapViewStyle === "satellite3d"}
@@ -863,7 +834,7 @@ export function SettingsScreen() {
         </Row>
         <Row
           label="3D buildings"
-          icon={<Ionicons name="business-outline" size={18} color={settings.show3DBuildings ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          icon={<Icon name="business-outline" size={18} color={settings.show3DBuildings ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.show3DBuildings}
@@ -873,7 +844,7 @@ export function SettingsScreen() {
         </Row>
         <Row
           label="Alerts on the map"
-          icon={<Ionicons name="warning-outline" size={18} color={settings.alertsEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          icon={<Icon name="warning-outline" size={18} color={settings.alertsEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.alertsEnabled}
@@ -890,7 +861,7 @@ export function SettingsScreen() {
       <Section title="Map shortcuts" visible={shouldShow("Map shortcuts")}>
         <Row
           label="Compass"
-          icon={<Ionicons name="compass-outline" size={18} color={settings.showCompass ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          icon={<Icon name="compass-outline" size={18} color={settings.showCompass ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.showCompass}
@@ -900,7 +871,7 @@ export function SettingsScreen() {
         </Row>
         <Row
           label="Audio player"
-          icon={<Ionicons name="musical-notes-outline" size={18} color={settings.showAudioPlayer ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          icon={<Icon name="musical-notes-outline" size={18} color={settings.showAudioPlayer ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.showAudioPlayer}
@@ -1010,7 +981,7 @@ export function SettingsScreen() {
               >
                 <View style={styles.themeSwatchShadowWrap}>
                   <View style={[styles.themeSwatch, styles.mapViewStyleSwatch]}>
-                    <Ionicons name={MAP_VIEW_STYLE_ICONS[style]} size={22} color={isSelected ? colors.accent : SETTINGS_TEXT_MUTED} />
+                    <Icon name={MAP_VIEW_STYLE_ICONS[style]} size={22} color={isSelected ? colors.accent : SETTINGS_TEXT_MUTED} />
                   </View>
                 </View>
                 <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>
@@ -1092,7 +1063,7 @@ export function SettingsScreen() {
                     </LinearGradient>
                   ) : (
                     <View style={[styles.themeSwatch, styles.iconSwatch]}>
-                      <Ionicons name="navigate" size={22} color={colors.accent} />
+                      <Icon name="navigate" size={22} color={colors.accent} />
                     </View>
                   )}
                 </View>
@@ -1141,7 +1112,7 @@ export function SettingsScreen() {
       </Section>
 
       <Section title="Map layers" visible={shouldShow("Map layers")}>
-        <Row label="Show Trackys" icon={<Ionicons name="happy-outline" size={18} color={settings.showTrackysOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}>
+        <Row label="Show Trackys" icon={<Icon name="happy-outline" size={18} color={settings.showTrackysOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}>
           <Switch
             value={settings.showTrackysOnMap}
             onValueChange={(value) => updateSettings({ showTrackysOnMap: value })}
@@ -1197,7 +1168,7 @@ export function SettingsScreen() {
         <View style={styles.liveCameraBox}>
           <Row
             label="Live traffic incidents (NSW)"
-            icon={<Ionicons name="warning-outline" size={18} color={settings.showLiveTraffic ? colors.accent : SETTINGS_TEXT_MUTED} />}
+            icon={<Icon name="warning-outline" size={18} color={settings.showLiveTraffic ? colors.accent : SETTINGS_TEXT_MUTED} />}
           >
             <Switch
               value={settings.showLiveTraffic}
@@ -1210,7 +1181,7 @@ export function SettingsScreen() {
         <View style={styles.liveCameraBox}>
           <Row
             label="Live traffic cameras (NSW)"
-            icon={<MaterialCommunityIcons name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : SETTINGS_TEXT_MUTED} />}
+            icon={<Icon name="cctv" size={18} color={settings.showLiveCameras ? colors.accent : SETTINGS_TEXT_MUTED} />}
           >
             <Switch
               value={settings.showLiveCameras}
@@ -1229,7 +1200,7 @@ export function SettingsScreen() {
       <Section title="Speed" visible={shouldShow("Speed")}>
         <Row
           label="Speed warning chime"
-          icon={<Ionicons name="volume-high" size={18} color={settings.speedWarningChimeEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
+          icon={<Icon name="volume-high" size={18} color={settings.speedWarningChimeEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.speedWarningChimeEnabled}
@@ -1273,28 +1244,20 @@ export function SettingsScreen() {
             editable={!gpxReplayRunning}
           />
           <View style={styles.gpxButtonRow}>
-            <Pressable
+            <Button
+              variant="secondary"
+              label="Start replay"
               onPress={onStartGpxReplay}
               disabled={gpxReplayRunning || !gpxText.trim()}
-              style={({ pressed }) => [
-                styles.gpxButton,
-                (gpxReplayRunning || !gpxText.trim()) && styles.gpxButtonDisabled,
-                pressed && { opacity: pressedOpacity },
-              ]}
-            >
-              <Text style={styles.gpxButtonText}>Start replay</Text>
-            </Pressable>
-            <Pressable
+              style={{ flex: 1 }}
+            />
+            <Button
+              variant="secondary"
+              label="Stop replay"
               onPress={onStopGpxReplay}
               disabled={!gpxReplayRunning}
-              style={({ pressed }) => [
-                styles.gpxButton,
-                !gpxReplayRunning && styles.gpxButtonDisabled,
-                pressed && { opacity: pressedOpacity },
-              ]}
-            >
-              <Text style={styles.gpxButtonText}>Stop replay</Text>
-            </Pressable>
+              style={{ flex: 1 }}
+            />
           </View>
           {gpxReplayRunning && <Text style={styles.helperText}>Replay running -- real GPS is ignored until stopped.</Text>}
         </Section>
@@ -1309,7 +1272,7 @@ export function SettingsScreen() {
           ]}
           accessibilityLabel="Why battery level matters for AI Vehicle Detection"
         >
-          <MaterialCommunityIcons
+          <Icon
             name={batteryLow ? "battery-alert" : "battery-heart-variant"}
             size={18}
             color={batteryLow ? colors.warning : SETTINGS_TEXT_MUTED}
@@ -1319,7 +1282,7 @@ export function SettingsScreen() {
               ? `Battery is at ${batteryPercent}%${lowPowerMode ? " (Low Power Mode on)" : ""} — AI Vehicle Detection works best above 50%.`
               : "AI Vehicle Detection works best with your battery above 50%."}
           </Text>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+          <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
 
         {/* Real, explicit request: night processing (a brightened frame fed to the model, plus
@@ -1343,19 +1306,12 @@ export function SettingsScreen() {
           ).map((option) => {
             const isSelected = settings.nightModePreference === option.value;
             return (
-              <Pressable
+              <Chip
+                label={option.label}
                 key={option.value}
                 onPress={() => updateSettings({ nightModePreference: option.value })}
-                style={({ pressed }) => [
-                  styles.expiryChip,
-                  isSelected && styles.expiryChipSelected,
-                  pressed && { opacity: pressedOpacity },
-                ]}
-              >
-                <Text style={[styles.expiryChipText, isSelected && styles.expiryChipTextSelected]}>
-                  {option.label}
-                </Text>
-              </Pressable>
+                selected={isSelected}
+              />
             );
           })}
         </View>
@@ -1372,9 +1328,9 @@ export function SettingsScreen() {
           onPress={() => navigation.navigate("VehicleHistory")}
           style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
         >
-          <MaterialCommunityIcons name="car-search" size={20} color={colors.accent} />
+          <Icon name="car-search" size={20} color={colors.accent} />
           <Text style={styles.revCheckLinkText}>View vehicle history & run a REV check</Text>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+          <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
 
         {/* Owner-only, per explicit request -- a real, paid business API credential, not
@@ -1391,9 +1347,9 @@ export function SettingsScreen() {
               onPress={() => navigation.navigate("OwnerDashboard")}
               style={({ pressed }) => [styles.revCheckLinkRow, pressed && { opacity: pressedOpacity }]}
             >
-              <MaterialCommunityIcons name="view-dashboard" size={20} color={colors.accent} />
+              <Icon name="view-dashboard" size={20} color={colors.accent} />
               <Text style={styles.revCheckLinkText}>Owner dashboard — users & notifications</Text>
-              <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+              <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
             </Pressable>
 
 
@@ -1559,13 +1515,13 @@ export function SettingsScreen() {
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Why battery matters here</Text>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="close"
+                iconColor={SETTINGS_TEXT_MUTED}
                 onPress={() => setBatteryInfoOpen(false)}
-                hitSlop={12}
                 accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={22} color={SETTINGS_TEXT_MUTED} />
-              </Pressable>
+              />
             </View>
             <Text style={styles.modalBody}>
               AI Vehicle Detection runs a real, live camera feed through on-device AI several
@@ -1591,7 +1547,7 @@ export function SettingsScreen() {
 
       <Section title="Public transit" visible={shouldShow("Public transit")}>
         <View style={styles.warningBox}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.warning} />
+          <Icon name="alert-circle-outline" size={18} color={colors.warning} />
           <Text style={styles.warningText}>
             Live, real-time bus/train tracking is limited to NSW, Australia.
           </Text>
@@ -1662,7 +1618,7 @@ export function SettingsScreen() {
               {!voicesLoaded ? "Loading…" : currentVoiceLabel}
             </Text>
           </View>
-          <MaterialCommunityIcons name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
+          <Icon name="chevron-right" size={18} color={SETTINGS_TEXT_MUTED} />
         </Pressable>
       </Section>
 
@@ -1846,21 +1802,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  gpxButton: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-  },
-  gpxButtonDisabled: {
-    opacity: 0.4,
-  },
-  gpxButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 13,
-  },
   warningBox: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1943,42 +1884,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: SETTINGS_TEXT,
-  },
-  signInButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md - 2,
-    alignItems: "center",
-  },
-  signInButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  signOutButton: {
-    backgroundColor: SETTINGS_SURFACE_MUTED,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md - 2,
-    alignItems: "center",
-  },
-  signOutButtonText: {
-    color: colors.danger,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  restorePurchasesButtonText: {
-    color: SETTINGS_TEXT,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  deleteAccountButton: {
-    alignItems: "center",
-    paddingVertical: spacing.sm,
-  },
-  deleteAccountButtonText: {
-    color: colors.danger,
-    fontWeight: "600",
-    fontSize: 13,
   },
   themeGrid: {
     flexDirection: "row",
@@ -2080,26 +1985,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.xs + 2,
-  },
-  expiryChip: {
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 2,
-    borderRadius: radius.pill,
-    backgroundColor: SETTINGS_SURFACE_MUTED,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  expiryChipSelected: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  expiryChipText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: SETTINGS_TEXT_MUTED,
-  },
-  expiryChipTextSelected: {
-    color: "#FFFFFF",
   },
   customExpiryRow: {
     flexDirection: "row",

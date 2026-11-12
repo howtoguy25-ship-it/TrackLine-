@@ -1,9 +1,10 @@
 import React from "react";
-import { View, Pressable, StyleSheet, Modal } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { View, StyleSheet, Modal } from "react-native";
 import { Text } from "@/components/AppText";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Tracky } from "@/components/trackys/Tracky";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 const EXPLAINER_SHOWN_KEY = "@trackline/ghostModeExplainerShown";
 
@@ -50,18 +51,8 @@ export function GhostModeExplainerModal({ visible, onStayHidden, onBecomeVisible
             turn that on any time from the Menu or Settings &gt; Privacy.
           </Text>
           <View style={styles.actions}>
-            <Pressable
-              style={({ pressed }) => [styles.button, pressed && { opacity: pressedOpacity }]}
-              onPress={onBecomeVisible}
-            >
-              <Text style={styles.buttonTextMuted}>Let others see me</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.button, styles.buttonPrimary, pressed && { opacity: pressedOpacity }]}
-              onPress={onStayHidden}
-            >
-              <Text style={styles.buttonTextPrimary}>Stay hidden</Text>
-            </Pressable>
+            <Button variant="secondary" label="Let others see me" onPress={onBecomeVisible} fullWidth />
+            <Button variant="primary" label="Stay hidden" onPress={onStayHidden} fullWidth />
           </View>
         </View>
       </View>
@@ -88,8 +79,4 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "800", color: colors.text, textAlign: "center", marginBottom: spacing.sm },
   body: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginBottom: spacing.sm },
   actions: { flexDirection: "column", gap: spacing.sm, marginTop: spacing.md },
-  button: { paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md, borderRadius: radius.md, alignItems: "center" },
-  buttonPrimary: { backgroundColor: colors.accent },
-  buttonTextMuted: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
-  buttonTextPrimary: { fontSize: 14, fontWeight: "700", color: "#FFFFFF" },
 });

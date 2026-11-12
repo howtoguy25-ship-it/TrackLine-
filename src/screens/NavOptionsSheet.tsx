@@ -1,9 +1,10 @@
 import React, { forwardRef } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
@@ -47,14 +48,13 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
           <Text style={styles.title}>Trip options</Text>
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={onClose}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
 
         <OptionRow icon="warning" iconBg="#F59E0B" iconColor="#111827" label="Report an incident" onPress={onReportAlert} />
@@ -78,14 +78,14 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
 
         <View style={styles.divider} />
 
-        <Pressable
+        <Button
+          variant="destructive"
+          icon="close-circle"
+          label="End navigation"
           onPress={onEndNavigation}
-          style={({ pressed }) => [styles.endButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="End navigation"
-        >
-          <Ionicons name="close-circle" size={20} color="#FFFFFF" />
-          <Text style={styles.endButtonText}>End navigation</Text>
-        </Pressable>
+          fullWidth
+        />
       </BottomSheetView>
     </BottomSheet>
   );
@@ -102,7 +102,7 @@ function OptionRow({
   subtitle,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   iconBg: string;
   iconColor: string;
   label: string;
@@ -119,13 +119,13 @@ function OptionRow({
       accessibilityLabel={subtitle ? `${label} -- ${subtitle}` : label}
     >
       <View style={[styles.rowIconWrap, { backgroundColor: iconBg }]}>
-        <Ionicons name={icon} size={20} color={iconColor} />
+        <Icon name={icon} size={20} color={iconColor} />
       </View>
       <View style={styles.rowTextWrap}>
         <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
         {subtitle && <Text style={styles.rowSubtitle}>{subtitle}</Text>}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -154,14 +154,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "800",
     color: colors.text,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
   },
   row: {
     flexDirection: "row",
@@ -198,19 +190,4 @@ const styles = StyleSheet.create({
   // Real, explicit request for a more polished look -- End navigation is a destructive, trip-
   // ending action, not just another row in the list, so it now reads as its own clear, full-
   // width button instead of blending in with Report/Share/AI Detection's identical row shape.
-  endButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: "#DC2626",
-    borderRadius: radius.lg,
-    paddingVertical: spacing.sm + 6,
-    ...shadow.low,
-  },
-  endButtonText: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
 });

@@ -4,7 +4,9 @@
 // MapScreen owns the state and the map; the rules (which routes, what they're called) are in
 // map/routeChoices.ts.
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, View, useWindowDimensions } from "react-native";
+import { Icon, type IconName } from "@/components/ui/Icon";
+import { Button, Chip } from "@/components/ui/Button";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, View, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -15,7 +17,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { Text } from "@/components/AppText";
 import { colors, pressedOpacity, scaleFor, shadow } from "@/theme/tokens";
@@ -28,14 +29,19 @@ import {
   isAvoidSupported,
   type RouteAvoidKey,
   type RouteAvoidPrefs,
+  TRAFFIC_LEVEL_LABELS,
+  type RouteSummaryParts,
 } from "@/map/routeChoices";
+import { SELECTED_ROUTE_TIME, TRAFFIC_TEXT } from "@/theme/colors";
+import { useUiScheme } from "@/components/ui/uiScheme";
 
-const GO_BLUE_DARK = "#0077CC";
+// The Go now fill: the go blue, pressed shade.
+const GO_BLUE_DARK = colors.primaryPressed;
 const SELECTED_ROW_FILL = "#F4F5F8";
 
 export const TRAVEL_MODE_ORDER: TravelMode[] = ["driving", "walking", "bicycling", "transit"];
 
-export const TRAVEL_MODE_ICONS: Record<TravelMode, keyof typeof Ionicons.glyphMap> = {
+export const TRAVEL_MODE_ICONS: Record<TravelMode, IconName> = {
   driving: "car-outline",
   walking: "walk-outline",
   bicycling: "bicycle-outline",
@@ -108,15 +114,7 @@ export function RouteSelectionTopCard({
       onLayout={(e) => onHeightChange?.(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
     >
       <View style={[styles.topCard, { borderRadius: 32 * k, padding: 10 * k, gap: 6 * k }]}>
-        <Pressable
-          onPress={onBack}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          style={({ pressed }) => [styles.backButton, { width: 40 * k, height: 40 * k }, pressed && { opacity: pressedOpacity }]}
-        >
-          <Ionicons name="chevron-back" size={26 * k} color={colors.text} />
-        </Pressable>
+        <Button variant="ghost" icon="chevron-back" iconColor={colors.text} onPress={onBack} accessibilityLabel="Back" />
         <View style={[styles.field, { borderRadius: 22 * k, paddingHorizontal: 14 * k }]}>
           <Pressable
             onPress={onEditOrigin}
@@ -124,7 +122,7 @@ export function RouteSelectionTopCard({
             accessibilityRole="button"
             accessibilityLabel={`Starting from ${originLabel}. Tap to change.`}
           >
-            <Text style={[styles.fieldIcon, { fontSize: 18 * k, color: colors.primary }]}>◎</Text>
+            <Icon name="radio-button-on" size={20 * k} color={colors.accent} />
             <Text style={[styles.fieldText, { fontSize: 18 * k }]} numberOfLines={1}>
               {originLabel}
             </Text>
@@ -136,55 +134,38 @@ export function RouteSelectionTopCard({
             accessibilityRole="button"
             accessibilityLabel={`Going to ${destinationLabel}. Tap to change.`}
           >
-            <Text style={[styles.fieldIcon, { fontSize: 17 * k }]}>📍</Text>
+            <Icon name="location" size={20 * k} color={colors.dangerFill} />
             <Text style={[styles.fieldText, { fontSize: 18 * k }]} numberOfLines={1}>
               {destinationLabel}
             </Text>
           </Pressable>
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="swap-vertical"
+            iconColor={colors.text}
             onPress={onSwap}
-            hitSlop={8}
-            accessibilityRole="button"
             accessibilityLabel={`Swap: start from ${destinationLabel} and go to ${originLabel}`}
-            style={({ pressed }) => [
-              styles.swapButton,
-              { width: 38 * k, height: 38 * k, borderRadius: 19 * k, right: 8 * k, top: 48 * k - 19 * k },
-              pressed && { opacity: pressedOpacity },
-            ]}
-          >
-            <Ionicons name="swap-vertical" size={20 * k} color={colors.text} />
-          </Pressable>
+            style={[styles.swapButton, { right: 4 * k, top: 48 * k - 22 }]}
+          />
         </View>
       </View>
       <View style={[styles.pillRow, { gap: 8 * k, marginTop: 8 * k }]} pointerEvents="box-none">
-        <Pressable
+        <Chip
+          onMap
+          selected={avoidActive}
+          label={avoidLabel}
+          trailingIcon="chevron-down"
           onPress={onOpenAvoid}
-          accessibilityRole="button"
           accessibilityLabel={`${avoidLabel}. Choose what routes avoid.`}
-          style={({ pressed }) => [
-            styles.pill,
-            { height: 40 * k, borderRadius: 20 * k, paddingHorizontal: 16 * k },
-            avoidActive && styles.pillActive,
-            pressed && { opacity: pressedOpacity },
-          ]}
-        >
-          <Text style={[styles.pillText, { fontSize: 18 * k }]}>{avoidLabel}</Text>
-          <Ionicons name="chevron-down" size={16 * k} color={colors.primary} />
-        </Pressable>
-        <Pressable
+        />
+        <Chip
+          onMap
+          icon={TRAVEL_MODE_ICONS[travelMode]}
+          label={MODE_PILL_LABELS[travelMode]}
+          trailingIcon="chevron-down"
           onPress={onOpenMode}
-          accessibilityRole="button"
           accessibilityLabel={`${TRAVEL_MODE_LABELS[travelMode]}. Change how you're getting there.`}
-          style={({ pressed }) => [
-            styles.pill,
-            { height: 40 * k, borderRadius: 20 * k, paddingHorizontal: 16 * k },
-            pressed && { opacity: pressedOpacity },
-          ]}
-        >
-          <Ionicons name={TRAVEL_MODE_ICONS[travelMode]} size={18 * k} color={colors.primary} />
-          <Text style={[styles.pillText, { fontSize: 18 * k }]}>{MODE_PILL_LABELS[travelMode]}</Text>
-          <Ionicons name="chevron-down" size={16 * k} color={colors.primary} />
-        </Pressable>
+        />
       </View>
     </View>
   );
@@ -202,9 +183,7 @@ function SheetFrame({ visible, title, onClose, children }: { visible: boolean; t
         <View style={styles.grabber} />
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{title}</Text>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
-            <Text style={styles.modalDone}>Done</Text>
-          </Pressable>
+          <Button variant="ghost" label="Done" onPress={onClose} />
         </View>
         {children}
       </View>
@@ -274,9 +253,9 @@ export function TravelModeSheet({
             accessibilityState={{ selected: active }}
             style={({ pressed }) => [styles.modeRow, i > 0 && styles.rowDivider, pressed && { opacity: pressedOpacity }]}
           >
-            <Ionicons name={TRAVEL_MODE_ICONS[m]} size={24} color={active ? colors.primary : colors.textMuted} />
-            <Text style={[styles.avoidLabel, { flex: 1 }, active && { color: colors.primary }]}>{MODE_PILL_LABELS[m]}</Text>
-            {active && <Ionicons name="checkmark" size={22} color={colors.primary} />}
+            <Icon name={TRAVEL_MODE_ICONS[m]} size={24} color={active ? colors.accent : colors.textMuted} />
+            <Text style={[styles.avoidLabel, { flex: 1 }, active && { color: colors.accent }]}>{MODE_PILL_LABELS[m]}</Text>
+            {active && <Icon name="checkmark" size={22} color={colors.accent} />}
           </Pressable>
         );
       })}
@@ -295,6 +274,33 @@ export interface RouteChoiceRow {
   title: string | null;
   /** "Best route, Typical traffic · Toll". */
   subtitle: string;
+  /** The same line in pieces, for driving routes, so the traffic words take their colour. */
+  subtitleParts?: RouteSummaryParts;
+}
+
+/** The grey line under a route, with "Light / Typical / Heavy traffic" in green / grey / red. */
+function RouteSubtitle({ row, style }: { row: RouteChoiceRow; style: StyleProp<TextStyle> }) {
+  const scheme = useUiScheme();
+  const p = row.subtitleParts;
+  if (!p) {
+    return (
+      <Text style={style} numberOfLines={1}>
+        {row.subtitle}
+      </Text>
+    );
+  }
+  return (
+    <Text style={style} numberOfLines={1}>
+      {p.lead}
+      {p.traffic && (
+        <>
+          {", "}
+          <Text style={{ color: TRAFFIC_TEXT[scheme][p.traffic] }}>{TRAFFIC_LEVEL_LABELS[p.traffic]}</Text>
+        </>
+      )}
+      {p.tail}
+    </Text>
+  );
 }
 
 interface SheetProps {
@@ -333,6 +339,7 @@ export function RouteSelectionSheet({
   const insets = useSafeAreaInsets();
   const { width, height: windowHeight } = useWindowDimensions();
   const k = scaleFor(width);
+  const scheme = useUiScheme();
   const [expanded, setExpanded] = useState(false);
   const [summaryHeight, setSummaryHeight] = useState(0);
   const [footerHeight, setFooterHeight] = useState(0);
@@ -395,12 +402,12 @@ export function RouteSelectionSheet({
           </Pressable>
           {errorText ? (
             <View style={[styles.statusRow, { paddingHorizontal: 20 * k }]}>
-              <Ionicons name="alert-circle" size={22} color={colors.danger} />
+              <Icon name="alert-circle" size={22} color={colors.danger} />
               <Text style={styles.errorText}>{errorText}</Text>
             </View>
           ) : !hasRoutes ? (
             <View style={[styles.statusRow, { paddingHorizontal: 20 * k }]}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.accent} />
               <Text style={styles.statusText}>{loadingText}</Text>
             </View>
           ) : !expanded && selected ? (
@@ -414,9 +421,7 @@ export function RouteSelectionSheet({
                   {selected.title}
                 </Text>
               )}
-              <Text style={[styles.summarySub, { fontSize: 17 * k }]} numberOfLines={1}>
-                {selected.subtitle}
-              </Text>
+              <RouteSubtitle row={selected} style={[styles.summarySub, { fontSize: 17 * k }]} />
             </Pressable>
           ) : (
             <View style={{ height: 4 }} />
@@ -444,7 +449,7 @@ export function RouteSelectionSheet({
               >
                 {isSelected && <View style={styles.selectedBar} />}
                 <View style={styles.summaryTop}>
-                  <Text style={[styles.listTime, { fontSize: 24 * k }, isSelected && { color: colors.primary }]}>{row.timeText}</Text>
+                  <Text style={[styles.listTime, { fontSize: 24 * k }, isSelected && { color: SELECTED_ROUTE_TIME[scheme] }]}>{row.timeText}</Text>
                   <Text style={[styles.summaryDistance, { fontSize: 17 * k }]}>{row.distanceText}</Text>
                 </View>
                 {row.title && (
@@ -452,9 +457,7 @@ export function RouteSelectionSheet({
                     {row.title}
                   </Text>
                 )}
-                <Text style={[styles.summarySub, { fontSize: 16 * k }]} numberOfLines={1}>
-                  {row.subtitle}
-                </Text>
+                <RouteSubtitle row={row} style={[styles.summarySub, { fontSize: 16 * k }]} />
               </Pressable>
             );
           })}
@@ -464,7 +467,7 @@ export function RouteSelectionSheet({
               accessibilityRole="button"
               style={({ pressed }) => [styles.addStop, styles.rowDivider, { paddingHorizontal: 20 * k }, pressed && { opacity: pressedOpacity }]}
             >
-              <Ionicons name="add" size={20 * k} color={colors.primary} />
+              <Icon name="add" size={20 * k} color={colors.accent} />
               <Text style={[styles.addStopText, { fontSize: 17 * k }]}>{hasStop ? "Change stop" : "Add a stop"}</Text>
             </Pressable>
           )}
@@ -476,37 +479,18 @@ export function RouteSelectionSheet({
         style={[styles.footer, { gap: 12 * k, paddingHorizontal: 16 * k, paddingTop: 10 * k, paddingBottom: insets.bottom + 12 * k }]}
       >
         {onLeaveLater && (
-          <Pressable
-            onPress={onLeaveLater}
-            disabled={!hasRoutes}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.footerButton,
-              styles.leaveLater,
-              { height: 58 * k, borderRadius: 29 * k },
-              !hasRoutes && { opacity: 0.5 },
-              pressed && { opacity: pressedOpacity },
-            ]}
-          >
-            <Text style={[styles.leaveLaterText, { fontSize: 18 * k }]}>Leave later</Text>
-          </Pressable>
+          <Button variant="secondary" size="large" label="Leave later" onPress={onLeaveLater} disabled={!hasRoutes} style={styles.footerButton} />
         )}
-        <Pressable
+        <Button
+          variant="primary"
+          size="large"
+          label="Go now"
           onPress={onGoNow}
           disabled={!hasRoutes}
-          accessibilityRole="button"
           accessibilityHint={countdownRunning ? "Starts by itself in a few seconds. Touch the screen to stop it." : undefined}
-          style={({ pressed }) => [
-            styles.footerButton,
-            styles.goNow,
-            { height: 58 * k, borderRadius: 29 * k },
-            !hasRoutes && { opacity: 0.5 },
-            pressed && { opacity: pressedOpacity },
-          ]}
-        >
-          <Animated.View style={[styles.goFill, fillStyle]} pointerEvents="none" />
-          <Text style={[styles.goNowText, { fontSize: 18 * k }]}>Go now</Text>
-        </Pressable>
+          style={styles.footerButton}
+          underlay={<Animated.View style={[styles.goFill, fillStyle]} pointerEvents="none" />}
+        />
       </View>
     </View>
   );
@@ -569,29 +553,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     ...shadow.floating,
   },
-  backButton: { alignItems: "center", justifyContent: "center" },
   field: { flex: 1, backgroundColor: colors.surfaceMuted },
   fieldRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingRight: 44 },
-  fieldIcon: { width: 22, textAlign: "center" },
   fieldText: { flex: 1, fontWeight: "500", color: colors.text },
   fieldDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.chipBorder, marginLeft: 32 },
-  swapButton: {
-    position: "absolute",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    ...shadow.low,
-  },
+  swapButton: { position: "absolute" },
   pillRow: { flexDirection: "row" },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.surface,
-    ...shadow.floating,
-  },
-  pillActive: { borderWidth: 1.5, borderColor: colors.primary },
-  pillText: { fontWeight: "600", color: colors.primary },
 
   sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)" },
   modalSheet: {
@@ -602,7 +569,6 @@ const styles = StyleSheet.create({
   },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12 },
   modalTitle: { fontSize: 22, fontWeight: "700", color: colors.text },
-  modalDone: { fontSize: 17, fontWeight: "600", color: colors.primary },
   avoidRow: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 56, paddingVertical: 8 },
   avoidLabel: { fontSize: 18, fontWeight: "500", color: colors.text },
   avoidHint: { fontSize: 14, color: colors.textFaint, marginTop: 2 },
@@ -632,14 +598,10 @@ const styles = StyleSheet.create({
   listTime: { fontWeight: "700", color: colors.text },
   selectedBar: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: colors.primary },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 52 },
-  addStopText: { fontWeight: "500", color: colors.primary },
+  addStopText: { fontWeight: "500", color: colors.accent },
   footer: { flexDirection: "row" },
-  footerButton: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
-  leaveLater: { backgroundColor: colors.surfaceMuted },
-  leaveLaterText: { fontWeight: "600", color: colors.primary },
-  goNow: { backgroundColor: colors.primary },
+  footerButton: { flex: 1 },
   goFill: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: GO_BLUE_DARK },
-  goNowText: { fontWeight: "600", color: "#FFFFFF" },
 
   bubbleWrap: { alignItems: "center" },
   bubble: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6, alignItems: "center", ...shadow.low },

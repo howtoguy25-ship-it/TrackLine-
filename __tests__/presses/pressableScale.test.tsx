@@ -7,7 +7,7 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 
 jest.mock("expo-haptics", () => ({ impactAsync: () => Promise.resolve(), ImpactFeedbackStyle: { Light: "light" } }));
 
-import { PressableScale } from "@/components/PressableScale";
+import { PressableScale } from "@/components/ui/PressableScale";
 import { componentNameFromHierarchy } from "@/debug/touchDebug";
 
 describe("PressableScale", () => {

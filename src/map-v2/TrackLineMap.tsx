@@ -2,6 +2,7 @@ import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, u
 import { StyleSheet, View } from "react-native";
 import type { CameraStop, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { loadMapbox } from "@/map-v2/mapbox";
+import { TRAFFIC } from "@/theme/colors";
 import { GestureTracker } from "@/map-v2/gestures";
 import {
   BUILDING_EXTRUSION_MIN_PITCH,
@@ -255,7 +256,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
             belowLayerID="road-label-service"
             filter={["match", ["get", "congestion"], ["moderate", "heavy", "severe"], true, false]}
             style={{
-              lineColor: ["match", ["get", "congestion"], "moderate", "#FF9500", "heavy", "#E5222B", "severe", "#8B0000", "#00000000"],
+              lineColor: ["match", ["get", "congestion"], "moderate", TRAFFIC.slow, "heavy", TRAFFIC.heavy, "severe", TRAFFIC.standstill, "#00000000"],
               lineWidth: ["interpolate", ["exponential", 1.5], ["zoom"], 10, 1.5, 14, 3, 18, 8],
               lineCap: "round",
               lineJoin: "round",

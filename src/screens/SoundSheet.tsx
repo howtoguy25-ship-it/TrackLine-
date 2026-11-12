@@ -1,9 +1,10 @@
 import React, { forwardRef, useEffect, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, Platform } from "react-native";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useSettings } from "@/context/SettingsContext";
 import { getVoiceDisplayName } from "@/services/voiceLabel";
 import {
@@ -15,12 +16,12 @@ import {
   type AudioRouteType,
 } from "audio-route";
 import type { SpokenDirectionsMode } from "@/services/settings";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
 // Taller than it was, to fit the "Listening on" row without clipping the voice row below it.
 const SNAP_POINTS = ["58%"];
 
-const ROUTE_ICONS: Record<AudioRouteType, React.ComponentProps<typeof Ionicons>["name"]> = {
+const ROUTE_ICONS: Record<AudioRouteType, IconName> = {
   speaker: "volume-high-outline",
   phone: "call-outline",
   headphones: "headset-outline",
@@ -108,14 +109,13 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
           <Text style={styles.title}>Sound</Text>
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={onClose}
-            hitSlop={12}
-            style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Close"
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
 
         <Text style={styles.sectionLabel}>Spoken directions</Text>
@@ -154,7 +154,7 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
                 : "Listening on. Tap to choose where sound plays."
             }
           >
-            <Ionicons
+            <Icon
               name={ROUTE_ICONS[audioRoute?.type ?? "other"]}
               size={20}
               color={colors.accent}
@@ -166,7 +166,7 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
                 {audioRoute ? describeAudioRoute(audioRoute, Platform.OS) : "Tap to choose where sound plays"}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            <Icon name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
         )}
 
@@ -179,7 +179,7 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
             <Text style={styles.radioLabel}>Current voice</Text>
             <Text style={styles.radioDescription}>{currentVoiceLabel}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          <Icon name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
       </BottomSheetView>
     </BottomSheet>
@@ -210,14 +210,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "800",
     color: colors.text,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
   },
   sectionLabel: {
     fontSize: 13,

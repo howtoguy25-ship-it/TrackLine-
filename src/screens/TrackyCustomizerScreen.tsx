@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ScrollView } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { Tracky } from "@/components/trackys/Tracky";
 import {
@@ -90,14 +91,13 @@ export function TrackyCustomizerScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Make your Tracky</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       <View style={styles.previewRow}>
@@ -156,7 +156,7 @@ export function TrackyCustomizerScreen() {
                 style={[styles.swatch, styles.swatchNone, !draft.colorBottom && styles.swatchSelected]}
                 accessibilityLabel="No two-tone"
               >
-                <Ionicons name="close" size={16} color={colors.textMuted} />
+                <Icon name="close" size={16} color={colors.textMuted} />
               </Pressable>
               {BODY_COLOR_PALETTE.map((c) => (
                 <Swatch key={c} color={c} selected={draft.colorBottom === c} onPress={() => setDraft({ ...draft, colorBottom: c })} />
@@ -267,9 +267,9 @@ export function TrackyCustomizerScreen() {
                     {!unlocked && !!o.unlockHint && <Text style={styles.tileHint}>{o.unlockHint}</Text>}
                   </View>
                   {!unlocked ? (
-                    <Ionicons name="lock-closed" size={16} color={colors.textMuted} />
+                    <Icon name="lock-closed" size={16} color={colors.textMuted} />
                   ) : selected ? (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
+                    <Icon name="checkmark-circle" size={20} color={colors.accent} />
                   ) : null}
                 </Pressable>
               );
@@ -284,16 +284,14 @@ export function TrackyCustomizerScreen() {
         </Text>
       )}
       <View style={styles.actions}>
-        <Pressable style={({ pressed }) => [styles.secondaryButton, pressed && { opacity: pressedOpacity }]} onPress={onUseMood}>
-          <Text style={styles.secondaryButtonText}>Use my mood instead</Text>
-        </Pressable>
-        <Pressable
-          style={({ pressed }) => [styles.primaryButton, !draftUnlocked && styles.primaryButtonDisabled, pressed && draftUnlocked && { opacity: pressedOpacity }]}
+        <Button variant="secondary" label="Use my mood instead" onPress={onUseMood} style={{ flex: 1 }} />
+        <Button
+          variant="primary"
+          label="Save"
           onPress={onSave}
           disabled={!draftUnlocked}
-        >
-          <Text style={styles.primaryButtonText}>Save</Text>
-        </Pressable>
+          style={{ flex: 1 }}
+        />
       </View>
     </View>
   );
@@ -306,7 +304,7 @@ function Swatch({ color, selected, onPress }: { color: string; selected: boolean
       style={[styles.swatch, { backgroundColor: color }, selected && styles.swatchSelected]}
       accessibilityLabel={`Colour ${color}`}
     >
-      {selected && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+      {selected && <Icon name="checkmark" size={16} color="#FFFFFF" />}
     </Pressable>
   );
 }
@@ -314,7 +312,7 @@ function Swatch({ color, selected, onPress }: { color: string; selected: boolean
 function LockBadge() {
   return (
     <View style={styles.lockBadge}>
-      <Ionicons name="lock-closed" size={11} color="#FFFFFF" />
+      <Icon name="lock-closed" size={11} color="#FFFFFF" />
     </View>
   );
 }
@@ -323,14 +321,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   previewRow: { alignItems: "center", paddingVertical: spacing.md },
   tabBar: { flexGrow: 0, marginBottom: spacing.sm },
   tabBarContent: { gap: spacing.xs },
@@ -399,21 +389,4 @@ const styles = StyleSheet.create({
   trailLabel: { fontSize: 15, fontWeight: "700", color: colors.text },
   lockedNotice: { fontSize: 12, color: colors.danger, textAlign: "center", marginBottom: spacing.sm },
   actions: { flexDirection: "row", gap: spacing.sm },
-  secondaryButton: {
-    flex: 1,
-    paddingVertical: spacing.sm + 4,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-  },
-  secondaryButtonText: { fontSize: 14, fontWeight: "700", color: colors.text },
-  primaryButton: {
-    flex: 1,
-    paddingVertical: spacing.sm + 4,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-  },
-  primaryButtonDisabled: { opacity: 0.4 },
-  primaryButtonText: { fontSize: 14, fontWeight: "800", color: "#FFFFFF" },
 });

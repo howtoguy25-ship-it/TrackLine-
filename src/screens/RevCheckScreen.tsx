@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking, Keyboard } from "react-native";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, Pressable, StyleSheet, ScrollView, Linking, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
@@ -300,19 +301,18 @@ export function RevCheckScreen() {
             written-off / money-owing status -- Australia only.
           </Text>
         </View>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={onClose}
-          hitSlop={12}
           accessibilityLabel="Close REV check"
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
-        >
-          <Ionicons name="close" size={22} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       {hasVehicleSummary && (
         <View style={styles.summaryCard}>
-          <MaterialCommunityIcons name="car-info" size={20} color={colors.accent} />
+          <Icon name="car-info" size={20} color={colors.accent} />
           <View style={styles.summaryTextWrap}>
             <Text style={styles.summaryTitle}>From live AI detection</Text>
             <View style={styles.summaryRow}>
@@ -334,14 +334,13 @@ export function RevCheckScreen() {
       <View style={styles.formCard}>
         <View style={styles.fieldLabelRow}>
           <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>NUMBER PLATE (required)</Text>
-          <Pressable
+          <Button
+            variant="secondary"
+            icon="camera-outline"
+            label="Scan plate"
             onPress={() => navigation.navigate("DocumentScan", { mode: "plate" })}
-            style={({ pressed }) => [styles.scanButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Scan plate with camera"
-          >
-            <Ionicons name="camera-outline" size={14} color={colors.accent} />
-            <Text style={styles.scanButtonText}>Scan plate</Text>
-          </Pressable>
+          />
         </View>
         <TextInput
           value={plate}
@@ -361,20 +360,13 @@ export function RevCheckScreen() {
           {AU_STATES.map((s) => {
             const isSelected = state === s.code;
             return (
-              <Pressable
+              <Chip
+                label={s.code}
                 key={s.code}
                 onPress={() => setState(s.code)}
-                style={({ pressed }) => [
-                  styles.stateChip,
-                  isSelected && styles.stateChipSelected,
-                  pressed && { opacity: pressedOpacity },
-                ]}
                 accessibilityLabel={s.label}
-              >
-                <Text style={[styles.stateChipText, isSelected && styles.stateChipTextSelected]}>
-                  {s.code}
-                </Text>
-              </Pressable>
+                selected={isSelected}
+              />
             );
           })}
         </View>
@@ -384,14 +376,13 @@ export function RevCheckScreen() {
 
         <View style={styles.fieldLabelRow}>
           <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
-          <Pressable
+          <Button
+            variant="secondary"
+            icon="camera-outline"
+            label="Scan VIN"
             onPress={() => navigation.navigate("DocumentScan", { mode: "vin" })}
-            style={({ pressed }) => [styles.scanButton, pressed && { opacity: pressedOpacity }]}
             accessibilityLabel="Scan VIN with camera"
-          >
-            <Ionicons name="camera-outline" size={14} color={colors.accent} />
-            <Text style={styles.scanButtonText}>Scan VIN</Text>
-          </Pressable>
+          />
         </View>
         <TextInput
           value={vin}
@@ -414,7 +405,7 @@ export function RevCheckScreen() {
 
         {paymentRequired && !hasPendingPaidRetry && paymentReady && (
           <View style={styles.costNotice}>
-            <MaterialCommunityIcons name="currency-usd" size={14} color={colors.warning} />
+            <Icon name="currency-usd" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
               Running this check costs {priceLabel}, charged securely through the App Store.
             </Text>
@@ -424,7 +415,7 @@ export function RevCheckScreen() {
             state instead of a normal-looking price notice for a purchase guaranteed to fail. */}
         {paymentRequired && !hasPendingPaidRetry && !paymentReady && (
           <View style={styles.costNotice}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={14} color={colors.warning} />
+            <Icon name="alert-circle-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
               REV Check payments aren't available yet -- try again shortly.
             </Text>
@@ -432,43 +423,37 @@ export function RevCheckScreen() {
         )}
         {hasPendingPaidRetry && (
           <View style={styles.costNotice}>
-            <MaterialCommunityIcons name="information-outline" size={14} color={colors.warning} />
+            <Icon name="information-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
               Your last check didn't complete after payment -- retrying is free, no second charge.
             </Text>
           </View>
         )}
 
-        <Pressable
+        <Button
+          variant="primary"
+          size="large"
+          fullWidth
+          label={
+            hasPendingPaidRetry
+              ? "Retry REV check (already paid)"
+              : paymentRequired
+                ? paymentReady
+                  ? `Pay ${priceLabel} and start REV check`
+                  : "Payments unavailable"
+                : "Start REV check"
+          }
+          loading={checking || purchasing}
           onPress={onStart}
           disabled={!plate.trim() || checking || purchasing || (paymentRequired && !hasPendingPaidRetry && !paymentReady)}
-          style={({ pressed }) => [
-            styles.startButton,
-            (!plate.trim() || checking || purchasing || (paymentRequired && !hasPendingPaidRetry && !paymentReady)) &&
-              styles.startButtonDisabled,
-            pressed && !checking && !purchasing && plate.trim() && { opacity: pressedOpacity },
-          ]}
-        >
-          {checking || purchasing ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.startButtonText}>
-              {hasPendingPaidRetry
-                ? "Retry REV Check (already paid)"
-                : paymentRequired
-                  ? paymentReady
-                    ? `Pay ${priceLabel} & Start REV Check`
-                    : "Payments unavailable"
-                  : "Start REV Check"}
-            </Text>
-          )}
-        </Pressable>
+          style={{ marginTop: spacing.lg }}
+        />
       </View>
 
       {plateResult && plateResult.outcome === "success" && plateResult.vehicle && (
         <View style={styles.successCard}>
           <View style={styles.successHeader}>
-            <MaterialCommunityIcons name="car-info" size={20} color={colors.accent} />
+            <Icon name="car-info" size={20} color={colors.accent} />
             <Text style={styles.successHeaderText}>Real vehicle data from plate + state</Text>
           </View>
           <View style={styles.detailRowLight}>
@@ -509,7 +494,7 @@ export function RevCheckScreen() {
         <View
           style={[styles.resultCard, plateResult.outcome === "error" ? styles.resultCardError : styles.resultCardWarn]}
         >
-          <MaterialCommunityIcons
+          <Icon
             name={plateResult.outcome === "error" ? "alert-circle-outline" : "information-outline"}
             size={20}
             color={plateResult.outcome === "error" ? colors.danger : colors.warning}
@@ -521,7 +506,7 @@ export function RevCheckScreen() {
       {result && result.outcome === "success" && (
         <View style={styles.successCard}>
           <View style={styles.successHeader}>
-            <MaterialCommunityIcons name="check-decagram" size={20} color={colors.accent} />
+            <Icon name="check-decagram" size={20} color={colors.accent} />
             <Text style={styles.successHeaderText}>
               {cachedResultAt ? `Last checked ${relativeTime(cachedResultAt)}` : "Real result from PPSR/NEVDIS"}
             </Text>
@@ -579,7 +564,7 @@ export function RevCheckScreen() {
                   ))
                 ) : (
                   <View style={styles.odometerUnavailable}>
-                    <MaterialCommunityIcons name="information-outline" size={14} color={colors.textFaint} />
+                    <Icon name="information-outline" size={14} color={colors.textFaint} />
                     <Text style={styles.odometerUnavailableText}>
                       {state === "NSW"
                         ? "Not returned by the connected provider yet. NSW itself records the last 3 annual roadworthy-check readings via Service NSW -- a future data source could surface them here."
@@ -609,20 +594,19 @@ export function RevCheckScreen() {
           </View>
 
           {result.certificateUrl && (
-            <Pressable
+            <Button
+              variant="secondary"
+              icon="file-certificate-outline"
+              label="View PPSR certificate"
               onPress={() => onOpenCertificate(result.certificateUrl as string)}
-              style={({ pressed }) => [styles.certButton, pressed && { opacity: pressedOpacity }]}
-            >
-              <MaterialCommunityIcons name="file-certificate-outline" size={16} color={colors.accent} />
-              <Text style={styles.certButtonText}>View PPSR certificate</Text>
-            </Pressable>
+            />
           )}
         </View>
       )}
 
       {result && result.outcome !== "success" && (
         <View style={[styles.resultCard, result.outcome === "error" ? styles.resultCardError : styles.resultCardWarn]}>
-          <MaterialCommunityIcons
+          <Icon
             name={result.outcome === "error" ? "alert-circle-outline" : "information-outline"}
             size={20}
             color={result.outcome === "error" ? colors.danger : colors.warning}
@@ -640,7 +624,7 @@ export function RevCheckScreen() {
         }}
         style={({ pressed }) => [styles.settingsLink, pressed && { opacity: pressedOpacity }]}
       >
-        <MaterialCommunityIcons name="key-variant" size={16} color={colors.accent} />
+        <Icon name="key-variant" size={16} color={colors.accent} />
         <Text style={styles.settingsLinkText}>Manage REV check provider keys in Settings</Text>
       </Pressable>
     </ScrollView>
@@ -659,15 +643,6 @@ const styles = StyleSheet.create({
   headerTextWrap: { flex: 1, gap: spacing.xs },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
   subtitle: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
   summaryCard: {
     flexDirection: "row",
     gap: spacing.sm + 2,
@@ -722,17 +697,6 @@ const styles = StyleSheet.create({
     flex: 1,
     flexShrink: 1,
   },
-  scanButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    flexShrink: 0,
-  },
-  scanButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   plateInput: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
@@ -747,17 +711,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   stateGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs + 2 },
-  stateChip: {
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  stateChipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  stateChipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
-  stateChipTextSelected: { color: "#FFFFFF" },
   helperText: { fontSize: 12, color: colors.textFaint, lineHeight: 16 },
   costNotice: {
     flexDirection: "row",
@@ -770,17 +723,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   costNoticeText: { flex: 1, fontSize: 12, fontWeight: "600", color: "#92400E" },
-  startButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: spacing.sm,
-    ...shadow.low,
-  },
-  startButtonDisabled: { backgroundColor: colors.border },
-  startButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
   resultCard: {
     flexDirection: "row",
     gap: spacing.sm + 2,
@@ -833,17 +775,6 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   odometerUnavailableText: { flex: 1, fontSize: 12, color: colors.textFaint, lineHeight: 16 },
-  certButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-  },
-  certButtonText: { fontSize: 13, fontWeight: "700", color: colors.accent },
   settingsLink: {
     flexDirection: "row",
     alignItems: "center",

@@ -16,7 +16,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "@/services/firebase";
 import { encodeGeohash } from "@/utils/geo";
-import { classifyAuRegion, type AuRegionCode } from "@/utils/auStates";
+import { classifyAuRegion } from "@/utils/auStates";
 import { ALERT_TTL_MS, type AlertDoc, type AlertType } from "@/types/alert";
 import { containsBlockedLanguage, clampToWordLimit } from "@/utils/commentFilter";
 

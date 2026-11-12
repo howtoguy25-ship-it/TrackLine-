@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
+import { Icon } from "@/components/ui/Icon";
 import { Animated, StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
-import { Ionicons } from "@expo/vector-icons";
 import { radius, shadow, spacing } from "@/theme/tokens";
 
 interface Props {
@@ -50,7 +50,7 @@ export function ExitLaneGuidance({ direction, distanceMeters, instruction, botto
     >
       <View style={styles.bar}>
         <View style={styles.chevronWrap}>
-          <Ionicons name={direction === "left" ? "chevron-back" : "chevron-forward"} size={26} color="#FFFFFF" />
+          <Icon name={direction === "left" ? "chevron-back" : "chevron-forward"} size={26} color="#FFFFFF" />
         </View>
         <View style={styles.textWrap}>
           <Text style={styles.title}>KEEP {direction === "left" ? "LEFT" : "RIGHT"} FOR THE EXIT</Text>

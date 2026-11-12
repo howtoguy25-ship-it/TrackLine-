@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Pressable } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { Animated, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { ALERT_COLORS, ALERT_ICONS, ALERT_LABELS, type AlertType } from "@/types/alert";
 
 export interface NearbyAlertNotification {
@@ -63,9 +64,13 @@ export function NearbyAlertToast({ notification, onDismiss }: Props) {
       <Text style={styles.text} numberOfLines={1}>
         {ALERT_LABELS[notification.type]} reported {distanceLabel}
       </Text>
-      <Pressable onPress={onDismiss} hitSlop={12} accessibilityLabel="Dismiss" style={({ pressed }) => pressed && { opacity: pressedOpacity }}>
-        <MaterialCommunityIcons name="close" size={18} color={colors.textMuted} />
-      </Pressable>
+      <Button
+        variant="ghost"
+        icon="close"
+        iconColor={colors.textMuted}
+        onPress={onDismiss}
+        accessibilityLabel="Dismiss"
+      />
     </Animated.View>
   );
 }

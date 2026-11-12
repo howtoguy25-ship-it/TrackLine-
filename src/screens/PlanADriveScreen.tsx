@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, FlatList, ActivityIndicator, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -147,20 +148,19 @@ export function PlanADriveScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Plan a drive</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       {!destination ? (
         <>
           <View style={styles.searchRow}>
-            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <Icon name="search" size={16} color={colors.textMuted} />
             <TextInput
               value={query}
               onChangeText={onChangeText}
@@ -183,7 +183,7 @@ export function PlanADriveScreen() {
                   style={({ pressed }) => [styles.predictionRow, pressed && { opacity: pressedOpacity }]}
                   onPress={() => onPickPrediction(item)}
                 >
-                  <Ionicons name="location-outline" size={18} color={colors.textMuted} />
+                  <Icon name="location-outline" size={18} color={colors.textMuted} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.predictionPrimary} numberOfLines={1}>
                       {item.primaryText}
@@ -198,7 +198,7 @@ export function PlanADriveScreen() {
                   style={({ pressed }) => [styles.predictionRow, pressed && { opacity: pressedOpacity }]}
                   onPress={() => pickPlace(item)}
                 >
-                  <Ionicons name="time-outline" size={18} color={colors.textMuted} />
+                  <Icon name="time-outline" size={18} color={colors.textMuted} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.predictionPrimary} numberOfLines={1}>
                       {item.name}
@@ -215,34 +215,22 @@ export function PlanADriveScreen() {
       ) : (
         <View style={styles.planCard}>
           <Pressable style={styles.destRow} onPress={() => setDestination(null)}>
-            <Ionicons name="flag" size={18} color={colors.accent} />
+            <Icon name="flag" size={18} color={colors.accent} />
             <Text style={styles.destText} numberOfLines={2}>
               {destination.name}
             </Text>
-            <Ionicons name="pencil" size={16} color={colors.textFaint} />
+            <Icon name="pencil" size={16} color={colors.textFaint} />
           </Pressable>
 
           <Text style={styles.sectionLabel}>Departure time</Text>
           <View style={styles.presetRow}>
             {DEPARTURE_PRESETS.map((preset) => (
-              <Pressable
+              <Chip
+                label={preset.label}
                 key={preset.label}
                 onPress={() => setMinutesFromNow(preset.minutesFromNow)}
-                style={({ pressed }) => [
-                  styles.presetChip,
-                  minutesFromNow === preset.minutesFromNow && styles.presetChipActive,
-                  pressed && { opacity: pressedOpacity },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.presetChipText,
-                    minutesFromNow === preset.minutesFromNow && styles.presetChipTextActive,
-                  ]}
-                >
-                  {preset.label}
-                </Text>
-              </Pressable>
+                selected={minutesFromNow === preset.minutesFromNow}
+              />
             ))}
           </View>
 
@@ -260,13 +248,13 @@ export function PlanADriveScreen() {
             )}
           </View>
 
-          <Pressable
+          <Button
+            variant="primary"
+            label="Start drive"
             onPress={onStart}
             disabled={!eta}
-            style={({ pressed }) => [styles.startButton, !eta && styles.startButtonDisabled, pressed && { opacity: pressedOpacity }]}
-          >
-            <Text style={styles.startButtonText}>Start drive</Text>
-          </Pressable>
+            size="large" fullWidth
+          />
         </View>
       )}
     </View>
@@ -277,14 +265,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -311,16 +291,6 @@ const styles = StyleSheet.create({
   },
   destText: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.text },
   presetRow: { flexDirection: "row", gap: spacing.sm },
-  presetChip: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-  },
-  presetChipActive: { backgroundColor: colors.accent },
-  presetChipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
-  presetChipTextActive: { color: "#FFFFFF" },
   etaBox: {
     alignItems: "center",
     paddingVertical: spacing.lg,
@@ -330,12 +300,4 @@ const styles = StyleSheet.create({
   etaSubtext: { fontSize: 14, color: colors.textMuted },
   etaNote: { fontSize: 11, color: colors.textFaint, textAlign: "center", marginTop: spacing.xs },
   etaError: { fontSize: 13, color: colors.danger },
-  startButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-  },
-  startButtonDisabled: { opacity: 0.5 },
-  startButtonText: { fontSize: 16, fontWeight: "800", color: "#FFFFFF" },
 });

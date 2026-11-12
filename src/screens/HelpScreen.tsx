@@ -1,8 +1,9 @@
 import React from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
@@ -41,14 +42,13 @@ export function HelpScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Help</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
@@ -63,7 +63,7 @@ export function HelpScreen() {
           onPress={() => Linking.openURL("mailto:support@tracklinemaps.com")}
           style={({ pressed }) => [styles.contactRow, pressed && { opacity: pressedOpacity }]}
         >
-          <Ionicons name="mail-outline" size={20} color={colors.accent} />
+          <Icon name="mail-outline" size={20} color={colors.accent} />
           <Text style={styles.contactText}>Contact support@tracklinemaps.com</Text>
         </Pressable>
       </ScrollView>
@@ -75,14 +75,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   faqItem: { marginBottom: spacing.lg },
   question: { fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: 4 },
   answer: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },

@@ -1,4 +1,6 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import type { SharedValue } from "react-native-reanimated";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import * as Crypto from "expo-crypto";
@@ -16,7 +18,6 @@ import {
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path, Rect } from "react-native-svg";
 import { ThreeSnapBottomSheet, type ThreeSnapBottomSheetRef } from "@/components/ThreeSnapBottomSheet";
 import { AddressKeypadAccessory, ADDRESS_KEYPAD_ACCESSORY_ID } from "@/components/AddressKeypadAccessory";
@@ -75,7 +76,7 @@ import {
 
 // Outlined icons for search results. A plain outlined pin for anything that isn't obviously a
 // station, airport, hotel, food place or park.
-function predictionIconFor(types: string[] | undefined): keyof typeof Ionicons.glyphMap {
+function predictionIconFor(types: string[] | undefined): IconName {
   const t = new Set(types ?? []);
   if (t.has("train_station") || t.has("transit_station") || t.has("subway_station") || t.has("light_rail_station")) {
     return "train-outline";
@@ -613,11 +614,15 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
           accessibilityRole="search"
           accessibilityLabel="Where to? Search for a place"
         >
-          <Ionicons name="search" size={24} color={colors.textMuted} />
+          <Icon name="search" size={24} color={colors.textMuted} />
           <Text style={styles.fieldPlaceholder}>Where to?</Text>
-          <Pressable onPress={onPressMic} hitSlop={12} accessibilityRole="button" accessibilityLabel="Search by voice">
-            <Ionicons name="mic" size={24} color={colors.text} />
-          </Pressable>
+          <Button
+            variant="ghost"
+            icon="mic"
+            iconColor={colors.text}
+            onPress={onPressMic}
+            accessibilityLabel="Search by voice"
+          />
         </Pressable>
 
         {/* Home, Work, the driver's own saved places, then + New -- scrolling sideways once
@@ -644,15 +649,14 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
             <SlotChip
               key={place.placeId}
               label={place.label ?? place.name}
-              icon={<Ionicons name="bookmark" size={20} color="#7C3AED" />}
+              icon={<Icon name="bookmark" size={20} color="#7C3AED" />}
               onPress={() => onDestinationSelected(place)}
               onLongPress={() => onLongPressCustomPlace(place.placeId, place.label ?? place.name)}
             />
           ))}
           <SlotChip
             label="New"
-            icon={<Ionicons name="add" size={22} color={colors.accent} />}
-            link
+            icon={<Icon name="add" size={22} color={colors.accent} />}
             onPress={() => beginPicking("custom")}
           />
         </ScrollView>
@@ -723,9 +727,13 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
           </View>
         )}
         <View style={styles.searchTopRow}>
-          <Pressable onPress={resetSearch} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
-            <Ionicons name="chevron-back" size={28} color={colors.textMuted} />
-          </Pressable>
+          <Button
+            variant="ghost"
+            icon="chevron-back"
+            iconColor={colors.textMuted}
+            onPress={resetSearch}
+            accessibilityLabel="Back"
+          />
           <View style={styles.searchField}>
             <TextInput
               value={query}
@@ -743,19 +751,22 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
             />
             {loading && <ActivityIndicator size="small" color={colors.accent} />}
             {query.length > 0 ? (
-              <Pressable onPress={() => onChangeText("")} hitSlop={12} accessibilityLabel="Clear search">
-                <Ionicons name="close-circle" size={22} color={colors.textFaint} />
-              </Pressable>
+              <Button
+                variant="ghost"
+                icon="close-circle"
+                iconColor={colors.textFaint}
+                onPress={() => onChangeText("")}
+                accessibilityLabel="Clear search"
+              />
             ) : (
-              <Pressable
+              <Button
+                variant="ghost"
+                icon={listening ? "mic" : "mic-outline"}
+                iconColor={listening ? colors.danger : colors.text}
                 onPress={onPressMic}
-                hitSlop={12}
-                accessibilityRole="button"
                 accessibilityLabel={listening ? "Stop listening" : "Search by voice"}
                 accessibilityState={{ selected: listening }}
-              >
-                <Ionicons name={listening ? "mic" : "mic-outline"} size={22} color={listening ? colors.danger : colors.text} />
-              </Pressable>
+              />
             )}
           </View>
         </View>
@@ -801,7 +812,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                 onPress={() => onSelectPrediction(item)}
               >
                 <View style={styles.resultIcon}>
-                  <Ionicons name={predictionIconFor(item.types)} size={28} color={colors.textMuted} />
+                  <Icon name={predictionIconFor(item.types)} size={28} color={colors.textMuted} />
                 </View>
                 <View style={styles.resultText}>
                   <Text style={styles.resultTitle} numberOfLines={1}>
@@ -841,7 +852,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                 onLongPress={() => onLongPressCustomPlace(item.placeId, item.label ?? item.name)}
               >
                 <View style={styles.resultIcon}>
-                  <Ionicons name="bookmark-outline" size={26} color={colors.textMuted} />
+                  <Icon name="bookmark-outline" size={26} color={colors.textMuted} />
                 </View>
                 <View style={styles.resultText}>
                   <Text style={styles.resultTitle} numberOfLines={1}>
@@ -901,18 +912,8 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                 onSubmitEditing={confirmNamedPlace}
               />
               <View style={styles.nameModalActions}>
-                <Pressable
-                  style={({ pressed }) => [styles.nameModalButton, pressed && { opacity: pressedOpacity }]}
-                  onPress={cancelNamingPlace}
-                >
-                  <Text style={styles.nameModalButtonTextMuted}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.nameModalButton, styles.nameModalButtonPrimary, pressed && { opacity: pressedOpacity }]}
-                  onPress={confirmNamedPlace}
-                >
-                  <Text style={styles.nameModalButtonTextPrimary}>Save</Text>
-                </Pressable>
+                <Button variant="secondary" label="Cancel" onPress={cancelNamingPlace} style={{ flex: 1 }} />
+                <Button variant="primary" label="Save" onPress={confirmNamedPlace} style={{ flex: 1 }} />
               </View>
             </View>
           </View>
@@ -925,9 +926,13 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
       <View style={[styles.contactsModal, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.contactsModalHeader}>
           <Text style={styles.contactsModalTitle}>Upcoming events</Text>
-          <Pressable onPress={() => setEventsOpen(false)} hitSlop={10} accessibilityLabel="Close">
-            <Ionicons name="close" size={22} color={colors.textMuted} />
-          </Pressable>
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
+            onPress={() => setEventsOpen(false)}
+            accessibilityLabel="Close"
+          />
         </View>
         {calendarEvents.length === 0 ? (
           <EmptyState
@@ -947,7 +952,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                 disabled={drivingToEventId === item.id}
               >
                 <View style={styles.resultIcon}>
-                  <Ionicons name="calendar-outline" size={26} color={colors.textMuted} />
+                  <Icon name="calendar-outline" size={26} color={colors.textMuted} />
                 </View>
                 <View style={styles.resultText}>
                   <Text style={styles.resultTitle} numberOfLines={1}>
@@ -975,20 +980,24 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
       <View style={[styles.contactsModal, { paddingTop: insets.top + spacing.md }]}>
         <View style={styles.contactsModalHeader}>
           <Text style={styles.contactsModalTitle}>Friends & family</Text>
-          <Pressable onPress={() => setContactsPickerOpen(false)} hitSlop={10} accessibilityLabel="Close">
-            <Ionicons name="close" size={22} color={colors.textMuted} />
-          </Pressable>
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
+            onPress={() => setContactsPickerOpen(false)}
+            accessibilityLabel="Close"
+          />
         </View>
 
         {contactsStatus !== "granted" ? (
           <Pressable style={styles.contactsConnectRow} onPress={onConnectContacts}>
-            <Ionicons name="people-outline" size={20} color={colors.accent} />
+            <Icon name="people-outline" size={20} color={colors.accent} />
             <Text style={styles.contactsConnectText}>Connect your contacts to drive to a saved address</Text>
           </Pressable>
         ) : (
           <>
             <View style={styles.contactsSearchRow}>
-              <Ionicons name="search" size={16} color={colors.textMuted} />
+              <Icon name="search" size={16} color={colors.textMuted} />
               <TextInput
                 value={contactsQuery}
                 onChangeText={setContactsQuery}
@@ -1017,7 +1026,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                     disabled={drivingToContactId === item.id}
                   >
                     <View style={[styles.predictionIconWrap, { backgroundColor: colors.accent }]}>
-                      <Ionicons name="person" size={16} color="#FFFFFF" />
+                      <Icon name="person" size={16} color="#FFFFFF" />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.primaryText} numberOfLines={1}>
@@ -1030,7 +1039,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                     {drivingToContactId === item.id ? (
                       <ActivityIndicator size="small" color={colors.accent} />
                     ) : (
-                      <Ionicons name="navigate-outline" size={18} color={colors.accent} />
+                      <Icon name="navigate-outline" size={18} color={colors.accent} />
                     )}
                   </Pressable>
                 )}
@@ -1050,21 +1059,18 @@ function CategoryChip({
   active,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   label: string;
   active?: boolean;
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      style={({ pressed }) => [styles.categoryChip, active && styles.categoryChipActive, pressed && { opacity: pressedOpacity }]}
+    <Chip
+      icon={icon}
+      label={label}
       onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: !!active }}
-    >
-      <Ionicons name={icon} size={18} color={active ? "#FFFFFF" : colors.text} />
-      <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>{label}</Text>
-    </Pressable>
+      selected={!!active}
+    />
   );
 }
 
@@ -1093,30 +1099,15 @@ function WorkGlyph() {
 function SlotChip({
   label,
   icon,
-  link,
   onPress,
   onLongPress,
 }: {
   label: string;
   icon: React.ReactNode;
-  link?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  return (
-    <Pressable
-      style={({ pressed }) => [styles.slotChip, pressed && { opacity: pressedOpacity }]}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      {icon}
-      <Text style={[styles.slotChipText, link && { color: colors.accent }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+  return <Chip label={label} leading={icon} onPress={onPress} onLongPress={onLongPress} accessibilityLabel={label} />;
 }
 
 /** A recent search. Swipe left to reveal Delete. */
@@ -1148,7 +1139,7 @@ function RecentRow({
         accessibilityHint="Swipe left to delete"
       >
         <View style={styles.resultIcon}>
-          <Ionicons name="time-outline" size={26} color={colors.textMuted} />
+          <Icon name="time-outline" size={26} color={colors.textMuted} />
         </View>
         <View style={styles.resultText}>
           <Text style={styles.resultTitle} numberOfLines={1}>
@@ -1173,7 +1164,7 @@ function OptionRow({
   busy,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   title: string;
   subtitle: string;
   busy?: boolean;
@@ -1187,7 +1178,7 @@ function OptionRow({
       accessibilityRole="button"
     >
       <View style={styles.resultIcon}>
-        {busy ? <ActivityIndicator color={colors.accent} /> : <Ionicons name={icon} size={26} color={colors.textMuted} />}
+        {busy ? <ActivityIndicator color={colors.accent} /> : <Icon name={icon} size={26} color={colors.textMuted} />}
       </View>
       <View style={styles.resultText}>
         <Text style={styles.resultTitle} numberOfLines={1}>
@@ -1295,18 +1286,6 @@ const styles = StyleSheet.create({
   },
   pickingBannerText: { fontSize: 13, fontWeight: "700", color: colors.accent },
   micNote: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs, paddingHorizontal: spacing.xs },
-  categoryChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    height: 44,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 22,
-    paddingHorizontal: spacing.lg,
-  },
-  categoryChipActive: { backgroundColor: colors.accent },
-  categoryChipText: { fontSize: 16, fontWeight: "600", color: colors.text },
-  categoryChipTextActive: { color: "#FFFFFF" },
   listFlex: { flex: 1, marginTop: spacing.sm },
   row: {
     flexDirection: "row",
@@ -1340,10 +1319,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   nameModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm, marginTop: spacing.sm },
-  nameModalButton: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.md },
-  nameModalButtonPrimary: { backgroundColor: colors.accent },
-  nameModalButtonTextMuted: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
-  nameModalButtonTextPrimary: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   contactsModal: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   contactsModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
   contactsModalTitle: { fontSize: 20, fontWeight: "800", color: colors.text },

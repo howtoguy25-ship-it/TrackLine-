@@ -481,3 +481,62 @@ a phone is in `TEST_ON_PHONE.md` §11 (NEEDS DEVICE TEST for every row — no de
 | EV siren radar, dashcam overlay | YES (not map layers) | unchanged screen overlays above the map |
 | Simulate drive | YES (new, dev builds) | `dev/simulateDrive.ts` through the GPS-replay channel; jest "simulate drive" |
 | Map / Mapbox attribution | YES | Mapbox logo + ⓘ on the map; About › Licences: © Mapbox, © OpenStreetMap |
+
+## 12. Strict verification — is each requirement wired into what the phone renders?
+
+**Why the phone showed the old home screen:** the phone wasn't running this code. The
+TestFlight/Play builds (`eab53952`, `fa3a97e2`) were made from `e97b183`, before UI pass 2 began,
+and a *development* build carries no JavaScript of its own — it shows whatever the computer's
+Metro server serves (an old checkout showed the old screen). Settings › About now prints the
+build's version, commit and date, and says "JS from dev server" when that's where the code came
+from, so this can be checked on the phone itself.
+
+Entry chain (each link tested in `__tests__/presses/wiring.test.ts`): `package.json` main →
+`expo/AppEntry.js` → `App.tsx:132` `<RootNavigator>` → `RootNavigator.tsx:170` first screen
+`Map` → `MapScreen.tsx`.
+
+"Rendered" = reachable from that chain in the current code (proved by the render tests rendering
+the real `MapScreen`). On-device confirmation is the `TEST_ON_PHONE.md` checklist.
+
+| Requirement | Rendered? | Evidence |
+|---|---|---|
+| §0 Rubik everywhere, theme tokens | YES | `App.tsx:18` useFonts; `AppText.tsx`; wiring "no react-native Text" |
+| §1 One recenter, 58pt dark grey, only after panning | YES | `HomeMapControls.tsx:161` (tone recenter, size 58); homeScreen "exactly one re-centre" |
+| §1 No Map tools button, no extra recenters, no address row | YES | homeScreen "no Map tools", "no current-address row"; wiring "old buttons absent" |
+| §1 Floating buttons 12pt above sheet, hidden above half | YES | `HomeMapControls.tsx` aboveSheetStyle + `floatingButtonsInteractive`; homeMapControls test; uiPass2 "fade out" |
+| §1 Default TrackLine Light + one-time migration | YES | `settings.ts:208` migrateStoredSettings; homeScreen "light map", "moved once" |
+| §1 Street pill | YES | `MapScreen.tsx:4923` `<StreetPill>` |
+| §1 320×50 ad on the safe-area edge, no black bar, hidden in nav/route choice/place page | YES | `BannerAdBar.tsx:39`; `MapScreen.tsx:1096` shouldShowBanner; homeScreen "padding is exactly the safe area", "hidden while navigating…" |
+| §2 Where to? sheet: field + mic + Home/Work/New, no category chips | YES | `WhereToSheet.tsx:286,615,636`; homeScreen "Where to? field…", "category chips out of the sheet" |
+| §3 Full-screen search with categories | YES | `WhereToSheet.tsx` search modal; search test |
+| §4 Place page | YES | `MapScreen.tsx:4751` `<PlacePage>`; placePage tests (View routes, Save, Share, More, parking) |
+| §5 Route selection: top card, avoid, travel mode, sheet, Go now | YES | `MapScreen.tsx:4785–4825`; routeSelection tests (8) |
+| §5 Distinct routes, traffic, tolls (Routes API) | YES | `MapScreen.tsx:2279–2281`; uiPass2 tests |
+| Button fix: Menu not a modal, unhandled actions logged | YES | `RootNavigator.tsx:148,186`; navigationConfig tests |
+| Button fix: touch debugger | YES | `App.tsx:131`; `SettingsScreen` TouchDebuggerRow |
+| Mapbox: own style JSON | YES | `TrackLineMap.tsx:204`; mapV2 style tests (gl-style-validate) |
+| Mapbox: every feature ported | YES | `MapScreen.tsx:4522,4538`; §11 table above; mapV2 tests (32) |
+| Mapbox: react-native-maps removed | YES | wiring "react-native-maps is not a dependency" |
+| Mapbox: attributions | YES | `LicensesScreen.tsx:45`; Mapbox logo on the map |
+| Build stamp in Settings › About and the developer section | YES | `SettingsScreen.tsx:1643`; wiring "shows version, build, commit and UTC build time" |
+
+## 13. Button & colour system (two add-ons)
+
+| Rule | Done? | Evidence |
+|---|---|---|
+| One Button family: Primary, Secondary, Ghost, Destructive (+ DestructiveConfirm), Floating, Chip | YES | `components/ui/Button.tsx:122,195,247`; appWide "no screen dresses a Pressable up as a button" (0 left, was 124 ad-hoc button styles) |
+| No Touchable*, press feedback only inside components/ui | YES | appWide test |
+| Colours by meaning (blue go, grey alternative, white map, dark-grey re-centre, yellow report, purple route, red danger, green good) | YES | `theme/colors.ts:95` ACTIONS; buttons "paints only colours from its meaning group" (fails if a variant draws another group's colour — checked by mutation) |
+| Re-centre / report tones only on re-centre / report buttons | YES | appWide "re-centre tone is only ever a re-centre…" |
+| Meaning colours never hand-written outside the theme | YES | appWide "no screen or component writes a meaning colour by hand" |
+| Report colours (police/crash/hazard/jam/cameras/roadwork diamond/chat) + Live Traffic NSW "i" badge | YES | `colors.ts:157`; `MapIcons.tsx:97`; `trafficNswModel.ts` incidentStyle; colours "Live Traffic NSW incidents…" |
+| Traffic: slow / heavy / standstill on the map; "Light / Typical / Heavy traffic" text in green / grey / red; selected route time blue | YES | `colors.ts:190,199`; `TrackLineMap.tsx:259`; `RouteSelection.tsx:282,452` |
+| Dark mode: surfaces #1C1D20/#26282C, map controls #2A2C30 + white icons, hues unchanged | PARTIAL | the whole button family and the traffic text switch with the map's Dark theme (`ui/uiScheme.ts`); sheet and screen backgrounds are still light (see NOTES) |
+| WCAG AA for every pair | YES (map traffic lines recorded, see NOTES) | `__tests__/design/colours.test.ts` (33 tests, including pressed states) |
+| 44×44 minimum tap targets | YES | buttons "tap targets" tests |
+| Shapes: floating round 56, menu radius 16, chips 18, pill primaries, cards 20 | YES | buttons "primaries are pills…"; `tokens.ts` radius.card 20 |
+| One shadow (0 6 16 + 0 1 3 rgba(16,24,40)), 1px hairline on white map buttons | YES | `tokens.ts:90`; buttons "one shadow… hairline"; appWide "nothing outside the theme sets its own shadow" |
+| One line icon set, 1.75 stroke, 24pt | YES (map artwork excepted) | `ui/Icon.tsx` (Lucide); appWide "only map-artwork files import @expo/vector-icons" |
+| Rubik 600, 17–18pt, sentence case | YES | `Button.tsx:43` labelSize; appWide "sentence case" |
+| Press 0.96 + 6% darker, 120ms, light haptic, no overshoot; appear 180ms fade + 8pt | YES | `ui/PressableScale.tsx:12`, `ui/Appear.tsx:9`; buttons "press is 96%…"; appWide "presses use timing, not springs" |
+| Nothing loops except Go now fill and Tracky idle, both off with Reduce Motion | YES | speedometer pulse → one bump; LIVE dot steady; `MapScreen.tsx:4812`; appWide "nothing loops…", "both stop with Reduce Motion" |

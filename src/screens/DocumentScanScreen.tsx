@@ -1,14 +1,15 @@
 import React, { useCallback, useRef, useState } from "react";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { Camera, useCameraDevice, useCameraPermission, type PhotoFile } from "react-native-vision-camera";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { recognizeVinFromPhoto, recognizePlateFromPhoto } from "@/services/documentScan";
 import { AU_STATES, DEFAULT_AU_STATE } from "@/utils/auStates";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 
 // vision-camera's PhotoFile.path is a bare filesystem path, not a URI -- same fix
@@ -86,9 +87,7 @@ export function DocumentScanScreen() {
         <Text style={styles.permissionText}>
           TrackLine needs camera access to scan a {isVin ? "VIN" : "plate"}.
         </Text>
-        <Pressable style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant camera access</Text>
-        </Pressable>
+        <Button variant="primary" label="Grant camera access" onPress={requestPermission} />
         <Pressable onPress={onClose}>
           <Text style={styles.closeLink}>Close</Text>
         </Pressable>
@@ -122,9 +121,13 @@ export function DocumentScanScreen() {
       />
 
       <View style={[styles.header, { top: insets.top + spacing.md }]}>
-        <Pressable style={styles.headerButton} onPress={onClose} accessibilityLabel="Close">
-          <Ionicons name="close" size={22} color="#FFFFFF" />
-        </Pressable>
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor="#FFFFFF"
+          onPress={onClose}
+          accessibilityLabel="Close"
+        />
         <Text style={styles.headerTitle}>{isVin ? "Scan VIN" : "Scan plate"}</Text>
         <View style={styles.headerButton} />
       </View>
@@ -156,14 +159,12 @@ export function DocumentScanScreen() {
 
       {stage === "notFound" && (
         <View style={styles.overlay}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={40} color="#FFFFFF" />
+          <Icon name="alert-circle-outline" size={40} color="#FFFFFF" />
           <Text style={styles.overlayText}>
             Couldn't read a {isVin ? "VIN" : "plate"} from that photo -- move closer, fill the
             guide box, and avoid glare, then try again.
           </Text>
-          <Pressable style={styles.retakeButton} onPress={onRetake}>
-            <Text style={styles.retakeButtonText}>Try again</Text>
-          </Pressable>
+          <Button variant="secondary" label="Try again" onPress={onRetake} />
         </View>
       )}
 
@@ -188,20 +189,13 @@ export function DocumentScanScreen() {
                 {AU_STATES.map((s) => {
                   const isSelected = plateState === s.code;
                   return (
-                    <Pressable
+                    <Chip
+                      label={s.code}
                       key={s.code}
                       onPress={() => setPlateState(s.code)}
-                      style={({ pressed }) => [
-                        styles.stateChip,
-                        isSelected && styles.stateChipSelected,
-                        pressed && { opacity: pressedOpacity },
-                      ]}
                       accessibilityLabel={s.label}
-                    >
-                      <Text style={[styles.stateChipText, isSelected && styles.stateChipTextSelected]}>
-                        {s.code}
-                      </Text>
-                    </Pressable>
+                      selected={isSelected}
+                    />
                   );
                 })}
               </View>
@@ -216,23 +210,14 @@ export function DocumentScanScreen() {
           )}
 
           <View style={styles.confirmButtons}>
-            <Pressable
-              style={({ pressed }) => [styles.retakeButton, pressed && { opacity: pressedOpacity }]}
-              onPress={onRetake}
-            >
-              <Text style={styles.retakeButtonText}>Retake</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.useButton,
-                !editedValue.trim() && styles.useButtonDisabled,
-                pressed && !!editedValue.trim() && { opacity: pressedOpacity },
-              ]}
+            <Button variant="secondary" label="Retake" onPress={onRetake} style={{ flex: 1 }} />
+            <Button
+              variant="primary"
+              label={`Use this ${isVin ? "VIN" : "plate"}`}
               onPress={onUse}
               disabled={!editedValue.trim()}
-            >
-              <Text style={styles.useButtonText}>Use this {isVin ? "VIN" : "plate"}</Text>
-            </Pressable>
+              style={{ flex: 1 }}
+            />
           </View>
         </View>
       )}
@@ -251,13 +236,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   permissionText: { color: "#FFFFFF", fontSize: 15, textAlign: "center" },
-  permissionButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.lg,
-  },
-  permissionButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
   closeLink: { color: "#9CA3AF", fontSize: 14, marginTop: spacing.sm },
   header: {
     position: "absolute",
@@ -383,39 +361,9 @@ const styles = StyleSheet.create({
   },
   confirmHelper: { fontSize: 12, color: colors.textFaint, lineHeight: 16 },
   stateGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs + 2 },
-  stateChip: {
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  stateChipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  stateChipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
-  stateChipTextSelected: { color: "#FFFFFF" },
   confirmButtons: {
     flexDirection: "row",
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  retakeButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
-  },
-  retakeButtonText: { fontSize: 14, fontWeight: "700", color: colors.text },
-  useButton: {
-    flex: 2,
-    height: 48,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.accent,
-  },
-  useButtonDisabled: { backgroundColor: colors.textFaint },
-  useButtonText: { fontSize: 14, fontWeight: "700", color: "#FFFFFF" },
 });

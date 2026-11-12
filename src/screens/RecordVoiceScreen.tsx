@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { View, Pressable, StyleSheet, SectionList, Alert } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import Svg, { Circle } from "react-native-svg";
-import { Ionicons } from "@expo/vector-icons";
 import {
   useAudioRecorder,
   useAudioRecorderState,
@@ -30,7 +30,7 @@ import {
   CUSTOM_START_PHRASE_MAX_COUNT,
   type VoiceClipDef,
 } from "@/services/recordedVoices";
-import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, spacing } from "@/theme/tokens";
 
 // Real, explicit request (Waze-style redesign, Phase 3) -- the guided recorder: every real clip
 // is MAX 6 SECONDS, auto-stop, with a countdown ring, real playback, re-record and delete. No
@@ -231,30 +231,38 @@ export function RecordVoiceScreen() {
             <View style={styles.rowActions}>
               {hasClip && (
                 <>
-                  <Pressable onPress={() => onPlay(clip.key)} hitSlop={8} accessibilityLabel="Play">
-                    <Ionicons
-                      name={isPlayingThis ? "pause-circle" : "play-circle"}
-                      size={26}
-                      color={colors.accent}
-                    />
-                  </Pressable>
-                  <Pressable onPress={() => onDelete(clip.key)} hitSlop={8} accessibilityLabel="Delete recording">
-                    <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
-                  </Pressable>
+                  <Button
+                    variant="ghost"
+                    icon={isPlayingThis ? "pause-circle" : "play-circle"}
+                    iconColor={colors.accent}
+                    onPress={() => onPlay(clip.key)}
+                    accessibilityLabel="Play"
+                  />
+                  <Button
+                    variant="ghost"
+                    icon="trash-outline"
+                    iconColor={colors.textMuted}
+                    onPress={() => onDelete(clip.key)}
+                    accessibilityLabel="Delete recording"
+                  />
                 </>
               )}
               {isCustomStartPhraseKey(clip.key) && (
-                <Pressable onPress={() => onRemovePhrase(clip)} hitSlop={8} accessibilityLabel="Remove this phrase">
-                  <Ionicons name="close-circle-outline" size={20} color={colors.textMuted} />
-                </Pressable>
+                <Button
+                  variant="ghost"
+                  icon="close-circle-outline"
+                  iconColor={colors.textMuted}
+                  onPress={() => onRemovePhrase(clip)}
+                  accessibilityLabel="Remove this phrase"
+                />
               )}
-              <Pressable
+              <Button
+                variant="primary"
+                icon={hasClip ? "refresh" : "mic"}
                 onPress={() => startRecording(clip.key)}
-                style={({ pressed }) => [styles.recordButton, pressed && { opacity: pressedOpacity }]}
                 disabled={activeRecordingKey !== null}
-              >
-                <Ionicons name={hasClip ? "refresh" : "mic"} size={16} color="#FFFFFF" />
-              </Pressable>
+                accessibilityLabel={hasClip ? "Record again" : "Record"}
+              />
             </View>
           )}
         </View>
@@ -312,18 +320,13 @@ export function RecordVoiceScreen() {
                 returnKeyType="done"
                 onSubmitEditing={onAddPhrase}
               />
-              <Pressable
+              <Button
+                variant="primary"
+                icon="add"
                 onPress={onAddPhrase}
                 disabled={!canAddPhrase}
-                style={({ pressed }) => [
-                  styles.addPhraseButton,
-                  !canAddPhrase && styles.addPhraseButtonDisabled,
-                  pressed && { opacity: pressedOpacity },
-                ]}
                 accessibilityLabel="Add phrase"
-              >
-                <Ionicons name="add" size={18} color="#FFFFFF" />
-              </Pressable>
+              />
             </View>
           ) : null
         }
@@ -370,14 +373,6 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 15, fontWeight: "600", color: colors.text },
   rowSubtitle: { fontSize: 12, color: colors.danger, marginTop: 2 },
   rowActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  recordButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   addPhraseRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -387,15 +382,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   addPhraseInput: { flex: 1, fontSize: 15, color: colors.text, paddingVertical: spacing.xs },
-  addPhraseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addPhraseButtonDisabled: { backgroundColor: colors.border },
   ringButton: { width: RING_SIZE, height: RING_SIZE, alignItems: "center", justifyContent: "center" },
   ringInnerDot: {
     position: "absolute",

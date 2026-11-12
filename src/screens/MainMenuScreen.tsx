@@ -1,11 +1,12 @@
 import { useLocation } from "@/context/LocationContext";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { subscribeNearbyPresence, type PresenceDoc } from "@/services/presence";
 import { metersBetween } from "@/map/homeMapLogic";
 import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, ScrollView, Share, Alert, ActivityIndicator } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "@/context/AuthContext";
@@ -123,14 +124,13 @@ export function MainMenuScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Menu</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close menu"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -161,20 +161,15 @@ export function MainMenuScreen() {
             'Ghost mode'." Tapping it jumps straight to the full Privacy picker (same one the
             Menu button's own long-press sheet offers) rather than duplicating a quick-toggle
             here too. */}
-        <Pressable
-          style={({ pressed }) => [
-            styles.visibilityPill,
-            isGhostMode && styles.visibilityPillGhost,
-            pressed && { opacity: pressedOpacity },
-          ]}
+        <Chip
+          icon={isGhostMode ? "eye-off" : "eye"}
+          label={isGhostMode ? "Ghost mode" : "Visible to other drivers"}
+          // Green says "visible"; grey says hidden.
+          leading={<View style={[styles.visibilityDot, { backgroundColor: isGhostMode ? colors.textFaint : colors.good }]} />}
           onPress={() => navigation.navigate("Settings", { category: "privacy" })}
           accessibilityLabel={isGhostMode ? "Ghost mode. Tap to change" : "Visible to other drivers. Tap to change"}
-        >
-          <Ionicons name={isGhostMode ? "eye-off" : "eye"} size={14} color={isGhostMode ? colors.textMuted : colors.accent} />
-          <Text style={[styles.visibilityPillText, isGhostMode && styles.visibilityPillTextGhost]}>
-            {isGhostMode ? "Ghost mode" : "Visible to other drivers"}
-          </Text>
-        </Pressable>
+          style={styles.visibilityChip}
+        />
 
         <Pressable
           style={({ pressed }) => [styles.planCard, pressed && { opacity: pressedOpacity }]}
@@ -182,13 +177,13 @@ export function MainMenuScreen() {
           accessibilityLabel="Plan a drive"
         >
           <View style={styles.planCardIconWrap}>
-            <Ionicons name="calendar" size={22} color="#FFFFFF" />
+            <Icon name="calendar" size={22} color="#FFFFFF" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.planCardTitle}>Plan a drive</Text>
             <Text style={styles.planCardSubtitle}>Pick a destination and check your ETA</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+          <Icon name="chevron-forward" size={18} color="#FFFFFF" />
         </Pressable>
 
         <MenuRow
@@ -223,7 +218,7 @@ export function MainMenuScreen() {
             style={({ pressed }) => [styles.connectCalendarRow, pressed && { opacity: pressedOpacity }]}
             onPress={onConnectCalendar}
           >
-            <Ionicons name="calendar-outline" size={18} color={colors.accent} />
+            <Icon name="calendar-outline" size={18} color={colors.accent} />
             <Text style={styles.connectCalendarText}>Connect your calendar to see events with a location here</Text>
           </Pressable>
         ) : eventsLoading ? (
@@ -239,7 +234,7 @@ export function MainMenuScreen() {
               disabled={drivingToEventId === event.id}
             >
               <View style={styles.eventIconWrap}>
-                <Ionicons name="location" size={16} color="#FFFFFF" />
+                <Icon name="location" size={16} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.eventTitle} numberOfLines={1}>
@@ -252,7 +247,7 @@ export function MainMenuScreen() {
               {drivingToEventId === event.id ? (
                 <ActivityIndicator size="small" color={colors.accent} />
               ) : (
-                <Ionicons name="navigate-outline" size={18} color={colors.accent} />
+                <Icon name="navigate-outline" size={18} color={colors.accent} />
               )}
             </Pressable>
           ))
@@ -268,7 +263,7 @@ function MenuRow({
   onPress,
   badge,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   label: string;
   onPress: () => void;
   badge?: number;
@@ -280,7 +275,7 @@ function MenuRow({
       accessibilityLabel={label}
     >
       <View style={styles.rowIconWrap}>
-        <Ionicons name={icon} size={20} color={colors.accent} />
+        <Icon name={icon} size={20} color={colors.accent} />
       </View>
       <Text style={styles.rowLabel} numberOfLines={1}>
         {label}
@@ -290,7 +285,7 @@ function MenuRow({
           <Text style={styles.badgeText}>{badge > 9 ? "9+" : badge}</Text>
         </View>
       )}
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -311,14 +306,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     color: colors.text,
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
   },
   mascotRow: {
     flexDirection: "row",
@@ -351,20 +338,8 @@ const styles = StyleSheet.create({
   mascotGreeting: { fontSize: 15, fontWeight: "800", color: colors.text },
   trackysNearby: { fontSize: 12, fontWeight: "500", color: colors.textMuted, marginTop: 4 },
   viewProfileLink: { fontSize: 12, fontWeight: "700", color: colors.accent, marginTop: 2 },
-  visibilityPill: {
-    flexDirection: "row",
-    alignSelf: "flex-start",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentSoft,
-    marginBottom: spacing.md,
-  },
-  visibilityPillGhost: { backgroundColor: colors.surfaceMuted },
-  visibilityPillText: { fontSize: 12, fontWeight: "700", color: colors.accent },
-  visibilityPillTextGhost: { color: colors.textMuted },
+  visibilityChip: { alignSelf: "flex-start", marginBottom: spacing.md },
+  visibilityDot: { width: 8, height: 8, borderRadius: 4 },
   planCard: {
     flexDirection: "row",
     alignItems: "center",

@@ -1,3 +1,5 @@
+import { EMERGENCY_PIN, REPORTS, TRAFFIC_LIGHT_PIN, type ReportColour } from "@/theme/colors";
+
 export type AlertType = "police" | "emergency_vehicle" | "hazard" | "camera" | "crash" | "traffic_light";
 
 export interface AlertDoc {
@@ -75,11 +77,21 @@ export const ALERT_ICONS: Record<AlertType, string> = {
   traffic_light: "traffic-light",
 };
 
+/** Each alert type's pin colour and the glyph colour that reads on it (theme/colors.ts). */
+export const ALERT_PIN: Record<AlertType, ReportColour> = {
+  police: REPORTS.police,
+  emergency_vehicle: EMERGENCY_PIN,
+  hazard: REPORTS.hazard,
+  camera: REPORTS.camera,
+  crash: REPORTS.crash,
+  traffic_light: TRAFFIC_LIGHT_PIN,
+};
+
 export const ALERT_COLORS: Record<AlertType, string> = {
-  police: "#1E6FE0", // blue
-  emergency_vehicle: "#DC2626",
-  hazard: "#F5A30B", // amber
-  camera: "#7C3AED", // purple
-  crash: "#F04A23", // red-orange
-  traffic_light: "#0D9488",
+  police: ALERT_PIN.police.fill,
+  emergency_vehicle: ALERT_PIN.emergency_vehicle.fill,
+  hazard: ALERT_PIN.hazard.fill,
+  camera: ALERT_PIN.camera.fill,
+  crash: ALERT_PIN.crash.fill,
+  traffic_light: ALERT_PIN.traffic_light.fill,
 };

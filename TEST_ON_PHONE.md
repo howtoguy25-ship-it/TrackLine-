@@ -189,6 +189,17 @@ Install the development build from the `mapbox-map` branch.
 - [ ] Tap a shop/park name on the map: its place card opens.
 - [ ] About › Licences lists © Mapbox and © OpenStreetMap.
 
+## 12. Buttons and colours — NEEDS DEVICE TEST
+
+- [ ] Settings › About shows `Build v… · <commit> · <date> UTC`; on a development build it also says "JS from dev server".
+- [ ] Home: Menu is a white rounded square, Sound and Compass white circles, Report a yellow circle with a black outline, Re-centre (after panning) a dark-grey circle. All cast the same soft shadow.
+- [ ] Press any button: it dips slightly and darkens, with a light tap; no bounce.
+- [ ] Route selection: Go now is solid blue, Leave later light grey with blue text; "Light traffic" green, "Heavy traffic" red; the selected route's time is blue.
+- [ ] Danger: Delete actions are red text on pale red; only a final "yes, delete" is solid red.
+- [ ] Live Traffic NSW pins: report colours, roadwork a diamond, a small white "i" badge.
+- [ ] Settings › Map appearance › Dark: floating buttons turn dark grey with white icons.
+- [ ] iOS/Android Reduce Motion on: Go now has no countdown fill; Tracky stops bobbing; nothing else loops.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

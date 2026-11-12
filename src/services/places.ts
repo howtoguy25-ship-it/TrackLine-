@@ -1,7 +1,6 @@
 import { env } from "@/config/env";
 import type { LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
-import { withTimeout } from "@/utils/withTimeout";
 
 // Real, confirmed bug fix -- see withTimeout.ts's own comment. 12s is generous enough for a
 // real, slow-but-working connection to still complete normally, short enough that a genuinely

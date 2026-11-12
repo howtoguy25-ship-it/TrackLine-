@@ -14,6 +14,7 @@ import { iconsUsed, type MapPin } from "@/map-v2/pins";
 import type { PresenceDoc } from "@/services/presence";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
+import { GREEN, TRAFFIC } from "@/theme/colors";
 
 // Everything drawn on the Mapbox map, from plain data the map screen already works out: the
 // route being driven (travelled part faded, turn callouts, the turn arrow), route choices
@@ -23,9 +24,11 @@ import { colors, radius, shadow, spacing } from "@/theme/tokens";
 const ROUTE_PURPLE = colors.routePurple;
 const ROUTE_PURPLE_CASING = colors.routePurpleCasing;
 const ROUTE_ALT = colors.routeAlt;
-const TRAFFIC_SLOW = "#FF8A00";
-const TRAFFIC_JAM = "#E5222B";
-const SUGGESTION_GREEN = "#22C55E";
+// Traffic on a route: slow amber, heavy red (free-flowing stretches aren't coloured). A faster
+// route on offer is "good" green.
+const TRAFFIC_SLOW = TRAFFIC.slow;
+const TRAFFIC_JAM = TRAFFIC.heavy;
+const SUGGESTION_GREEN = GREEN;
 
 export interface RouteSelectionDrawing {
   drawn: { index: number; line: LatLng[] }[];

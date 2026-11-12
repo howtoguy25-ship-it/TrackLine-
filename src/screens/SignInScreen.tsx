@@ -1,12 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  Platform,
-  KeyboardAvoidingView,
-  ActivityIndicator,
-} from "react-native";
+import { Button } from "@/components/ui/Button";
+import { View, Pressable, StyleSheet, Platform, KeyboardAvoidingView } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
@@ -20,7 +14,7 @@ import {
   signUpWithEmail,
 } from "@/services/firebase";
 import { env } from "@/config/env";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -313,19 +307,13 @@ export function SignInScreen() {
 
       {error && <Text style={styles.errorText}>{error}</Text>}
 
-      <Pressable
-        style={({ pressed }) => [styles.primaryButton, pressed && { opacity: pressedOpacity }]}
+      <Button
+        variant="primary"
+        label={mode === "signup" ? "Create account" : "Sign in"}
         onPress={onEmailSubmit}
         disabled={busy}
-      >
-        {busy ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.primaryButtonText}>
-            {mode === "signup" ? "Create account" : "Sign in"}
-          </Text>
-        )}
-      </Pressable>
+        size="large" fullWidth loading={busy}
+      />
 
       <Pressable
         onPress={() => {
@@ -405,19 +393,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: colors.danger,
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
   },
   switchModeText: {
     fontSize: 13,

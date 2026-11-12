@@ -1,8 +1,9 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, Image, ActivityIndicator, FlatList, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { PlacesApiError, priceLevelText, type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
@@ -234,20 +235,19 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
           {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss,
               which isn't obvious, especially once the sheet is scrolled up under the status bar.
               Same imperative .close() the "X" everywhere else in this file already uses. */}
-          <Pressable
+          <Button
+            variant="ghost"
+            icon="close"
+            iconColor={colors.textMuted}
             onPress={() => {
               Keyboard.dismiss();
               if (ref && typeof ref !== "function") ref.current?.close();
             }}
-            hitSlop={10}
             accessibilityLabel="Close"
-            style={styles.closeButton}
-          >
-            <Ionicons name="close" size={20} color={colors.textMuted} />
-          </Pressable>
+          />
         </View>
         <View style={styles.searchRow}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
+          <Icon name="search" size={16} color={colors.textMuted} />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -266,25 +266,19 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
             }}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
-              <Ionicons name="close-circle" size={18} color={colors.textFaint} />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close-circle"
+              iconColor={colors.textFaint}
+              onPress={() => setQuery("")}
+              accessibilityLabel="Clear search"
+            />
           )}
         </View>
 
         <View style={styles.scopeRow}>
           {FOOD_SCOPES.map(({ key, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => setScope(key)}
-              style={({ pressed }) => [
-                styles.scopeChip,
-                scope === key && styles.scopeChipActive,
-                pressed && { opacity: pressedOpacity },
-              ]}
-            >
-              <Text style={[styles.scopeChipText, scope === key && styles.scopeChipTextActive]}>{label}</Text>
-            </Pressable>
+            <Chip label={label} key={key} onPress={() => setScope(key)} selected={scope === key} />
           ))}
         </View>
 
@@ -305,17 +299,15 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
         )}
         {errorText && !loading && (
           <View style={styles.centerRow}>
-            <Ionicons name="alert-circle" size={18} color={colors.danger} />
+            <Icon name="alert-circle" size={18} color={colors.danger} />
             <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
-            <Pressable
+            <Button
+              variant="ghost"
+              icon="refresh"
+              label="Retry"
               onPress={() => setRetryTick((t) => t + 1)}
-              hitSlop={10}
-              style={styles.retryButton}
               accessibilityLabel="Retry"
-            >
-              <Ionicons name="refresh" size={14} color={colors.accent} />
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
+            />
           </View>
         )}
         {!loading && !errorText && filteredPlaces.length === 0 && (
@@ -347,7 +339,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
                 <Image source={{ uri: item.photoUrl }} style={styles.photo} />
               ) : (
                 <View style={[styles.photo, styles.photoFallback]}>
-                  <Ionicons name="restaurant-outline" size={22} color={colors.textFaint} />
+                  <Icon name="restaurant-outline" size={22} color={colors.textFaint} />
                 </View>
               )}
               <View style={{ flex: 1 }}>
@@ -360,7 +352,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
                 <View style={styles.metaRow}>
                   {item.rating !== undefined && (
                     <View style={styles.metaChip}>
-                      <Ionicons name="star" size={11} color="#F59E0B" />
+                      <Icon name="star" size={11} color="#F59E0B" />
                       <Text style={styles.metaChipText}>
                         {item.rating.toFixed(1)}
                         {item.userRatingsTotal ? ` (${item.userRatingsTotal})` : ""}
@@ -381,7 +373,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
                   <Text style={styles.distanceText}>{formatDistance(item.distanceMeters)}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+              <Icon name="chevron-forward" size={16} color={colors.textFaint} />
             </Pressable>
           )}
         />
@@ -398,14 +390,6 @@ const styles = StyleSheet.create({
   pressableFill: {},
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   title: { fontSize: 17, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
-  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -418,27 +402,8 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
   scopeRow: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.sm },
-  scopeChip: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  scopeChipActive: { backgroundColor: colors.accent },
-  scopeChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
-  scopeChipTextActive: { color: "#FFFFFF" },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-  },
-  retryButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs },
   row: {

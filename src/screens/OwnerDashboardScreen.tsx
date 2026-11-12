@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Pressable, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
+import React, { useCallback, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "@/context/AuthContext";
 import { isOwnerEmail } from "@/config/admin";
@@ -12,7 +13,7 @@ import {
   type OwnerStats,
   type BroadcastHistoryEntry,
 } from "@/services/ownerDashboard";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 const TEXT_MUTED = "#8B95A5";
 const TEXT_FAINT = "#5B6472";
@@ -115,7 +116,7 @@ export function OwnerDashboardScreen() {
   if (!isOwner) {
     return (
       <View style={styles.deniedContainer}>
-        <Ionicons name="lock-closed" size={32} color={TEXT_FAINT} />
+        <Icon name="lock-closed" size={32} color={TEXT_FAINT} />
         <Text style={styles.deniedText}>This dashboard is only available to the app owner.</Text>
       </View>
     );
@@ -139,19 +140,19 @@ export function OwnerDashboardScreen() {
       {stats && (
         <View style={styles.statsRow}>
           <StatCard
-            icon={<MaterialCommunityIcons name="cellphone" size={22} color={colors.accent} />}
+            icon={<Icon name="cellphone" size={22} color={colors.accent} />}
             label="Total installs"
             value={stats.totalInstalls.toLocaleString()}
             sublabel="Unique devices, all time"
           />
           <StatCard
-            icon={<Ionicons name="radio-button-on" size={20} color="#22C55E" />}
+            icon={<Icon name="radio-button-on" size={20} color="#22C55E" />}
             label="Active now"
             value={stats.activeNow.toLocaleString()}
             sublabel="Last 5 minutes"
           />
           <StatCard
-            icon={<Ionicons name="person-circle" size={22} color={colors.accent} />}
+            icon={<Icon name="person-circle" size={22} color={colors.accent} />}
             label="Logged in"
             value={stats.loggedInAccounts.toLocaleString()}
             sublabel="Real accounts, not guest"
@@ -183,24 +184,17 @@ export function OwnerDashboardScreen() {
         style={[styles.input, styles.inputMultiline]}
       />
 
-      <Pressable
+      <Button
+        variant="primary"
+        size="large"
+        fullWidth
+        icon="send"
+        label="Send to all users"
+        loading={sending}
         onPress={onSend}
         disabled={!canSend}
-        style={({ pressed }) => [
-          styles.sendButton,
-          !canSend && styles.sendButtonDisabled,
-          pressed && canSend && { opacity: pressedOpacity },
-        ]}
-      >
-        {sending ? (
-          <ActivityIndicator size="small" color="#FFFFFF" />
-        ) : (
-          <>
-            <Ionicons name="send" size={16} color="#FFFFFF" />
-            <Text style={styles.sendButtonText}>Send to all users</Text>
-          </>
-        )}
-      </Pressable>
+        style={{ marginTop: spacing.lg }}
+      />
 
       {sendResult && (
         <Text style={sendResult.ok ? styles.successText : styles.errorText}>{sendResult.message}</Text>
@@ -310,23 +304,6 @@ const styles = StyleSheet.create({
   inputMultiline: {
     minHeight: 72,
     textAlignVertical: "top",
-  },
-  sendButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm + 2,
-  },
-  sendButtonDisabled: {
-    opacity: 0.4,
-  },
-  sendButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
   },
   historyRow: {
     flexDirection: "row",

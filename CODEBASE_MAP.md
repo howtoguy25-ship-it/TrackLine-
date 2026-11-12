@@ -48,6 +48,14 @@ phase-by-phase status.
 | `SignInScreen.tsx` | Google/Apple/email sign-in. |
 | `MapboxMapScreen.tsx` | The real Mapbox engine preview described above — owner-only entry point in Settings. |
 
+## Design system (`src/theme/colors.ts`, `src/components/ui/`)
+
+- `theme/colors.ts` — colours grouped by meaning (go, alternative, map control, re-centre, report, route, danger, good), report and traffic colours, light/dark surfaces, WCAG contrast helpers. No React Native imports.
+- `theme/tokens.ts` — the names screens use (`colors.accent`…), radii, the one shadow.
+- `components/ui/Button.tsx` — `Button` (primary / secondary / ghost / destructive / destructiveConfirm), `FloatingButton` (map / recenter / report), `Chip`. No colour props.
+- `components/ui/Icon.tsx` — Lucide line icons at 1.75 stroke; `ui/PressableScale.tsx` press feedback; `ui/Appear.tsx` arrival animation; `ui/uiScheme.ts` light/dark from the map theme.
+- Tests: `__tests__/design/` (colours + contrast, rendered buttons, app-wide source rules).
+
 ## Components (`src/components/`)
 
 Notable: `LiveSpeedometer.tsx` + `SpeedLimitSign.tsx` (speed dial), `NavigationInstructionCard.tsx`

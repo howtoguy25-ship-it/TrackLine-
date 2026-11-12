@@ -272,12 +272,23 @@ export function routeTags(routes: ChoiceRoute[]): (RouteTag | null)[] {
   });
 }
 
+export interface RouteSummaryParts {
+  lead: string;
+  /** The traffic words, drawn in their own colour (green / grey / red). */
+  traffic: TrafficLevel | null;
+  tail: string;
+}
+
+/** The pieces of "Best route, Typical traffic · Toll", so the traffic words can be coloured. */
+export function routeSummaryParts(tag: RouteTag | null, level: TrafficLevel | null, hasToll: boolean): RouteSummaryParts {
+  const lead = tag === "Best" ? "Best route" : tag === "Fastest" ? "Fastest route" : tag === "No tolls" ? "No tolls" : "Alternative route";
+  return { lead, traffic: level, tail: hasToll ? " · Toll" : "" };
+}
+
 /** "Best route, Typical traffic · Toll" -- the grey line under "Via …". */
 export function routeSummaryLine(tag: RouteTag | null, level: TrafficLevel | null, hasToll: boolean): string {
-  const lead = tag === "Best" ? "Best route" : tag === "Fastest" ? "Fastest route" : tag === "No tolls" ? "No tolls" : "Alternative route";
-  const parts = [lead];
-  if (level) parts.push(TRAFFIC_LEVEL_LABELS[level]);
-  return parts.join(", ") + (hasToll ? " · Toll" : "");
+  const p = routeSummaryParts(tag, level, hasToll);
+  return p.lead + (p.traffic ? ", " + TRAFFIC_LEVEL_LABELS[p.traffic] : "") + p.tail;
 }
 
 /** "Via M2" from Google's own route description, or null when it didn't give one. */

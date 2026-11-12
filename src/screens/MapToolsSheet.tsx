@@ -1,9 +1,9 @@
 import React, { forwardRef } from "react";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
 interface Props {
@@ -91,13 +91,13 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
           label="Dashcam"
           subtitle={detectionBatteryLow ? "Battery below 50% -- still works, may run slower" : undefined}
           onPress={onOpenDetection}
-          trailing={<Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
+          trailing={<Icon name="chevron-forward" size={18} color={colors.textMuted} />}
         />
         <OptionRow
           icon="settings-outline"
           label="Settings"
           onPress={onOpenSettings}
-          trailing={<Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
+          trailing={<Icon name="chevron-forward" size={18} color={colors.textMuted} />}
         />
       </BottomSheetScrollView>
     </BottomSheet>
@@ -117,7 +117,7 @@ function OptionRow({
   onPress,
   trailing,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   label: string;
   subtitle?: string;
   onPress: () => void;
@@ -130,7 +130,7 @@ function OptionRow({
       accessibilityLabel={subtitle ? `${label} -- ${subtitle}` : label}
     >
       <View style={styles.rowIconWrap}>
-        <Ionicons name={icon} size={20} color={colors.text} />
+        <Icon name={icon} size={20} color={colors.text} />
       </View>
       <View style={styles.rowTextWrap}>
         <Text style={styles.rowLabel}>{label}</Text>
@@ -147,7 +147,7 @@ function ToggleRow({
   on,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   label: string;
   on: boolean;
   onPress: () => void;

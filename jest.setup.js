@@ -13,3 +13,12 @@ jest.mock("react-native-google-mobile-ads", () => ({
 jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock")
 );
+
+// Firebase ships ESM that Jest can't load, and no test talks to a real backend. Anything that
+// reaches Firebase (settings sync, the button family reading the map theme...) gets an inert stub.
+jest.mock("@/services/firebase", () => require("./__tests__/support/stubs").stubService());
+jest.mock("firebase/firestore", () => require("./__tests__/support/stubs").stubService());
+jest.mock("firebase/storage", () => require("./__tests__/support/stubs").stubService());
+jest.mock("firebase/auth", () => require("./__tests__/support/stubs").stubService());
+jest.mock("firebase/functions", () => require("./__tests__/support/stubs").stubService());
+jest.mock("firebase/app", () => require("./__tests__/support/stubs").stubService());

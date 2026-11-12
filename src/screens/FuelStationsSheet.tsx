@@ -1,8 +1,9 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ActivityIndicator, FlatList, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { PlacesApiError, type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
@@ -211,20 +212,19 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
           <View style={styles.titleRow}>
             <Text style={styles.title}>Petrol stations nearby</Text>
             {/* Real, confirmed complaint: no explicit close affordance -- only drag-to-dismiss. */}
-            <Pressable
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor={colors.textMuted}
               onPress={() => {
                 Keyboard.dismiss();
                 if (ref && typeof ref !== "function") ref.current?.close();
               }}
-              hitSlop={10}
               accessibilityLabel="Close"
-              style={styles.closeButton}
-            >
-              <Ionicons name="close" size={20} color={colors.textMuted} />
-            </Pressable>
+            />
           </View>
           <View style={styles.searchRow}>
-            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <Icon name="search" size={16} color={colors.textMuted} />
             <TextInput
               value={query}
               onChangeText={setQuery}
@@ -240,9 +240,13 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
               }}
             />
             {query.length > 0 && (
-              <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
-                <Ionicons name="close-circle" size={18} color={colors.textFaint} />
-              </Pressable>
+              <Button
+                variant="ghost"
+                icon="close-circle"
+                iconColor={colors.textFaint}
+                onPress={() => setQuery("")}
+                accessibilityLabel="Clear search"
+              />
             )}
           </View>
 
@@ -260,17 +264,15 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
           )}
           {errorText && !loading && (
             <View style={styles.centerRow}>
-              <Ionicons name="alert-circle" size={18} color={colors.danger} />
+              <Icon name="alert-circle" size={18} color={colors.danger} />
               <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="refresh"
+                label="Retry"
                 onPress={() => setRetryTick((t) => t + 1)}
-                hitSlop={10}
-                style={styles.retryButton}
                 accessibilityLabel="Retry"
-              >
-                <Ionicons name="refresh" size={14} color={colors.accent} />
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </Pressable>
+              />
             </View>
           )}
           {!loading && !errorText && filteredStations.length === 0 && (
@@ -298,7 +300,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
               onPress={() => onViewDetails(item.placeId)}
             >
               <View style={styles.fuelIconWrap}>
-                <MaterialCommunityIcons name="gas-station" size={22} color="#FFFFFF" />
+                <Icon name="gas-station" size={22} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={1}>
@@ -310,14 +312,14 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
                 <View style={styles.metaRow}>
                   {item.rating !== undefined && (
                     <View style={styles.metaChip}>
-                      <Ionicons name="star" size={11} color="#F59E0B" />
+                      <Icon name="star" size={11} color="#F59E0B" />
                       <Text style={styles.metaChipText}>{item.rating.toFixed(1)}</Text>
                     </View>
                   )}
                   <Text style={styles.distanceText}>{formatDistance(item.distanceMeters)}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+              <Icon name="chevron-forward" size={16} color={colors.textFaint} />
             </Pressable>
           )}
         />
@@ -334,14 +336,6 @@ const styles = StyleSheet.create({
   pressableFill: {},
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   title: { fontSize: 17, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
-  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -355,16 +349,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-  },
-  retryButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
   row: {

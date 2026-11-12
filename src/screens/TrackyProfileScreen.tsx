@@ -1,8 +1,9 @@
 import React from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ScrollView } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -31,14 +32,13 @@ export function TrackyProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Your Tracky</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       <View style={styles.previewRow}>
@@ -47,14 +47,13 @@ export function TrackyProfileScreen() {
         ) : (
           <Tracky mood={displayMood} size={120} animated reactOnTap />
         )}
-        <Pressable
+        <Button
+          variant="primary"
+          icon="color-palette-outline"
+          label="Make your Tracky"
           onPress={() => navigation.navigate("TrackyCustomizer")}
-          style={({ pressed }) => [styles.customizeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Make your Tracky"
-        >
-          <Ionicons name="color-palette-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.customizeButtonText}>Make your Tracky</Text>
-        </Pressable>
+        />
         {usingCustom && (
           <Text style={styles.customNotice}>
             Showing your own design. Pick a mood below to switch back to moods.
@@ -98,12 +97,12 @@ export function TrackyProfileScreen() {
                 </View>
                 {!unlocked && (
                   <View style={styles.lockBadge}>
-                    <Ionicons name="lock-closed" size={11} color="#FFFFFF" />
+                    <Icon name="lock-closed" size={11} color="#FFFFFF" />
                   </View>
                 )}
                 {isSelected && (
                   <View style={styles.checkBadge}>
-                    <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                    <Icon name="checkmark" size={11} color="#FFFFFF" />
                   </View>
                 )}
                 <Text style={styles.tileLabel} numberOfLines={1}>
@@ -127,26 +126,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   previewRow: { alignItems: "center", paddingVertical: spacing.lg },
-  customizeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
-  },
-  customizeButtonText: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
   customNotice: { fontSize: 12, color: colors.textMuted, marginTop: spacing.sm, textAlign: "center" },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.textMuted },

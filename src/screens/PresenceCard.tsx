@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { View, Pressable, StyleSheet, Modal, Alert, ActivityIndicator } from "react-native";
+import { Button, Chip } from "@/components/ui/Button";
+import { View, Pressable, StyleSheet, Modal, Alert } from "react-native";
 import { Text } from "@/components/AppText";
-import { Ionicons } from "@expo/vector-icons";
 import { Tracky } from "@/components/trackys/Tracky";
 import { TRACKY_MOODS } from "@/components/trackys/moods";
 import { reverseGeocode } from "@/services/places";
@@ -122,41 +122,32 @@ export function PresenceCard({ presence, selfUid, onClose, onBlocked }: Props) {
               <Text style={styles.name}>{presence.displayName ?? "A Tracky"}</Text>
               <Text style={styles.moodLabel}>{presence.look ? "Custom Tracky" : mood.label}</Text>
             </View>
-            <Pressable onPress={handleClose} hitSlop={12} style={styles.closeButton} accessibilityLabel="Close">
-              <Ionicons name="close" size={18} color={colors.textMuted} />
-            </Pressable>
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor={colors.textMuted}
+              onPress={handleClose}
+              accessibilityLabel="Close"
+            />
           </View>
 
           <Text style={styles.roadLine}>
             {roadName === null ? "Locating..." : roadName ? `Driving on ${roadName}` : "Driving nearby"}
           </Text>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.waveButton,
-              (waveCooldownMs > 0 || waving) && styles.waveButtonDisabled,
-              pressed && waveCooldownMs === 0 && !waving && { opacity: pressedOpacity },
-            ]}
+          <Button
+            variant="primary"
+            fullWidth
+            label={waveCooldownMs > 0 ? "Waved 👋" : "Wave 👋"}
+            loading={waving}
             onPress={onWave}
             disabled={waveCooldownMs > 0 || waving}
-          >
-            {waving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.waveButtonText}>{waveCooldownMs > 0 ? "Waved 👋" : "Wave 👋"}</Text>
-            )}
-          </Pressable>
+          />
 
           {reportOpen ? (
             <View style={styles.reportReasons}>
               {REPORT_REASONS.map((r) => (
-                <Pressable
-                  key={r.key}
-                  style={({ pressed }) => [styles.reportChip, pressed && { opacity: pressedOpacity }]}
-                  onPress={() => onSubmitReport(r.key)}
-                >
-                  <Text style={styles.reportChipText}>{r.label}</Text>
-                </Pressable>
+                <Chip label={r.label} key={r.key} onPress={() => onSubmitReport(r.key)} />
               ))}
             </View>
           ) : (
@@ -193,34 +184,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   name: { fontSize: 16, fontWeight: "800", color: colors.text },
   moodLabel: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
-  closeButton: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   roadLine: { fontSize: 13, color: colors.textMuted, marginTop: spacing.md },
-  waveButton: {
-    marginTop: spacing.md,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm + 2,
-    alignItems: "center",
-  },
-  waveButtonDisabled: { backgroundColor: colors.surfaceMuted },
-  waveButtonText: { fontSize: 14, fontWeight: "800", color: "#FFFFFF" },
   footerRow: { flexDirection: "row", gap: spacing.lg, marginTop: spacing.md, justifyContent: "center" },
   footerLink: { paddingVertical: spacing.xs },
   footerLinkText: { fontSize: 13, fontWeight: "700", color: colors.textFaint },
   reportReasons: { marginTop: spacing.md, gap: spacing.sm },
-  reportChip: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-  },
-  reportChipText: { fontSize: 13, fontWeight: "700", color: colors.text },
 });

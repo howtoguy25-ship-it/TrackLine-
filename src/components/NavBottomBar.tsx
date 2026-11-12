@@ -1,10 +1,11 @@
 import React from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
 import { Text } from "@/components/AppText";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
-import { radius, spacing, shadow, pressedOpacity } from "@/theme/tokens";
+import { colors, pressedOpacity, radius, shadow, spacing } from "@/theme/tokens";
 
 interface Props {
   etaText: string;
@@ -90,7 +91,7 @@ export function NavBottomBar({
         >
           <View style={styles.recentreCircle}>
             <View style={styles.recentreCrosshairRing} />
-            <Ionicons name="navigate" size={22} color="#FFFFFF" />
+            <Icon name="navigate" size={22} color="#FFFFFF" />
           </View>
           <View>
             <Text style={styles.recentreText}>Re-centre</Text>
@@ -101,32 +102,26 @@ export function NavBottomBar({
         </Pressable>
       )}
 
-      <Pressable
+      <Button
+        variant="secondary"
+        label="Overview"
         onPress={onOverview}
-        hitSlop={8}
-        style={({ pressed }) => [styles.overviewPill, pressed && { opacity: pressedOpacity }]}
         accessibilityLabel="Overview of the whole route"
-      >
-        <Text style={styles.overviewPillText}>Overview</Text>
-      </Pressable>
+      />
 
-      <Pressable
+      <Button
+        variant="secondary"
+        icon={hasStop ? "close-circle-outline" : "add"}
         onPress={hasStop ? onRemoveStop : onAddStop}
-        hitSlop={8}
-        style={({ pressed }) => [styles.iconButton, { backgroundColor: theme.actionBg }, pressed && { opacity: pressedOpacity }]}
         accessibilityLabel={hasStop ? "Remove stop" : "Add a stop"}
-      >
-        <Ionicons name={hasStop ? "close-circle-outline" : "add"} size={22} color={theme.actionText} />
-      </Pressable>
+      />
 
-      <Pressable
+      <Button
+        variant="secondary"
+        icon="ellipsis-vertical"
         onPress={onOptions}
-        hitSlop={8}
-        style={({ pressed }) => [styles.iconButton, { backgroundColor: theme.actionBg }, pressed && { opacity: pressedOpacity }]}
         accessibilityLabel="More options"
-      >
-        <Ionicons name="ellipsis-vertical" size={20} color={theme.actionText} />
-      </Pressable>
+      />
     </View>
   );
 }
@@ -178,7 +173,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#4A4D52",
+    backgroundColor: colors.recenterGrey,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -194,26 +189,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800",
     color: "#FFFFFF",
-  },
-  overviewPill: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 14,
-    height: 36,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
-  overviewPillText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

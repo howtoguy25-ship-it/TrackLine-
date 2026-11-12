@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, FlatList, Pressable, StyleSheet, ActivityIndicator, Keyboard } from "react-native";
 import { TextInput, Text } from "@/components/AppText";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   searchPlaces,
@@ -17,7 +18,7 @@ import {
   clearSearchHistory,
 } from "@/services/searchHistory";
 import type { LatLng } from "@/utils/polyline";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 // Default collapsed count for "Recent searches" -- the dropdown toggle expands to the full
 // stored history (see searchHistory.ts's own cap) and collapses back to this.
@@ -26,7 +27,7 @@ const COLLAPSED_HISTORY_COUNT = 3;
 // Real, confirmed request -- match Apple Maps' own search result styling: a category-colored
 // icon circle per result type instead of one generic pin for every row. Reads straight off
 // Google's own real place `types` tags (see places.ts), not guessed from the name text.
-function predictionIconFor(types: string[] | undefined): { name: keyof typeof Ionicons.glyphMap; bg: string } {
+function predictionIconFor(types: string[] | undefined): { name: IconName; bg: string } {
   const t = new Set(types ?? []);
   if (t.has("train_station") || t.has("transit_station") || t.has("subway_station") || t.has("light_rail_station")) {
     return { name: "train", bg: "#1D4ED8" };
@@ -277,18 +278,18 @@ export function DestinationSearchBar({
                 onPress={onPressOrigin}
                 accessibilityLabel={`Starting point: ${originLabel}. Tap to change.`}
               >
-                <Ionicons name="ellipse" size={10} color={colors.accent} />
+                <Icon name="ellipse" size={10} color={colors.accent} />
                 <Text style={styles.originText} numberOfLines={2}>
                   {originLabel}
                 </Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+                <Icon name="chevron-forward" size={14} color={colors.textFaint} />
               </Pressable>
               <View style={styles.originDivider} />
             </>
           )}
           <View style={hasOriginRow ? styles.inputRowFlat : styles.inputRow}>
             <View style={styles.searchIconWrap}>
-              <Ionicons name="search" size={18} color={colors.accent} />
+              <Icon name="search" size={18} color={colors.accent} />
             </View>
             <TextInput
               value={query}
@@ -302,15 +303,19 @@ export function DestinationSearchBar({
             />
             {loading && <ActivityIndicator size="small" color={colors.accent} />}
             {onCancel && (
-              <Pressable onPress={onCancel} hitSlop={10} accessibilityLabel="Cancel">
-                <Ionicons name="close-circle" size={20} color={colors.textFaint} />
-              </Pressable>
+              <Button
+                variant="ghost"
+                icon="close-circle"
+                iconColor={colors.textFaint}
+                onPress={onCancel}
+                accessibilityLabel="Cancel"
+              />
             )}
           </View>
         </View>
         {errorText && (
           <View style={styles.errorBanner}>
-            <Ionicons name="alert-circle" size={16} color={colors.danger} />
+            <Icon name="alert-circle" size={16} color={colors.danger} />
             <Text style={styles.errorText}>{errorText}</Text>
           </View>
         )}
@@ -320,7 +325,7 @@ export function DestinationSearchBar({
             onPress={selectMyLocation}
           >
             <View style={styles.myLocationIconWrap}>
-              <Ionicons name="navigate" size={13} color="#FFFFFF" />
+              <Icon name="navigate" size={13} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.myLocationText}>My Location</Text>
@@ -341,7 +346,7 @@ export function DestinationSearchBar({
             {findingNearestStation ? (
               <ActivityIndicator size="small" color={colors.accent} />
             ) : (
-              <Ionicons name="train-outline" size={18} color={colors.accent} />
+              <Icon name="train-outline" size={18} color={colors.accent} />
             )}
             <Text style={styles.quickActionText}>
               {findingNearestStation ? "Finding nearest station…" : "Nearest train/bus station"}
@@ -361,7 +366,7 @@ export function DestinationSearchBar({
               onFindRestaurants?.();
             }}
           >
-            <Ionicons name="restaurant-outline" size={18} color={colors.accent} />
+            <Icon name="restaurant-outline" size={18} color={colors.accent} />
             <Text style={styles.quickActionText}>Restaurants nearby</Text>
           </Pressable>
         )}
@@ -373,7 +378,7 @@ export function DestinationSearchBar({
               onFindHotels?.();
             }}
           >
-            <Ionicons name="bed-outline" size={18} color={colors.accent} />
+            <Icon name="bed-outline" size={18} color={colors.accent} />
             <Text style={styles.quickActionText}>Hotels nearby</Text>
           </Pressable>
         )}
@@ -391,7 +396,7 @@ export function DestinationSearchBar({
                   onPress={() => onSelectPrediction(item)}
                 >
                   <View style={[styles.predictionIconWrap, { backgroundColor: iconBg }]}>
-                    <Ionicons name={iconName} size={16} color="#FFFFFF" />
+                    <Icon name={iconName} size={16} color="#FFFFFF" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={styles.predictionTitleRow}>
@@ -422,21 +427,20 @@ export function DestinationSearchBar({
                   <Text style={styles.clearAllText}>Clear all</Text>
                 </Pressable>
                 {history.length > COLLAPSED_HISTORY_COUNT && (
-                  <Pressable
+                  <Button
+                    variant="ghost"
+                    icon={historyExpanded ? "chevron-up" : "chevron-down"}
                     onPress={() => setHistoryExpanded((v) => !v)}
-                    hitSlop={8}
-                    style={styles.dropdownButton}
                     accessibilityLabel={historyExpanded ? "Show fewer recent searches" : "Show all recent searches"}
-                  >
-                    <Ionicons name={historyExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.textMuted} />
-                  </Pressable>
+                    iconColor={colors.textMuted}
+                  />
                 )}
               </View>
             </View>
             {visibleHistory.map((place) => (
               <View key={place.placeId} style={styles.row}>
                 <Pressable style={styles.historyRowMain} onPress={() => selectPlace(place)}>
-                  <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+                  <Icon name="time-outline" size={16} color={colors.textMuted} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.primaryText} numberOfLines={1}>
                       {place.name}
@@ -448,14 +452,13 @@ export function DestinationSearchBar({
                     )}
                   </View>
                 </Pressable>
-                <Pressable
+                <Button
+                  variant="ghost"
+                  icon="close"
                   onPress={() => onRemoveHistoryEntry(place.placeId)}
-                  hitSlop={10}
-                  style={styles.historyRemoveButton}
                   accessibilityLabel={`Remove ${place.name} from recent searches`}
-                >
-                  <Ionicons name="close" size={16} color={colors.textFaint} />
-                </Pressable>
+                  iconColor={colors.textFaint}
+                />
               </View>
             ))}
           </View>
@@ -679,25 +682,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.accent,
   },
-  dropdownButton: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   historyRowMain: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-  },
-  historyRemoveButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

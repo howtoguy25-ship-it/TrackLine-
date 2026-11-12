@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Icon } from "@/components/ui/Icon";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Animated, {
   runOnJS,
@@ -8,11 +9,10 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
-import { PressableScale } from "@/components/PressableScale";
-import { CompassNeedle, RecenterIcon, ReportIcon } from "@/components/icons/MapControlIcons";
+import { FloatingButton } from "@/components/ui/Button";
+import { CompassNeedle, ReportIcon } from "@/components/icons/MapControlIcons";
 import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity } from "@/map/homeMapLogic";
-import { colors, shadow, scaleFor } from "@/theme/tokens";
+import { colors, scaleFor } from "@/theme/tokens";
 
 // Every floating button on the idle home map, in one place:
 //
@@ -60,10 +60,9 @@ interface Props {
 export function HomeMapControls(props: Props) {
   const { width } = useWindowDimensions();
   const k = scaleFor(width);
+  // Floating buttons are 56pt (the Menu one a rounded square); re-centre is 58pt.
   const size = {
-    menu: 56 * k,
     round: 56 * k,
-    report: 68 * k,
     recenter: 58 * k,
     side: 16 * k,
     gap: 8 * k,
@@ -104,68 +103,54 @@ export function HomeMapControls(props: Props) {
     >
       {/* Top-left: Menu, then Compass */}
       <View pointerEvents="box-none" style={[styles.column, { top, left: size.side, gap: size.gap }]}>
-        <PressableScale
+        <FloatingButton
+          tone="map"
+          shape="menu"
+          size={size.round}
+          icon="menu"
           onPress={props.onMenu}
           onLongPress={props.onMenuLongPress}
-          style={[styles.white, { width: size.menu, height: size.menu, borderRadius: 14 * k }]}
-          accessibilityRole="button"
           accessibilityLabel={props.unreadCount > 0 ? `Menu, ${props.unreadCount} unread in Inbox` : "Menu"}
-        >
-          <Ionicons name="menu" size={24 * k} color={colors.text} />
-          {props.unreadCount > 0 && <View style={styles.unreadDot} pointerEvents="none" />}
-          {props.dashcamBadge && (
-            <View style={styles.dashcamBadge} pointerEvents="none">
-              <Ionicons name="videocam" size={10} color="#FFFFFF" />
-            </View>
-          )}
-        </PressableScale>
+          badge={
+            <>
+              {props.unreadCount > 0 && <View style={styles.unreadDot} pointerEvents="none" />}
+              {props.dashcamBadge && (
+                <View style={styles.dashcamBadge} pointerEvents="none">
+                  <Icon name="videocam" size={10} color="#FFFFFF" strokeWidth={2.25} />
+                </View>
+              )}
+            </>
+          }
+        />
 
         {props.showCompass && (
-          <PressableScale
-            onPress={props.onCompass}
-            style={[styles.white, { width: size.round, height: size.round, borderRadius: size.round / 2 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Compass. Tap to face north."
-          >
+          <FloatingButton tone="map" size={size.round} onPress={props.onCompass} accessibilityLabel="Compass. Tap to face north.">
             <Animated.View style={needleStyle}>
               <CompassNeedle size={34 * k} />
             </Animated.View>
-          </PressableScale>
+          </FloatingButton>
         )}
       </View>
 
       {/* Top-right: Audio player (optional), then Sound */}
       <View pointerEvents="box-none" style={[styles.column, { top, right: size.side, gap: size.gap }]}>
         {props.showAudioPlayer && (
-          <PressableScale
-            onPress={props.onAudioPlayer}
-            style={[styles.white, { width: size.round, height: size.round, borderRadius: size.round / 2 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Audio player"
-          >
-            <Ionicons name="musical-notes" size={24 * k} color={colors.text} />
-          </PressableScale>
+          <FloatingButton tone="map" size={size.round} icon="musical-notes" onPress={props.onAudioPlayer} accessibilityLabel="Audio player" />
         )}
-        <PressableScale
+        <FloatingButton
+          tone="map"
+          size={size.round}
+          icon={props.soundOff ? "volume-mute" : "volume-high"}
           onPress={props.onSound}
-          style={[styles.white, { width: size.round, height: size.round, borderRadius: size.round / 2 }]}
-          accessibilityRole="button"
           accessibilityLabel={props.soundOff ? "Sound: off" : "Sound"}
-        >
-          <Ionicons name={props.soundOff ? "volume-mute" : "volume-high"} size={24 * k} color={colors.text} />
-        </PressableScale>
+        />
       </View>
 
       {/* Bottom-right, riding on the sheet: Report */}
       <Animated.View pointerEvents="box-none" style={[styles.anchored, { right: size.side }, aboveSheetStyle]}>
-        <PressableScale
-          onPress={props.onReport}
-          style={[styles.report, { width: size.report, height: size.report, borderRadius: 18 * k }]}
-          accessibilityRole="button"
-          accessibilityLabel="Report something on the road"
-        >
-          <ReportIcon size={44 * k} />
-        </PressableScale>
+        <FloatingButton tone="report" size={size.round} onPress={props.onReport} accessibilityLabel="Report something on the road">
+          <ReportIcon size={34 * k} />
+        </FloatingButton>
       </Animated.View>
 
       {/* Bottom-left, riding on the sheet: Re-centre -- only after panning away */}
@@ -173,14 +158,7 @@ export function HomeMapControls(props: Props) {
         pointerEvents={props.showRecenter ? "box-none" : "none"}
         style={[styles.anchored, { left: size.side }, aboveSheetStyle, recenterStyle]}
       >
-        <PressableScale
-          onPress={props.onRecenter}
-          style={[styles.recenter, { width: size.recenter, height: size.recenter, borderRadius: size.recenter / 2 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Re-centre on my location"
-        >
-          <RecenterIcon size={38 * k} />
-        </PressableScale>
+        <FloatingButton tone="recenter" size={size.recenter} icon="locate" onPress={props.onRecenter} accessibilityLabel="Re-centre on my location" />
       </Animated.View>
     </Animated.View>
   );
@@ -189,10 +167,6 @@ export function HomeMapControls(props: Props) {
 const styles = StyleSheet.create({
   column: { position: "absolute", alignItems: "center" },
   anchored: { position: "absolute" },
-  white: { backgroundColor: "#FFFFFF", ...shadow.floating },
-  report: { backgroundColor: colors.reportYellow, ...shadow.floating },
-  // 90% opaque dark grey, so the road shows faintly through it.
-  recenter: { backgroundColor: "rgba(74, 77, 82, 0.9)", ...shadow.floating },
   unreadDot: {
     position: "absolute",
     top: 9,
@@ -200,7 +174,7 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
     borderRadius: 5.5,
-    backgroundColor: colors.danger,
+    backgroundColor: colors.dangerFill,
     borderWidth: 1.5,
     borderColor: "#FFFFFF",
   },
@@ -211,7 +185,7 @@ const styles = StyleSheet.create({
     width: 17,
     height: 17,
     borderRadius: 8.5,
-    backgroundColor: colors.danger,
+    backgroundColor: colors.dangerFill,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,

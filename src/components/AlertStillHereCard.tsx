@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { Animated, Easing, StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ALERT_COLORS, ALERT_LABELS, type AlertDoc } from "@/types/alert";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 interface Props {
   alert: AlertDoc;
@@ -72,22 +73,18 @@ export function AlertStillHereCard({ alert, onStillHere, onNotHere }: Props) {
           </View>
         </View>
         <View style={styles.buttonRow}>
-          <Pressable
+          <Button
+            variant="secondary"
+            label="Not here"
             onPress={() => respond(onNotHere)}
-            style={({ pressed }) => [styles.button, styles.notHereButton, pressed && { opacity: pressedOpacity }]}
-          >
-            <Text style={styles.notHereText}>Not here</Text>
-          </Pressable>
-          <Pressable
+            style={{ flex: 1 }}
+          />
+          <Button
+            variant="primary"
+            label="Still here"
             onPress={() => respond(onStillHere)}
-            style={({ pressed }) => [
-              styles.button,
-              { backgroundColor: accentColor },
-              pressed && { opacity: pressedOpacity },
-            ]}
-          >
-            <Text style={styles.stillHereText}>Still here</Text>
-          </Pressable>
+            style={{ flex: 1 }}
+          />
         </View>
       </View>
     </Animated.View>
@@ -136,25 +133,5 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: "row",
     gap: spacing.sm,
-  },
-  button: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-  },
-  notHereButton: {
-    backgroundColor: "#F3F4F6",
-  },
-  notHereText: {
-    color: "#374151",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  stillHereText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 14,
   },
 });

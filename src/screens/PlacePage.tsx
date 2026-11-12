@@ -1,22 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import {
   View,
   Pressable,
   StyleSheet,
   ScrollView,
   Image,
-  ActivityIndicator,
   Alert,
   Linking,
   Share,
   useWindowDimensions,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { Text } from "@/components/AppText";
-import { PressableScale } from "@/components/PressableScale";
+import { Button, FloatingButton } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { getPlaceInfo, type PlaceDetails, type PlaceInfo } from "@/services/places";
@@ -187,29 +186,24 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
   };
 
   const sheetHeight = height * PLACE_PAGE_SHEET_FRACTION;
-  const roundButton = { width: 48, height: 48, borderRadius: 24 };
   const footerHeight = 58 + spacing.lg + insets.bottom;
   const googlePhotos = info?.photoUrls ?? [];
   const canAddPhoto = isLookupablePlaceId(place.placeId);
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      <Pressable
+      <FloatingButton
+        icon="chevron-back"
         onPress={onBack}
-        style={({ pressed }) => [styles.round, roundButton, { top: insets.top + spacing.sm, left: spacing.lg }, pressed && { opacity: pressedOpacity }]}
-        accessibilityRole="button"
         accessibilityLabel="Back to search"
-      >
-        <Ionicons name="chevron-back" size={26} color={colors.text} />
-      </Pressable>
-      <Pressable
+        style={[styles.round, { top: insets.top + spacing.sm, left: spacing.lg }]}
+      />
+      <FloatingButton
+        icon="close"
         onPress={onClose}
-        style={({ pressed }) => [styles.round, roundButton, { top: insets.top + spacing.sm, right: spacing.lg }, pressed && { opacity: pressedOpacity }]}
-        accessibilityRole="button"
         accessibilityLabel="Close"
-      >
-        <Ionicons name="close" size={26} color={colors.text} />
-      </Pressable>
+        style={[styles.round, { top: insets.top + spacing.sm, right: spacing.lg }]}
+      />
 
       <View style={[styles.sheet, { height: sheetHeight }]}>
         <View style={styles.grabber} />
@@ -245,15 +239,20 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
                 </Text>
               )}
               {!!info.phoneNumber && (
-                <Pressable onPress={() => Linking.openURL(`tel:${info.phoneNumber}`)} hitSlop={6}>
-                  <Text style={[styles.fact, { color: colors.accent }]}>{info.phoneNumber}</Text>
-                </Pressable>
+                <Button
+                  variant="ghost"
+                  inline
+                  label={info.phoneNumber}
+                  onPress={() => Linking.openURL(`tel:${info.phoneNumber}`)}
+                  accessibilityLabel={`Call ${info.phoneNumber}`}
+                  style={styles.inlineLink}
+                />
               )}
             </View>
           )}
 
           <View style={styles.tiles}>
-            <ActionTile icon={isSaved ? "bookmark" : "bookmark-outline"} label={isSaved ? "Saved" : "Save"} onPress={toggleSave} />
+            <ActionTile icon="bookmark" filled={isSaved} label={isSaved ? "Saved" : "Save"} onPress={toggleSave} />
             <ActionTile icon="share-outline" label="Share" onPress={share} />
             <ActionTile icon="ellipsis-horizontal" label="More" onPress={() => setMenu("more")} />
           </View>
@@ -274,9 +273,7 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
                   </Text>
                 </View>
               </View>
-              <Pressable onPress={() => onSeeMoreParking(place)} hitSlop={8}>
-                <Text style={styles.link}>See more parking</Text>
-              </Pressable>
+              <Button variant="ghost" inline label="See more parking" onPress={() => onSeeMoreParking(place)} style={styles.inlineLink} />
             </>
           )}
 
@@ -285,16 +282,16 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
               <Text style={styles.sectionTitle}>Photos</Text>
               <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
                 {canAddPhoto && (
-                  <Pressable
+                  <Button
+                    variant="secondary"
+                    stacked
+                    icon="camera-outline"
+                    label="Add photo"
+                    loading={uploading}
                     onPress={addPhoto}
-                    disabled={uploading}
-                    style={({ pressed }) => [styles.addPhoto, pressed && { opacity: pressedOpacity }]}
-                    accessibilityRole="button"
                     accessibilityLabel="Add a photo"
-                  >
-                    {uploading ? <ActivityIndicator color={colors.accent} /> : <Ionicons name="camera-outline" size={30} color={colors.accent} />}
-                    <Text style={styles.addPhotoText}>Add photo</Text>
-                  </Pressable>
+                    style={styles.addPhoto}
+                  />
                 )}
                 {googlePhotos.map((url, i) => (
                   <View key={url} style={styles.photo}>
@@ -321,14 +318,7 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
       </View>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.sm }]}>
-        <PressableScale
-          onPress={() => onViewRoutes(place)}
-          style={styles.viewRoutes}
-          accessibilityRole="button"
-          accessibilityLabel="View routes"
-        >
-          <Text style={styles.viewRoutesText}>View routes</Text>
-        </PressableScale>
+        <Button variant="primary" size="large" fullWidth label="View routes" onPress={() => onViewRoutes(place)} />
       </View>
 
       {menu && (
@@ -367,32 +357,21 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
   );
 }
 
-function ActionTile({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
-  return (
-    <PressableScale onPress={onPress} style={styles.tile} accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={26} color={colors.accent} />
-      <Text style={styles.tileText}>{label}</Text>
-    </PressableScale>
-  );
+function ActionTile({ icon, label, onPress, filled }: { icon: IconName; label: string; onPress: () => void; filled?: boolean }) {
+  return <Button variant="secondary" stacked icon={icon} filledIcon={filled} label={label} onPress={onPress} style={styles.tile} />;
 }
 
-function MenuItem({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+function MenuItem({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.menuItem, pressed && { opacity: pressedOpacity }]}>
-      <Ionicons name={icon} size={22} color={colors.textMuted} />
+      <Icon name={icon} size={22} color={colors.textMuted} />
       <Text style={styles.menuItemText}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  round: {
-    position: "absolute",
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.floating,
-  },
+  round: { position: "absolute", zIndex: 2 },
   sheet: {
     position: "absolute",
     left: 0,
@@ -426,8 +405,7 @@ const styles = StyleSheet.create({
   facts: { marginTop: spacing.md, gap: 4 },
   fact: { fontSize: 15, color: colors.text },
   tiles: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
-  tile: { flex: 1, height: 84, borderRadius: 16, backgroundColor: colors.surfaceMuted },
-  tileText: { fontSize: 15, fontWeight: "600", color: colors.accent, marginTop: 4 },
+  tile: { flex: 1 },
   sectionTitle: { fontSize: 20, fontWeight: "700", color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },
   parkingCard: {
     flexDirection: "row",
@@ -449,23 +427,12 @@ const styles = StyleSheet.create({
   parkingPinText: { color: "#FFFFFF", fontSize: 18, fontWeight: "700" },
   parkingTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
   parkingSub: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
-  link: { fontSize: 16, fontWeight: "600", color: colors.accent, marginTop: spacing.sm },
+  inlineLink: { alignSelf: "flex-start", marginTop: spacing.xs },
   photo: { width: 150 },
   photoImage: { width: 150, height: 110, borderRadius: 12, backgroundColor: colors.surfaceMuted },
   photoCredit: { fontSize: 11, color: colors.textMuted, marginTop: 3 },
   poweredBy: { fontSize: 11, color: colors.textFaint, marginTop: spacing.xs },
-  addPhoto: {
-    width: 110,
-    height: 110,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderStyle: "dashed",
-    borderColor: colors.chipBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  addPhotoText: { fontSize: 13, fontWeight: "600", color: colors.accent },
+  addPhoto: { width: 110, height: 110 },
   footer: {
     position: "absolute",
     left: 0,
@@ -475,8 +442,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.surface,
   },
-  viewRoutes: { height: 58, borderRadius: 29, backgroundColor: colors.primary },
-  viewRoutesText: { fontSize: 20, fontWeight: "600", color: "#FFFFFF" },
   menuOverlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
   menuCard: {
     backgroundColor: colors.surface,

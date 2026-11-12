@@ -720,3 +720,29 @@ $ gl-style-validate               trackline-light / dark / satellite-streets: ex
 $ npx tsx scripts/test-*.ts       61 + 32 + 21 + 20 + 11 + 14 + 19 checks passed
 $ npx expo export --platform ios  iOS Bundled (2753 modules), exit 0
 ```
+
+## Buttons, icons and colour meaning — limits and decisions
+
+- **The go blue is `#0098FF`, not `#0099FF`.** White on `#0099FF` measures 2.9998:1, a hair under
+  the 3:1 large-text minimum; one step darker on the green channel clears it (3.03:1) and looks
+  identical. Primary and final-confirm labels are always 18pt semibold so they count as large text.
+- **Blue and red TEXT use darker shades of the same hue** (`#0062B8`, `#B8262B`), because
+  `#0099FF` / `#E5484D` as text on white or light grey don't reach 4.5:1 — and the shades still
+  pass on those fills pressed 6% darker. Green text is `#0B7A3B` for the same reason. Fills keep
+  the brief's exact values.
+- **Report glyphs** are white where white reads (3:1+) and ink where it doesn't (hazard, roadwork,
+  chat), so every pin passes.
+- **Map traffic lines use the brief's exact colours and are not held to 3:1.** Slow amber on a
+  white road is 2.0:1 and heavy red over the purple route 1.6:1. Traffic is never shown by colour
+  alone — every route also says "Light / Typical / Heavy traffic" — so the lines are supplementary;
+  the test records the ratios so a change is deliberate.
+- **Dark mode is partial.** The whole button family (floating buttons, chips, buttons) and the
+  traffic words switch to the dark palette when the map's Dark theme is on. The sheets and full
+  screens are still light: their styles are static and converting every screen is its own job.
+- **Re-centre stays 58pt** (the home-screen brief) while other floating buttons are 56pt.
+- **Map artwork keeps its own drawings**: the user-chosen alert icon themes, OSM marker glyphs and
+  map pins still use their icon packs. Every UI icon is a Lucide line icon (ISC licence).
+- **List rows, cards and tiles** stay plain Pressables with their own layout; anything shaped like
+  a button is a `Button`, `Chip` or `FloatingButton` (a test scans for it).
+- **Reduce Motion** turns off the Go now countdown entirely (no fill, no auto-start; tap Go now),
+  Tracky's idle bob, press scaling (the 6% darken stays) and the appear rise (a plain fade stays).

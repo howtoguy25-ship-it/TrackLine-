@@ -1,14 +1,17 @@
 import React, { useCallback } from "react";
 import { Pressable, StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { useReduceMotion } from "@/hooks/useReduceMotion";
+import { PRESS_DARKEN } from "@/theme/colors";
 
-// The app's standard press feedback: the control dips to 94% on a spring and gives a light
-// haptic tap. Used by the floating map buttons and the primary action buttons, so pressing
-// anything important feels the same everywhere.
+// The app's one press feedback, used by every button in components/ui: while held the control
+// shrinks to 96% and darkens by 6%, over 120ms, with a light haptic tap. No spring and no
+// overshoot. With Reduce Motion on, it only darkens.
 
-const PRESSED_SCALE = 0.94;
-const SPRING = { damping: 15, stiffness: 320, mass: 0.6 };
+export const PRESS_SCALE = 0.96;
+export const PRESS_MS = 120;
+const TIMING = { duration: PRESS_MS, easing: Easing.out(Easing.quad) };
 
 interface Props extends Omit<PressableProps, "style"> {
   style?: StyleProp<ViewStyle>;
@@ -23,25 +26,30 @@ interface Props extends Omit<PressableProps, "style"> {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function PressableScale({ style, haptic = true, onPressIn, onPressOut, children, ...rest }: Props) {
-  const scale = useSharedValue(1);
+  const reduceMotion = useReduceMotion();
+  const pressed = useSharedValue(0);
   // .get()/.set() rather than .value: the same thing, in the form the React Compiler accepts.
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: reduceMotion ? 1 : 1 - (1 - PRESS_SCALE) * pressed.get() }],
+  }));
+  const shadeStyle = useAnimatedStyle(() => ({ opacity: PRESS_DARKEN * pressed.get() }));
+  const radius = (StyleSheet.flatten(style)?.borderRadius as number | undefined) ?? 0;
 
   const handlePressIn = useCallback<NonNullable<PressableProps["onPressIn"]>>(
     (event) => {
-      scale.set(withSpring(PRESSED_SCALE, SPRING));
+      pressed.set(withTiming(1, TIMING));
       // Fire-and-forget: a phone with haptics off (or without them) just doesn't buzz.
       if (haptic) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       onPressIn?.(event);
     },
-    [haptic, onPressIn, scale]
+    [haptic, onPressIn, pressed]
   );
   const handlePressOut = useCallback<NonNullable<PressableProps["onPressOut"]>>(
     (event) => {
-      scale.set(withSpring(1, SPRING));
+      pressed.set(withTiming(0, TIMING));
       onPressOut?.(event);
     },
-    [onPressOut, scale]
+    [onPressOut, pressed]
   );
 
   // onPress, onLongPress, disabled, accessibility props etc. all pass straight through in `rest`.
@@ -53,10 +61,13 @@ export function PressableScale({ style, haptic = true, onPressIn, onPressOut, ch
       style={[styles.centered, style, animatedStyle]}
     >
       {children}
+      {/* The 6% darken: black at 6% over the whole control, its own shape. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.shade, { borderRadius: radius }, shadeStyle]} />
     </AnimatedPressable>
   );
 }
 
 const styles = StyleSheet.create({
   centered: { alignItems: "center", justifyContent: "center" },
+  shade: { backgroundColor: "#000000", opacity: 0 },
 });

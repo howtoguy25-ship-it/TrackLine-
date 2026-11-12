@@ -8,16 +8,19 @@ import { CheckeredFlagPin, StartDot } from "@/components/RouteSelection";
 import { Tracky } from "@/components/trackys/Tracky";
 import type { TrackyMoodKey } from "@/components/trackys/moods";
 import type { TrackyCustomization } from "@/components/trackys/customization";
-import { ALERT_COLORS, type AlertType } from "@/types/alert";
+import { ALERT_PIN, type AlertType } from "@/types/alert";
 import { SPEED_CAMERA_MARKER, TRAFFIC_LIGHT_MARKER } from "@/utils/osmMarkerStyle";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors } from "@/theme/tokens";
+import { LIVE_TRAFFIC_BADGE } from "@/theme/colors";
+import { Icon, isIconName } from "@/components/ui/Icon";
+import { Text } from "@/components/AppText";
 
 // Every icon the Mapbox map draws, each one an ordinary React view rendered ONCE into a map
 // image (Mapbox's Images/Image), then reused by any number of pins through the SymbolLayer.
 // That keeps hundreds of pins cheap -- they're one native layer, not hundreds of views.
 //
-// An icon is named by what it shows, e.g. "alert:POLICE", "fuel", "incident:#DC2626:flame:1".
+// An icon is named by what it shows, e.g. "alert:POLICE", "fuel", "incident:#F5A623:#1F2125:circle:flame:1".
 // `iconView(name)` turns a name back into its view; unknown names get nothing.
 
 const CLUSTER_COLORS: Record<string, string> = {
@@ -44,11 +47,12 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
   switch (kind) {
     case "alert": {
       const type = rest[0] as AlertType;
-      const color = ALERT_COLORS[type] ?? colors.text;
+      const pin = ALERT_PIN[type];
+      const color = pin?.fill ?? colors.text;
       return (
         <View style={styles.column}>
           <Badge color={color} size={30}>
-            <AlertTypeGlyph type={type} size={17} color="#FFFFFF" />
+            <AlertTypeGlyph type={type} size={17} color={pin?.glyph ?? "#FFFFFF"} />
           </Badge>
           <View style={[styles.pointer, { borderTopColor: color }]} />
         </View>
@@ -91,13 +95,28 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
         </Badge>
       );
     case "incident": {
-      const [color, icon, major] = rest;
+      // A Live Traffic NSW report: its type's colour and shape (roadwork is a diamond, the rest
+      // circles) with a small white "i" badge saying where it came from.
+      const [color, glyph, shape, icon, major] = rest;
       const big = major === "1";
       const size = big ? 32 : 26;
+      const diamond = shape === "diamond";
+      const name = isIconName(icon) ? icon : "warning";
       return (
-        <View style={[styles.incident, { width: size, height: size, borderRadius: big ? 9 : 7, backgroundColor: color }]}>
-          <View style={styles.unrotate}>
-            <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={big ? 17 : 14} color="#FFFFFF" />
+        <View style={{ width: size + 8, height: size + 8, alignItems: "center", justifyContent: "center" }}>
+          <View
+            style={[
+              styles.incident,
+              { width: size, height: size, backgroundColor: color, borderRadius: diamond ? 6 : size / 2 },
+              diamond && styles.diamond,
+            ]}
+          >
+            <View style={diamond ? styles.unrotate : undefined}>
+              <Icon name={name} size={big ? 17 : 14} color={glyph} strokeWidth={2.25} />
+            </View>
+          </View>
+          <View style={styles.infoBadge}>
+            <Text style={styles.infoBadgeText}>i</Text>
           </View>
         </View>
       );
@@ -180,8 +199,23 @@ const styles = StyleSheet.create({
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
   },
-  incident: { borderWidth: 2, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center", transform: [{ rotate: "45deg" }] },
+  incident: { borderWidth: 2, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  diamond: { transform: [{ rotate: "45deg" }] },
   unrotate: { transform: [{ rotate: "-45deg" }] },
+  infoBadge: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: LIVE_TRAFFIC_BADGE.fill,
+    borderWidth: 1,
+    borderColor: "rgba(16,24,40,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoBadgeText: { fontSize: 10, lineHeight: 12, fontWeight: "700", fontStyle: "italic", color: LIVE_TRAFFIC_BADGE.glyph },
   placePin: {
     width: 34,
     height: 34,

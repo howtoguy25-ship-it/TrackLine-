@@ -1,6 +1,8 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutUp } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
+import { appearAnimations } from "@/components/ui/Appear";
+import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { Text } from "@/components/AppText";
 import { colors, shadow } from "@/theme/tokens";
 
@@ -45,10 +47,11 @@ function ReportsMark({ size }: { size: number }) {
 }
 
 export function StreetPill({ streetName, reportsAround, stationary, top, scale }: Props) {
+  const reduceMotion = useReduceMotion();
   const showReports = stationary && reportsAround > 0;
   // Which pill is on screen is keyed, so React swaps one element for another and the
-  // entering/exiting animations below run: a slide between the two modes, a cross-fade between
-  // two street names.
+  // entering/exiting animations below run: the app's one appear (a 180ms fade with an 8pt rise;
+  // just the fade with Reduce Motion on).
   const mode = showReports ? "reports" : streetName ? `street:${streetName}` : "none";
 
   if (mode === "none") return null;
@@ -57,13 +60,15 @@ export function StreetPill({ streetName, reportsAround, stationary, top, scale }
   const pillStyle = [styles.pill, { height, paddingHorizontal: 22 * scale, borderRadius: height / 2 }];
   const textStyle = [styles.text, { fontSize: 20 * scale }];
 
+  const appear = appearAnimations(reduceMotion);
+
   return (
     <View pointerEvents="none" style={[styles.wrap, { top }]} accessibilityLiveRegion="polite">
       {showReports ? (
         <Animated.View
           key="reports"
-          entering={SlideInDown.duration(260)}
-          exiting={SlideOutUp.duration(220)}
+          entering={appear.entering}
+          exiting={appear.exiting}
           style={[pillStyle, styles.row]}
         >
           <ReportsMark size={26 * scale} />
@@ -74,8 +79,8 @@ export function StreetPill({ streetName, reportsAround, stationary, top, scale }
       ) : (
         <Animated.View
           key={mode}
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(200)}
+          entering={appear.entering}
+          exiting={appear.exiting}
           style={pillStyle}
         >
           <Text style={textStyle} numberOfLines={1}>

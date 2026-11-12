@@ -1,3 +1,5 @@
+import { useReduceMotion } from "@/hooks/useReduceMotion";
+import { shadow } from "@/theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
 import { StyleSheet, Animated } from "react-native";
 import { Text } from "@/components/AppText";
@@ -58,21 +60,22 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
     }).start();
   }, [visible, opacity]);
 
+  // One small bump when the speed first turns red, not a looping pulse: nothing on screen
+  // loops except the Go now fill and Tracky's idle bob. With Reduce Motion on, no bump at all.
+  const reduceMotion = useReduceMotion();
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (!isRed) {
+    if (!isRed || reduceMotion) {
       pulse.setValue(1);
       return;
     }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.08, duration: 420, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 420, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isRed, pulse]);
+    const bump = Animated.sequence([
+      Animated.timing(pulse, { toValue: 1.08, duration: 120, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]);
+    bump.start();
+    return () => bump.stop();
+  }, [isRed, pulse, reduceMotion]);
 
   const chimePlayer = useAudioPlayer(require("../../assets/sounds/speed_warning_chime.wav"));
   const lastChimeAtRef = useRef(0);
@@ -168,11 +171,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.22)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
+    ...shadow.floating,
   },
   dialAmber: {
     backgroundColor: "#F59E0B",

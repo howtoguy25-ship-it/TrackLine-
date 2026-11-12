@@ -1,9 +1,10 @@
 import React from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { View, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sentry } from "@/services/sentry";
-import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { spacing } from "@/theme/tokens";
 
 interface Props {
   onClose: () => void;
@@ -45,17 +46,13 @@ function Fallback({ onClose }: { onClose: () => void }) {
   return (
     <View style={styles.container}>
       <Text style={styles.text}>Vehicle detection ran into a problem and had to stop.</Text>
-      <Pressable
-        style={({ pressed }) => [
-          styles.closeButton,
-          { marginBottom: insets.bottom },
-          pressed && { opacity: pressedOpacity },
-        ]}
+      <Button
+        variant="secondary"
+        label="Close"
         onPress={onClose}
         accessibilityLabel="Close vehicle detection"
-      >
-        <Text style={styles.closeButtonText}>Close</Text>
-      </Pressable>
+        style={{ marginBottom: insets.bottom }}
+      />
     </View>
   );
 }
@@ -73,16 +70,5 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     textAlign: "center",
-  },
-  closeButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-  },
-  closeButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
   },
 });

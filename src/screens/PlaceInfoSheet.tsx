@@ -1,9 +1,10 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ScrollView, Linking, Image, Animated } from "react-native";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import { priceLevelText, type PlaceInfo } from "@/services/places";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
@@ -133,14 +134,13 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                   </Text>
                 )}
               </View>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="close"
+                iconColor={colors.textMuted}
                 onPress={onClose}
-                hitSlop={12}
-                style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
                 accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </Pressable>
+              />
             </View>
 
             <View style={styles.statusRow}>
@@ -149,13 +149,13 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                   indicator, so the icon reads as "this way, this long" rather than "by car". */}
               {etaText && (
                 <View style={styles.etaPill}>
-                  <Ionicons name="navigate" size={13} color="#FFFFFF" />
+                  <Icon name="navigate" size={13} color="#FFFFFF" />
                   <Text style={styles.etaPillText}>{etaText}</Text>
                 </View>
               )}
               {place.rating != null && (
                 <View style={styles.ratingWrap}>
-                  <Ionicons name="star" size={14} color="#F59E0B" />
+                  <Icon name="star" size={14} color="#F59E0B" />
                   <Text style={styles.ratingText}>
                     {place.rating.toFixed(1)}
                     {place.userRatingsTotal != null ? ` (${place.userRatingsTotal})` : ""}
@@ -178,30 +178,22 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
             {(onGetDirections || onStartNavigation) && (
               <View style={styles.actionsRow}>
                 {onGetDirections && (
-                  <Pressable
+                  <Button
+                    variant="secondary"
+                    icon="navigate-outline"
+                    label="Directions"
                     onPress={() => onGetDirections(place)}
-                    style={({ pressed }) => [
-                      styles.actionButton,
-                      styles.directionsButton,
-                      pressed && { opacity: pressedOpacity },
-                    ]}
-                  >
-                    <Ionicons name="navigate-outline" size={16} color={colors.accent} />
-                    <Text style={styles.directionsButtonText}>Directions</Text>
-                  </Pressable>
+                    style={{ flex: 1 }}
+                  />
                 )}
                 {onStartNavigation && (
-                  <Pressable
+                  <Button
+                    variant="primary"
+                    icon="play"
+                    label="Start"
                     onPress={() => onStartNavigation(place)}
-                    style={({ pressed }) => [
-                      styles.actionButton,
-                      styles.startButton,
-                      pressed && { opacity: pressedOpacity },
-                    ]}
-                  >
-                    <Ionicons name="play" size={15} color="#FFFFFF" />
-                    <Text style={styles.startButtonText}>Start</Text>
-                  </Pressable>
+                    style={{ flex: 1 }}
+                  />
                 )}
               </View>
             )}
@@ -229,7 +221,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                 >
                   <Text style={styles.streetViewHint}>Street View -- swipe up for more</Text>
                   <View style={styles.streetViewExpandBadge}>
-                    <Ionicons name="chevron-up" size={13} color={colors.accent} />
+                    <Icon name="chevron-up" size={13} color={colors.accent} />
                   </View>
                 </Pressable>
               </View>
@@ -271,7 +263,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                       style={({ pressed }) => [styles.linkRow, pressed && { opacity: pressedOpacity }]}
                       onPress={() => Linking.openURL(`tel:${place.phoneNumber}`)}
                     >
-                      <Ionicons name="call-outline" size={16} color={colors.accent} />
+                      <Icon name="call-outline" size={16} color={colors.accent} />
                       <Text style={styles.linkText}>{place.phoneNumber}</Text>
                     </Pressable>
                   )}
@@ -280,7 +272,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                       style={({ pressed }) => [styles.linkRow, pressed && { opacity: pressedOpacity }]}
                       onPress={() => Linking.openURL(place.website!)}
                     >
-                      <Ionicons name="globe-outline" size={16} color={colors.accent} />
+                      <Icon name="globe-outline" size={16} color={colors.accent} />
                       <Text style={styles.linkText} numberOfLines={1}>
                         {place.website}
                       </Text>
@@ -299,7 +291,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                           {review.authorName}
                         </Text>
                         <View style={styles.ratingWrap}>
-                          <MaterialCommunityIcons name="star" size={12} color="#F59E0B" />
+                          <Icon name="star" size={12} color="#F59E0B" />
                           <Text style={styles.reviewRating}>{review.rating}</Text>
                         </View>
                       </View>
@@ -356,14 +348,6 @@ const styles = StyleSheet.create({
     color: colors.accent,
     marginTop: 3,
   },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -389,34 +373,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.md,
   },
-  actionButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderRadius: radius.pill,
-    paddingVertical: 11,
-  },
   // Secondary/outline treatment -- Start is the one real "go now" action, so Directions (opens
   // the picker, doesn't commit to anything yet) reads as the lighter-weight choice beside it.
-  directionsButton: {
-    backgroundColor: colors.accentSoft,
-  },
-  directionsButtonText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  startButton: {
-    backgroundColor: colors.accent,
-    ...shadow.low,
-  },
-  startButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
   etaPill: {
     flexDirection: "row",
     alignItems: "center",

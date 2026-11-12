@@ -1,7 +1,9 @@
 // The app-side shape of Live Traffic NSW, and the pure logic around it (reading the shared
-// snapshot defensively, choosing which incidents to draw, how each looks). No imports, so
-// scripts/test-traffic-nsw.ts checks it directly. The Firestore subscription is in trafficNsw.ts;
+// snapshot defensively, choosing which incidents to draw, how each looks). Its only import is
+// the import-free colour table, so scripts/test-traffic-nsw.ts checks it directly. The Firestore subscription is in trafficNsw.ts;
 // the snapshot itself is produced by firebase/functions (refreshNswTraffic).
+
+import { INCIDENT_REPORT, REPORTS, type IncidentKind } from "../theme/colors";
 
 export type TrafficIncidentKind = "incident" | "roadwork" | "majorevent" | "flood" | "fire";
 
@@ -125,26 +127,33 @@ export function incidentsNear(
 }
 
 export interface IncidentStyle {
-  /** An Ionicons name. */
+  /** An Icon name (components/ui/Icon.tsx). */
   icon: "car-sport" | "construct" | "flag" | "water" | "flame" | "warning" | "hand-left" | "close-circle";
+  /** The report colour for this kind of incident (theme/colors.ts REPORTS). */
   color: string;
+  /** The glyph colour that reads on it. */
+  glyph: string;
+  /** Roadwork is a diamond, everything else a circle. */
+  shape: "circle" | "diamond";
   label: string;
 }
 
-/** How an incident is drawn. Category wins over kind where it says something more specific. */
+function styled(kind: IncidentKind, icon: IncidentStyle["icon"], label: string): IncidentStyle {
+  const report = REPORTS[INCIDENT_REPORT[kind]];
+  return { icon, color: report.fill, glyph: report.glyph, shape: report.shape, label };
+}
+
 export function incidentStyle(incident: Pick<TrafficIncident, "kind" | "category">): IncidentStyle {
   const category = incident.category.toLowerCase();
-  if (incident.kind === "fire") return { icon: "flame", color: "#DC2626", label: "Fire" };
-  if (incident.kind === "flood") return { icon: "water", color: "#2563EB", label: "Flooding" };
+  if (incident.kind === "fire") return styled("fire", "flame", "Fire");
+  if (incident.kind === "flood") return styled("flood", "water", "Flooding");
   // A closed road outranks whatever closed it.
-  if (/\bclos(ed|ure)/.test(category)) return { icon: "close-circle", color: "#DC2626", label: "Road closed" };
-  if (incident.kind === "roadwork") return { icon: "construct", color: "#D97706", label: "Roadwork" };
-  if (incident.kind === "majorevent") return { icon: "flag", color: "#7C3AED", label: "Major event" };
-  if (category.includes("crash") || category.includes("accident")) {
-    return { icon: "car-sport", color: "#DC2626", label: "Crash" };
-  }
-  if (category.includes("traffic")) return { icon: "hand-left", color: "#EA580C", label: "Heavy traffic" };
-  return { icon: "warning", color: "#CA8A04", label: incident.category };
+  if (/\bclos(ed|ure)/.test(category)) return styled("closed", "close-circle", "Road closed");
+  if (incident.kind === "roadwork") return styled("roadwork", "construct", "Roadwork");
+  if (incident.kind === "majorevent") return styled("event", "flag", "Major event");
+  if (category.includes("crash") || category.includes("accident")) return styled("crash", "car-sport", "Crash");
+  if (category.includes("traffic")) return styled("traffic", "hand-left", "Heavy traffic");
+  return styled("other", "warning", incident.category);
 }
 
 /** "3 min ago", "2 hr ago" -- or "" when the feed gave no time. */

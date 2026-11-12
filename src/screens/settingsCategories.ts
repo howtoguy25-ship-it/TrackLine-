@@ -1,4 +1,4 @@
-import type { Ionicons } from "@expo/vector-icons";
+import type { IconName } from "@/components/ui/Icon";
 
 // Settings' top-level categories: their names and icons (SettingsCategoriesScreen), and which of
 // SettingsScreen's sections each one shows. Kept out of SettingsScreen.tsx so the category list
@@ -15,7 +15,7 @@ export const SETTINGS_CATEGORY_LABELS: Record<SettingsCategory, string> = {
   developer: "Developer",
 };
 
-export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, keyof typeof Ionicons.glyphMap> = {
+export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, IconName> = {
   account: "person-circle-outline",
   privacy: "eye-off-outline",
   mapDisplay: "map-outline",

@@ -1,8 +1,9 @@
 import React from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -33,14 +34,13 @@ export function SettingsCategoriesScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       {CATEGORY_ORDER.map((category) => (
@@ -51,10 +51,10 @@ export function SettingsCategoriesScreen() {
           accessibilityLabel={SETTINGS_CATEGORY_LABELS[category]}
         >
           <View style={styles.rowIconWrap}>
-            <Ionicons name={SETTINGS_CATEGORY_ICONS[category]} size={20} color={colors.accent} />
+            <Icon name={SETTINGS_CATEGORY_ICONS[category]} size={20} color={colors.accent} />
           </View>
           <Text style={styles.rowLabel}>{SETTINGS_CATEGORY_LABELS[category]}</Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          <Icon name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
       ))}
     </View>
@@ -65,14 +65,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   row: {
     flexDirection: "row",
     alignItems: "center",

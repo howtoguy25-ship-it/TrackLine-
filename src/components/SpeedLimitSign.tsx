@@ -1,3 +1,4 @@
+import { shadow } from "@/theme/tokens";
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
@@ -38,11 +39,7 @@ const styles = StyleSheet.create({
     borderColor: "#DC2626",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 6,
+    ...shadow.floating,
   },
   value: {
     fontSize: 24,

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Pressable, StyleSheet, FlatList } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { View, StyleSheet, FlatList } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
+import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -12,8 +13,8 @@ import { useSettings } from "@/context/SettingsContext";
 import { subscribeVisibleAlerts, hideAlertForUser, unhideAlertForUser, markInboxViewedNow } from "@/services/alerts";
 import { haversineMeters } from "@/services/places";
 import type { AlertDoc, AlertType } from "@/types/alert";
-import { ALERT_LABELS, ALERT_ICONS, ALERT_COLORS } from "@/types/alert";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { ALERT_LABELS, ALERT_ICONS, ALERT_COLORS, ALERT_PIN } from "@/types/alert";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { Tracky } from "@/components/trackys/Tracky";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- main menu's Inbox row). A live feed of
@@ -97,14 +98,13 @@ export function InboxScreen() {
     <View style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Inbox</Text>
-        <Pressable
+        <Button
+          variant="ghost"
+          icon="close"
+          iconColor={colors.textMuted}
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
           accessibilityLabel="Close inbox"
-        >
-          <Ionicons name="close" size={20} color={colors.textMuted} />
-        </Pressable>
+        />
       </View>
 
       <FlatList keyboardShouldPersistTaps="handled"
@@ -127,9 +127,9 @@ export function InboxScreen() {
             <View style={[styles.row, isPendingUndo && styles.rowPendingUndo]}>
               <View style={[styles.iconWrap, { backgroundColor: ALERT_COLORS[item.type] }]}>
                 {glyph.set === "mi" ? (
-                  <MaterialIcons name={glyph.name as any} size={20} color="#FFFFFF" />
+                  <MaterialIcons name={glyph.name as any} size={20} color={ALERT_PIN[item.type].glyph} />
                 ) : (
-                  <MaterialCommunityIcons name={glyph.name as any} size={20} color="#FFFFFF" />
+                  <MaterialCommunityIcons name={glyph.name as any} size={20} color={ALERT_PIN[item.type].glyph} />
                 )}
               </View>
               <View style={{ flex: 1 }}>
@@ -152,13 +152,15 @@ export function InboxScreen() {
                 </Text>
               </View>
               {isPendingUndo ? (
-                <Pressable onPress={onUndo} hitSlop={8} style={styles.undoButton}>
-                  <Text style={styles.undoButtonText}>Undo</Text>
-                </Pressable>
+                <Button variant="ghost" label="Undo" onPress={onUndo} />
               ) : (
-                <Pressable onPress={() => onDelete(item)} hitSlop={8} accessibilityLabel="Delete">
-                  <Ionicons name="trash-outline" size={20} color={colors.textFaint} />
-                </Pressable>
+                <Button
+                  variant="ghost"
+                  icon="trash-outline"
+                  iconColor={colors.textFaint}
+                  onPress={() => onDelete(item)}
+                  accessibilityLabel="Delete"
+                />
               )}
             </View>
           );
@@ -177,14 +179,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   listContent: { gap: spacing.xs },
   emptyState: { alignItems: "center", gap: spacing.sm, paddingTop: spacing.xxl * 2 },
   emptyText: { fontSize: 14, color: colors.textMuted },
@@ -216,11 +210,4 @@ const styles = StyleSheet.create({
   officialTagText: { fontSize: 10, fontWeight: "800", color: colors.accent },
   rowComment: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   rowMeta: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
-  undoButton: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  undoButtonText: { fontSize: 12, fontWeight: "800", color: colors.accent },
 });

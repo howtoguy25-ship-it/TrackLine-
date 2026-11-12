@@ -1,49 +1,65 @@
-// Shared design tokens for the mobile app -- every screen/component in this app pulls its
-// colors/spacing/radius/shadow from here, so refining this one file is the real, highest-
-// leverage way to give the whole app a cohesive visual upgrade at once, rather than hand-editing
-// dozens of screens individually (which would also risk undoing a lot of this session's own
-// carefully evidence-tuned layout work along the way).
-//
-// Real, explicit request for a "bold & modern... professional yet stylish... unique" upgrade,
-// keeping the existing blue identity rather than replacing it -- accent moved one full step
-// deeper/richer in the same Tailwind blue scale (#2563EB, blue-600 -> #1D4ED8, blue-700), a real,
-// well-tested, harmonious shade (not a guessed value), reading as more premium/saturated while
-// still unmistakably the same blue. accentDeep/accentSoft are new -- a pressed/depth shade and a
-// light tint for badges/selected states, both derived from the same blue scale, so anything that
-// wants a darker or lighter variant of the brand color has a real token instead of a one-off hex.
+// Shared design tokens: every screen pulls its colours, spacing, radii and shadow from here.
+import {
+  BLUE,
+  BLUE_TEXT,
+  DARK_GREY,
+  GREEN,
+  GREEN_TEXT,
+  INK,
+  LAVENDER,
+  PURPLE,
+  PURPLE_BEST,
+  RED,
+  RED_SOFT,
+  RED_TEXT,
+  SELECTED_TINT,
+  SURFACES,
+  YELLOW,
+  darken,
+} from "@/theme/colors";
+
+// Every value below comes from theme/colors.ts, where colours are grouped by meaning. The names
+// here are the ones the app's screens already use.
 export const colors = {
-  // The Waze-style UI pass's palette (pass 2, section 0). Everything visual in the app reads
-  // from this one object, so these values ARE the app's look.
-  //
-  // `accent` is the link blue: it's what text links, icons and selected states use, and it has
-  // to stay legible as text on white. `primary` is the brighter blue reserved for filled
-  // buttons (white text on top).
-  accent: "#0A84E0",
-  accentDeep: "#0669B8",
-  accentSoft: "#E1F1FD",
-  primary: "#0099FF",
-  primaryPressed: "#007ACC",
-  dark: "#1F2125",
-  danger: "#DC2626",
-  warning: "#F59E0B",
-  surface: "#FFFFFF", // sheets and cards
-  surfaceMuted: "#F1F3F7", // search fields, chips, action tiles
-  border: "#E6E8EB", // dividers
+  /** Blue for text, links and line icons (passes AA on white and light grey). */
+  accent: BLUE_TEXT,
+  accentDeep: "#00559F",
+  /** Pale blue behind something selected. */
+  accentSoft: SELECTED_TINT.light,
+  /** Go / confirm blue: filled buttons, with white on top. */
+  primary: BLUE,
+  primaryPressed: darken(BLUE),
+  dark: INK,
+  /** Red for danger text and small danger marks (AA on white). */
+  danger: RED_TEXT,
+  /** The danger red itself: the final confirm button, unread dots. */
+  dangerFill: RED,
+  dangerSoft: RED_SOFT,
+  /** Amber text for a caution (AA on white). */
+  warning: "#A35F00",
+  /** Good / visible green, and its text shade. */
+  good: GREEN,
+  goodText: GREEN_TEXT,
+  surface: SURFACES.light.sheet,
+  surfaceMuted: SURFACES.light.muted,
+  border: SURFACES.light.divider,
   chipBorder: "#DADDE2",
-  text: "#1F2125",
-  textMuted: "#6B7078",
-  textFaint: "#8A8F98",
+  text: SURFACES.light.text,
+  textMuted: SURFACES.light.textMuted,
+  textFaint: SURFACES.light.textFaint,
   grabber: "#8E9399",
   // Routes
-  routePurple: "#6A1FD1",
+  routePurple: PURPLE,
   routePurpleCasing: "#4A1396",
-  routeAlt: "#C9A8F5",
-  bestTag: "#5212B8",
+  routeAlt: LAVENDER,
+  bestTag: PURPLE_BEST,
   // The grey bar navigation's trip summary sits on
   banner: "#E9EAEE",
   // Floating map buttons
-  reportYellow: "#FBDD4A",
-  recenterGrey: "#4A4D52",
+  reportYellow: YELLOW,
+  recenterGrey: DARK_GREY,
+  /** The 1px edge on white map buttons. */
+  hairline: "rgba(16,24,40,0.06)",
 } as const;
 
 export const spacing = {
@@ -55,66 +71,35 @@ export const spacing = {
   xxl: 24,
 } as const;
 
-// Softer, slightly larger scale than before (sm 10->12, md 12->14, lg 14->18, xl 16->22) -- a
-// real, deliberate part of the "bold & modern" direction: more generous rounding reads as more
-// contemporary/premium across every card, button, sheet, and badge in the app that already
-// pulls from this token, with zero per-screen changes needed.
+// Corner radii. Named ones are the brief's: menu button 16, chips 18, cards 20; pills are fully
+// round.
 export const radius = {
   sm: 12,
   md: 14,
   lg: 18,
-  xl: 22,
+  xl: 20,
+  menu: 16,
+  chip: 18,
+  card: 20,
   pill: 999,
 } as const;
 
-// Deeper elevation across all three tiers than before -- part of the same "bold" direction as
-// the radius bump above: more pronounced shadows read as more premium/confident than the
-// previous subtler ones, without changing what actually casts a shadow anywhere.
-export const shadow = {
-  low: {
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  medium: {
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  high: {
-    shadowColor: "#000",
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-  },
-  // Floating buttons over the map (menu, compass, sound, report, recenter): 0 4 12, 18% black.
-  floating: {
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  // New -- a real signature detail for this app's own "unique look" (not present before this
-  // upgrade): a soft blue-tinted glow instead of a flat black shadow, used deliberately sparingly
-  // on the app's own most central actions (see e.g. RouteOptionsCard's Start button) rather than
-  // on every button, which would read as gaudy instead of premium.
-  accentGlow: {
-    shadowColor: "#0099FF",
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
+// One shadow for everything that floats: 0 6 16 rgba(16,24,40,0.12) + 0 1 3 rgba(16,24,40,0.08).
+// boxShadow draws both layers on iOS and Android (React Native's new architecture). The old tier
+// names all resolve to it, so every card, sheet and button casts the same soft shadow.
+const ONE_SHADOW = {
+  boxShadow: "0px 6px 16px rgba(16,24,40,0.12), 0px 1px 3px rgba(16,24,40,0.08)",
 } as const;
 
-// Standard opacity a Pressable dims to while held, for consistent tactile feedback
-// across every button in the app instead of some buttons having it and others not.
+export const shadow = {
+  low: ONE_SHADOW,
+  medium: ONE_SHADOW,
+  high: ONE_SHADOW,
+  floating: ONE_SHADOW,
+  card: ONE_SHADOW,
+} as const;
+
+// Opacity a plain Pressable row dims to while held. (Buttons use components/ui's press feedback.)
 export const pressedOpacity = 0.7;
 
 export { DESIGN_WIDTH, scaleFor } from "@/theme/scale";

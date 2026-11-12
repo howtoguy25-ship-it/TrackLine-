@@ -4,33 +4,22 @@ import Svg, { Circle, Line, Path, Polygon } from "react-native-svg";
 // The home map's own control artwork, drawn here as plain SVG shapes. Original to TrackLine:
 // each is a few primitives written by hand, not traced or adapted from another app's icons.
 
-/** Report: a yellow warning triangle with a black outline and a black "+". */
+/**
+ * Report: a black warning triangle outline with a "+", drawn on the yellow Report button. Its
+ * stroke is the line set's 1.75 at 24pt (3.5 on this 48-unit canvas).
+ */
 export function ReportIcon({ size }: { size: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 48 48">
       <Path
-        d="M24 6.5 L43.5 40 Q44.4 41.6 42.6 41.6 L5.4 41.6 Q3.6 41.6 4.5 40 Z"
-        fill="#FFE55C"
-        stroke="#1F2125"
-        strokeWidth={3}
+        d="M24 7 L43 40 Q43.8 41.5 42.1 41.5 L5.9 41.5 Q4.2 41.5 5 40 Z"
+        fill="none"
+        stroke="#000000"
+        strokeWidth={3.5}
         strokeLinejoin="round"
       />
-      <Line x1="24" y1="20" x2="24" y2="35" stroke="#1F2125" strokeWidth={3.4} strokeLinecap="round" />
-      <Line x1="16.5" y1="27.5" x2="31.5" y2="27.5" stroke="#1F2125" strokeWidth={3.4} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-/** Re-centre: a white crosshair ring with a white heading arrow inside it. */
-export function RecenterIcon({ size }: { size: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 48 48">
-      <Circle cx="24" cy="24" r="15" stroke="#FFFFFF" strokeWidth={2.4} fill="none" />
-      <Line x1="24" y1="3" x2="24" y2="10" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" />
-      <Line x1="24" y1="38" x2="24" y2="45" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" />
-      <Line x1="3" y1="24" x2="10" y2="24" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" />
-      <Line x1="38" y1="24" x2="45" y2="24" stroke="#FFFFFF" strokeWidth={2.4} strokeLinecap="round" />
-      <Polygon points="24,14.5 31,31.5 24,27.6 17,31.5" fill="#FFFFFF" />
+      <Line x1="24" y1="20" x2="24" y2="34" stroke="#000000" strokeWidth={3.5} strokeLinecap="round" />
+      <Line x1="17" y1="27" x2="31" y2="27" stroke="#000000" strokeWidth={3.5} strokeLinecap="round" />
     </Svg>
   );
 }

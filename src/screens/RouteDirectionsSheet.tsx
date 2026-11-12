@@ -1,12 +1,13 @@
 import React, { forwardRef, useMemo } from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { View, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { MANEUVER_ICONS } from "@/components/NavigationInstructionCard";
 import type { Route, RouteStep } from "@/services/directions";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 interface Props {
   route: Route | null;
@@ -42,14 +43,13 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
                 {route.hasTrafficDelay ? " (traffic)" : ""}
               </Text>
             </View>
-            <Pressable
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor={colors.textMuted}
               onPress={onClose}
-              hitSlop={12}
-              style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
               accessibilityLabel="Close"
-            >
-              <Ionicons name="close" size={20} color={colors.textMuted} />
-            </Pressable>
+            />
           </View>
           <BottomSheetFlatList keyboardShouldPersistTaps="handled"
             data={route.steps}
@@ -62,7 +62,7 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
               return (
                 <View style={[styles.row, isActive && styles.rowActive]}>
                   <View style={[styles.iconWrap, isActive && styles.iconWrapActive, isPast && styles.iconWrapPast]}>
-                    <MaterialIcons name={icon} size={18} color="#FFFFFF" />
+                    <Icon name={icon} size={18} color="#FFFFFF" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.instruction, isPast && styles.instructionPast]}>
@@ -112,14 +112,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     marginTop: 2,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
   },
   row: {
     flexDirection: "row",

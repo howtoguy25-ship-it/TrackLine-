@@ -1,10 +1,11 @@
 import React from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { Modal, View, Pressable, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
-import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatIncidentAge, incidentStyle, type NearbyIncident } from "@/services/trafficNswModel";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 // The card shown when a Live Traffic NSW pin is tapped. Everything on it is Transport for NSW's
 // own report, lightly tidied -- the category, where, the delay if they give one, their advice,
@@ -32,7 +33,7 @@ export function TrafficIncidentCard({ incident, onRoute, distanceText, openedAtM
         <Pressable style={[styles.card, { marginBottom: insets.bottom + spacing.lg }]} onPress={() => {}}>
           <View style={styles.header}>
             <View style={[styles.icon, { backgroundColor: style.color }]}>
-              <Ionicons name={style.icon} size={20} color="#FFFFFF" />
+              <Icon name={style.icon} size={20} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>
@@ -41,14 +42,13 @@ export function TrafficIncidentCard({ incident, onRoute, distanceText, openedAtM
               </Text>
               {!!incident.where && <Text style={styles.where}>{incident.where}</Text>}
             </View>
-            <Pressable
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor={colors.textMuted}
               onPress={onClose}
-              hitSlop={12}
-              style={({ pressed }) => [styles.closeButton, pressed && { opacity: pressedOpacity }]}
               accessibilityLabel="Close"
-            >
-              <Ionicons name="close" size={18} color={colors.textMuted} />
-            </Pressable>
+            />
           </View>
 
           <View style={styles.chips}>
@@ -78,14 +78,6 @@ const styles = StyleSheet.create({
   icon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 16, fontWeight: "800", color: colors.text },
   where: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
-  closeButton: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   chip: {
     fontSize: 12,

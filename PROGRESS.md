@@ -6,7 +6,14 @@ Live Traffic NSW, full settings reorg, etc.). Kept current so a new session can 
 where this one left off — see `CODEBASE_MAP.md` for what the repo looks like and `NOTES.md` for
 honest limitations/missing keys.
 
-## Mapbox map + button fix (latest)
+## Strict verification + button & colour system (latest)
+
+- [x] Root cause of the old home screen on the phone: old builds / dev server JS (AUDIT §12); build stamp in Settings › About — `2a9bc36`, dev build `7d8f1253`
+- [x] One Button family, Lucide line icons, one shadow, press/appear motion, colour meaning groups, WCAG AA tests (AUDIT §13)
+- [ ] Device check: `TEST_ON_PHONE.md` §12
+- [ ] Dark sheets/screens (only the button family and traffic text go dark today)
+
+## Mapbox map + button fix
 
 - [x] Buttons-do-nothing fix (Menu was a native modal; screens opened behind it) — `e74a550`, dev build `ac01134e`
 - [x] Branch `mapbox-map`: §1 setup + §2 own style — `f8316a8`; §3 every map feature on Mapbox — `3248b15`;

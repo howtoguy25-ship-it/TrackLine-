@@ -1,4 +1,6 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Button, Chip } from "@/components/ui/Button";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import {
   View,
   Pressable,
@@ -12,7 +14,6 @@ import {
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
 import { PlacesApiError, type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
@@ -193,20 +194,19 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
         <Pressable style={styles.pressableFill} onPress={() => Keyboard.dismiss()}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>Parking nearby</Text>
-            <Pressable
+            <Button
+              variant="ghost"
+              icon="close"
+              iconColor={colors.textMuted}
               onPress={() => {
                 Keyboard.dismiss();
                 if (ref && typeof ref !== "function") ref.current?.close();
               }}
-              hitSlop={10}
               accessibilityLabel="Close"
-              style={styles.closeButton}
-            >
-              <Ionicons name="close" size={20} color={colors.textMuted} />
-            </Pressable>
+            />
           </View>
           <View style={styles.searchRow}>
-            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <Icon name="search" size={16} color={colors.textMuted} />
             <TextInput
               value={query}
               onChangeText={setQuery}
@@ -222,9 +222,13 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
               }}
             />
             {query.length > 0 && (
-              <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
-                <Ionicons name="close-circle" size={18} color={colors.textFaint} />
-              </Pressable>
+              <Button
+                variant="ghost"
+                icon="close-circle"
+                iconColor={colors.textFaint}
+                onPress={() => setQuery("")}
+                accessibilityLabel="Clear search"
+              />
             )}
           </View>
 
@@ -268,17 +272,15 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
           )}
           {errorText && !loading && (
             <View style={styles.centerRow}>
-              <Ionicons name="alert-circle" size={18} color={colors.danger} />
+              <Icon name="alert-circle" size={18} color={colors.danger} />
               <Text style={[styles.centerText, { color: colors.danger }]}>{errorText}</Text>
-              <Pressable
+              <Button
+                variant="ghost"
+                icon="refresh"
+                label="Retry"
                 onPress={() => setRetryTick((t) => t + 1)}
-                hitSlop={10}
-                style={styles.retryButton}
                 accessibilityLabel="Retry"
-              >
-                <Ionicons name="refresh" size={14} color={colors.accent} />
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </Pressable>
+              />
             </View>
           )}
           {!loading && !errorText && filteredCarParks.length === 0 && (
@@ -320,7 +322,7 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
               onPress={() => onViewDetails(place.placeId)}
             >
               <View style={styles.parkingIconWrap}>
-                <MaterialCommunityIcons name="parking" size={22} color="#FFFFFF" />
+                <Icon name="parking" size={22} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name} numberOfLines={1}>
@@ -346,7 +348,7 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
                   <Text style={styles.distanceText}>{formatDistance(place.distanceMeters)}</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+              <Icon name="chevron-forward" size={16} color={colors.textFaint} />
             </Pressable>
           )}
         />
@@ -366,12 +368,8 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
                 shows only car parks that are marked as having it.
               </Text>
               <View style={styles.moreActions}>
-                <Pressable onPress={() => setFilters(NO_PARKING_FILTERS)} hitSlop={8} style={styles.moreButton}>
-                  <Text style={styles.moreButtonTextMuted}>Clear all</Text>
-                </Pressable>
-                <Pressable onPress={() => setMoreOpen(false)} style={[styles.moreButton, styles.moreButtonPrimary]}>
-                  <Text style={styles.moreButtonTextPrimary}>Done</Text>
-                </Pressable>
+                <Button variant="ghost" label="Clear all" onPress={() => setFilters(NO_PARKING_FILTERS)} />
+                <Button variant="primary" label="Done" onPress={() => setMoreOpen(false)} />
               </View>
             </Pressable>
           </Pressable>
@@ -389,22 +387,13 @@ function FilterChip({
   accessibilityLabel,
 }: {
   label: string;
-  icon?: React.ComponentProps<typeof Ionicons>["name"];
+  icon?: IconName;
   active: boolean;
   onPress: () => void;
   accessibilityLabel?: string;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && { opacity: pressedOpacity }]}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      accessibilityLabel={accessibilityLabel ?? label}
-    >
-      {icon && <Ionicons name={icon} size={14} color={active ? "#FFFFFF" : colors.textMuted} />}
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
+    <Chip selected={active} icon={icon} label={label} onPress={onPress} accessibilityLabel={accessibilityLabel ?? label} />
   );
 }
 
@@ -413,14 +402,6 @@ const styles = StyleSheet.create({
   pressableFill: {},
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   title: { fontSize: 17, fontWeight: "800", color: colors.text },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceMuted,
-  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -434,16 +415,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
   centerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
   centerText: { flex: 1, fontSize: 13, color: colors.textMuted },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceMuted,
-  },
-  retryButtonText: { fontSize: 12, fontWeight: "700", color: colors.accent },
   listFlex: { flex: 1 },
   listContent: { paddingBottom: spacing.xxl, gap: spacing.xs, paddingTop: spacing.xs },
   row: {
@@ -466,18 +437,6 @@ const styles = StyleSheet.create({
   vicinity: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.xs, marginTop: 4 },
   filterRow: { gap: spacing.xs, paddingBottom: spacing.sm },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.surfaceMuted,
-  },
-  chipActive: { backgroundColor: colors.accent },
-  chipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
-  chipTextActive: { color: "#FFFFFF" },
   filterNote: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingBottom: spacing.sm },
   filterNoteText: { flex: 1, fontSize: 12, color: colors.textMuted },
   filterNoteAction: { fontSize: 12, fontWeight: "700", color: colors.accent },
@@ -506,9 +465,5 @@ const styles = StyleSheet.create({
   moreLabel: { fontSize: 15, color: colors.text },
   moreHint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
   moreActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm, marginTop: spacing.sm },
-  moreButton: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.md },
-  moreButtonPrimary: { backgroundColor: colors.accent },
-  moreButtonTextMuted: { fontSize: 15, fontWeight: "700", color: colors.textMuted },
-  moreButtonTextPrimary: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   distanceText: { fontSize: 12, color: colors.textFaint, marginLeft: "auto" },
 });

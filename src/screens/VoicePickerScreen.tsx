@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, SectionList, ActivityIndicator, Modal } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Speech from "expo-speech";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -30,7 +31,7 @@ import {
   type NavLanguage,
 } from "@/services/navLanguage";
 import { useSettings } from "@/context/SettingsContext";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 
 // Real, explicit request (Waze-style redesign, Phase 3) -- the "Current voice" picker screen,
@@ -283,7 +284,7 @@ export function VoicePickerScreen() {
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <View style={styles.searchRow}>
-        <Ionicons name="search" size={16} color={colors.textMuted} />
+        <Icon name="search" size={16} color={colors.textMuted} />
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -293,9 +294,13 @@ export function VoicePickerScreen() {
           autoCorrect={false}
         />
         {query.length > 0 && (
-          <Pressable onPress={() => setQuery("")} hitSlop={10} accessibilityLabel="Clear search">
-            <Ionicons name="close-circle" size={18} color={colors.textFaint} />
-          </Pressable>
+          <Button
+            variant="ghost"
+            icon="close-circle"
+            iconColor={colors.textFaint}
+            onPress={() => setQuery("")}
+            accessibilityLabel="Clear search"
+          />
         )}
       </View>
 
@@ -336,18 +341,18 @@ export function VoicePickerScreen() {
               TrackLine will use this voice to speak your turn-by-turn directions and alerts.
             </Text>
             <View style={styles.modalActions}>
-              <Pressable
-                style={({ pressed }) => [styles.modalButton, pressed && { opacity: pressedOpacity }]}
+              <Button
+                variant="secondary"
+                label="Cancel"
                 onPress={() => setPendingSelection(null)}
-              >
-                <Text style={styles.modalButtonTextMuted}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.modalButton, styles.modalButtonPrimary, pressed && { opacity: pressedOpacity }]}
+                style={{ flex: 1 }}
+              />
+              <Button
+                variant="primary"
+                label="Accept"
                 onPress={confirmPendingSelection}
-              >
-                <Text style={styles.modalButtonTextPrimary}>Accept</Text>
-              </Pressable>
+                style={{ flex: 1 }}
+              />
             </View>
           </View>
         </View>
@@ -385,7 +390,7 @@ function VoiceRow({
             {name}
             {enhanced ? " ✦" : ""}
           </Text>
-          {previewing && <Ionicons name="volume-high" size={14} color={colors.accent} />}
+          {previewing && <Icon name="volume-high" size={14} color={colors.accent} />}
         </View>
         {!!subtitle && (
           <Text style={[styles.rowSubtitle, locked && styles.rowSubtitleLocked]} numberOfLines={1}>
@@ -394,9 +399,9 @@ function VoiceRow({
         )}
       </View>
       {locked ? (
-        <MaterialCommunityIcons name="lock-outline" size={18} color={colors.textFaint} />
+        <Icon name="lock-outline" size={18} color={colors.textFaint} />
       ) : selected ? (
-        <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
+        <Icon name="checkmark-circle" size={22} color={colors.accent} />
       ) : (
         <View style={styles.rowRadio} />
       )}
@@ -483,8 +488,4 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: "800", color: colors.text, marginBottom: spacing.sm },
   modalBody: { fontSize: 14, color: colors.textMuted, lineHeight: 20 },
   modalActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg, justifyContent: "flex-end" },
-  modalButton: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md },
-  modalButtonPrimary: { backgroundColor: colors.accent },
-  modalButtonTextMuted: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
-  modalButtonTextPrimary: { fontSize: 14, fontWeight: "700", color: "#FFFFFF" },
 });

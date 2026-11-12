@@ -1,4 +1,7 @@
+import { useReduceMotion } from "@/hooks/useReduceMotion";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button, Chip, FloatingButton } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import {
   View,
   StyleSheet,
@@ -23,13 +26,11 @@ import { incidentStyle } from "@/services/trafficNswModel";
 import * as Location from "expo-location";
 import { usePowerState } from "expo-battery";
 import { loadBoxedTFLiteModel } from "@/services/tfliteVehicleModel";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import BottomSheet from "@gorhom/bottom-sheet";
 import { useNavigation, useIsFocused, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing, pressedOpacity, scaleFor } from "@/theme/tokens";
-import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import { clusterPoints } from "@/utils/markerCluster";
 
 import { useLocation } from "@/context/LocationContext";
@@ -109,6 +110,8 @@ import {
   routeTags,
   routesBounds,
   trafficLevel,
+  routeSummaryParts,
+  type RouteSummaryParts,
   trafficStretches,
   viaRoadLabel,
   withoutUturns,
@@ -482,6 +485,8 @@ export function MapScreen() {
   // Go now's ten-second fill. Starts once per destination when its driving routes arrive; any
   // touch on the screen stops it for good (see the container's onTouchStart).
   const [autoGoRunning, setAutoGoRunning] = useState(false);
+  // With Reduce Motion on there's no Go now fill and no countdown: the driver taps Go now.
+  const reduceMotion = useReduceMotion();
   const autoGoArmedRef = useRef(false);
   const [modeRoute, setModeRoute] = useState<Route | null>(null);
   // Every real alternative Google returned for the current walking/bicycling/transit trip --
@@ -3419,12 +3424,14 @@ export function MapScreen() {
       selectionRoutes.map((r, i) => {
         const tag = selectionTags[i] ?? null;
         let subtitle: string;
+        let subtitleParts: RouteSummaryParts | undefined;
         if (travelMode === "driving") {
           const hasToll = r.tollEstimate?.hasToll === true;
           const price = hasToll ? r.tollEstimate?.priceText : null;
-          subtitle =
-            routeSummaryLine(tag as Parameters<typeof routeSummaryLine>[0], trafficLevel(r), hasToll) +
-            (price ? ` ${price}` : "");
+          const routeTag = tag as Parameters<typeof routeSummaryLine>[0];
+          subtitle = routeSummaryLine(routeTag, trafficLevel(r), hasToll) + (price ? ` ${price}` : "");
+          const parts = routeSummaryParts(routeTag, trafficLevel(r), hasToll);
+          subtitleParts = { ...parts, tail: parts.tail + (price ? ` ${price}` : "") };
         } else if (travelMode === "transit") {
           const firstLeg = r.transitSummary?.legs[0];
           const transfers = r.transitSummary?.transfers ?? 0;
@@ -3440,6 +3447,7 @@ export function MapScreen() {
           distanceText: formatDistance(r.distanceMeters, settings.distanceUnit),
           title: travelMode === "transit" ? transitRouteTitle(r) : viaRoadLabel(r.summary),
           subtitle,
+          subtitleParts,
         };
       }),
     [selectionRoutes, selectionTags, travelMode, settings.distanceUnit]
@@ -4315,7 +4323,7 @@ export function MapScreen() {
           {
             id: `incident:${incident.id}`,
             coordinate: { latitude: incident.lat, longitude: incident.lng },
-            icon: `incident:${st.color}:${st.icon}:${incident.major ? 1 : 0}`,
+            icon: `incident:${st.color}:${st.glyph}:${st.shape}:${st.icon}:${incident.major ? 1 : 0}`,
             priority: incident.major ? 26 : 25,
           },
           { kind: "incident", incident }
@@ -4570,20 +4578,18 @@ export function MapScreen() {
         <View style={styles.locationGateOverlay} pointerEvents="auto">
           {permissionDenied ? (
             <>
-              <MaterialCommunityIcons name="map-marker-off-outline" size={40} color="#FFFFFF" />
+              <Icon name="map-marker-off-outline" size={40} color="#FFFFFF" />
               <Text style={styles.locationGateTitle}>Location access needed</Text>
               <Text style={styles.locationGateText}>
                 TrackLine needs your real location to show you on the map and navigate -- it never
                 shows a placeholder or guessed position.
               </Text>
-              <Pressable
+              <Button
+                variant="primary"
+                label={canAskAgain ? "Allow location access" : "Open settings"}
                 onPress={() => (canAskAgain ? requestLocationPermission() : Linking.openSettings())}
-                style={({ pressed }) => [styles.locationGateButton, pressed && { opacity: pressedOpacity }]}
-              >
-                <Text style={styles.locationGateButtonText}>
-                  {canAskAgain ? "Allow location access" : "Open Settings"}
-                </Text>
-              </Pressable>
+                style={{ marginTop: spacing.sm }}
+              />
             </>
           ) : (
             <>
@@ -4655,7 +4661,7 @@ export function MapScreen() {
           Marker. Never moves itself; the map pans/zooms underneath it instead. */}
       {placingAlert && (
         <View style={styles.placementPinOverlay} pointerEvents="none">
-          <Ionicons name="location" size={44} color={colors.danger} />
+          <Icon name="location" size={44} color={colors.danger} />
         </View>
       )}
 
@@ -4663,7 +4669,7 @@ export function MapScreen() {
           to match the app's own accent (a start point, not a hazard report). */}
       {pickingOrigin && originPickerView === "pin" && (
         <View style={styles.placementPinOverlay} pointerEvents="none">
-          <Ionicons name="location" size={44} color={colors.accent} />
+          <Icon name="location" size={44} color={colors.accent} />
         </View>
       )}
 
@@ -4671,26 +4677,20 @@ export function MapScreen() {
           halo/pin below) -- the destination step that follows a confirmed start point. */}
       {pickingDestinationPoint && destinationPickerView === "pin" && (
         <View style={styles.placementPinOverlay} pointerEvents="none">
-          <Ionicons name="location" size={44} color="#22C55E" />
+          <Icon name="location" size={44} color="#22C55E" />
         </View>
       )}
 
       {/* 3D buildings on and not navigating: switch between the 3D angle and a near-horizon
           "front view" over the raised buildings. */}
       {show3D && !route && currentLatLng && (
-        <Pressable
-          style={({ pressed }) => [
-            styles.frontViewButton,
-            { top: insets.top + spacing.md },
-            frontView && styles.fabActive,
-            pressed && { opacity: pressedOpacity },
-          ]}
+        <Chip
+          icon={frontView ? "layers" : "eye"}
+          label={frontView ? "Top-down" : "Front view"}
           onPress={toggleFrontView}
           accessibilityLabel={frontView ? "Switch to top-down 3D view" : "Switch to front view"}
-        >
-          <Ionicons name={frontView ? "layers" : "eye"} size={18} color="#FFFFFF" />
-          <Text style={styles.frontViewButtonText}>{frontView ? "Top-down" : "Front view"}</Text>
-        </Pressable>
+          onMap selected={frontView} style={[styles.frontViewSpot, { top: insets.top + spacing.md }]}
+        />
       )}
 
       {/* Custom "From" picker -- reachable either from the idle search panel's own From row
@@ -4809,7 +4809,7 @@ export function MapScreen() {
             }
             onLeaveLater={travelMode === "driving" ? leaveLaterFromRouteSelection : undefined}
             onGoNow={goNowFromRouteSelection}
-            countdownRunning={autoGoRunning && travelMode === "driving"}
+            countdownRunning={autoGoRunning && travelMode === "driving" && !reduceMotion}
             onCountdownDone={goNowFromRouteSelection}
             onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
             hasStop={!!stopLocation}
@@ -4835,15 +4835,13 @@ export function MapScreen() {
       )}
 
       {__DEV__ && route && (
-        <Pressable
+        <Chip
+          icon={simulatingDrive ? "stop" : "car-sport"}
+          label={simulatingDrive ? "Stop simulation" : "Simulate drive"}
           onPress={() => (simulatingDrive ? stopSimulatedDrive() : startSimulatedDrive(remainingPolyline.length > 1 ? remainingPolyline : detailedRoutePolyline(route)))}
-          style={({ pressed }) => [styles.simulateDriveChip, { bottom: insets.bottom + bottomBarHeight + spacing.xl * 3 }, pressed && { opacity: pressedOpacity }]}
-          accessibilityRole="button"
           accessibilityLabel={simulatingDrive ? "Stop simulated drive" : "Simulate drive"}
-        >
-          <Ionicons name={simulatingDrive ? "stop" : "car-sport"} size={16} color="#FFFFFF" />
-          <Text style={styles.simulateDriveText}>{simulatingDrive ? "Stop simulation" : "Simulate drive"}</Text>
-        </Pressable>
+          onMap style={[styles.simulateDriveSpot, { bottom: insets.bottom + bottomBarHeight + spacing.xl * 3 }]}
+        />
       )}
 
       {route && (
@@ -4910,7 +4908,7 @@ export function MapScreen() {
           style={[styles.currentStreetChipWrap, { bottom: insets.bottom + bottomBarHeight + spacing.md + 8 }]}
         >
           <View style={styles.currentStreetChip}>
-            <Ionicons name="navigate" size={11} color="#FFFFFF" style={{ transform: [{ rotate: "90deg" }] }} />
+            <Icon name="navigate" size={11} color="#FFFFFF" style={{ transform: [{ rotate: "90deg" }] }} />
             <Text style={styles.currentStreetChipText} numberOfLines={1}>
               {navRoadName}
             </Text>
@@ -4966,29 +4964,19 @@ export function MapScreen() {
         <View style={[styles.placementBar, { bottom: insets.bottom + spacing.xl }]}>
           <Text style={styles.placementBarText}>Add this stop to your route?</Text>
           <View style={styles.placementBarButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonRemove,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              icon="arrow-back"
               onPress={cancelStopPreview}
               accessibilityLabel="Back -- cancel adding this stop"
-            >
-              <Ionicons name="arrow-back" size={20} color={colors.text} />
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonSet,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            />
+            <Button
+              variant="primary"
+              icon="checkmark"
+              label="Add stop"
               onPress={confirmStopPreview}
               accessibilityLabel="Confirm add stop"
-            >
-              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-              <Text style={styles.placementButtonSetText}>Add Stop</Text>
-            </Pressable>
+            />
           </View>
         </View>
       )}
@@ -5009,7 +4997,7 @@ export function MapScreen() {
         >
           <View style={styles.trafficSuggestionTopRow}>
             <View style={styles.trafficSuggestionIconWrap}>
-              <Ionicons name="flash" size={18} color="#FFFFFF" />
+              <Icon name="flash" size={18} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.trafficSuggestionTitle}>Heavy traffic ahead</Text>
@@ -5027,33 +5015,25 @@ export function MapScreen() {
               style={({ pressed }) => [styles.trafficSuggestionClose, pressed && { opacity: pressedOpacity }]}
               accessibilityLabel="Close -- not wanted, keep current route"
             >
-              <Ionicons name="close" size={16} color={colors.text} />
+              <Icon name="close" size={16} color={colors.text} />
             </Pressable>
           </View>
           <View style={styles.trafficSuggestionActionRow}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.trafficSuggestionActionButton,
-                styles.trafficSuggestionNoButton,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              label="No"
               onPress={dismissTrafficSuggestion}
               accessibilityLabel="No -- keep current route"
-            >
-              <Text style={styles.trafficSuggestionNoText}>No</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.trafficSuggestionActionButton,
-                styles.trafficSuggestionYesButton,
-                pressed && { opacity: pressedOpacity },
-              ]}
+              style={{ flex: 1 }}
+            />
+            <Button
+              variant="primary"
+              icon="checkmark"
+              label="Yes"
               onPress={acceptTrafficSuggestion}
               accessibilityLabel={`Yes -- switch to the faster route, save about ${Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} minutes`}
-            >
-              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-              <Text style={styles.trafficSuggestionYesText}>Yes</Text>
-            </Pressable>
+              style={{ flex: 1 }}
+            />
           </View>
         </View>
       )}
@@ -5063,14 +5043,13 @@ export function MapScreen() {
           driver was on before they accepted. */}
       {route && acceptedSuggestionOriginalRoute && !stopPreviewRoute && !addingStopDuringNav && !placingAlert && (
         <View style={[styles.endSuggestedRouteWrap, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}>
-          <Pressable
-            style={({ pressed }) => [styles.endSuggestedRouteButton, pressed && { opacity: pressedOpacity }]}
+          <Button
+            variant="secondary"
+            icon="return-up-back"
+            label="End suggested route"
             onPress={endSuggestedRoute}
             accessibilityLabel="End suggested route -- return to your original route"
-          >
-            <Ionicons name="return-up-back" size={16} color="#FFFFFF" />
-            <Text style={styles.endSuggestedRouteText}>End suggested route</Text>
-          </Pressable>
+          />
         </View>
       )}
 
@@ -5096,7 +5075,7 @@ export function MapScreen() {
           onPress={() => setFasterRouteBanner(null)}
           accessibilityLabel={fasterRouteBanner}
         >
-          <Ionicons name="flash" size={16} color="#FFFFFF" />
+          <Icon name="flash" size={16} color="#FFFFFF" />
           <Text style={styles.reroutingBadgeText}>{fasterRouteBanner}</Text>
         </Pressable>
       )}
@@ -5112,7 +5091,7 @@ export function MapScreen() {
           style={[styles.transitWaitBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
           accessibilityLabel="Waiting at boarding stop"
         >
-          <Ionicons name="bus" size={18} color="#FFFFFF" />
+          <Icon name="bus" size={18} color="#FFFFFF" />
           <View style={{ flex: 1 }}>
             <Text style={styles.transitWaitTitle}>
               You've arrived at {firstBoardingStop.departureStop || "the stop"}
@@ -5157,24 +5136,22 @@ export function MapScreen() {
             not loud. Camera-height switching (front view <-> overview) lives on the always-
             present locate FAB instead of a separate button here. */}
         {route && !followTilt && (
-          <Pressable
-            style={({ pressed }) => [styles.recenterPill, pressed && { opacity: pressedOpacity }]}
+          <FloatingButton
+            tone="recenter"
+            icon="navigate"
             onPress={toggleFollowTilt}
-            hitSlop={8}
             accessibilityLabel="Recenter on my location"
-          >
-            <Ionicons name="navigate" size={16} color={colors.textMuted} />
-          </Pressable>
+            size={44}
+          />
         )}
         {route && followTilt && (
-          <Pressable
-            style={({ pressed }) => [styles.settingsButton, pressed && { opacity: pressedOpacity }]}
+          <FloatingButton
+            tone="map"
+            icon="close"
             onPress={toggleFollowTilt}
-            hitSlop={8}
             accessibilityLabel="Exit close-follow view"
-          >
-            <Ionicons name="close" size={20} color={colors.text} />
-          </Pressable>
+            size={44}
+          />
         )}
         {/* Voice guidance only ever speaks during active turn-by-turn navigation, so mute
             only means anything then -- previously always rendered here, which put it at the
@@ -5282,18 +5259,13 @@ export function MapScreen() {
             </Text>
           </View>
           <View style={styles.placementBarButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonRemove,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              icon="close"
               onPress={cancelAlertPlacement}
               disabled={submittingAlert}
               accessibilityLabel="Cancel placing alert"
-            >
-              <Ionicons name="close" size={20} color={colors.text} />
-            </Pressable>
+            />
             {/* "Set incidents from 2 views" -- only offered while reporting during active
                 navigation, since that's the real scenario this exists for: spotting something
                 just passed and wanting the clearer, driver's-eye front view to place it
@@ -5301,68 +5273,42 @@ export function MapScreen() {
             {/* Satellite on/off, right here on the placement bar: lining a pin up against real
                 ground features is exactly when aerial imagery helps, and the Map tools button
                 that used to offer it during placement no longer floats over the map. */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonRemove,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              icon={mapType === "hybrid" ? "map-outline" : "earth-outline"}
               onPress={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
               disabled={submittingAlert}
               accessibilityLabel={mapType === "hybrid" ? "Switch to the drawn map" : "Switch to satellite view"}
-            >
-              <Ionicons name={mapType === "hybrid" ? "map-outline" : "earth-outline"} size={20} color={colors.text} />
-            </Pressable>
+            />
             {route && (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.placementButton,
-                  styles.placementButtonRemove,
-                  pressed && { opacity: pressedOpacity },
-                ]}
+              <Button
+                variant="secondary"
+                icon={placementFrontView ? "eye-off-outline" : "eye-outline"}
                 onPress={togglePlacementFrontView}
                 disabled={submittingAlert}
                 accessibilityLabel={placementFrontView ? "Switch to normal height view" : "Switch to front driving view"}
-              >
-                <Ionicons name={placementFrontView ? "eye-off-outline" : "eye-outline"} size={20} color={colors.text} />
-              </Pressable>
+              />
             )}
             {/* One-tap "place it exactly where I am right now" -- per explicit request, beside
                 Cancel/Set. Sets AND immediately confirms in the same tap using the driver's own
                 live GPS fix, rather than requiring the fixed-center pin to already be panned
                 there. The normal pan-anywhere flow (Set button) is untouched. */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonRemove,
-                pressed && !submittingAlert && !!currentLatLng && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              icon="locate"
               onPress={confirmAlertPlacementAtMyLocation}
               disabled={submittingAlert || !currentLatLng}
               accessibilityLabel="Set alert at my current location"
-            >
-              <Ionicons name="locate" size={20} color={colors.text} />
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonSet,
-                (submittingAlert || alertCommentBlocked) && styles.placementButtonSetDisabled,
-                pressed && !submittingAlert && !alertCommentBlocked && { opacity: pressedOpacity },
-              ]}
+            />
+            <Button
+              variant="primary"
+              icon="checkmark"
+              label="Set"
               onPress={() => confirmAlertPlacement()}
               disabled={submittingAlert || alertCommentBlocked}
               accessibilityLabel="Set alert location"
-            >
-              {submittingAlert ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-                  <Text style={styles.placementButtonSetText}>Set</Text>
-                </>
-              )}
-            </Pressable>
+              loading={submittingAlert}
+            />
           </View>
         </View>
       )}
@@ -5378,36 +5324,20 @@ export function MapScreen() {
             {originPinAddressLoading ? "Finding address…" : originPinAddress ?? "Move the map to place the pin"}
           </Text>
           <View style={styles.placementBarButtons}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonRemove,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              icon="search"
               onPress={switchOriginToSearch}
               accessibilityLabel="Search for a starting point instead"
-            >
-              {/* Real, confirmed discoverability bug this fixes: this used a plain "X" (close)
-                  icon, which reads as "cancel/dismiss" to anyone looking at it -- not "search
-                  instead", its real actual function. A real magnifying-glass icon makes that
-                  function obvious at a glance instead of only existing in its accessibility
-                  label. */}
-              <Ionicons name="search" size={20} color={colors.text} />
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonSet,
-                !originPinLatLng && styles.placementButtonSetDisabled,
-                pressed && !!originPinLatLng && { opacity: pressedOpacity },
-              ]}
+            />
+            <Button
+              variant="primary"
+              icon="checkmark"
+              label="Set"
               onPress={confirmOriginPin}
               disabled={!originPinLatLng}
               accessibilityLabel="Set starting point"
-            >
-              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-              <Text style={styles.placementButtonSetText}>Set</Text>
-            </Pressable>
+            />
           </View>
         </View>
       )}
@@ -5427,41 +5357,28 @@ export function MapScreen() {
               usual flex-end so this sits on its own at the left while X/Set stay paired on the
               right, a clear, uncluttered three-action layout instead of stacking a fourth row. */}
           <View style={[styles.placementBarButtons, styles.placementBarButtonsSpread]}>
-            <Pressable
-              style={({ pressed }) => [styles.changeOriginButton, pressed && { opacity: pressedOpacity }]}
+            <Button
+              variant="secondary"
+              icon="arrow-undo"
+              label="Change starting point"
               onPress={onChangeStartingPointFromDestinationStep}
               accessibilityLabel="Change starting point"
-            >
-              <Ionicons name="arrow-undo" size={14} color={colors.accent} />
-              <Text style={styles.changeOriginButtonText}>Change starting point</Text>
-            </Pressable>
+            />
             <View style={styles.placementBarButtonsPair}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonRemove,
-                pressed && { opacity: pressedOpacity },
-              ]}
+            <Button
+              variant="secondary"
+              icon="search"
               onPress={switchDestinationToSearch}
               accessibilityLabel="Search for a destination instead"
-            >
-              {/* Same real discoverability fix as the starting-point picker's own button above. */}
-              <Ionicons name="search" size={20} color={colors.text} />
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.placementButton,
-                styles.placementButtonSet,
-                !destinationPinLatLng && styles.placementButtonSetDisabled,
-                pressed && !!destinationPinLatLng && { opacity: pressedOpacity },
-              ]}
+            />
+            <Button
+              variant="primary"
+              icon="checkmark"
+              label="Set"
               onPress={confirmDestinationPin}
               disabled={!destinationPinLatLng}
               accessibilityLabel="Set destination"
-            >
-              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-              <Text style={styles.placementButtonSetText}>Set</Text>
-            </Pressable>
+            />
             </View>
           </View>
         </View>
@@ -5696,18 +5613,7 @@ export function MapScreen() {
 const styles = StyleSheet.create({
   mapUnavailable: { alignItems: "center", justifyContent: "center", padding: 24 },
   mapUnavailableText: { fontSize: 15, color: colors.textMuted, textAlign: "center" },
-  simulateDriveChip: {
-    position: "absolute",
-    left: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    backgroundColor: "rgba(31,33,37,0.85)",
-  },
-  simulateDriveText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" },
+  simulateDriveSpot: { position: "absolute", left: spacing.lg },
   container: { flex: 1, backgroundColor: colors.surfaceMuted },
   mapArea: { flex: 1 },
   mapPlaceholder: { backgroundColor: colors.surfaceMuted },
@@ -5736,18 +5642,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
-  locationGateButton: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  locationGateButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
-  },
   trafficLegend: {
     position: "absolute",
     alignSelf: "center",
@@ -5774,87 +5668,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  destinationPinWrap: {
-    alignItems: "center",
-  },
-  destinationFlagBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#1F2937",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.medium,
-  },
-  destinationPinPoint: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderTopColor: "#1F2937",
-    marginTop: -1,
-  },
-  turnCalloutPill: {
-    maxWidth: 160,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.pill,
-    backgroundColor: "#3B0764",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
-    ...shadow.medium,
-  },
-  turnCalloutText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  originPinWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.medium,
-  },
   // Small, clear pointed pill for each route option's live ETA -- deliberately compact (not a
   // full card) so it reads at a glance without covering meaningful map area, per explicit
   // request. Unselected pills stay light/neutral so the selected one's red is what actually
   // draws the eye, matching the selected route line's own highlight color.
-  routeEtaPill: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    ...shadow.low,
-  },
-  routeEtaPillText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: colors.text,
-  },
-  routeEtaPillTextSelected: {
-    color: "#FFFFFF",
-  },
   // Wide, soft, translucent "flashlight" cone -- apex (the narrow point) sits at the puck's
   // exact coordinate (see the Marker's anchor: {y: 1} above) and fans out in whichever
   // direction deviceHeading currently points.
-  compassConeGlyph: {
-    width: 0,
-    height: 0,
-    backgroundColor: "transparent",
-    borderStyle: "solid",
-    borderLeftWidth: 26,
-    borderRightWidth: 26,
-    borderTopWidth: 46,
-    borderBottomWidth: 0,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderTopColor: "rgba(37, 99, 235, 0.3)",
-  },
   placementPinOverlay: {
     position: "absolute",
     top: "50%",
@@ -5937,180 +5757,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
   },
-  changeOriginButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  changeOriginButtonText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.accent,
-  },
-  placementButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.pill,
-    height: 40,
-    paddingHorizontal: spacing.md,
-    gap: spacing.xs,
-  },
-  placementButtonRemove: {
-    width: 40,
-    paddingHorizontal: 0,
-    backgroundColor: colors.surfaceMuted,
-  },
-  placementButtonSet: {
-    backgroundColor: colors.accent,
-    minWidth: 64,
-  },
-  placementButtonSetDisabled: {
-    backgroundColor: colors.textFaint,
-  },
-  placementButtonSetText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  frontViewButton: {
-    position: "absolute",
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.dark,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    ...shadow.medium,
-  },
-  frontViewButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  osmIconBadgeTrafficLight: {
-    width: TRAFFIC_LIGHT_MARKER.badgeSize,
-    height: TRAFFIC_LIGHT_MARKER.badgeSize,
-    borderRadius: TRAFFIC_LIGHT_MARKER.badgeSize / 2,
-    backgroundColor: TRAFFIC_LIGHT_MARKER.color,
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  osmIconBadgeSpeedCamera: {
-    width: SPEED_CAMERA_MARKER.badgeSize,
-    height: SPEED_CAMERA_MARKER.badgeSize,
-    borderRadius: SPEED_CAMERA_MARKER.badgeSize / 2,
-    backgroundColor: SPEED_CAMERA_MARKER.color,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fuelPinWrap: {
-    alignItems: "center",
-  },
-  fuelPinBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#16A34A",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  frontViewSpot: { position: "absolute", alignSelf: "center" },
   // Same shape as fuelPinBadge, distinct colors so all three viewport layers stay visually
   // distinguishable from each other and from the green fuel pin at a glance.
-  restaurantPinBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#F97316",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hotelPinBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#6366F1",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   // Shared cluster badge for the fuel/restaurant/hotel viewport layers -- wider than the single-
   // pin badges above to fit an icon plus a real count, backgroundColor set per-category inline.
-  placeClusterBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 8,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    justifyContent: "center",
-  },
-  placeClusterBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
   // Deliberately a different color from both OSM markers above (blue, not purple/teal) -- this
   // is a real live NSW government camera feed, an entirely separate dataset from the mapped
   // OSM traffic-light/speed-camera layer, and shouldn't visually read as a third variant of it.
-  osmIconBadgeLiveCamera: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.accent,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  osmClusterBadge: {
-    minWidth: 26,
-    height: 26,
-    borderRadius: 13,
-    paddingHorizontal: 6,
-    backgroundColor: TRAFFIC_LIGHT_MARKER.color,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
-  },
-  osmClusterBadgeSpeedCamera: {
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
-    paddingHorizontal: 6,
-    backgroundColor: SPEED_CAMERA_MARKER.color,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
-  },
-  osmClusterBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
   topRightControls: {
     position: "absolute",
     // Hugs the true right edge (rather than floating inward) so this reads as a compact,
@@ -6119,26 +5773,8 @@ const styles = StyleSheet.create({
     right: spacing.sm,
     gap: spacing.xs + 2,
   },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
   // Small and muted on purpose -- explicit request: not a big, bright button, just enough to
   // notice and tap when the camera has drifted from the driver's own position.
-  recenterPill: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
   currentStreetChipWrap: {
     position: "absolute",
     left: spacing.xl,
@@ -6161,61 +5797,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  idleStreetChipWrap: {
-    position: "absolute",
-    left: spacing.xl,
-    right: spacing.xl,
-    // "Just under the user's arrow" -- the map keeps the live user marker roughly screen-
-    // center while idle and not panned away (same real assumption placementPinOverlay's own
-    // top: "50%" already makes elsewhere in this screen), so this sits a little below that,
-    // not a fixed pixel offset from the top that would drift relative to the marker on a
-    // taller/shorter device.
-    top: "50%",
-    marginTop: 28,
-    alignItems: "center",
-  },
-  idleStreetChip: {
-    maxWidth: "80%",
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
-    backgroundColor: "#FFFFFF",
-    ...shadow.low,
-  },
-  idleStreetChipText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "700",
-  },
   // The place page's pin: a red disc with a white centre and a soft shadow.
-  placePagePin: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#E5342B",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 6,
-  },
-  placePagePinDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#FFFFFF" },
-  alertClusterBadge: {
-    minWidth: 30,
-    height: 30,
-    paddingHorizontal: 8,
-    borderRadius: 15,
-    backgroundColor: colors.text,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  alertClusterText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   osmLoadingBadge: {
     width: 40,
     height: 40,
@@ -6287,50 +5869,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
   },
-  trafficSuggestionActionButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-  },
-  trafficSuggestionNoButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.14)",
-  },
-  trafficSuggestionNoText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-  trafficSuggestionYesButton: {
-    backgroundColor: colors.accent,
-  },
-  trafficSuggestionYesText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
   endSuggestedRouteWrap: {
     position: "absolute",
     left: spacing.md,
     alignItems: "flex-start",
-  },
-  endSuggestedRouteButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    backgroundColor: "rgba(17, 24, 39, 0.82)",
-    borderRadius: radius.pill,
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm + 4,
-    ...shadow.high,
-  },
-  endSuggestedRouteText: {
-    fontSize: 12.5,
-    fontWeight: "800",
-    color: "#FFFFFF",
   },
   reroutingBadgeText: {
     color: "#FFFFFF",
@@ -6373,103 +5915,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...shadow.low,
   },
-  // Real, explicit request -- the "+" report button is the one primary action that stays on
-  // the map's front alongside Search, so it gets the app's own signature soft-blue-glow shadow
-  // (the same accentGlow token RouteOptionsCard's Start button uses) instead of a flat shadow,
-  // reading as clearly inviting/primary rather than just another floating circle.
-  fab: {
-    position: "absolute",
-    right: spacing.xl,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.accentGlow,
-  },
-  reportFab: {
-    position: "absolute",
-    right: spacing.xl,
-    width: 58,
-    height: 58,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.medium,
-  },
-  reportFabTriangle: {
-    position: "absolute",
-  },
-  reportFabPlus: {
-    position: "absolute",
-    marginTop: 10,
-  },
-  recenterFabLeft: {
-    position: "absolute",
-    left: spacing.xl,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.medium,
-  },
-  menuButtonPosition: {
-    position: "absolute",
-    left: spacing.md,
-  },
-  soundButtonPosition: {
-    position: "absolute",
-    right: spacing.md,
-    // "Mid-screen" per spec -- a percentage of real screen height (like placementPinOverlay's
-    // own top: "50%" above), not a fixed pixel offset from the top, so it stays genuinely
-    // mid-screen across every device size (iPhone SE through Pro Max) rather than drifting
-    // higher/lower relative to the visible map on a shorter/taller screen. Nudged a little above
-    // true center to leave more breathing room below for the speedometer/street pill.
-    top: "42%",
-  },
-  fabSecondary: {
-    position: "absolute",
-    right: spacing.xl,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.dark,
-    alignItems: "center",
-    justifyContent: "center",
-    // Subtle light ring, not a color change -- per explicit request, a refined look rather than
-    // a brighter one. A flat dark circle with nothing but a drop shadow reads as a plain hole
-    // cut in the map at a glance; a faint edge gives it real, deliberate definition against
-    // both light and dark map themes without competing for attention the way a bright accent
-    // color would.
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
-    ...shadow.medium,
-  },
-  fabSecondaryCompact: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-  },
-  fabActive: {
-    backgroundColor: colors.accent,
-    borderColor: "rgba(255,255,255,0.35)",
-  },
   // Small advisory badge on the AI Detection FAB when battery is under 50% -- see
   // detectionBatteryLow's own comment. Purely visual, the Pressable underneath stays fully
   // tappable either way.
-  fabBatteryBadge: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.warning,
-    borderWidth: 1.5,
-    borderColor: colors.dark,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });

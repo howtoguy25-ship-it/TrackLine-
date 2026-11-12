@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, FlatList, Alert, Image } from "react-native";
 import { Text } from "@/components/AppText";
 import { Swipeable } from "react-native-gesture-handler";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -158,7 +159,7 @@ export function VehicleHistoryScreen() {
   const renderRightActions = useCallback(
     (plate: string) => (
       <Pressable onPress={() => onRemove(plate)} style={styles.swipeDeleteAction}>
-        <Ionicons name="trash" size={20} color="#FFFFFF" />
+        <Icon name="trash" size={20} color="#FFFFFF" />
         <Text style={styles.swipeDeleteText}>Delete</Text>
       </Pressable>
     ),
@@ -183,32 +184,31 @@ export function VehicleHistoryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.topRow}>
-        <Pressable
+        <Button
+          variant="primary"
+          icon="add-circle"
+          label="Enter a plate manually"
           onPress={() => navigation.navigate("RevCheck", undefined)}
-          style={({ pressed }) => [styles.addButton, pressed && { opacity: pressedOpacity }]}
-        >
-          <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Enter a plate manually</Text>
-        </Pressable>
+          fullWidth
+        />
         {headerRight}
       </View>
 
       {selectMode && (
         <View style={styles.selectBar}>
-          <Pressable
+          <Button
+            variant="ghost"
+            icon={allSelected ? "checkbox" : "square-outline"}
+            label={allSelected ? "Deselect all" : "Select all"}
             onPress={onToggleSelectAll}
-            style={({ pressed }) => [styles.selectAllButton, pressed && { opacity: pressedOpacity }]}
-          >
-            <Ionicons name={allSelected ? "checkbox" : "square-outline"} size={18} color={colors.accent} />
-            <Text style={styles.selectAllText}>{allSelected ? "Deselect all" : "Select all"}</Text>
-          </Pressable>
+          />
           <Text style={styles.selectCountText}>{selectedPlates.size} selected</Text>
         </View>
       )}
 
       {loaded && entries.length === 0 ? (
         <View style={styles.emptyState}>
-          <MaterialCommunityIcons name="car-search-outline" size={40} color={colors.textFaint} />
+          <Icon name="car-search-outline" size={40} color={colors.textFaint} />
           <Text style={styles.emptyTitle}>No vehicles yet</Text>
           <Text style={styles.emptyText}>
             Vehicles the AI detector fully identifies (a confirmed number plate read) are
@@ -234,7 +234,7 @@ export function VehicleHistoryScreen() {
                 style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
               >
                 {selectMode && (
-                  <Ionicons
+                  <Icon
                     name={isChecked ? "checkbox" : "square-outline"}
                     size={22}
                     color={isChecked ? colors.accent : colors.textFaint}
@@ -250,7 +250,7 @@ export function VehicleHistoryScreen() {
                   <Image source={{ uri: item.thumbnailUri }} style={styles.thumbnail} />
                 ) : (
                   <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
-                    <MaterialCommunityIcons name="car" size={22} color={colors.textFaint} />
+                    <Icon name="car" size={22} color={colors.textFaint} />
                   </View>
                 )}
                 <View style={styles.plateBadge}>
@@ -271,7 +271,7 @@ export function VehicleHistoryScreen() {
                     {!isSyntheticVinKey && item.vin ? ` · VIN saved` : ""}
                   </Text>
                 </View>
-                {!selectMode && <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textMuted} />}
+                {!selectMode && <Icon name="chevron-right" size={20} color={colors.textMuted} />}
               </Pressable>
             );
 
@@ -291,26 +291,16 @@ export function VehicleHistoryScreen() {
       )}
 
       {selectMode ? (
-        <Pressable
+        <Button
+          variant="destructive"
+          icon="trash"
+          label={`Delete selected (${selectedPlates.size})`}
           onPress={onDeleteSelected}
           disabled={selectedPlates.size === 0}
-          style={({ pressed }) => [
-            styles.deleteSelectedButton,
-            selectedPlates.size === 0 && styles.deleteSelectedButtonDisabled,
-            pressed && selectedPlates.size > 0 && { opacity: pressedOpacity },
-          ]}
-        >
-          <Ionicons name="trash" size={16} color="#FFFFFF" />
-          <Text style={styles.deleteSelectedText}>Delete selected ({selectedPlates.size})</Text>
-        </Pressable>
+        />
       ) : (
         entries.length > 0 && (
-          <Pressable
-            onPress={onClearAll}
-            style={({ pressed }) => [styles.clearButton, pressed && { opacity: pressedOpacity }]}
-          >
-            <Text style={styles.clearButtonText}>Clear all history</Text>
-          </Pressable>
+          <Button variant="destructive" label="Clear all history" onPress={onClearAll} />
         )
       )}
     </View>
@@ -320,18 +310,6 @@ export function VehicleHistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceMuted, padding: spacing.xl, gap: spacing.md },
   topRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  addButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs + 2,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 48,
-    ...shadow.low,
-  },
-  addButtonText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
   selectToggleText: { color: colors.accent, fontWeight: "700", fontSize: 14 },
   selectBar: {
     flexDirection: "row",
@@ -339,8 +317,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.xs,
   },
-  selectAllButton: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  selectAllText: { color: colors.accent, fontWeight: "600", fontSize: 13 },
   selectCountText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
   list: { gap: spacing.sm, paddingBottom: spacing.xxl },
   row: {
@@ -394,20 +370,4 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.xl },
   emptyTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
   emptyText: { fontSize: 13, color: colors.textMuted, textAlign: "center", lineHeight: 18 },
-  clearButton: { alignItems: "center", paddingVertical: spacing.sm },
-  clearButtonText: { fontSize: 13, fontWeight: "600", color: colors.danger },
-  deleteSelectedButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.danger,
-    borderRadius: radius.md,
-    height: 48,
-    ...shadow.low,
-  },
-  deleteSelectedButtonDisabled: {
-    backgroundColor: colors.textFaint,
-  },
-  deleteSelectedText: { color: "#FFFFFF", fontWeight: "700", fontSize: 14 },
 });
