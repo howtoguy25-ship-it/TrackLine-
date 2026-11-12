@@ -131,6 +131,38 @@ Three separate real triggers, each worth checking on its own:
   every other condition (visible, driving, Show Trackys on) is met — it should reappear once
   Device A's real position moves back outside that ~500m radius.
 
+## 9. UI pass 2 — NEEDS DEVICE TEST
+
+One device is enough. Install the development build from §1, sign in, and allow location.
+
+**Home map**
+- [ ] Every screen is in Rubik (compare a menu label with the system font — Rubik's "g" and "y" are rounder).
+- [ ] Buttons shrink slightly and tick (haptic) when pressed.
+- [ ] Your arrow sits about two-thirds of the way down the screen; the map turns with your heading.
+- [ ] Drag the "Where to?" sheet up: the floating buttons ride on top of it, then fade out just above half height and can't be tapped.
+- [ ] Pan away: Re-centre appears; tap it and the map flies back in about half a second.
+- [ ] Compass needle turns as the map rotates; tapping it points north.
+- [ ] Street pill under the arrow changes name smoothly as you turn onto a new road; parked for 10 s with reports nearby, it slides to "N reports around you".
+- [ ] Report pins grow as you zoom in and group into counts when zoomed out.
+
+**Search and place page**
+- [ ] The search slides up quickly; Food/Fuel/Parking/Hotels chips work; typing shows Australian results nearest-first among equal matches.
+- [ ] Swipe a recent search left to delete it.
+- [ ] Pick a place: the place page covers the bottom 60% with the place pinned in the middle above it; Back returns to the search.
+- [ ] Add photo: pick one from your library; it shows as yours (pending) and nobody else sees it until approved.
+
+**Route selection** (pick any destination a few km away)
+- [ ] No ad banner. The top card shows "Your location" and the destination; tapping each lets you change it; ↑↓ swaps them.
+- [ ] Up to three routes: the selected one purple with a dark edge, others lavender; tapping a lavender line or its bubble selects it.
+- [ ] Time bubbles sit on their own lines and never cover each other; the selected one is dark purple with "Best" / "Fastest" / "No tolls" under the time.
+- [ ] In heavy traffic, the slow parts of the purple line are orange and jams red.
+- [ ] All routes fit between the top card and the bottom sheet.
+- [ ] Bottom sheet shows the time, distance, "Via …" and e.g. "Best route, Typical traffic · Toll"; pull it up for the list, with the selected row marked by a blue bar.
+- [ ] Avoid ▾: switch on Toll roads — routes reload, the pill reads "Avoid · 1", and it's still on for the next trip.
+- [ ] Drive ▾ → Walk / Bike / Transit shows those routes.
+- [ ] Do nothing for 10 s: Go now fills darker blue and navigation starts. Touch the screen during the fill: it stops.
+- [ ] Leave later opens Plan a drive with this destination filled in. "Add a stop" (pulled-up list) adds a stop.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

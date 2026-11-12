@@ -37,8 +37,10 @@ phase-by-phase status.
 | `SettingsScreen.tsx` | One long scrollable settings screen (not yet grouped into the new Waze-style sections — that's Phase 5/6 of the redesign). Has its own `Section`/`Row` helpers (label + control, **no description line yet** for most existing rows). |
 | `MainMenuScreen.tsx` | **New this session** — minimal first slice of the Waze-style slide-in main menu (Sign in/Account + Settings rows only; real, not a placeholder, but far short of the full designed panel). |
 | `SoundSheet.tsx` | **New this session** — the Sound button's bottom sheet (Spoken directions radio + Current voice row). No "Listening on" row yet — needs a native audio-route module, see `NOTES.md`. |
+| `WhereToSheet.tsx` | UI pass 2 — the home "Where to?" sheet (24/55/92% snaps, Home/Work/saved chips, recents, More options) and the full-screen search it opens. Exposes `collapse/expandHalf/expandFull/openSearch` via ref. |
+| `PlacePage.tsx` | UI pass 2 — the place page between search and routes (60% sheet: facts, hours, Save/Share/More, nearby parking, photos incl. drivers' own, View routes). |
 | `PlaceInfoSheet.tsx` | Apple/Google-Maps-style place detail card — directions/start buttons, live ETA, Street View (static + a new interactive Maps-Embed-API `WebView` with static fallback), category/price line. |
-| `RouteDirectionsSheet.tsx`, `RestaurantsSheet.tsx`, `HotelsSheet.tsx`, `FuelStationsSheet.tsx`, `OsmMarkerSheet.tsx`, `AlertDetailSheet.tsx`, `AlertReportSheet.tsx`, `LiveCameraSheet.tsx`, `MapToolsSheet.tsx`, `NavOptionsSheet.tsx` | Bottom sheets for their named feature. `MapToolsSheet` is the current single "..." button covering recenter/3D/satellite/dashcam/alerts toggle/layers — the redesign's Waze layout mostly disperses these into Settings or dedicated buttons. |
+| `RouteDirectionsSheet.tsx`, `RestaurantsSheet.tsx`, `HotelsSheet.tsx`, `FuelStationsSheet.tsx`, `OsmMarkerSheet.tsx`, `AlertDetailSheet.tsx`, `AlertReportSheet.tsx`, `LiveCameraSheet.tsx`, `MapToolsSheet.tsx`, `NavOptionsSheet.tsx` | Bottom sheets for their named feature. `MapToolsSheet` is no longer on the home map (UI pass 2 moved each item — see `AUDIT.md` §10); it's still reachable during navigation from Trip options › Map tools. |
 | `VehicleDetectionScreen.tsx` + `VehicleDetectionErrorBoundary.tsx` | Live AI vehicle detection (react-native-vision-camera + a native TFLite frame processor). **Do not touch its detection/tracking/bounding-box/speed logic.** |
 | `VehicleHistoryScreen.tsx`, `RevCheckScreen.tsx` | Saved detections list; paid REV Check lookup flow. |
 | `DocumentScanScreen.tsx` | Camera capture for VIN/plate OCR (ML Kit). |
@@ -48,14 +50,23 @@ phase-by-phase status.
 
 ## Components (`src/components/`)
 
-Notable: `LiveSpeedometer.tsx` + `SpeedLimitSign.tsx` (speed dial, now restyled smaller this
-session), `NavigationInstructionCard.tsx` (top turn-by-turn card, real per-manoeuvre MaterialIcons
-arrows), `NavBottomBar.tsx` (live ETA/distance/arrival strip during nav), `LocationMarkers.tsx`
-(the user's own live marker — gradient-filled arrow, Settings-driven icon), `AlertMarker.tsx`,
-`DestinationSearchBar.tsx` (the current full-width top search bar — gets replaced by the Phase
-3/"Phase 2" bottom sheet in the new design), `MenuButton.tsx`/`CompassButton.tsx`/`SoundButton.tsx`
-(**new this session**, the Waze-style home-screen buttons), `BannerAdBar.tsx`, `ExitLaneGuidance.tsx`,
-`MuteButton.tsx`.
+Notable: `LiveSpeedometer.tsx` + `SpeedLimitSign.tsx` (speed dial), `NavigationInstructionCard.tsx`
+(top turn-by-turn card), `NavBottomBar.tsx` (live ETA/distance/arrival strip during nav),
+`LocationMarkers.tsx` (the user's own live marker), `AlertMarker.tsx` (report pins, sized by zoom),
+`BannerAdBar.tsx`, `ExitLaneGuidance.tsx`, `MuteButton.tsx`.
+
+UI pass 2: `AppText.tsx` (Text/TextInput in Rubik — import these instead of react-native's),
+`PressableScale.tsx` (press animation), `HomeMapControls.tsx` (Menu/Compass/Audio/Sound/Report/
+Re-centre on the home map, anchored to the sheet), `StreetPill.tsx`, `ThreeSnapBottomSheet.tsx`
+(the "Where to?" sheet's container), `RouteSelection.tsx` (route-selection top card, Avoid and
+travel-mode sheets, two-state bottom sheet with Go now, time bubbles, start dot, checkered-flag
+pin). The old `RouteOptionsCard.tsx` and `MenuButton`/`CompassButton`/`SoundButton` are gone.
+
+Pure rules (no rendering, unit-tested): `src/map/homeMapLogic.ts` (button fade, arrow position,
+pin sizes, street-pill throttle), `src/map/routeChoices.ts` (distinct routes, avoid options,
+traffic labels, route tags, bubble placement), `src/services/searchRanking.ts`,
+`src/services/placePageLogic.ts`. Tests: `__tests__/` (Jest, `npx jest`) and `scripts/test-*.ts`
+(`npx tsx scripts/test-ui-logic.ts` etc.).
 
 ## Navigation (`src/navigation/RootNavigator.tsx`)
 

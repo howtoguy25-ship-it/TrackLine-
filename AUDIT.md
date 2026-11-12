@@ -372,3 +372,62 @@ the project owner can provide; everything else that was asked for is real and wo
 **Phase 5: 4 DONE, 0 PARTIAL, 0 MISSING.** No full extraction into separate per-category screen
 files was attempted — a deliberate choice, not an oversight; see NOTES.md's own Phase 5 entry
 for why (the ~15 sections' state/handlers are genuinely shared and interdependent).
+
+## 10. UI pass 2 — home, search, place page, route selection
+
+Commits on `claude/go-session-0d5bup`: §0 `5d8b4d0`, §1 `473564f`, §2+§3 `3c6d72b`, §4 `ba52a9d`,
+§5 `7d8b9b2`, §6 (this doc update). Map engine stays react-native-maps (Mapbox deferred).
+"NEEDS DEVICE TEST" means the logic is built and unit-tested but how it looks/feels can only be
+judged on a phone — each one is listed in `TEST_ON_PHONE.md` §9.
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| §0 Rubik font on every screen (no font files from Waze; Google Fonts Rubik, OFL) | DONE | `src/theme/typography.ts`, `src/components/AppText.tsx` (51 screens import it), `App.tsx` holds the splash until fonts load (3 s cap); `COPYRIGHT_AUDIT.md` Rubik entry |
+| §0 Colour tokens + sizes in pt for 390pt width, scaled by width | DONE | `src/theme/tokens.ts`, `src/theme/scale.ts` (`scaleFor`, clamped 0.85–1.25); `scripts/test-ui-logic.ts` §0 |
+| §0 Press animation (scale 0.94 + light haptic) | DONE · NEEDS DEVICE TEST | `src/components/PressableScale.tsx` |
+| §1 Menu (unread dot, dashcam badge), Compass (needle follows map bearing), Audio player, Sound, yellow Report 68pt, Re-centre 58pt only when panned away | DONE · NEEDS DEVICE TEST | `src/components/HomeMapControls.tsx`, `src/components/icons/MapControlIcons.tsx` |
+| §1 Floating buttons anchored to the sheet and hidden above the half sheet | DONE | `homeMapLogic.floatingButtonsOpacity/Interactive`; `__tests__/uiPass2.test.ts` "floating buttons above the half sheet" |
+| §1 Driver arrow at 62% of screen, heading-up follow at zoom 17 | DONE · NEEDS DEVICE TEST | `homeMapLogic.homeMapPadding/arrowScreenY`; test-ui-logic §1 |
+| §1 Street pill: ≤1 paid lookup per 25 m, cross-fade, "N reports around you" when stopped | DONE | `RoadLookupTracker`/`StreetNameTracker`; jest "street-pill lookup throttle"; `src/components/StreetPill.tsx` |
+| §1 Report pins sized by zoom (+4 on route), grouped below zoom 12 | DONE | `alertPinSize`, `shouldClusterAlerts`; test-ui-logic §1 |
+| §1 Map tools panel removed from home; every item moved (table below) | DONE | `MainMenuScreen.tsx`, `SettingsScreen.tsx` Map view/Map shortcuts, search chips, `NavOptionsSheet.tsx` "Map tools" |
+| §1 Ad banner hidden on route selection, during navigation, on the place page | DONE | `MapScreen.tsx` `bannerShown` |
+| §2 "Where to?" sheet: 24/55/92% snaps, Home/Work chips (original SVG glyphs), saved chips, recents with swipe-to-delete, More options (contacts, calendar, nearest station, share drive) | DONE · NEEDS DEVICE TEST | `src/screens/WhereToSheet.tsx`, `src/components/ThreeSnapBottomSheet.tsx` |
+| §2 Nearest-station row subtitle | DEVIATION | Says "Walking directions to the closest stop" — live departures need the TfNSW Trip Planner API, not wired (NOTES.md) |
+| §3 Full-screen search: 250 ms slide-in, Saved/Fuel/Food/Parking/Hotels chips, Australian results ranked by match then distance, session tokens, 250 ms debounce, Tracky empty states | DONE | `src/services/searchRanking.ts`; test-ui-logic §3 |
+| §4 Place page (60% sheet): name, distance, address, facts, today's hours, Save/Share/More (Home/Work, planned drive, copy address, report), nearby parking, photos with Google credits | DONE · NEEDS DEVICE TEST | `src/screens/PlacePage.tsx`, `src/services/placePageLogic.ts`; test-ui-logic §4 |
+| §4 Drivers' own photos (moderated: pending until approved) | DONE · NEEDS DEVICE TEST | `src/services/placeContributions.ts`; `firebase/firestore.rules` + `storage.rules`, emulator tests 126/126 |
+| §5 Old "Choose a route" card, Recommended/Fastest/Safest cards and With tolls/No tolls tiles removed | DONE | `src/components/RouteOptionsCard.tsx` deleted; `src/components/RouteSelection.tsx` |
+| §5 Top card: back, "◎ Your location" / "📍 destination" rows (tap to edit), swap | DONE · NEEDS DEVICE TEST | `RouteSelectionTopCard`; destination row reopens the full search, origin row opens the pin picker |
+| §5 Avoid ▾ pill with count ("Avoid · 2"), sheet of toggles, each re-requests routes, remembered | DONE | `AvoidSheet`; `settings.routeAvoid`; `avoidPillLabel`/`normalizeRouteAvoid` tests |
+| §5 Avoid: toll roads, motorways, ferries | DONE | Routes API `routeModifiers` (`getRouteChoices`) |
+| §5 Avoid: U-turns | DONE (filter) | Routes containing a U-turn manoeuvre are dropped; if all have one they're kept with a note (`withoutUturns` test) |
+| §5 Avoid: unpaved roads, difficult intersections | DEVIATION | Google routing has no such option; listed greyed out with the reason instead of a switch that does nothing |
+| §5 Drive ▾ pill switches Drive / Walk / Bike / Transit | DONE | `TravelModeSheet` |
+| §5 Only distinct routes (drop >85% shared path or same time+distance), up to 3, live traffic | DONE | `distinctRoutes`; jest "route de-duplication" |
+| §5 Selected route purple 8pt over darker casing; alternatives lavender 6pt, tappable; slow/jammed stretches orange/red | DONE · NEEDS DEVICE TEST | `MapScreen.tsx` route-selection layers; `trafficStretches` test; Routes API `TRAFFIC_ON_POLYLINE` |
+| §5 Time bubbles with tail; selected #5212B8 "10 min / Best·Fastest·No tolls"; never overlapping | DONE · NEEDS DEVICE TEST | `RouteTimeBubble`, `routeTags`, `bubbleAnchors` (placed where routes separate and apart from each other) tests |
+| §5 Start = blue dot in grey circle; destination = round checkered-flag pin (original art) | DONE | `StartDot`, `CheckeredFlagPin` (SVG drawn here) |
+| §5 Fit all routes between card and sheet in 600 ms | DONE · NEEDS DEVICE TEST | `fitRoutesOnScreen` + map padding = measured card/sheet |
+| §5 Sheet collapsed: time 34pt, distance, "Via <road>", "Best route, Typical traffic · Toll" | DONE | `RouteSelectionSheet`; traffic thresholds (≤5% light, ≤25% typical) jest-tested; "Via" only when Google gives a description |
+| §5 Sheet pulled up: list, dividers, selected row grey with 4pt blue bar and blue time; tap selects | DONE · NEEDS DEVICE TEST | `RouteSelectionSheet` |
+| §5 Leave later → Plan a drive for this destination | DONE | `leaveLaterFromRouteSelection` → `PlanADrive { initialDestination }` |
+| §5 Go now with 10 s darker fill that starts navigation; any touch cancels | DONE · NEEDS DEVICE TEST | `RouteSelectionSheet` countdown; `MapScreen` root `onTouchStart` |
+| §5 "Add a stop" link in the pulled-up list | DONE | Hidden for transit (Google has no stops on transit trips) |
+| §6 tsc / expo lint / jest / expo-doctor | DONE | Output in NOTES.md "UI pass 2 — verification" |
+
+### Where every old Map tools item lives now
+
+| Old Map tools item | Where it is now |
+|---|---|
+| Recenter | Re-centre button on the home map (appears once the map is panned away from you) |
+| 3D buildings | Settings › Map display › Map view › 3D buildings (now remembered between launches) |
+| Satellite view | Settings › Map display › Map view › Satellite; plus a satellite toggle on the alert-placement bar |
+| Alerts | Settings › Map display › Map view › Alerts |
+| Restaurants | Search › Food chip |
+| Hotels | Search › Hotels chip |
+| Petrol stations | Search › Fuel chip |
+| Parking | Search › Parking chip; place page › Nearby parking › See more parking |
+| Dashcam | Main menu › Dashcam (AI vehicle detection); the Menu button shows a badge while it's running |
+| Settings | Main menu › Settings (and Main menu › Map display goes straight to the map section) |
+| All of the above during navigation | Trip options › Map tools opens the same panel |

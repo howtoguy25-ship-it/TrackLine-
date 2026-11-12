@@ -576,3 +576,61 @@ profile in `eas.json` now builds `arm64-v8a` only. **That fix has not been prove
   moving markers, the lean, the trail particles, and the sampler have never run. No real Mapbox
   response has ever been received by this code (tests use a fake token). `TEST_ON_PHONE.md`
   covers what to check.
+
+## UI pass 2 (home, search, place page, route selection) — limits and deviations
+
+- **Map engine:** still react-native-maps (Google). Mapbox stays deferred.
+- **Route choices cost more per request.** The route-selection screen makes one Routes API
+  `computeRoutes` call per destination (and one per Avoid toggle) with `TRAFFIC_ON_POLYLINE` and
+  `TOLLS` extra computations — that's Google's higher-priced Routes tier, not the plain
+  Directions rate. It replaces the old screen's five parallel Directions requests plus a toll
+  lookup. If the Routes API refuses the key, it falls back to the classic Directions API's
+  alternatives; the slow/jammed stretches and "· Toll" are then blank.
+- **Avoid: unpaved roads and difficult intersections** are shown greyed out — Google routing has
+  no option for either. **U-turns** are avoided by dropping routes whose steps contain a U-turn;
+  if every route has one they're shown anyway, with a note in the Avoid sheet.
+- **A trip with a stop shows one route** — the Routes API returns no alternatives when there is an
+  intermediate waypoint.
+- **"Via <road>"** is Google's own route description; when Google doesn't give one the line is left
+  out rather than guessed. For routes from the Routes API, the turn card's street name is read out
+  of the English instruction ("Turn left onto George St" → "George St"); other languages show the
+  whole sentence, as before.
+- **Go now** auto-start runs for driving only, once per destination; any touch anywhere on the
+  screen stops it for that destination.
+- **Audio player** button opens the driver's music app (Spotify / Apple Music / YouTube Music); it
+  has no in-app playback controls.
+- **Nearest station** row says "Walking directions to the closest stop" — live departures would
+  need the TfNSW Trip Planner API, which isn't wired.
+- **Place page** calls a car park within 40 m "Car park at this place"; otherwise the nearest one
+  within 800 m with a walk time (straight line × 1.3 at 80 m/min).
+- **Root Jest** was added (`jest-expo`, `@react-native/jest-preset@0.86.3` to match RN 0.86) for the
+  pure-logic unit tests in `__tests__/`. The wider plain checks stay in `scripts/test-*.ts`.
+
+### UI pass 2 — verification (2026-11-12, after §5)
+
+```
+$ npx tsc --noEmit
+(exit 0, no output)
+
+$ npx expo lint
+✖ 230 problems (191 errors, 39 warnings)      # baseline before the pass: 231 — no new problems
+
+$ npx jest
+PASS __tests__/uiPass2.test.ts
+  route de-duplication (5)  traffic label thresholds (6)  street-pill lookup throttle (3)
+  distance formatting (2)  floating buttons above the half sheet (2)
+Tests:       18 passed, 18 total
+
+$ npx expo-doctor
+19/21 checks passed. 2 checks failed.
+✖ Missing peer dependency: expo-camera (required by @tensorflow/tfjs-react-native)
+✖ React Native Directory: react-native-fast-tflite untested on New Architecture;
+  no metadata for local modules audio-route, map3d, yamnet-siren, vision-camera-resize-plugin, live-activity
+# both pre-existing and unchanged by this pass
+
+$ npx tsx scripts/test-ui-logic.ts        61 checks passed
+  (+ nav-speech 32, nav-language 21, parking-filters 20, drive-link 11, traffic-nsw 14, presence-playback 19)
+$ firebase emulators:exec … "npm --prefix firebase/tests test"
+Test Suites: 6 passed, 6 total — Tests: 126 passed, 126 total
+$ npx expo export --platform ios          iOS Bundled (2774 modules), exit 0
+```

@@ -6,7 +6,20 @@ Live Traffic NSW, full settings reorg, etc.). Kept current so a new session can 
 where this one left off — see `CODEBASE_MAP.md` for what the repo looks like and `NOTES.md` for
 honest limitations/missing keys.
 
-## Where things stand right now
+## UI pass 2 — home, search, place page, route selection (latest)
+
+All six sections done on `claude/go-session-0d5bup` (see `AUDIT.md` §10 for the
+requirement-by-requirement table, `NOTES.md` "UI pass 2" for limits and the verification output):
+
+- [x] §0 Rubik font, colour tokens, press animation — `5d8b4d0`
+- [x] §1 Home map: sheet-anchored buttons, street pill, report pins, Map tools items relocated — `473564f`
+- [x] §2 "Where to?" sheet + §3 full-screen search — `3c6d72b`
+- [x] §4 Place page — `ba52a9d`
+- [x] §5 Route selection (distinct routes, Avoid/Drive pills, bubbles, two-state sheet, Go now) — `7d8b9b2`
+- [x] §6 tsc, expo lint (230, baseline 231), jest 18/18, expo-doctor 19/21 (pre-existing), docs, EAS development build
+- [ ] Device check of everything marked NEEDS DEVICE TEST — `TEST_ON_PHONE.md` §9
+
+## Where things stood before UI pass 2
 
 **Done, committed, iOS-verified (real EAS build + TestFlight submission), real and functional:**
 - Settings: `showCompass`, `spokenDirections` fields + Firestore cross-device sync
