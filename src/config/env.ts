@@ -55,6 +55,7 @@ export const env = {
   // itself has to have been fetched at build time too, which needs the separate download token,
   // see app.config.js's own comment on the @rnmapbox/maps plugin entry).
   mapboxPublicToken: extra.mapboxPublicToken ?? "",
+  useMapbox: extra.useMapbox ?? "",
   // Genuinely optional, same treatment as every other key above -- src/services/trackyMood.ts
   // is the real, honest check for whether the "Rain at location" auto-mood trigger can run.
   openWeatherApiKey: extra.openWeatherApiKey ?? "",

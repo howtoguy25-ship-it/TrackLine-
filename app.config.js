@@ -366,7 +366,11 @@ module.exports = {
       // "build the feature anyway, show an honest state" treatment as every other optional key
       // here. See src/map/mapboxAvailability.ts for the real, non-fabricated "is Mapbox actually
       // usable right now" check this backs, and NOTES.md for the full story.
-      mapboxPublicToken: process.env.MAPBOX_PUBLIC_TOKEN,
+      // Read at runtime by the Mapbox map (src/map-v2/mapbox.ts). EXPO_PUBLIC_MAPBOX_TOKEN first;
+      // MAPBOX_PUBLIC_TOKEN is the name already stored in EAS.
+      mapboxPublicToken: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN,
+      // "1"/"0" forces the new Mapbox map on/off; unset = on in development builds (src/map-v2/flag.ts).
+      useMapbox: process.env.EXPO_PUBLIC_USE_MAPBOX,
       // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
       // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
       // false (never fabricated) when this is unset, so auto-mood just skips that one signal.
