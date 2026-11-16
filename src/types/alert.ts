@@ -15,6 +15,10 @@ export interface AlertDoc {
   region?: string;
   createdBy: string;
   createdAt: number; // ms epoch
+  /** Posted by a low-trust reporter: shown, but not announced until someone confirms it. */
+  needsConfirmation?: boolean;
+  /** When someone last said "Still here" (the server sets it). */
+  lastConfirmedAt?: number;
   expiresAt: number; // ms epoch
   confirmCount: number;
   // "Not here" vote count -- mirrors confirmCount exactly (see services/alerts.ts's denyAlert),

@@ -104,8 +104,8 @@ interface Props {
 }
 
 export interface WhereToSheetRef extends ThreeSnapBottomSheetRef {
-  /** Opens the full-screen search -- e.g. "Back" from the place page. */
-  openSearch: () => void;
+  /** Opens the full-screen search -- e.g. "Back" from the place page; with a slot, to pick a new Home/Work address. */
+  openSearch: (slot?: SavedPlaceSlot) => void;
 }
 
 // Peek / half / full, as fractions of the space between the status bar and whatever is under
@@ -280,7 +280,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
       collapse: () => sheetRef.current?.collapse(),
       expandHalf: () => sheetRef.current?.expandHalf(),
       expandFull: () => sheetRef.current?.expandFull(),
-      openSearch: () => openSearch("route"),
+      openSearch: (slot?: SavedPlaceSlot) => openSearch(slot ?? "route"),
     }),
     [openSearch]
   );

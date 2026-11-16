@@ -133,6 +133,7 @@ import {
   subscribeNearbyPresence,
   callUpdatePresence,
   callClearPresence,
+  callSendWave,
   getBlockedUids,
   type PresenceDoc,
 } from "@/services/presence";
@@ -224,7 +225,10 @@ import {
 import { formatArrivalClock, formatDurationText, formatDistance } from "@/utils/navFormat";
 import {
   subscribeVisibleAlerts,
-  reportAlert,
+  submitReport,
+  undoReport,
+  ReportRefused,
+  type ReportResult,
   deleteAlert,
   hideAlertForUser,
   confirmAlert,
@@ -241,7 +245,16 @@ import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveS
 import { setNavigationActive } from "@/services/navState";
 import { startLiveActivity, updateLiveActivity, endLiveActivity, maneuverToSfSymbol } from "live-activity";
 import { recordDriveToday } from "@/services/trackyMood";
-import type { AlertDoc, AlertType } from "@/types/alert";
+import { ALERT_LABELS, type AlertDoc, type AlertType } from "@/types/alert";
+import { UNDO_MS } from "@/types/alertPolicy";
+import { stillThereCandidate } from "@/alerts/stillThere";
+import { ReportUndoBar } from "@/components/ReportUndoBar";
+import { TrackyBubble } from "@/components/TrackyBubble";
+import { SavedPlacePopup, type SavedPinPlace } from "@/components/SavedPlacePopup";
+import { savedPinIcon, savedPinPlaces } from "@/map/savedPins";
+import { getSavedPlaces, pushSavedPlacesToProfile, removeCustomPlace, removeHomeOrWork, addCustomPlace, subscribeSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
+import { clearParkingSpot, getParkingSpot, setParkingSpot, subscribeParkingSpot, type ParkingSpot } from "@/services/parkingSpot";
+import { buildDriveLink } from "@/services/driveLink";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -277,20 +290,6 @@ const TRAFFIC_SUGGESTION_DISPLAY_MS = 10_000;
 // nowhere near the driver yet).
 const NEAR_TERM_TRAFFIC_CHECK_METERS = 1000;
 
-// Automatic proximity "Still here? / Not here" prompt (AlertStillHereCard) -- real, explicit
-// request. An alert only becomes eligible once it's aged 1-3 hours (per explicit request --
-// freshly-placed alerts don't need re-confirming yet), the driver is within 300m of it, and
-// actually heading TOWARD it, not past/away from it. See the eligibility effect near
-// visibleAlerts for how these get applied.
-const STILL_HERE_MIN_AGE_MS = 60 * 60 * 1000;
-const STILL_HERE_MAX_AGE_MS = 3 * 60 * 60 * 1000;
-const STILL_HERE_RADIUS_METERS = 300;
-// heading is only a trustworthy "which way is the driver facing" signal while actually moving
-// (see the heading fallback's own comment above) -- a stationary car facing some arbitrary
-// direction shouldn't get asked about an alert it isn't really approaching.
-const STILL_HERE_MIN_SPEED_KMH = 5;
-const STILL_HERE_HEADING_TOLERANCE_DEG = 70;
-
 // At most this many route lines on the route-selection map (transit can offer many more
 // itineraries in the list; the selected one is always drawn).
 const MAX_DRAWN_ROUTES = 3;
@@ -315,7 +314,8 @@ type PinTarget =
   | { kind: "fuelPin"; pin: FuelStationPin }
   | { kind: "incident"; incident: NearbyIncident }
   | { kind: "liveCamera"; camera: LiveTrafficCamera }
-  | { kind: "origin" };
+  | { kind: "origin" }
+  | { kind: "saved"; place: SavedPinPlace };
 
 export function MapScreen() {
   const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
@@ -2037,6 +2037,33 @@ export function MapScreen() {
   }, [user]);
 
   const [selectedPresence, setSelectedPresence] = useState<PresenceDoc | null>(null);
+  // Tap a Tracky: the small bubble first; "More" opens the full card.
+  const [bubblePresence, setBubblePresence] = useState<PresenceDoc | null>(null);
+  const [bubbleAtMs, setBubbleAtMs] = useState(0);
+  const onSelectPresenceBubble = useCallback((p: PresenceDoc) => {
+    setBubbleAtMs(Date.now());
+    setBubblePresence(p);
+  }, []);
+  const onWaveFromBubble = useCallback(async (): Promise<string> => {
+    if (!bubblePresence) return "";
+    const r = await callSendWave(bubblePresence.uid);
+    return r.outcome === "success" ? "Waved!" : r.outcome === "rate_limited" ? "You waved recently -- try again later." : "Couldn't wave right now.";
+  }, [bubblePresence]);
+
+  // Home, Work, saved places and the parking spot on the map (SavedPlacePopup).
+  const [savedPlaces, setSavedPlacesState] = useState<SavedPlaces>({ home: null, work: null, custom: [] });
+  const [parkingSpot, setParkingSpotState] = useState<ParkingSpot | null>(null);
+  const [selectedSaved, setSelectedSaved] = useState<SavedPinPlace | null>(null);
+  useEffect(() => {
+    getSavedPlaces().then(setSavedPlacesState);
+    getParkingSpot().then(setParkingSpotState);
+    const a = subscribeSavedPlaces(setSavedPlacesState);
+    const b = subscribeParkingSpot(setParkingSpotState);
+    return () => {
+      a();
+      b();
+    };
+  }, []);
 
   // Real, explicit request -- "Map shows max 50 Trackys, clustered." Closest-to-driver-first
   // cap (not an arbitrary slice of whatever subscribeNearbyPresence happened to return). The
@@ -2231,6 +2258,7 @@ export function MapScreen() {
       freshlySeen.add(alert.id);
       if (alert.createdBy === user?.uid) continue;
       if (!alertsWhileDriving(reportSettingsRef.current, COMMUNITY_ITEM[alert.type])) continue;
+      if (alert.needsConfirmation) continue;
       const distanceM = distanceKm(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng) * 1000;
       if (distanceM > NEARBY_ALERT_TOAST_RADIUS_METERS) continue;
       newToasts.push({ id: alert.id, type: alert.type, distanceM });
@@ -2253,27 +2281,23 @@ export function MapScreen() {
   // behind the driver's back) and never re-asks about the same alert twice this session (see
   // promptedAlertIdsRef's own comment). heading/currentSpeedKmh are the same live values the
   // rest of this screen's own nav logic already reads, not a separate GPS source.
+  // Per-type windows, never the reporter, never over a turn (alerts/stillThere.ts).
+  const stillThereNavBusy = !!manoeuvreChip || (approach.phase === "approach" && approach.zoomed);
   useEffect(() => {
     if (stillHerePrompt || !currentLatLng) return;
-    if (currentSpeedKmh === null || currentSpeedKmh < STILL_HERE_MIN_SPEED_KMH) return;
-
-    const now = Date.now();
-    const eligible = visibleAlerts.find((alert) => {
-      if (promptedAlertIdsRef.current.has(alert.id)) return false;
-      const ageMs = now - alert.createdAt;
-      if (ageMs < STILL_HERE_MIN_AGE_MS || ageMs > STILL_HERE_MAX_AGE_MS) return false;
-      const distanceMeters =
-        distanceKm(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng) * 1000;
-      if (distanceMeters > STILL_HERE_RADIUS_METERS) return false;
-      const bearingToAlert = bearingDegrees(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng);
-      // Wrapped to the shortest signed angle between the two bearings (-180..180) so e.g. 350°
-      // vs 10° reads as a 20° difference, not 340°.
-      const headingDiff = Math.abs(((bearingToAlert - heading + 540) % 360) - 180);
-      return headingDiff <= STILL_HERE_HEADING_TOLERANCE_DEG;
+    const candidate = stillThereCandidate(visibleAlerts, {
+      nowMs: location?.timestamp ?? 0,
+      uid: user?.uid,
+      position: currentLatLng,
+      headingDeg: heading,
+      speedKmh: currentSpeedKmh,
+      navBusy: stillThereNavBusy,
+      alreadyAsked: promptedAlertIdsRef.current,
     });
-
-    if (eligible) setStillHerePrompt(eligible);
-  }, [visibleAlerts, currentLatLng, heading, currentSpeedKmh, stillHerePrompt]);
+    if (candidate) setStillHerePrompt(candidate);
+    // A new fix runs this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleAlerts, currentLatLng, stillHerePrompt, stillThereNavBusy]);
 
   const onStillHereRespond = useCallback((alert: AlertDoc, isStillHere: boolean) => {
     promptedAlertIdsRef.current.add(alert.id);
@@ -2534,7 +2558,7 @@ export function MapScreen() {
       const currentUser = userRef.current;
       if (autoShareDetectionsRef.current && latLng && currentUser) {
         try {
-          await reportAlert("emergency_vehicle", latLng, currentUser.uid, alertExpiryMsRef.current);
+          await submitReport("emergency_vehicle", latLng, latLng, currentUser.uid, { customTtlMs: alertExpiryMsRef.current });
         } catch (err) {
           console.warn("[siren] auto-share detection failed", err);
         }
@@ -4329,6 +4353,8 @@ export function MapScreen() {
   // own event object) -- every call site below passes either nothing or an explicit LatLng, no
   // call site passes onPress={confirmAlertPlacement} directly, which would otherwise hand the
   // GestureResponderEvent to this parameter instead.
+  // The 3 s Undo after sending a report (held on the server until then).
+  const [pendingReport, setPendingReport] = useState<{ result: ReportResult; type: AlertType; untilMs: number } | null>(null);
   const confirmAlertPlacement = useCallback(async (overrideLocation?: LatLng) => {
     if (submittingAlertRef.current) return;
     // Real enforcement, not just a disabled-looking button -- blocks the actual Firestore write
@@ -4348,22 +4374,36 @@ export function MapScreen() {
       setBannerVisible(true);
       return;
     }
+    // The server checks a report is within 1 km of where the driver really is.
+    if (!currentLatLng) {
+      setBannerMessage("Waiting for your location -- reports need it.");
+      setBannerVisible(true);
+      return;
+    }
     submittingAlertRef.current = true;
     setSubmittingAlert(true);
     try {
-      await reportAlert(
-        type,
-        location,
-        user.uid,
-        settings.alertExpiryMs,
-        alertComment,
-        settings.showNameOnReports ? user.displayName : null
-      );
+      const result = await submitReport(type, location, currentLatLng, user.uid, {
+        customTtlMs: settings.alertExpiryMs,
+        comment: alertComment,
+        reporterName: settings.showNameOnReports ? user.displayName : null,
+      });
+      if (result.kind === "merged") {
+        setBannerMessage(`${ALERT_LABELS[type]} was already reported here -- you've confirmed it.`);
+        setBannerVisible(true);
+      } else {
+        setPendingReport({ result, type, untilMs: result.kind === "pending" ? result.publishAtMs : Date.now() + UNDO_MS });
+      }
       pendingAlertTypeRef.current = null;
       setPlacingAlert(false);
       setAlertPlacementLatLng(null);
       setAlertComment("");
     } catch (err) {
+      if (err instanceof ReportRefused) {
+        setBannerMessage(err.message);
+        setBannerVisible(true);
+        return;
+      }
       // Same "log it, don't just swallow it" pattern as the rest of this screen (see reroute/
       // place-lookup catches above) -- but this write is important enough that the driver also
       // needs to actually see it failed, since nothing else here would ever tell them the alert
@@ -4376,7 +4416,24 @@ export function MapScreen() {
       submittingAlertRef.current = false;
       setSubmittingAlert(false);
     }
-  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment]);
+  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment, currentLatLng]);
+
+  // The 3 s Undo after sending a report (held on the server until then).
+  const clearPendingReport = useCallback(() => setPendingReport(null), []);
+  const onUndoReport = useCallback(() => {
+    const p = pendingReport;
+    setPendingReport(null);
+    if (!p || !user) return;
+    undoReport(p.result, user.uid)
+      .then(() => {
+        setBannerMessage("Report taken back.");
+        setBannerVisible(true);
+      })
+      .catch((err) => {
+        setBannerMessage(err instanceof ReportRefused ? err.message : "Couldn't undo -- it may already be on the map.");
+        setBannerVisible(true);
+      });
+  }, [pendingReport, user]);
 
   // "Set at my location" -- per explicit request, a one-tap shortcut beside Cancel/Set that
   // places AND immediately confirms the alert at the driver's own real live GPS position
@@ -5002,6 +5059,11 @@ export function MapScreen() {
     if (placePage && !route && !pendingDestination) {
       add({ id: `place-page:${placePage.placeId}`, coordinate: placePage.location, icon: "place-page", priority: 60 });
     }
+    if (!route && !pendingDestination) {
+      for (const sp of savedPinPlaces(savedPlaces, parkingSpot)) {
+        add({ id: `saved:${sp.kind}:${sp.placeId}`, coordinate: sp.location, icon: savedPinIcon(sp), anchor: "bottom", priority: 40 }, { kind: "saved", place: sp });
+      }
+    }
     if (originOverride && !route && !pickingOrigin && !inRouteSelection) {
       add({ id: "origin-override", coordinate: originOverride.location, icon: "origin", anchor: "bottom", priority: 55 }, { kind: "origin" });
     }
@@ -5033,6 +5095,8 @@ export function MapScreen() {
     originOverride,
     pickingOrigin,
     inRouteSelection,
+    savedPlaces,
+    parkingSpot,
   ]);
   const onMapboxPinPress = useCallback(
     (pinId: string) => {
@@ -5051,6 +5115,8 @@ export function MapScreen() {
           return onSpeedCameraClusterPress(target.lat, target.lng);
         case "venue":
           return onViewVenueDetails(target.placeId);
+        case "saved":
+          return setSelectedSaved(target.place);
         case "fuelPin":
           return target.pin.onPress();
         case "incident":
@@ -5229,7 +5295,7 @@ export function MapScreen() {
             user={mapboxUser}
             presences={approachDrawing ? [] : visiblePresences}
             presenceCellSize={presenceCellSizeDegrees}
-            onSelectPresence={setSelectedPresence}
+            onSelectPresence={onSelectPresenceBubble}
             onPresenceCluster={onPlaceClusterPress}
             selection={mapboxSelection}
             arrival={destinationLatLng ?? (pendingDestination && !route && !inRouteSelection ? pendingDestination.location : null)}
@@ -6308,6 +6374,76 @@ export function MapScreen() {
         onClose={() => setSelectedIncident(null)}
       />
 
+      {bubblePresence && !selectedPresence && (
+        <TrackyBubble
+          presence={bubblePresence}
+          nowMs={bubbleAtMs}
+          top={insets.top + spacing.md + (route ? instructionCardHeight + spacing.md : 64)}
+          onWave={onWaveFromBubble}
+          onMore={() => {
+            setSelectedPresence(bubblePresence);
+            setBubblePresence(null);
+          }}
+          onClose={() => setBubblePresence(null)}
+        />
+      )}
+
+      {selectedSaved && !route && (
+        <SavedPlacePopup
+          place={selectedSaved}
+          bottom={whereToHeights.peek + spacing.md}
+          onClose={() => setSelectedSaved(null)}
+          onSend={() => {
+            Share.share({ message: buildDriveLink({ latitude: selectedSaved.location.latitude, longitude: selectedSaved.location.longitude, name: selectedSaved.title, address: selectedSaved.address }) }).catch(() => {});
+          }}
+          onRoutes={() => {
+            const sp = selectedSaved;
+            setSelectedSaved(null);
+            onDestinationSelected({ placeId: sp.placeId, name: sp.title, address: sp.address, location: sp.location });
+          }}
+          onPreview={() => {
+            mapRef.current?.animateCamera({ center: selectedSaved.location, zoom: 17, pitch: 0 }, { duration: 600 });
+          }}
+          onMarkParking={() => {
+            setParkingSpot({ latitude: selectedSaved.location.latitude, longitude: selectedSaved.location.longitude, label: selectedSaved.address || selectedSaved.title }).then(() => {
+              setBannerMessage("Parking spot marked -- tap the P to find your car.");
+              setBannerVisible(true);
+            });
+            setSelectedSaved(null);
+          }}
+          onFindCar={
+            parkingSpot
+              ? () => {
+                  setSelectedSaved(null);
+                  onDestinationSelected({ placeId: "parking", name: "Your parking spot", address: parkingSpot.label, location: { latitude: parkingSpot.latitude, longitude: parkingSpot.longitude } });
+                }
+              : null
+          }
+          onEdit={(newLabel) => {
+            const sp = selectedSaved;
+            setSelectedSaved(null);
+            if (sp.kind === "home" || sp.kind === "work") {
+              whereToSheetRef.current?.openSearch(sp.kind);
+              return;
+            }
+            const original = savedPlaces.custom.find((p) => p.placeId === sp.placeId);
+            if (original && newLabel) {
+              addCustomPlace(original, newLabel).then((next) => {
+                if (user && !user.isAnonymous) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
+              });
+            }
+          }}
+          onRemove={() => {
+            const sp = selectedSaved;
+            setSelectedSaved(null);
+            const done = sp.kind === "parking" ? clearParkingSpot().then(() => null) : sp.kind === "custom" ? removeCustomPlace(sp.placeId) : removeHomeOrWork(sp.kind);
+            done.then((next) => {
+              if (next && user && !user.isAnonymous) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
+            });
+          }}
+        />
+      )}
+
       {user && (
         <PresenceCard
           presence={selectedPresence}
@@ -6369,12 +6505,23 @@ export function MapScreen() {
       {/* Rendered last of all -- an actionable prompt the driver is being actively asked to
           answer, so it needs to sit on top of everything else, same reasoning as AlertBanner
           above it. */}
-      {stillHerePrompt && (
+      {pendingReport && (
+        <ReportUndoBar
+          type={pendingReport.type}
+          untilMs={pendingReport.untilMs}
+          onUndo={onUndoReport}
+          onDone={clearPendingReport}
+          bottom={route ? insets.bottom + bottomBarHeight + spacing.sm : insets.bottom + spacing.xl}
+        />
+      )}
+
+      {stillHerePrompt && !pendingReport && (
         <AlertStillHereCard
           key={stillHerePrompt.id}
           alert={stillHerePrompt}
           onStillHere={() => onStillHereRespond(stillHerePrompt, true)}
           onNotHere={() => onStillHereRespond(stillHerePrompt, false)}
+          bottom={route ? insets.bottom + bottomBarHeight + spacing.sm : undefined}
         />
       )}
     </View>

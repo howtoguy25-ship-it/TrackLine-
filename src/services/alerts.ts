@@ -66,9 +66,95 @@ function toAlertDoc(id: string, data: any): AlertDoc {
     // day) -- treated as "nobody's hidden it yet" rather than crashing on the shape mismatch.
     hiddenBy: data.hiddenBy && typeof data.hiddenBy === "object" && !Array.isArray(data.hiddenBy) ? data.hiddenBy : {},
     comment: typeof data.comment === "string" && data.comment.length > 0 ? data.comment : undefined,
+    needsConfirmation: data.needsConfirmation === true,
+    lastConfirmedAt: data.lastConfirmedAt?.toMillis?.() ?? undefined,
   };
 }
 
+// ---- Reporting through the server -----------------------------------------------------------
+// Reports go through the submitReport Cloud Function (anti-spam, duplicate merge, trust, a 3 s
+// undo window -- firebase/functions/reports/). Until that function is deployed the app falls
+// back to writing the alert itself, which the console rules in force today allow; once the
+// repo's firestore.rules are deployed that direct write is refused, so the server's checks
+// can't be skipped.
+
+export type ReportResult =
+  | { kind: "pending"; pendingId: string; publishAtMs: number; needsConfirmation: boolean }
+  | { kind: "merged"; alertId: string }
+  | { kind: "direct"; alertId: string };
+
+export class ReportRefused extends Error {
+  constructor(public reason: string, message: string, public until?: number) {
+    super(message);
+  }
+}
+
+const NOT_DEPLOYED = new Set(["functions/not-found", "functions/unimplemented", "functions/internal", "functions/unavailable"]);
+
+async function callable<T>(name: string, data: unknown): Promise<T> {
+  // Loaded on use: the functions SDK ships ESM the test runner can't load (see firebase.ts), and
+  // most screens that import this file never report anything.
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { httpsCallable } = require("@firebase/functions") as typeof import("@firebase/functions");
+  const { functions } = require("@/services/firebase") as typeof import("@/services/firebase");
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const res = await httpsCallable(functions, name)(data);
+  return res.data as T;
+}
+
+export async function submitReport(
+  type: AlertType,
+  location: { latitude: number; longitude: number },
+  from: { latitude: number; longitude: number },
+  uid: string,
+  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null } = {}
+): Promise<ReportResult> {
+  const trimmed = options.comment?.trim();
+  const comment = trimmed && !containsBlockedLanguage(trimmed) ? clampToWordLimit(trimmed) : undefined;
+  const region = classifyAuRegion(location.latitude, location.longitude);
+  try {
+    const r = await callable<{ merged: boolean; alertId?: string; pendingId?: string; publishAtMs?: number; needsConfirmation?: boolean }>("submitReport", {
+      type,
+      at: { lat: location.latitude, lng: location.longitude },
+      from: { lat: from.latitude, lng: from.longitude },
+      region,
+      comment,
+      customTtlMs: options.customTtlMs ?? null,
+      showName: !!options.reporterName,
+    });
+    if (r.merged && r.alertId) return { kind: "merged", alertId: r.alertId };
+    return { kind: "pending", pendingId: r.pendingId as string, publishAtMs: r.publishAtMs as number, needsConfirmation: !!r.needsConfirmation };
+  } catch (err) {
+    const e = err as { code?: string; message?: string; details?: { reason?: string; until?: number } };
+    if (e.code && NOT_DEPLOYED.has(e.code)) {
+      const alertId = await reportAlert(type, location, uid, options.customTtlMs, options.comment, options.reporterName);
+      return { kind: "direct", alertId };
+    }
+    if (e.details?.reason) throw new ReportRefused(e.details.reason, e.message ?? "Report refused.", e.details.until);
+    throw err;
+  }
+}
+
+/** Undo inside the 3 s window (at most 2 an hour, server-enforced). */
+export async function undoReport(result: ReportResult, uid: string): Promise<void> {
+  if (result.kind === "pending") {
+    try {
+      await callable("undoReport", { pendingId: result.pendingId });
+    } catch (err) {
+      const e = err as { message?: string; details?: { reason?: string } };
+      if (e.details?.reason) throw new ReportRefused(e.details.reason, e.message ?? "Can't undo.");
+      throw err;
+    }
+  } else if (result.kind === "direct") {
+    // Before the server is deployed: the report was written directly, so undo deletes it
+    // (only its creator may -- firestore.rules).
+    void uid;
+    await deleteAlert(result.alertId);
+  }
+  // merged: nothing new was posted, nothing to undo.
+}
+
+/** Direct write -- only used as the fallback above until submitReport is deployed. */
 export async function reportAlert(
   type: AlertType,
   location: { latitude: number; longitude: number },

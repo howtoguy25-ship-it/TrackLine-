@@ -19,6 +19,8 @@ const personaCore = require("./personaSpeechCore");
 const trafficCore = require("./trafficNswCore");
 const schoolZonesCore = require("./schoolZonesCore");
 const roadReportsCore = require("./roadReportsCore");
+const reportsCore = require("./reports/core");
+const { firestoreReportStore } = require("./reports/store");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -124,6 +126,56 @@ exports.cleanupExpiredAlerts = onSchedule("every 15 minutes", async () => {
   }
 
   console.log(`cleanupExpiredAlerts: removed ${deletedTotal} expired alert(s)`);
+});
+
+// ---- Driver reports (police, crash, hazard ...) --------------------------------------------
+// Every report goes through submitReport: anti-spam (within 1 km of the driver, 10 an hour, 30 a
+// day, a burst blocks for 15 min then 24 h), duplicates merged into the report already on the
+// map, low-trust reporters' reports flagged to need a confirmation. It's held for 3 s so Undo
+// works (undoReport, at most 2 an hour), then publishPendingReport puts it on the map. Votes
+// ("Still here" / "Not there") extend or remove it and move the reporter's trust
+// (applyReportVote). Rules: reports/policy.json. Tests: firebase/tests/reports.test.js.
+const reportStore = () => firestoreReportStore(getFirestore(), { FieldValue, Timestamp });
+
+function reportHttpsError(err) {
+  if (err instanceof reportsCore.ReportError) {
+    const code = ["blocked", "hourly-limit", "daily-limit", "undo-limit"].includes(err.code) ? "resource-exhausted" : err.code === "not-found" ? "not-found" : "failed-precondition";
+    return new HttpsError(code, err.message, { reason: err.code, ...(err.until ? { until: err.until } : {}) });
+  }
+  return err;
+}
+
+exports.submitReport = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const name = request.data && request.data.showName && typeof request.auth.token.name === "string" && request.auth.token.name.length <= 40 ? request.auth.token.name : null;
+  try {
+    return await reportsCore.submit(reportStore(), { uid: request.auth.uid, data: request.data, reporterName: name, nowMs: Date.now() });
+  } catch (err) {
+    throw reportHttpsError(err);
+  }
+});
+
+exports.undoReport = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  try {
+    return await reportsCore.undo(reportStore(), { uid: request.auth.uid, pendingId: request.data && request.data.pendingId, nowMs: Date.now() });
+  } catch (err) {
+    throw reportHttpsError(err);
+  }
+});
+
+exports.publishPendingReport = onDocumentCreated("pendingReports/{id}", async (event) => {
+  const data = event.data && event.data.data();
+  if (!data) return;
+  const wait = Math.max(0, Math.min(10_000, data.publishAtMs - Date.now())) + 250;
+  await sleep(wait);
+  await reportStore().publish(event.params.id);
+});
+
+exports.applyReportVote = onDocumentCreated("alerts/{alertId}/votes/{uid}", async (event) => {
+  const data = event.data && event.data.data();
+  if (!data || (data.vote !== "confirm" && data.vote !== "deny")) return;
+  await reportStore().applyVote(event.params.alertId, event.params.uid, data.vote, Date.now());
 });
 
 /**
