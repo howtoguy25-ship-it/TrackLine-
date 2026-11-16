@@ -45,6 +45,7 @@ import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/de
 import { TouchDebuggerRow } from "@/debug/TouchDebuggerRow";
 import { getBuildStamp } from "@/config/getBuildStamp";
 import { CATEGORY_SECTIONS } from "@/screens/settingsCategories";
+import { mapEngineLine } from "@/config/mapEngine";
 import { ALERT_LABELS, type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
@@ -1701,6 +1702,10 @@ export function SettingsScreen() {
             JavaScript came from). See config/buildStamp.ts. */}
         <Text style={styles.aboutMeta} selectable testID="build-stamp">
           Build {getBuildStamp()}
+        </Text>
+        {/* Which map is really running, so it can be checked on the phone. */}
+        <Text style={styles.aboutMeta} selectable testID="map-engine">
+          {mapEngineLine()}
         </Text>
         {BUSINESS_INFO.businessName ? (
           <Text style={styles.aboutMeta}>{BUSINESS_INFO.businessName}</Text>

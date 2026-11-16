@@ -68,8 +68,108 @@ export const BUILDING_EXTRUSION_MIN_PITCH = 30;
 export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
-/** Name of the runtime image the highway shields are drawn on (TrackLineMap adds it). */
+/** Bumped whenever the style's rules change (shown in Settings > About). */
+export const STYLE_VERSION = 3;
+
+/**
+ * Every label is the place's own name in the local language and script (Mapbox Streets `name`):
+ * Arabic in Riyadh and Beirut, Japanese in Tokyo, Cyrillic in Moscow -- like the road signs.
+ * English only where a feature has no local name. No rule anywhere is tied to one country.
+ */
+export const LOCAL_NAME = ["coalesce", ["get", "name"], ["get", "name_en"]];
+
+/** Prefix of the runtime plate images the highway shields are drawn on (TrackLineMap adds them). */
 export const SHIELD_IMAGE = "tl-shield";
+
+/** The plate colours TrackLineMap draws (`tl-shield-<colour>`). */
+export const SHIELD_PLATES = ["green", "blue", "white", "red", "yellow", "orange", "brown"] as const;
+export type ShieldPlate = (typeof SHIELD_PLATES)[number];
+
+export const SHIELD_PLATE_COLOURS: Record<ShieldPlate, string> = {
+  green: "#1F8A3B",
+  blue: "#1E4FA3",
+  white: "#FFFFFF",
+  red: "#C8102E",
+  yellow: "#FFD400",
+  orange: "#E87722",
+  brown: "#7A4A21",
+};
+
+/**
+ * Which plate a road's route number goes on, from the tiles' own `shield` value (Mapbox Streets
+ * v8 gives each road the shield style used where it is). The data decides -- US Interstates blue,
+ * German motorways blue, Swiss red, Australian national highways green -- and anything unknown a
+ * plain white plate, never one country's look applied to another.
+ */
+export const SHIELD_PLATE_FOR: Record<string, ShieldPlate> = {
+  // Only values documented for Mapbox Streets v8 (docs.mapbox.com > mapbox-streets-v8 > road >
+  // shield; "No further shield values will be added in v8"). Anything else, and every
+  // country-specific value whose real plate colour isn't certain, gets the neutral white plate
+  // with the tiles' own text colour.
+  "rectangle-white": "white",
+  "rectangle-red": "red",
+  "rectangle-orange": "orange",
+  "rectangle-yellow": "yellow",
+  "rectangle-green": "green",
+  "rectangle-blue": "blue",
+  "circle-white": "white",
+  "au-national-highway": "green",
+  "au-national-route": "white",
+  "au-state": "blue",
+  "au-tourist": "brown",
+  "nz-state": "red",
+  "us-interstate": "blue",
+  "us-interstate-duplex": "blue",
+  "us-interstate-truck": "blue",
+  "us-interstate-business": "green",
+  "us-highway": "white",
+  "us-highway-duplex": "white",
+  "us-highway-alternate": "white",
+  "us-highway-bypass": "white",
+  "us-highway-truck": "white",
+  "us-highway-business": "green",
+  "de-motorway": "blue",
+  "hu-motorway": "blue",
+  "ch-motorway": "red",
+  "gr-motorway": "green",
+  "hr-motorway": "green",
+  "si-motorway": "green",
+  "cn-nths-expy": "green",
+  "mx-federal": "white",
+  "mx-state": "white",
+};
+
+/** Default text colour on each plate when the tiles don't give one. */
+const PLATE_TEXT: Record<ShieldPlate, string> = {
+  green: "#FFFFFF",
+  blue: "#FFFFFF",
+  white: "#1A1A1A",
+  red: "#FFFFFF",
+  yellow: "#1A1A1A",
+  orange: "#1A1A1A",
+  brown: "#FFFFFF",
+};
+
+/** Mapbox Streets v8 `shield_text_color` values -> the colours drawn. */
+export const SHIELD_TEXT_COLOURS: Record<string, string> = {
+  // The documented shield_text_color values.
+  black: "#1A1A1A",
+  white: "#FFFFFF",
+  yellow: "#FFD400",
+  orange: "#E87722",
+  blue: "#1E4FA3",
+};
+
+function plateExpression(): unknown[] {
+  const pairs = Object.entries(SHIELD_PLATE_FOR).flatMap(([shield, plate]) => [shield, `${SHIELD_IMAGE}-${plate}`]);
+  return ["match", ["get", "shield"], ...pairs, `${SHIELD_IMAGE}-white`];
+}
+
+function shieldTextExpression(): unknown[] {
+  const fromData = ["match", ["get", "shield_text_color"], ...Object.entries(SHIELD_TEXT_COLOURS).flat(), "none"];
+  const byPlate = ["match", ["get", "shield"], ...Object.entries(SHIELD_PLATE_FOR).flatMap(([shield, plate]) => [shield, PLATE_TEXT[plate]]), PLATE_TEXT.white];
+  return ["case", ["!=", fromData, "none"], fromData, byPlate];
+}
 
 export interface StylePalette {
   name: string;
@@ -186,7 +286,7 @@ export function roadLabelLayer(cls: RoadClass, palette: StylePalette): Json {
       "symbol-placement": "line",
       "symbol-spacing": LABEL_SPACING_PX,
       "symbol-sort-key": LABEL_PRIORITY[cls],
-      "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]],
+      "text-field": LOCAL_NAME,
       "text-font": LABEL_FONT,
       "text-size": ["interpolate", ["linear"], ["zoom"], LABEL_MIN_ZOOM[cls], small, 18, large],
       "text-max-angle": 30,
@@ -204,7 +304,7 @@ export function roadLabelLayer(cls: RoadClass, palette: StylePalette): Json {
   };
 }
 
-function shieldLayer(palette: StylePalette): Json {
+function shieldLayer(): Json {
   return {
     id: "road-shields",
     type: "symbol",
@@ -226,12 +326,13 @@ function shieldLayer(palette: StylePalette): Json {
       "text-font": LABEL_FONT_BOLD,
       "text-size": 12,
       "text-rotation-alignment": "viewport",
-      "icon-image": SHIELD_IMAGE,
+      "icon-image": plateExpression(),
       "icon-text-fit": "both",
       "icon-text-fit-padding": [3, 6, 3, 6],
       "icon-rotation-alignment": "viewport",
     },
-    paint: { "text-color": palette.shieldText },
+    // The tiles' own shield text colour (yellow on Australia's green, white on blue motorways...).
+    paint: { "text-color": shieldTextExpression() },
   };
 }
 
@@ -339,7 +440,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     minzoom: 9,
     maxzoom: 16,
     layout: {
-      "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]],
+      "text-field": LOCAL_NAME,
       "text-font": LABEL_FONT,
       "text-size": ["interpolate", ["linear"], ["zoom"], 9, 14, 13, 20, 16, 22],
       "text-transform": "uppercase",
@@ -350,7 +451,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     paint: { "text-color": p.suburbLabel, "text-halo-color": p.labelHalo, "text-halo-width": 2 },
   });
   for (const cls of [...ROAD_DRAW_ORDER].reverse()) layers.push(roadLabelLayer(cls, p));
-  layers.push(shieldLayer(p));
+  layers.push(shieldLayer());
   // Places of interest: small, from close zoom only. Tapping one opens its details
   // (TrackLineMap reads these features at the tap point).
   layers.push({
@@ -361,7 +462,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     minzoom: 15.5,
     filter: ["<=", ["get", "filterrank"], 2],
     layout: {
-      "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]],
+      "text-field": LOCAL_NAME,
       "text-font": LABEL_FONT,
       "text-size": 11,
       "text-max-width": 8,
@@ -378,6 +479,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
   return {
     version: 8,
     name: p.name,
+    metadata: { "trackline:styleVersion": STYLE_VERSION },
     sources,
     glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
     layers,

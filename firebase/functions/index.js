@@ -1128,10 +1128,13 @@ async function refreshNswSchoolZones() {
     await batch.commit();
   }
   // Tiles that no longer have a zone (a zone removed from the official data) are emptied.
-  const stale = await db.collection("schoolZoneTiles").where("region", "==", "AU-NSW").where("updatedAt", "<", updatedAt).get();
-  for (let i = 0; i < stale.docs.length; i += 400) {
+  // One range filter only (single-field index, which Firestore has automatically); the region
+  // is checked here. Equality + range on two fields would need a composite index.
+  const staleSnap = await db.collection("schoolZoneTiles").where("updatedAt", "<", updatedAt).get();
+  const stale = staleSnap.docs.filter((d) => d.get("region") === "AU-NSW");
+  for (let i = 0; i < stale.length; i += 400) {
     const batch = db.batch();
-    for (const d of stale.docs.slice(i, i + 400)) batch.set(d.ref, { ...meta, tile: d.id, zones: [] });
+    for (const d of stale.slice(i, i + 400)) batch.set(d.ref, { ...meta, tile: d.id, zones: [] });
     await batch.commit();
   }
   const calendar = schoolZonesCore.nswCalendar(built.terms, built.lateTerms, nswPublicHolidays);

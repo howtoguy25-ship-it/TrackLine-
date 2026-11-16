@@ -29,10 +29,40 @@ on:
         description: "Copy API keys from this repo's GitHub secrets into Firebase (tick after adding or changing one)"
         type: boolean
         default: false
+      refreshSchoolZones:
+        description: "After deploying functions, load the official NSW school zones now (instead of waiting for Monday)"
+        type: boolean
+        default: true
 
 jobs:
-  deploy:
+  # The Firestore/Storage rules and Cloud Functions tests, on the real emulators, with placeholder
+  # keys only. If any test fails, nothing is deployed.
+  emulator-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install functions and test dependencies
+        run: |
+          npm ci --prefix firebase/functions
+          npm ci --prefix firebase/tests
+      - name: Placeholder secrets for the Functions emulator (not real keys)
+        run: |
+          printf 'MAPBOX_SERVER_TOKEN=emulator-placeholder\nELEVENLABS_API_KEY=emulator-placeholder\nTFNSW_API_KEY=emulator-placeholder\n' > firebase/functions/.secret.local
+      - name: Rules + Cloud Functions tests on the emulators
+        run: npx -y firebase-tools@14 emulators:exec --project demo-trackline-rules-test --only firestore,storage,functions,auth "npm --prefix firebase/tests test"
+
+  deploy:
+    needs: emulator-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,7 +93,7 @@ jobs:
           TARGETS=""
           if [ "${{ inputs.deployFunctions }}" = "true" ]; then TARGETS="functions"; fi
           if [ "${{ inputs.deployFirestoreRules }}" = "true" ]; then
-            TARGETS="${TARGETS:+$TARGETS,}firestore:rules"
+            TARGETS="${TARGETS:+$TARGETS,}firestore:rules,firestore:indexes"
           fi
           if [ "${{ inputs.deployStorageRules }}" = "true" ]; then
             TARGETS="${TARGETS:+$TARGETS,}storage"
@@ -141,6 +171,49 @@ jobs:
             --only "${{ steps.targets.outputs.list }}" \
             --project "${{ steps.project.outputs.id }}" \
             --non-interactive
+
+      # Scheduled functions run from a Cloud Scheduler job Firebase creates on deploy
+      # (firebase-schedule-<function>-<region>; this project's functions are in us-central1).
+      # Running that job once loads the official NSW school zones now. The service account needs
+      # the "Cloud Scheduler Admin" role (DEPLOY.md).
+      - name: Authenticate gcloud with the same service account
+        if: ${{ inputs.deployFunctions && inputs.refreshSchoolZones }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Set up gcloud
+        if: ${{ inputs.deployFunctions && inputs.refreshSchoolZones }}
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Load the NSW school zones now (refreshSchoolZones, once)
+        if: ${{ inputs.deployFunctions && inputs.refreshSchoolZones }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
+          PROJECT_ID: ${{ steps.project.outputs.id }}
+        run: |
+          set -e
+          STARTED=$(date +%s)000
+          gcloud scheduler jobs run firebase-schedule-refreshSchoolZones-us-central1 \
+            --location=us-central1 --project="$PROJECT_ID"
+          echo "Triggered. Waiting for the function to write dataSources/schoolZones-AU-NSW (up to 10 min)..."
+          cd firebase/functions
+          node -e '
+            const admin = require("firebase-admin");
+            admin.initializeApp({ projectId: process.env.PROJECT_ID });
+            const db = admin.firestore();
+            const started = Number(process.argv[1]);
+            (async () => {
+              for (let i = 0; i < 60; i++) {
+                const d = (await db.doc("dataSources/schoolZones-AU-NSW").get()).data();
+                if (d && d.updatedAt >= started) {
+                  console.log(`School zones loaded: ${d.zones} zones in ${d.tiles} tiles (${d.skipped} skipped); calendar valid to ${d.calendarValidTo}.`);
+                  process.exit(0);
+                }
+                await new Promise((r) => setTimeout(r, 10000));
+              }
+              console.error("::error::refreshSchoolZones did not finish within 10 minutes. Firebase console > Functions > refreshSchoolZones > Logs shows why.");
+              process.exit(1);
+            })().catch((e) => { console.error("::error::" + e.message); process.exit(1); });
+          ' "$STARTED"
 
       - name: Clean up service account key
         if: always()
