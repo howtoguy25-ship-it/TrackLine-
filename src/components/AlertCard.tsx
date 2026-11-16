@@ -148,9 +148,16 @@ export function AlertCard(props: Props) {
         )}
 
         <View style={[styles.footer, { marginTop: s(compact ? 8 : 14) }]}>
-          <Text style={[styles.byline, { fontSize: s(compact ? 13 : 15) }]} numberOfLines={1} testID="alert-card-byline">
-            {byline}
-          </Text>
+          <View style={{ flexShrink: 1 }}>
+            <Text style={[styles.byline, { fontSize: s(compact ? 13 : 15) }]} numberOfLines={1} testID="alert-card-byline">
+              {byline}
+            </Text>
+            {!compact && (
+              <Text style={[styles.byline, { fontSize: s(12) }]} numberOfLines={1} testID="alert-card-source">
+                {card.sourceLine}
+              </Text>
+            )}
+          </View>
           {showThanks && (
             <Pressable
               onPress={thanksDisabled ? undefined : onThanks}

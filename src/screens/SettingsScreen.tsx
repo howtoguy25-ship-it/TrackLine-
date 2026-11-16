@@ -1211,6 +1211,15 @@ export function SettingsScreen() {
         <Text style={styles.helperText}>
           Each item has its own Show on map and Alert while driving switches. School zones are there too.
         </Text>
+        {isOwnerEmail(user?.email) && (
+          <LinkRow
+            label="Moderation queue"
+            hint="Approve fixed cameras and road features drivers reported"
+            icon="checkmark-circle"
+            onPress={() => navigation.navigate("Moderation")}
+            testID="moderation-link"
+          />
+        )}
       </Section>
 
       <Section title="Speedometer" visible={shouldShow("Speedometer")}>

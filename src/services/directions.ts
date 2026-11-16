@@ -50,6 +50,8 @@ export interface RouteStep {
   // the manoeuvre at this step's END (endLocation), like the instruction above.
   /** Lanes approaching the manoeuvre, left to right; absent when the data has none. */
   lanes?: Lane[];
+  /** Where a lane ends along this step (from the route's own lane counts, nav/laneEndings.ts). */
+  laneEndings?: LatLng[];
   /** Signed motorway exit number ("3B"), when there is one. */
   exitNumber?: string;
   /** Road reference of the road the manoeuvre leads onto ("M4"). */

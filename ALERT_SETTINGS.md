@@ -5,52 +5,55 @@ Every row has its own icon (`ReportItemIcon`), a title, a grey description and a
 with the icon, an explanation, the data source and its real switches. Switches are saved with the rest of the
 settings (AsyncStorage, and the signed-in account's `users/{uid}.settings` via the existing sync).
 
-An item with no data source anywhere shows **"Coming soon in your area"** with its switches disabled — never a
-switch that saves but changes nothing, never invented pins.
+Every item is live (no "Coming soon" anywhere — tested). Each one has at least one real source: driver reports from the
+report grid, official data, OpenStreetMap, or something derived from real route/traffic data. The same thing from several
+sources is shown once, best first: official > confirmed driver report > OpenStreetMap > unconfirmed report; the pin's card
+says which. Fixed cameras and road features stay on the map once 3 drivers confirm them or an admin approves them
+(Settings › Map information & overlays › Reports › Moderation queue, owner only).
 
-| Item | Show on map | Alert while driving | Data source | Status | Evidence |
-|---|---|---|---|---|---|
-| Speed camera | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Red light camera | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Red light & speed camera | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Stop sign camera | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Mobile police camera | Yes | Yes | TrackLine driver reports | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Transit lane camera | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Carpool lane camera | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Bus lane camera | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Mobile phone camera | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Noise camera | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Safe distance camera | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Seat belt camera | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Railway crossing | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Traffic lights | Yes | Yes (default off) | OpenStreetMap, TrackLine driver reports | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Toll booth | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Speed bump | Yes | Yes (default off) | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Sharp curve | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Speed limit changes | — | Yes | Posted limits (OSM / school zones) | DONE | engine.test.ts "Speed limit changes" + toggles.test.ts restart |
-| Complex intersection | Yes | Yes | Route road data (Mapbox) | DONE | engine.test.ts "Route items" (zoom gated by alert, label by show) |
-| Multi-lane merge | Yes | Yes | Route road data (Mapbox) | DONE | engine.test.ts "Route items" (zoom gated by alert, label by show) |
-| School zones | Yes | Yes | TfNSW school zones | DONE | toggles.test.ts "Older settings" (schoolZonesShowOnMap / schoolZonesAlert) + existing school-zone tests |
-| Lane ending | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Raised crossing | Yes | Yes | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Pedestrian crossing | Yes | Yes (default off) | OpenStreetMap | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Shoulder ending | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Narrow bridge | disabled | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Police | Yes | Yes | TrackLine driver reports | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Crash | Yes | Yes | TrackLine driver reports, Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Traffic | Yes | — | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Sudden slowdown | — | Yes | Live route traffic (Google) | DONE | engine.test.ts "Sudden slowdown" + toggles.test.ts restart |
-| Emergency vehicles | Yes | Yes | TrackLine driver reports | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Roadwork | Yes | Yes | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Map chats | disabled | — | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Closures | Yes | Yes | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Animals | Yes | Yes | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Crash history | — | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
-| Car on shoulder | Yes | Yes | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Other hazards | — | Yes | TrackLine driver reports, Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Bad weather | — | Yes | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Blocked lane | Yes | Yes | Live Traffic NSW | DONE | toggles.test.ts (pins/alert/voice/restart) + screens.test.tsx (detail switch) |
-| Tracky needs help | — | disabled | None anywhere yet | BLOCKED — "Coming soon in your area" | toggles.test.ts "Coming soon" + screens.test.tsx disabled switches |
+| Item | Show on map | Alert while driving | Data source | How it gets reported | Status | Evidence |
+|---|---|---|---|---|---|---|
+| Speed camera | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Red light camera | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Red light & speed camera | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Stop sign camera | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Mobile police camera | Yes | Yes | TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Transit lane camera | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Carpool lane camera | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Bus lane camera | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Mobile phone camera | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Noise camera | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Safe distance camera | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Seat belt camera | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Railway crossing | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Traffic lights | Yes | Yes (default off) | OpenStreetMap, TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Toll booth | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Speed bump | Yes | Yes (default off) | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Sharp curve | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Speed limit changes | — | Yes | Posted limits (official zones + OSM), TrackLine driver reports | Road report sheet (Speed limit / school zone) | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Complex intersection | Yes | Yes | Route data (Mapbox lanes / intersections), TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Multi-lane merge | Yes | Yes | Route data (Mapbox lanes / intersections), TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| School zones | Yes | Yes | TfNSW school zones (official), TrackLine driver reports | Road report sheet (Speed limit / school zone) | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Lane ending | Yes | Yes | Route data (Mapbox lanes / intersections), TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx "lane ending" + grid/pin/alert |
+| Raised crossing | Yes | Yes | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Pedestrian crossing | Yes | Yes (default off) | OpenStreetMap, TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Shoulder ending | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Narrow bridge | Yes | Yes | TrackLine driver reports | Report grid · permanent after 3 confirmations or admin approval | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Police | Yes | Yes | TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Crash | Yes | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Traffic | Yes | — | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Sudden slowdown | — | Yes | Live route traffic (Google), TrackLine drivers’ speeds, TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx "sudden slowdown" + engine.test.ts |
+| Emergency vehicles | Yes | Yes | TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Roadwork | Yes | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Map chats | Yes | — | TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Closures | Yes | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Animals | Yes | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Crash history | — | Yes | Recorded crashes (LTN + confirmed reports) | Derived (not reported) | DONE | liveItems.test.tsx "crash history"; firebase reports.test.js "crash history records" |
+| Car on shoulder | Yes | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Other hazards | — | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Bad weather | — | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Blocked lane | Yes | Yes | Live Traffic NSW (official), TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
+| Tracky needs help | — | Yes | TrackLine driver reports | Report grid · expires per type | DONE | liveItems.test.tsx (grid → pin → switches → alert → voice), toggles.test.ts (restart) |
 
 ## Speedometer (Map information & overlays > Speedometer)
 

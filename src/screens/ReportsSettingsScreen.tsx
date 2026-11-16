@@ -14,10 +14,10 @@ import {
   SECTION_ORDER,
   SECTION_TITLES,
   alertsWhileDriving,
-  isComingSoon,
   isShown,
   itemsIn,
   prefPatch,
+  sourcesLine,
   type ReportItemId,
 } from "@/settings/reportCatalog";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -26,7 +26,6 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 // grouped, each with its own icon, a one-line description and a chevron to its detail screen.
 
 function stateText(settings: ReturnType<typeof useSettings>["settings"], id: ReportItemId): string {
-  if (isComingSoon(id)) return "Coming soon";
   const item = REPORT_ITEM_BY_ID[id];
   const parts: string[] = [];
   if (item.show) parts.push(isShown(settings, id) ? "On map" : "");
@@ -74,7 +73,6 @@ export function ReportItemSettingsScreen() {
   const { settings, updateSettings } = useSettings();
   const id = route.params.id;
   const item = REPORT_ITEM_BY_ID[id];
-  const comingSoon = isComingSoon(id);
   const toggle = (which: "show" | "alert", value: boolean) => updateSettings(prefPatch(settings, id, which, value));
   return (
     <ScrollView contentContainerStyle={styles.content} testID={`report-detail-${id}`}>
@@ -82,27 +80,22 @@ export function ReportItemSettingsScreen() {
         <ReportItemIcon id={id} size={72} />
         <Text style={styles.heroTitle}>{item.title}</Text>
         <Text style={styles.explanation}>{item.explanation}</Text>
-        {comingSoon ? (
-          <Text style={styles.comingSoon} testID="coming-soon">
-            {"Coming soon in your area. There's no data source for this yet, so nothing is shown or announced."}
-          </Text>
-        ) : (
-          <Text style={styles.source} testID="data-source">{`Data: ${item.sources.map((s) => DATA_SOURCE_LABELS[s]).join(" · ")}`}</Text>
-        )}
+        <Text style={styles.sourcesLine} testID="sources-line">{sourcesLine(id)}</Text>
+        <Text style={styles.source} testID="data-source">{item.sources.map((s) => DATA_SOURCE_LABELS[s]).join(" · ")}</Text>
       </View>
       {item.show && (
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Show on map</Text>
-          <Switch value={!comingSoon && isShown(settings, id)} disabled={comingSoon} onValueChange={(v) => toggle("show", v)} testID="toggle-show" />
+          <Switch value={isShown(settings, id)} onValueChange={(v) => toggle("show", v)} testID="toggle-show" />
         </View>
       )}
       {item.alert && (
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Alert while driving</Text>
-          <Switch value={!comingSoon && alertsWhileDriving(settings, id)} disabled={comingSoon} onValueChange={(v) => toggle("alert", v)} testID="toggle-alert" />
+          <Switch value={alertsWhileDriving(settings, id)} onValueChange={(v) => toggle("alert", v)} testID="toggle-alert" />
         </View>
       )}
-      {item.alert && !comingSoon && (
+      {item.alert && (
         <Text style={styles.footnote}>Alerts are a short message on the map and a spoken line, once as you approach, following your voice settings.</Text>
       )}
     </ScrollView>
@@ -123,7 +116,7 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 22, fontWeight: "700", color: colors.text, marginTop: spacing.sm },
   explanation: { fontSize: 15, color: colors.text, textAlign: "center" },
   source: { fontSize: 13, color: colors.textMuted, textAlign: "center" },
-  comingSoon: { fontSize: 14, color: colors.textMuted, textAlign: "center", fontWeight: "600" },
+  sourcesLine: { fontSize: 14, color: colors.text, textAlign: "center", fontWeight: "600" },
   toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, minHeight: 56 },
   toggleLabel: { fontSize: 16, color: colors.text },
   footnote: { fontSize: 13, color: colors.textMuted, marginTop: spacing.sm },

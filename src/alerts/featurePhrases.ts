@@ -30,6 +30,19 @@ const EN: Lines = {
   otherHazards: "Hazard ahead",
   badWeather: "Weather hazard ahead",
   blockedLane: "Lane blocked ahead",
+  stopSignCamera: "Stop sign camera ahead",
+  transitLaneCamera: "Transit lane camera ahead",
+  carpoolLaneCamera: "Carpool lane camera ahead",
+  busLaneCamera: "Bus lane camera ahead",
+  noiseCamera: "Noise camera ahead",
+  laneEnding: "Lane ends ahead",
+  shoulderEnding: "Shoulder ends ahead",
+  narrowBridge: "Narrow bridge ahead",
+  complexIntersection: "Complex intersection ahead",
+  multiLaneMerge: "Lanes merge ahead",
+  suddenSlowdown: "Slowdown ahead",
+  crashHistory: "Crash-prone area ahead",
+  trackyNeedsHelp: "A driver needs help ahead",
 };
 
 const ES: Lines = {
@@ -57,6 +70,19 @@ const ES: Lines = {
   otherHazards: "Peligro más adelante",
   badWeather: "Peligro por mal tiempo más adelante",
   blockedLane: "Carril bloqueado más adelante",
+  stopSignCamera: "Cámara de señal de stop más adelante",
+  transitLaneCamera: "Cámara de carril de alta ocupación más adelante",
+  carpoolLaneCamera: "Cámara de carril compartido más adelante",
+  busLaneCamera: "Cámara de carril bus más adelante",
+  noiseCamera: "Cámara de ruido más adelante",
+  laneEnding: "El carril termina más adelante",
+  shoulderEnding: "El arcén termina más adelante",
+  narrowBridge: "Puente estrecho más adelante",
+  complexIntersection: "Intersección compleja más adelante",
+  multiLaneMerge: "Incorporación de carriles más adelante",
+  suddenSlowdown: "Tráfico lento más adelante",
+  crashHistory: "Zona con accidentes frecuentes más adelante",
+  trackyNeedsHelp: "Un conductor necesita ayuda más adelante",
 };
 
 const RU: Lines = {
@@ -84,6 +110,19 @@ const RU: Lines = {
   otherHazards: "Впереди опасность",
   badWeather: "Впереди опасность из-за погоды",
   blockedLane: "Впереди полоса перекрыта",
+  stopSignCamera: "Впереди камера у знака стоп",
+  transitLaneCamera: "Впереди камера на полосе для транзита",
+  carpoolLaneCamera: "Впереди камера на полосе для попутчиков",
+  busLaneCamera: "Впереди камера на автобусной полосе",
+  noiseCamera: "Впереди камера контроля шума",
+  laneEnding: "Впереди полоса заканчивается",
+  shoulderEnding: "Впереди обочина заканчивается",
+  narrowBridge: "Впереди узкий мост",
+  complexIntersection: "Впереди сложный перекрёсток",
+  multiLaneMerge: "Впереди слияние полос",
+  suddenSlowdown: "Впереди затор",
+  crashHistory: "Впереди аварийно-опасный участок",
+  trackyNeedsHelp: "Впереди водителю нужна помощь",
 };
 
 const TR: Lines = {
@@ -111,6 +150,19 @@ const TR: Lines = {
   otherHazards: "İleride tehlike var",
   badWeather: "İleride hava kaynaklı tehlike var",
   blockedLane: "İleride şerit kapalı",
+  stopSignCamera: "İleride dur işareti kamerası var",
+  transitLaneCamera: "İleride toplu taşıma şeridi kamerası var",
+  carpoolLaneCamera: "İleride ortak araç şeridi kamerası var",
+  busLaneCamera: "İleride otobüs şeridi kamerası var",
+  noiseCamera: "İleride gürültü kamerası var",
+  laneEnding: "İleride şerit bitiyor",
+  shoulderEnding: "İleride emniyet şeridi bitiyor",
+  narrowBridge: "İleride dar köprü var",
+  complexIntersection: "İleride karmaşık kavşak var",
+  multiLaneMerge: "İleride şeritler birleşiyor",
+  suddenSlowdown: "İleride trafik yavaşlıyor",
+  crashHistory: "İleride kaza riski yüksek bölge var",
+  trackyNeedsHelp: "İleride bir sürücünün yardıma ihtiyacı var",
 };
 
 const AR: Lines = {
@@ -138,6 +190,19 @@ const AR: Lines = {
   otherHazards: "خطر أمامك",
   badWeather: "خطر بسبب الطقس أمامك",
   blockedLane: "مسار مغلق أمامك",
+  stopSignCamera: "كاميرا إشارة توقف أمامك",
+  transitLaneCamera: "كاميرا مسار النقل أمامك",
+  carpoolLaneCamera: "كاميرا مسار المركبات المشتركة أمامك",
+  busLaneCamera: "كاميرا مسار الحافلات أمامك",
+  noiseCamera: "كاميرا الضوضاء أمامك",
+  laneEnding: "المسار ينتهي أمامك",
+  shoulderEnding: "كتف الطريق ينتهي أمامك",
+  narrowBridge: "جسر ضيق أمامك",
+  complexIntersection: "تقاطع معقد أمامك",
+  multiLaneMerge: "اندماج مسارات أمامك",
+  suddenSlowdown: "ازدحام مفاجئ أمامك",
+  crashHistory: "منطقة حوادث متكررة أمامك",
+  trackyNeedsHelp: "سائق يحتاج إلى مساعدة أمامك",
 };
 
 const LINES: Record<NavLanguage, Lines> = { en: EN, es: ES, ru: RU, tr: TR, ar: AR };

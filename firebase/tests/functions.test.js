@@ -4,6 +4,8 @@
 // FIRESTORE_EMULATOR_HOST, set by jest.setup.js / the emulators:exec wrapper), and the calls
 // themselves go through the real `firebase/functions` client SDK signed in against the real
 // Auth emulator, exactly how the mobile app itself calls these functions.
+// The first call into the functions emulator cold-starts every function; that can pass 5 s.
+jest.setTimeout(20_000);
 const { initializeApp } = require("firebase/app");
 const { getAuth, connectAuthEmulator, signInAnonymously } = require("firebase/auth");
 const { getFunctions, connectFunctionsEmulator, httpsCallable } = require("firebase/functions");

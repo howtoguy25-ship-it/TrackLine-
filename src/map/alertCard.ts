@@ -5,6 +5,7 @@
 import { formatDistance, type DistanceUnit } from "@/utils/navFormat";
 import { ALERT_LABELS, type AlertDoc, type AlertType } from "@/types/alert";
 import { incidentStyle, type TrafficIncident } from "@/services/trafficNswModel";
+import { REPORT_ITEM_BY_ID, itemOfAlert } from "@/settings/reportCatalog";
 
 /** The card closes itself after this long without a touch. */
 export const ALERT_CARD_IDLE_MS = 8000;
@@ -33,13 +34,24 @@ export interface AlertCardModel {
   thanks: number;
   /** The viewer's own report: thanks greyed out. */
   own: boolean;
+  /** Where it comes from: "Source: Live Traffic NSW (official)", "Source: TrackLine drivers · confirmed by 3". */
+  sourceLine: string;
+}
+
+/** The source line for a driver report. */
+export function reportSourceLine(alert: Pick<AlertDoc, "confirmCount" | "permanent" | "awaitingApproval">): string {
+  const n = alert.confirmCount ?? 0;
+  if (alert.permanent) return "Source: TrackLine drivers · confirmed, stays on the map";
+  if (alert.awaitingApproval) return `Source: TrackLine drivers · ${n === 0 ? "waiting for confirmation" : `confirmed by ${n} of 3`}`;
+  return `Source: TrackLine drivers${n > 0 ? ` · confirmed by ${n}` : ""}`;
 }
 
 export function cardForReport(alert: AlertDoc & { thanksCount?: number; reporterName?: string }, viewerUid: string | null): AlertCardModel {
   return {
     key: `report:${alert.id}`,
     source: "report",
-    title: ALERT_LABELS[alert.type],
+    // The exact item ("Stop sign camera", "Narrow bridge"); older reports: their type.
+    title: alert.item ? REPORT_ITEM_BY_ID[itemOfAlert(alert)].title : ALERT_LABELS[alert.type],
     latitude: alert.lat,
     longitude: alert.lng,
     createdAt: alert.createdAt || null,
@@ -49,6 +61,7 @@ export function cardForReport(alert: AlertDoc & { thanksCount?: number; reporter
     officialWhere: null,
     thanks: alert.thanksCount ?? 0,
     own: !!viewerUid && alert.createdBy === viewerUid,
+    sourceLine: reportSourceLine(alert),
   };
 }
 
@@ -69,6 +82,7 @@ export function cardForOfficial(incident: TrafficIncident): AlertCardModel {
     // Official alerts carry no thanks: there's nobody in the app to thank.
     thanks: 0,
     own: false,
+    sourceLine: "Source: Live Traffic NSW (official)",
   };
 }
 

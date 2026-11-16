@@ -13,6 +13,7 @@ import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
 import { VehicleCheckScreen } from "@/screens/VehicleCheckScreen";
 import { ReportItemSettingsScreen, ReportsSettingsScreen } from "@/screens/ReportsSettingsScreen";
+import { ModerationScreen } from "@/screens/ModerationScreen";
 import type { ReportItemId } from "@/settings/reportCatalog";
 import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
@@ -88,6 +89,8 @@ export type RootStackParamList = {
   // Settings > Map information & overlays > Reports, and one item's detail.
   ReportsSettings: undefined;
   ReportItemSettings: { id: ReportItemId };
+  // Owner/admin: fixed-feature reports waiting for approval.
+  Moderation: undefined;
   // Real camera capture for a VIN or a plate/registration -- see DocumentScanScreen's own
   // header comment for why one screen serves both as two distinct, purpose-built experiences.
   DocumentScan: { mode: "vin" | "plate" };
@@ -211,6 +214,7 @@ export function RootNavigator() {
         />
         <Stack.Screen name="ReportsSettings" component={ReportsSettingsScreen} options={{ headerShown: true, title: "Reports" }} />
         <Stack.Screen name="ReportItemSettings" component={ReportItemSettingsScreen} options={{ headerShown: true, title: "" }} />
+        <Stack.Screen name="Moderation" component={ModerationScreen} options={{ headerShown: true, title: "Moderation queue" }} />
         <Stack.Screen
           name="VehicleCheck"
           component={VehicleCheckScreen}

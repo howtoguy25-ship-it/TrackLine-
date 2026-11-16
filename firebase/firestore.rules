@@ -20,6 +20,16 @@ service cloud.firestore {
     }
 
     // A report waiting out its 3 s undo window, and each reporter's limits / trust: server only.
+    // Crash history: real crashes (Live Traffic NSW + confirmed driver reports); the server writes.
+    match /crashRecords/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /moderationLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /pendingReports/{id} {
       allow read, write: if false;
     }
