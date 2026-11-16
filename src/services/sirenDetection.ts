@@ -81,6 +81,7 @@ class SirenDetectionEngine {
     // object) instead of a fresh one each time, cuts that per-second allocation/session churn
     // down to what's structurally unavoidable for capturing a real, distinct 1s window --
     // functionally identical output, meaningfully less native audio-session thrashing.
+    // eslint-disable-next-line import/namespace -- AudioRecorder is a native class on expo-audio's AudioModule (typed, checked by tsc); the import plugin can't see native exports
     this.recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
 
     this.running = true;

@@ -48,6 +48,16 @@ export function useLiveSpeed(active: boolean): LiveSpeedState {
   const [speedKmh, setSpeedKmh] = useState(0);
   const [hasFix, setHasFix] = useState(false);
   const [accuracyM, setAccuracyM] = useState<number | null>(null);
+  // Turning off resets the shown values (adjusted while rendering, not in an effect).
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (!active) {
+      setSpeedKmh(0);
+      setHasFix(false);
+      setAccuracyM(null);
+    }
+  }
 
   const emaRef = useRef<number | null>(null);
   const lastFixRef = useRef<{ latitude: number; longitude: number; timestamp: number } | null>(null);
@@ -69,9 +79,6 @@ export function useLiveSpeed(active: boolean): LiveSpeedState {
       emaRef.current = null;
       lastFixRef.current = null;
       belowThresholdSinceRef.current = null;
-      setSpeedKmh(0);
-      setHasFix(false);
-      setAccuracyM(null);
       return;
     }
 

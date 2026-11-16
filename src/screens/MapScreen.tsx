@@ -351,6 +351,7 @@ export function MapScreen() {
   const visibilitySheetRef = useRef<BottomSheet>(null);
 
   const [route, setRoute] = useState<Route | null>(null);
+  const [acceptedSuggestionOriginalRoute, setAcceptedSuggestionOriginalRoute] = useState<Route | null>(null);
   const routeRef = useRef<Route | null>(null);
   useEffect(() => {
     routeRef.current = route;
@@ -439,13 +440,16 @@ export function MapScreen() {
   // after that, the existing satellite FAB (setMapType) is the live, manual override, same as
   // every other "saved default, live toggle still works" setting in this app. "tilted3d" needs
   // no correction at all here (mapType's own useState default above is already "standard").
-  useEffect(() => {
-    if (!settingsLoaded) return;
-    // Follows Settings > Map view > Satellite both ways, every time it changes -- that switch
-    // is where the satellite toggle lives now that the Map tools panel is gone from the home
-    // map. (It used to be applied once at launch only.)
-    setMapType(settings.defaultMapViewStyle === "satellite3d" ? "hybrid" : "standard");
-  }, [settingsLoaded, settings.defaultMapViewStyle]);
+  // Follows Settings > Map view > Satellite both ways, every time it changes -- that switch
+  // is where the satellite toggle lives now that the Map tools panel is gone from the home
+  // map. (Adjusted while rendering when the setting changes; the satellite button still
+  // toggles it in between.)
+  const appliedMapViewStyle = settingsLoaded ? settings.defaultMapViewStyle : null;
+  const [seenMapViewStyle, setSeenMapViewStyle] = useState<string | null>(null);
+  if (appliedMapViewStyle !== null && appliedMapViewStyle !== seenMapViewStyle) {
+    setSeenMapViewStyle(appliedMapViewStyle);
+    setMapType(appliedMapViewStyle === "satellite3d" ? "hybrid" : "standard");
+  }
 
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
@@ -479,10 +483,7 @@ export function MapScreen() {
       wasShowingTrafficRef.current = true;
       return () => clearTimeout(timer);
     }
-    if (!showsTrafficLayer) {
-      wasShowingTrafficRef.current = false;
-      setTrafficLegendVisible(false);
-    }
+    if (!showsTrafficLayer) wasShowingTrafficRef.current = false;
   }, [showsTrafficLayer]);
   const [stopLocation, setStopLocation] = useState<LatLng | null>(null);
   const [pickingStop, setPickingStop] = useState(false);
@@ -672,11 +673,14 @@ export function MapScreen() {
   // once a place card is actually open (not for every map tap/search result) and cleared the
   // instant the sheet shows a different place so a stale ETA from the last place never lingers
   // on screen while the new one's own real figure is still loading.
-  const [placeInfoEtaText, setPlaceInfoEtaText] = useState<string | null>(null);
+  // Each answer is kept with the place it's for, so a different place never shows it.
+  const [placeInfoEta, setPlaceInfoEta] = useState<{ placeId: string; text: string } | null>(null);
+  const placeInfoEtaText = placeInfo && placeInfoEta?.placeId === placeInfo.placeId ? placeInfoEta.text : null;
   // Real Street View Static thumbnail for whatever place PlaceInfoSheet is showing -- see
   // getStreetViewUrl's own comment for why this can genuinely come back null (no real coverage)
   // rather than ever showing a fabricated placeholder image.
-  const [placeInfoStreetViewUrl, setPlaceInfoStreetViewUrl] = useState<string | null>(null);
+  const [placeInfoStreetView, setPlaceInfoStreetView] = useState<{ placeId: string; url: string | null } | null>(null);
+  const placeInfoStreetViewUrl = placeInfo && placeInfoStreetView?.placeId === placeInfo.placeId ? placeInfoStreetView.url : null;
   // Real interactive Street View embed URL -- only ever derived once the metadata-checked
   // static URL above has confirmed real coverage for this exact place, so it's never built for
   // a location Google has no panorama for. Recomputed from the same place+url pair, not stored
@@ -786,9 +790,7 @@ export function MapScreen() {
   // pair is a safe, always-correct toggle rather than needing to track absolute angle.
   const [frontView, setFrontView] = useState(false);
 
-  useEffect(() => {
-    if (!show3D) setFrontView(false);
-  }, [show3D]);
+  if (!show3D && frontView) setFrontView(false);
 
   const toggleFrontView = useCallback(() => {
     setFrontView((was) => {
@@ -818,12 +820,10 @@ export function MapScreen() {
   // overview, and never require a manual adjustment to get there. The pulled-back pose is now
   // the opt-in one, reached via the locate button (see onLocateButtonPress below).
   const [overviewMode, setOverviewMode] = useState(false);
-  useEffect(() => {
-    // Exiting follow entirely (manual pan, or the X button) always resets this back to the
-    // default front-view pose for next time -- resuming follow (Recenter) shouldn't silently
-    // land back in the pulled-back overview from a previous session.
-    if (!followTilt) setOverviewMode(false);
-  }, [followTilt]);
+  // Exiting follow entirely (manual pan, or the X button) always resets this back to the
+  // default front-view pose for next time -- resuming follow (Recenter) shouldn't silently
+  // land back in the pulled-back overview from a previous session. (Adjusted while rendering.)
+  if (!followTilt && overviewMode) setOverviewMode(false);
 
   const currentLatLng = useMemo(
     () =>
@@ -886,8 +886,8 @@ export function MapScreen() {
   useEffect(() => {
     if (!pickingOrigin || originPickerView !== "pin" || !originPinLatLng) return;
     let cancelled = false;
-    setOriginPinAddressLoading(true);
     const handle = setTimeout(() => {
+      setOriginPinAddressLoading(true);
       reverseGeocode(originPinLatLng)
         .then((address) => {
           if (!cancelled) setOriginPinAddress(address);
@@ -909,8 +909,8 @@ export function MapScreen() {
   useEffect(() => {
     if (!pickingDestinationPoint || destinationPickerView !== "pin" || !destinationPinLatLng) return;
     let cancelled = false;
-    setDestinationPinAddressLoading(true);
     const handle = setTimeout(() => {
+      setDestinationPinAddressLoading(true);
       reverseGeocode(destinationPinLatLng)
         .then((address) => {
           if (!cancelled) setDestinationPinAddress(address);
@@ -1172,27 +1172,17 @@ export function MapScreen() {
   // regardless of speed (a stopped-at-lights moment shouldn't hide it); otherwise visible
   // continuously while moving and for 10 real seconds after the last moment it was, so a brief
   // stop at an intersection doesn't flicker it away and immediately back.
-  const lastMovingAtRef = useRef(Date.now());
-  const [speedometerVisible, setSpeedometerVisible] = useState(false);
+  // Visible while navigating or moving; after stopping it stays 10 s, then fades. The state is
+  // only set from the timer (and adjusted while rendering when movement resumes).
+  const speedometerMoving = !!route || liveSpeed.speedKmh > 3;
+  const [speedometerTimedOut, setSpeedometerTimedOut] = useState(true);
+  if (speedometerMoving && speedometerTimedOut) setSpeedometerTimedOut(false);
   useEffect(() => {
-    if (route) {
-      lastMovingAtRef.current = Date.now();
-      setSpeedometerVisible(true);
-      return;
-    }
-    if (liveSpeed.speedKmh > 3) {
-      lastMovingAtRef.current = Date.now();
-      setSpeedometerVisible(true);
-      return;
-    }
-    const elapsedMs = Date.now() - lastMovingAtRef.current;
-    if (elapsedMs >= 10000) {
-      setSpeedometerVisible(false);
-      return;
-    }
-    const timer = setTimeout(() => setSpeedometerVisible(false), 10000 - elapsedMs);
+    if (speedometerMoving) return;
+    const timer = setTimeout(() => setSpeedometerTimedOut(true), 10000);
     return () => clearTimeout(timer);
-  }, [liveSpeed.speedKmh, route]);
+  }, [speedometerMoving]);
+  const speedometerVisible = speedometerMoving || !speedometerTimedOut;
 
   // Real posted speed limit for the road the driver is currently on, from OpenStreetMap's
   // maxspeed tags (see osmTrafficData.ts's fetchSpeedLimitNear) -- mirrors the web app's own
@@ -1270,13 +1260,15 @@ export function MapScreen() {
     const timer = setInterval(evaluateRoad, 1000);
     return () => clearInterval(timer);
   }, [evaluateRoad]);
+  // No position: no limit or road name (adjusted while rendering; the lookup tracker is reset
+  // in an effect because it's a ref).
+  if (!currentLatLng && (speedLimitKmh !== null || speedLimitEstimated || currentRoadName !== null)) {
+    setSpeedLimitKmh(null);
+    setSpeedLimitEstimated(false);
+    setCurrentRoadName(null);
+  }
   useEffect(() => {
-    if (!currentLatLng) {
-      setSpeedLimitKmh(null);
-      setSpeedLimitEstimated(false);
-      setCurrentRoadName(null);
-      roadTrackerRef.current.reset();
-    }
+    if (!currentLatLng) roadTrackerRef.current.reset();
   }, [currentLatLng]);
 
   // Live device compass heading -- deliberately separate from `heading` above, which is the
@@ -1287,11 +1279,9 @@ export function MapScreen() {
   // highlight cone on the puck (below) so the route-facing arrow never wobbles with the phone,
   // while the cone gives a live, real "which way is my phone facing" signal on top of it.
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
+  if (!route && deviceHeading !== null) setDeviceHeading(null);
   useEffect(() => {
-    if (!route) {
-      setDeviceHeading(null);
-      return;
-    }
+    if (!route) return;
     let subscription: Location.LocationSubscription | null = null;
     let cancelled = false;
     Location.watchHeadingAsync((headingData) => {
@@ -1315,6 +1305,9 @@ export function MapScreen() {
   // exitNavigation read it, and neither needs a re-render when it changes.
   const liveShareIdRef = useRef<string | null>(null);
 
+  // Declared before the effects that read them (they used to be declared further down).
+  const approachRef = useRef<ApproachState>(INITIAL_APPROACH);
+  const lineTapAtRef = useRef(0);
   useEffect(() => {
     // Also skips while vehicle detection is open -- see detectionOpen's own effect-gating
     // comment further below for why: the MapView is fully covered by that modal and this
@@ -1410,7 +1403,6 @@ export function MapScreen() {
   // green chip and ease back out, or catch a miss and reroute. The state machine decides; this
   // only carries out its effects on the camera, the chip and the reroute.
   const [approach, setApproach] = useState<ApproachState>(INITIAL_APPROACH);
-  const approachRef = useRef<ApproachState>(INITIAL_APPROACH);
   const [manoeuvreChip, setManoeuvreChip] = useState<{ text: string; tone: ChipTone } | null>(null);
   const chipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set when the approach machine sees a missed manoeuvre; the reroute effect below acts on it.
@@ -1488,9 +1480,13 @@ export function MapScreen() {
   const navGeo = useMemo(() => (route ? buildRouteGeometry(route.steps, route.polyline) : null), [route]);
   const matchStateRef = useRef(createMatchState());
   const [navMatch, setNavMatch] = useState<MatchResult | null>(null);
+  const [matchedGeo, setMatchedGeo] = useState(navGeo);
+  if (matchedGeo !== navGeo) {
+    setMatchedGeo(navGeo);
+    setNavMatch(null);
+  }
   useEffect(() => {
     matchStateRef.current = createMatchState();
-    setNavMatch(null);
   }, [navGeo]);
   useEffect(() => {
     if (!navGeo || !location) return;
@@ -1807,7 +1803,6 @@ export function MapScreen() {
   // followTilt=true so the same exit ("X") control in topRightControls works to back out of it,
   // and overviewMode=true so the small circle toggle button (below) shows the right icon/state
   // too, even though this action was triggered by tapping the line rather than that button.
-  const lineTapAtRef = useRef(0);
   const enterOverviewMode = useCallback(() => {
     lineTapAtRef.current = Date.now();
     // Marks the chase-cam as "already handled" for this follow-tilt session so the default
@@ -2092,11 +2087,10 @@ export function MapScreen() {
   // Subscribe to alerts in every toggled-on region (Phase 3 + Phase 5), real Australian state/
   // territory selection instead of a distance radius. Fully off (and cleared) when the user has
   // disabled alerts altogether -- "if toggled off user who is active doesn't receive no alerts".
+  const alertsOn = !!user && settings.alertsEnabled;
+  if (!alertsOn && nearbyAlerts.length > 0) setNearbyAlerts([]);
   useEffect(() => {
-    if (!user || !settings.alertsEnabled) {
-      setNearbyAlerts([]);
-      return;
-    }
+    if (!user || !settings.alertsEnabled) return;
     return subscribeVisibleAlerts(settings.visibleRegions, user.uid, setNearbyAlerts);
   }, [user?.uid, settings.alertsEnabled, settings.visibleRegions]);
 
@@ -2156,6 +2150,7 @@ export function MapScreen() {
     }
     seenAlertIdsRef.current = freshlySeen;
     if (newToasts.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- queues alerts that just arrived from Firestore (external data) and speaks them
       setAlertToastQueue((q) => [...q, ...newToasts]);
       // Spoken as well as shown ("Police reported"), nearest first if several land at once.
       // It waits for any turn instruction in progress rather than talking over it, and is the
@@ -3087,16 +3082,13 @@ export function MapScreen() {
   // and guarded with a cancelled flag so a slow request for a place the driver already closed
   // can't overwrite the pill with a stale answer for a place no longer on screen.
   useEffect(() => {
-    if (!placeInfo || !routeOriginLatLng) {
-      setPlaceInfoEtaText(null);
-      return;
-    }
+    if (!placeInfo || !routeOriginLatLng) return;
     let cancelled = false;
-    setPlaceInfoEtaText(null);
+    const placeId = placeInfo.placeId;
     getDirections(routeOriginLatLng, placeInfo.location, { useTraffic: true })
       .then((route) => {
         if (cancelled) return;
-        setPlaceInfoEtaText(route.etaInTrafficText ?? route.etaText);
+        setPlaceInfoEta({ placeId, text: route.etaInTrafficText ?? route.etaText });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -3111,15 +3103,12 @@ export function MapScreen() {
   // its own independent request so a slow/failed Street View lookup never blocks or delays the
   // ETA pill or the rest of the place card.
   useEffect(() => {
-    if (!placeInfo) {
-      setPlaceInfoStreetViewUrl(null);
-      return;
-    }
+    if (!placeInfo) return;
     let cancelled = false;
-    setPlaceInfoStreetViewUrl(null);
+    const placeId = placeInfo.placeId;
     getStreetViewUrl(placeInfo.location)
       .then((url) => {
-        if (!cancelled) setPlaceInfoStreetViewUrl(url);
+        if (!cancelled) setPlaceInfoStreetView({ placeId, url });
       })
       .catch((err) => {
         if (!cancelled) console.warn("[map] street view lookup failed", err);
@@ -3270,6 +3259,7 @@ export function MapScreen() {
   useEffect(() => {
     const place = navRoute.params?.planADriveDestination;
     if (!place) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-off hand-off from another screen (navigation params), cleared straight after
     onDestinationSelected(place);
     navigation.setParams({ planADriveDestination: undefined });
   }, [navRoute.params?.planADriveDestination, onDestinationSelected, navigation]);
@@ -3366,7 +3356,6 @@ export function MapScreen() {
   // The route that was live right before a traffic suggestion was accepted -- kept around only
   // while driving the accepted suggestion, so "End suggested route" can put the driver straight
   // back on the exact route they started with, not just re-fetch a fresh one from scratch.
-  const [acceptedSuggestionOriginalRoute, setAcceptedSuggestionOriginalRoute] = useState<Route | null>(null);
   const onStopSelectedDuringNav = useCallback(
     async (place: PlaceDetails) => {
       setAddingStopDuringNav(false);
@@ -3501,10 +3490,12 @@ export function MapScreen() {
   // Clears any stale suggestion the moment the underlying route is replaced for any other
   // reason (a real reroute, an add-stop confirm, exiting navigation) -- a suggestion computed
   // against the old route's remaining path would no longer mean anything once route changes.
-  useEffect(() => {
+  const [suggestionForRoute, setSuggestionForRoute] = useState(route);
+  if (suggestionForRoute !== route) {
+    setSuggestionForRoute(route);
     setTrafficSuggestionRoute(null);
     setTrafficSuggestionSavedSeconds(0);
-  }, [route]);
+  }
 
   // Real, explicit request: the headline ETA/arrival-time keeps re-syncing with live traffic
   // for the WHOLE trip, not just the figure Google returned once at route selection -- if
@@ -3518,8 +3509,13 @@ export function MapScreen() {
   // already the proven cost/freshness tradeoff this screen uses for the sibling feature above.
   // Only meaningful for live-traffic-aware driving directions -- transit runs on its own
   // published schedule, and walking/biking have no real "traffic" signal to re-sync with.
-  useEffect(() => {
+  const liveEtaKey = `${travelMode}|${destinationLatLng?.latitude},${destinationLatLng?.longitude}`;
+  const [liveEtaFor, setLiveEtaFor] = useState<{ route: Route | null; key: string }>({ route, key: liveEtaKey });
+  if (liveEtaFor.route !== route || liveEtaFor.key !== liveEtaKey) {
+    setLiveEtaFor({ route, key: liveEtaKey });
     setLiveEtaSeconds(null);
+  }
+  useEffect(() => {
     if (!route || !destinationLatLng || travelMode !== "driving") return;
 
     // Best-effort match to the path being driven: the same avoid options the route was chosen
@@ -4319,6 +4315,7 @@ export function MapScreen() {
         { duration: 400 }
       );
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- same transition as the camera restore just above (placement ended)
     setPlacementFrontView(false);
     // Deliberately scoped to only the placingAlert transition -- route/followTilt/currentLatLng
     // /overviewMode/heading are read for their value at that moment, not meant to re-trigger
@@ -4515,9 +4512,17 @@ export function MapScreen() {
       (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.durationSeconds, 0) : 0),
     [route, activeStepIndex, liveEtaSeconds]
   );
+  // The arrival time moves on with the clock (every 30 s), not only when the ETA changes -- it
+  // used to stay frozen while stopped in traffic.
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!route) return;
+    const t = setInterval(() => setClockNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [route]);
   const arrivalClockText = useMemo(
-    () => (route ? formatArrivalClock(Date.now() + remainingDurationSeconds * 1000) : ""),
-    [route, remainingDurationSeconds]
+    () => (route ? formatArrivalClock(clockNow + remainingDurationSeconds * 1000) : ""),
+    [route, remainingDurationSeconds, clockNow]
   );
 
   // Keeps the real native Live Activity (Lock Screen/Dynamic Island, started in confirmRoute)
@@ -5056,7 +5061,7 @@ export function MapScreen() {
           above), auto-dismissing on its own after a few seconds rather than sitting there
           permanently. pointerEvents="none" -- purely informational, never blocks a tap on the
           map/search bar underneath. */}
-      {trafficLegendVisible && (
+      {trafficLegendVisible && showsTrafficLayer && (
         <View pointerEvents="none" style={[styles.trafficLegend, { top: insets.top + spacing.md }]}>
           <View style={styles.trafficLegendRow}>
             <View style={[styles.trafficLegendDot, { backgroundColor: "#EAB308" }]} />

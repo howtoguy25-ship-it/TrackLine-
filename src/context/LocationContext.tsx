@@ -57,6 +57,11 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   // the app launches normally first) actually switches the live GPS source, not just on the
   // next app restart. __DEV__-gated: this subscription is simply never created in production.
   const [replayActive, setReplayActive] = useState(__DEV__ && isGpsReplayActive());
+  // Dev GPS replay stands in for real permission (adjusted while rendering, not in an effect).
+  if (__DEV__ && replayActive && (!permissionGranted || permissionDenied)) {
+    setPermissionGranted(true);
+    setPermissionDenied(false);
+  }
   // Battery: a fix a second while the app is in front (navigation matches every second); with the
   // screen off / app in the background, every 3 s or 10 m -- still enough for the voice to call
   // the next turn, at a fraction of the drain.
@@ -74,8 +79,6 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     if (DIAGNOSTIC_DISABLE_LOCATION_WATCH) return;
 
     if (__DEV__ && replayActive) {
-      setPermissionGranted(true);
-      setPermissionDenied(false);
       const unsubscribe = subscribeGpsReplay((fix: ReplayFix) => setLocation(fix));
       return unsubscribe;
     }

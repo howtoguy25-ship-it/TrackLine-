@@ -8,6 +8,13 @@ module.exports = defineConfig([
     ignores: ["dist/*"],
   },
   {
+    // This rule only reports "React Compiler would skip optimising this component". The React
+    // Compiler is not enabled in this project (no babel-plugin-react-compiler, no
+    // experiments.reactCompiler), so it describes nothing that runs. The other compiler-era
+    // rules (refs, set-state-in-effect, immutability, purity) stay on: they catch real bugs.
+    rules: { "react-hooks/preserve-manual-memoization": "off" },
+  },
+  {
     // Jest tests: jest.mock() calls must come before the imports they replace, and a mock
     // factory can only reach outside values through require().
     files: ["__tests__/**/*.{ts,tsx}", "jest.setup.js"],

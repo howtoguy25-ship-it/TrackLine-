@@ -55,15 +55,14 @@ export function RevCheckScreen() {
   // back to this exact screen instance with a fresh plate/vin/state in route.params -- unlike
   // the useState initializers right above (mount-only), these keep the visible fields in sync
   // on every later return trip from a scan too, not just the very first time this screen opens.
-  useEffect(() => {
-    if (params?.plate !== undefined) setPlate(params.plate);
-  }, [params?.plate]);
-  useEffect(() => {
-    if (params?.vin !== undefined) setVin(params.vin);
-  }, [params?.vin]);
-  useEffect(() => {
-    if (params?.state !== undefined) setState(params.state);
-  }, [params?.state]);
+  // (Adjusted while rendering when the params change, rather than in effects.)
+  const [seenParams, setSeenParams] = useState({ plate: params?.plate, vin: params?.vin, state: params?.state });
+  if (seenParams.plate !== params?.plate || seenParams.vin !== params?.vin || seenParams.state !== params?.state) {
+    if (params?.plate !== undefined && params.plate !== seenParams.plate) setPlate(params.plate);
+    if (params?.vin !== undefined && params.vin !== seenParams.vin) setVin(params.vin);
+    if (params?.state !== undefined && params.state !== seenParams.state) setState(params.state);
+    setSeenParams({ plate: params?.plate, vin: params?.vin, state: params?.state });
+  }
   const [checking, setChecking] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [result, setResult] = useState<RevCheckResult | null>(null);

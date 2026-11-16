@@ -109,6 +109,7 @@ export function RecordVoiceScreen() {
   // real elapsed time, polled every 100ms (see useAudioRecorderState's interval above).
   useEffect(() => {
     if (recorderState.isRecording && recorderState.durationMillis >= MAX_CLIP_DURATION_MS) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reacting to the native recorder's elapsed time (an external system) by stopping it
       stopRecording();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

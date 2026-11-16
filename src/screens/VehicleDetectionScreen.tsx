@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useLatest } from "@/hooks/useLatest";
 import { Button, Chip, FloatingButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import {
@@ -384,7 +385,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // Diagnostic timing only (see the Sentry "perf:" breadcrumbs throughout this file) -- not
   // used for any real logic. Marks when this component first rendered, so onInitialized below
   // can report how long the native camera session genuinely took to come up.
-  const mountTimeRef = useRef(Date.now());
+  const [mountTime] = useState(() => Date.now());
+  const mountTimeRef = useRef(mountTime);
   const insets = useSafeAreaInsets();
   // Landscape add-on only -- pure layout signal for the HUD reflow below (banner/detail panel
   // side-anchored instead of spanning full-width, safe-area padding on both sides). Updates
@@ -442,14 +444,14 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     device && Number.isFinite(device.maxZoom) && device.maxZoom > 0
       ? Math.max(Math.min(minZoomFactor * 3, device.maxZoom), minZoomFactor)
       : minZoomFactor;
-  useEffect(() => {
-    if (!device) return;
-    // Seeds the slider at plain 1x (the device's own neutral zoom) once it's known -- same
-    // explicit finite/positive validation as the fixed-bump version this replaced, so a device
-    // that ever reports an invalid neutralZoom still falls back to a safe, real 1.0 instead of
-    // feeding the camera an unvalidated number.
+  // Seeds the slider at plain 1x (the device's own neutral zoom) once each camera device is
+  // known -- same explicit finite/positive validation as before, so a device reporting an invalid
+  // neutralZoom falls back to a safe 1.0. Adjusted while rendering (no extra effect pass).
+  const [zoomSeededFor, setZoomSeededFor] = useState<typeof device | null>(null);
+  if (device && zoomSeededFor !== device) {
+    setZoomSeededFor(device);
     setZoomFactor(Number.isFinite(device.neutralZoom) && device.neutralZoom > 0 ? device.neutralZoom : 1);
-  }, [device]);
+  }
   // Real measured height of the vertical zoom slider's own track area -- see its render site's
   // own comment for why this can't be a guessed constant. 220 is just a reasonable first-paint
   // fallback before the real onLayout measurement lands.
@@ -459,15 +461,13 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // rather than closing over the zoomFactor value from whenever it was first created. Feeds
   // speedTracker.ts's update() so parked-vehicle detection and distance/speed estimates both
   // account for the real, current zoom.
-  const zoomFactorRef = useRef(1);
-  zoomFactorRef.current = zoomFactor;
+  const zoomFactorRef = useLatest(zoomFactor);
   // Real ego GPS speed for turning a tracked vehicle's closing/receding rate into its own
   // actual road speed -- see speedTracker.ts's combineWithEgoSpeed. Reuses the SAME
   // app-wide location watcher LocationProvider already runs (App.tsx) rather than starting a
   // second GPS subscription just for this screen, so there's nothing extra to tear down here.
   const { location } = useLocation();
-  const egoSpeedRef = useRef<number | null>(null);
-  egoSpeedRef.current = location?.coords.speed ?? null;
+  const egoSpeedRef = useLatest<number | null>(location?.coords.speed ?? null);
   // Real, explicit request: a night-processing mode (brightened frame fed to the model, plus
   // lowered detection thresholds -- see the Frame Processor and render filter below) that
   // switches itself on/off using a real computed sunset/sunrise at the driver's own current
@@ -501,7 +501,10 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // only a real SharedValue is (same reason lastFrameProcessedMs/stableFrameOrientation below
   // are SharedValues too, not plain refs).
   const isNightActiveShared = useSharedValue(false);
-  isNightActiveShared.value = isNightActive;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability -- react-native-worklets-core SharedValue: assigning .value is its API
+    isNightActiveShared.value = isNightActive;
+  }, [isNightActive, isNightActiveShared]);
   // Real cloud OCR alternative (Plate Recognizer, platerecognizer.com) to this screen's own
   // on-device plate reader, per explicit request -- see readPlateTextSmart's own comment for why
   // this stays a graceful fallback rather than a hard requirement. Same ref pattern as
@@ -509,8 +512,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // not a normal re-render, so it needs a ref to always see the current value.
   const [plateRecognizerConfigured, setPlateRecognizerConfigured] = useState(false);
   useEffect(() => subscribePlateRecognizerProviderStatus(setPlateRecognizerConfigured), []);
-  const plateRecognizerConfiguredRef = useRef(false);
-  plateRecognizerConfiguredRef.current = plateRecognizerConfigured;
+  const plateRecognizerConfiguredRef = useLatest(plateRecognizerConfigured);
   // No "error" state -- see the model-load effect and the two capture paths' catch blocks
   // below. Every failure mode here now auto-recovers on its own instead of ever stopping and
   // waiting on a manual tap.
@@ -828,6 +830,8 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   const orientationStreak = useSharedValue(0);
   const ORIENTATION_DEBOUNCE_TICKS = 4;
 
+  /* eslint-disable react-hooks/immutability -- the frame processor is a worklet; react-native-worklets-core
+     SharedValues are updated by assigning .value (their documented API), which this React rule can't see */
   const frameProcessor = useFrameProcessor(
     (frame) => {
       "worklet";
@@ -1013,6 +1017,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     },
     [resize, onDetections]
   );
+  /* eslint-enable react-hooks/immutability */
 
   // Real, evidence-based emergency-lightbar check (actively strobing red/blue light) and
   // on-device plate OCR -- both still run here, on the JS thread, at a slower cadence than
@@ -1471,6 +1476,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           // otherwise a track that legitimately survives night's loosened detection floor would
           // still get silently hidden on screen by the higher render floor.
           .filter((box) => box.score >= (isNightActive ? MIN_RENDER_SCORE - NIGHT_DETECTION_SCORE_REDUCTION : MIN_RENDER_SCORE))
+          // eslint-disable-next-line react-hooks/refs -- draws boxes from the per-box smoothing cache the detection loop maintains; detection/tracking logic is deliberately unchanged
           .map((box) => {
           // See the scale/offsetX/offsetY comment above -- only remapped into raw-sensor space
           // when the preview is confirmed likely un-rotated (sensor landscape, interface never

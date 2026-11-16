@@ -352,6 +352,9 @@ export function SettingsScreen() {
     [updateSettings, settings.visibleAlertTypes]
   );
 
+  const [customExpiryOpen, setCustomExpiryOpen] = useState(false);
+  const [customHoursText, setCustomHoursText] = useState("");
+  const [customMinutesText, setCustomMinutesText] = useState("");
   const onExpiryPresetSelect = useCallback(
     (ms: number | null) => {
       setCustomExpiryOpen(false);
@@ -360,9 +363,6 @@ export function SettingsScreen() {
     [updateSettings]
   );
 
-  const [customExpiryOpen, setCustomExpiryOpen] = useState(false);
-  const [customHoursText, setCustomHoursText] = useState("");
-  const [customMinutesText, setCustomMinutesText] = useState("");
   const onApplyCustomExpiry = useCallback(() => {
     const hours = Math.max(0, parseInt(customHoursText, 10) || 0);
     const minutes = Math.max(0, Math.min(59, parseInt(customMinutesText, 10) || 0));

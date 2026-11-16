@@ -66,9 +66,8 @@ export function VehicleHistoryScreen() {
   // it) always clears whatever was checked -- a stale selection surviving into a fresh session
   // of picking rows would be a real, confusing bug (deleting something the driver never
   // actually re-checked this time around).
-  useEffect(() => {
-    if (!selectMode) setSelectedPlates(new Set());
-  }, [selectMode]);
+  // (Adjusted while rendering rather than in an effect, so there's no extra render pass.)
+  if (!selectMode && selectedPlates.size > 0) setSelectedPlates(new Set());
 
   const onOpenRevCheck = useCallback(
     (entry: VehicleHistoryEntry) => {
