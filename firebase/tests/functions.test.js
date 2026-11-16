@@ -391,3 +391,66 @@ describe("refreshNswTrafficNow", () => {
     expect(second.updateTime.isEqual(first.updateTime)).toBe(true);
   });
 });
+
+// Driver reports (roadReportsCore.js): the confirmRoadReport + syncRoadReport triggers, run for
+// real in the Functions emulator. Confirmations are written with the Admin SDK (the rules for
+// who may confirm are tested in firestore.rules.test.js); the triggers do the rest.
+describe("confirmRoadReport / syncRoadReport", () => {
+  const waitFor = async (fn, ms = 15000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      const v = await fn();
+      if (v) return v;
+      if (Date.now() > end) return v;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  };
+  const report = {
+    kind: "school_zone_missing",
+    reportedBy: "reporter-1",
+    lat: -33.9123,
+    lng: 151.1612,
+    tile: "-340_1511",
+    heading: 10,
+    speed: 40,
+    unit: "km/h",
+    windows: ["08:00-09:30", "14:30-16:00"],
+    status: "pending",
+    confirmCount: 0,
+  };
+
+  test("goes live at 3 confirmations from other drivers (the reporter's own doesn't count), then is published without the reporter's id", async () => {
+    const ref = adminDb.doc("roadFeatureReports/emu-r1");
+    await ref.set(report);
+    for (const uid of ["reporter-1", "driver-b", "driver-c"]) await ref.collection("confirmations").doc(uid).set({ at: 1 });
+    const two = await waitFor(async () => {
+      const d = (await ref.get()).data();
+      return d.confirmCount === 2 ? d : null;
+    });
+    expect(two).toMatchObject({ confirmCount: 2, status: "pending" });
+    expect((await adminDb.doc("communityRoadFeatures/emu-r1").get()).exists).toBe(false);
+
+    await ref.collection("confirmations").doc("driver-d").set({ at: 1 });
+    const live = await waitFor(async () => {
+      const d = (await ref.get()).data();
+      return d.status === "live" ? d : null;
+    });
+    expect(live).toMatchObject({ confirmCount: 3, status: "live" });
+    const pub = await waitFor(async () => {
+      const s = await adminDb.doc("communityRoadFeatures/emu-r1").get();
+      return s.exists ? s.data() : null;
+    });
+    expect(pub).toMatchObject({ id: "community-emu-r1", kind: "school_zone", speed: 40, windows: ["08:00-09:30", "14:30-16:00"] });
+    expect(JSON.stringify(pub)).not.toContain("reporter-1");
+  }, 40000);
+
+  test("an owner rejection removes the published zone", async () => {
+    const ref = adminDb.doc("roadFeatureReports/emu-r2");
+    await ref.set({ ...report, status: "approved" });
+    const pub = await waitFor(async () => (await adminDb.doc("communityRoadFeatures/emu-r2").get()).exists);
+    expect(pub).toBe(true);
+    await ref.update({ status: "rejected" });
+    const gone = await waitFor(async () => !(await adminDb.doc("communityRoadFeatures/emu-r2").get()).exists);
+    expect(gone).toBe(true);
+  }, 40000);
+});
