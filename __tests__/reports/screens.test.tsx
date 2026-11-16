@@ -1,12 +1,12 @@
 // Settings > Map information & overlays > Reports: every row (icon, title, grey description,
-// chevron), each detail screen's real switches, "Coming soon in your area", and the speedometer
+// chevron), each detail screen's real switches and "Sources:" line, and the speedometer
 // sign following its setting.
 import React from "react";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { mockNavigation, resetMockNavigation } from "../presses/mockNavigation";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/services/settings";
-import { REPORT_ITEMS, SECTION_ORDER, SECTION_TITLES, isComingSoon, isShown, alertsWhileDriving, type ReportItemId } from "@/settings/reportCatalog";
+import { REPORT_ITEMS, SECTION_ORDER, SECTION_TITLES, isShown, alertsWhileDriving, sourcesLine, type ReportItemId } from "@/settings/reportCatalog";
 
 jest.mock("@react-navigation/native", () => ({
   ...(jest.requireActual("@react-navigation/native") as object),
@@ -49,13 +49,16 @@ describe("Reports list", () => {
 });
 
 describe("Item detail", () => {
-  const live = REPORT_ITEMS.filter((i) => !isComingSoon(i.id));
+  const live = REPORT_ITEMS;
   it.each(live.map((i) => [i.id]))("%s: its switches change the real setting", async (id) => {
     const item = REPORT_ITEMS.find((i) => i.id === id)!;
     currentId.value = item.id;
     const view = await render(<ReportItemSettingsScreen />);
     expect(screen.getByText(item.explanation)).toBeTruthy();
     expect(screen.getByTestId("data-source")).toBeTruthy();
+    expect(screen.getByTestId("sources-line").props.children).toBe(sourcesLine(item.id));
+    expect(screen.queryByText(/coming soon/i)).toBeNull();
+    for (const t of ["toggle-show", "toggle-alert"]) expect(screen.queryByTestId(t)?.props.disabled ?? false).toBe(false);
     if (item.show) {
       const before = isShown(mockStore.settings, item.id);
       await fireEvent(screen.getByTestId("toggle-show"), "valueChange", !before);
@@ -70,19 +73,6 @@ describe("Item detail", () => {
     if (item.show) expect(screen.getByTestId("toggle-show").props.value).toBe(isShown(mockStore.settings, item.id));
   });
 
-  const soon = REPORT_ITEMS.filter((i) => isComingSoon(i.id));
-  it.each(soon.map((i) => [i.id]))("%s: says Coming soon in your area, switches disabled", async (id) => {
-    currentId.value = id as ReportItemId;
-    await render(<ReportItemSettingsScreen />);
-    expect(screen.getByTestId("coming-soon").props.children).toMatch(/Coming soon in your area/);
-    for (const t of ["toggle-show", "toggle-alert"]) {
-      const sw = screen.queryByTestId(t);
-      if (sw) {
-        expect(sw.props.disabled).toBe(true);
-        expect(sw.props.value).toBe(false);
-      }
-    }
-  });
 });
 
 describe("Speedometer limit sign", () => {

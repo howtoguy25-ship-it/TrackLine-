@@ -67,6 +67,9 @@ function toAlertDoc(id: string, data: any): AlertDoc {
     hiddenBy: data.hiddenBy && typeof data.hiddenBy === "object" && !Array.isArray(data.hiddenBy) ? data.hiddenBy : {},
     comment: typeof data.comment === "string" && data.comment.length > 0 ? data.comment : undefined,
     needsConfirmation: data.needsConfirmation === true,
+    item: typeof data.item === "string" && data.item ? data.item : undefined,
+    permanent: data.permanent === true,
+    awaitingApproval: data.awaitingApproval === true,
     lastConfirmedAt: data.lastConfirmedAt?.toMillis?.() ?? undefined,
   };
 }
@@ -107,7 +110,7 @@ export async function submitReport(
   location: { latitude: number; longitude: number },
   from: { latitude: number; longitude: number },
   uid: string,
-  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null } = {}
+  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null; item?: string | null } = {}
 ): Promise<ReportResult> {
   const trimmed = options.comment?.trim();
   const comment = trimmed && !containsBlockedLanguage(trimmed) ? clampToWordLimit(trimmed) : undefined;
@@ -121,13 +124,14 @@ export async function submitReport(
       comment,
       customTtlMs: options.customTtlMs ?? null,
       showName: !!options.reporterName,
+      item: options.item ?? null,
     });
     if (r.merged && r.alertId) return { kind: "merged", alertId: r.alertId };
     return { kind: "pending", pendingId: r.pendingId as string, publishAtMs: r.publishAtMs as number, needsConfirmation: !!r.needsConfirmation };
   } catch (err) {
     const e = err as { code?: string; message?: string; details?: { reason?: string; until?: number } };
     if (e.code && NOT_DEPLOYED.has(e.code)) {
-      const alertId = await reportAlert(type, location, uid, options.customTtlMs, options.comment, options.reporterName);
+      const alertId = await reportAlert(type, location, uid, options.customTtlMs, options.comment, options.reporterName, options.item);
       return { kind: "direct", alertId };
     }
     if (e.details?.reason) throw new ReportRefused(e.details.reason, e.message ?? "Report refused.", e.details.until);
@@ -171,7 +175,9 @@ export async function reportAlert(
   comment?: string | null,
   // The reporter's own signed-in name, only when they turned on "Show my name on reports";
   // firestore.rules checks it equals their auth token's name. Null = "by anonymous".
-  reporterName?: string | null
+  reporterName?: string | null,
+  // Settings > Reports item (stop sign camera, narrow bridge...); absent = the type's own.
+  item?: string | null
 ): Promise<string> {
   const now = Date.now();
   const geohash = encodeGeohash(location.latitude, location.longitude, 9);
@@ -197,6 +203,7 @@ export async function reportAlert(
     hiddenBy: {},
     thanksCount: 0,
     ...(safeComment ? { comment: safeComment } : {}),
+    ...(item ? { item } : {}),
     // Sent exactly as the auth token has it (the rules compare them); a name over 40 characters
     // is left off rather than cut, so the report says "by anonymous".
     ...(reporterName && reporterName.trim() && reporterName.length <= 40 ? { reporterName } : {}),

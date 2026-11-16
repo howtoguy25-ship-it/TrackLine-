@@ -165,7 +165,7 @@ export async function fetchOsmTrafficData(
   let data: OverpassResponse;
   try {
     data = await Promise.any(OVERPASS_ENDPOINTS.map(requestFrom));
-  } catch (err) {
+  } catch {
     if (controller.signal.aborted) {
       throw new Error("Traffic light/speed camera lookup timed out -- try panning the map again");
     }

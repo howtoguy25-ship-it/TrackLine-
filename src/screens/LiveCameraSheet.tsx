@@ -41,21 +41,22 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
   const [, setClockTick] = useState(0);
   const fadeAnim = useState(() => new Animated.Value(0))[0];
 
+  const imageUrl = camera?.imageUrl;
   useEffect(() => {
-    if (!camera) return;
+    if (!imageUrl) return;
     setImageLoaded(false);
     setLoadError(false);
-    setSrc(refreshLiveCameraImageUrl(camera.imageUrl));
+    setSrc(refreshLiveCameraImageUrl(imageUrl));
     const refreshId = setInterval(() => {
       setLoadError(false);
-      setSrc(refreshLiveCameraImageUrl(camera.imageUrl));
+      setSrc(refreshLiveCameraImageUrl(imageUrl));
     }, IMAGE_REFRESH_MS);
     const clockId = setInterval(() => setClockTick((t) => t + 1), 1000);
     return () => {
       clearInterval(refreshId);
       clearInterval(clockId);
     };
-  }, [camera?.imageUrl]);
+  }, [imageUrl]);
 
   // Real crossfade between successive frames -- previously a new frame just snapped in the
   // instant it finished loading, which read as a jarring flicker every refresh. Fading the new

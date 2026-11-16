@@ -21,6 +21,7 @@ const schoolZonesCore = require("./schoolZonesCore");
 const roadReportsCore = require("./roadReportsCore");
 const reportsCore = require("./reports/core");
 const { firestoreReportStore } = require("./reports/store");
+const crashRecords = require("./crashRecords");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -118,7 +119,15 @@ exports.cleanupExpiredAlerts = onSchedule("every 15 minutes", async () => {
     if (snapshot.empty) break;
 
     const batch = db.batch();
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    snapshot.docs.forEach((doc) => {
+      // A crash report another driver confirmed goes into crash history as it ends.
+      const record = crashRecords.recordFromAlert(doc.id, doc.data(), Date.now());
+      if (record) {
+        const { id, atMs, expiresAtMs, ...rest } = record;
+        batch.set(db.collection("crashRecords").doc(id), { ...rest, at: Timestamp.fromMillis(atMs), expiresAt: Timestamp.fromMillis(expiresAtMs) });
+      }
+      batch.delete(doc.ref);
+    });
     await batch.commit();
 
     deletedTotal += snapshot.size;
@@ -170,6 +179,19 @@ exports.publishPendingReport = onDocumentCreated("pendingReports/{id}", async (e
   const wait = Math.max(0, Math.min(10_000, data.publishAtMs - Date.now())) + 250;
   await sleep(wait);
   await reportStore().publish(event.params.id);
+});
+
+// Admin: fixed cameras / road features waiting for approval (also confirmable by 3 drivers).
+exports.moderationQueue = onCall(async (request) => {
+  if (!isAdminRequest(request)) throw new HttpsError("permission-denied", "Admins only.");
+  return { items: await reportStore().moderationQueue() };
+});
+
+exports.moderateReport = onCall(async (request) => {
+  if (!isAdminRequest(request)) throw new HttpsError("permission-denied", "Admins only.");
+  const { alertId, approve } = request.data || {};
+  if (typeof alertId !== "string" || !alertId) throw new HttpsError("invalid-argument", "alertId required.");
+  return { result: await reportStore().moderate(alertId, !!approve, request.auth.uid, Date.now()) };
 });
 
 exports.applyReportVote = onDocumentCreated("alerts/{alertId}/votes/{uid}", async (event) => {
@@ -1130,6 +1152,16 @@ async function refreshNswTrafficSnapshot() {
   const previousSnap = await ref.get();
   const snapshot = trafficCore.buildSnapshot(results, previousSnap.exists ? previousSnap.data() : null, Date.now());
   await ref.set(snapshot);
+  // Crash history: each official crash incident recorded once (same id = same doc).
+  const records = crashRecords.recordsFromIncidents(snapshot.incidents, Date.now());
+  for (let i = 0; i < records.length; i += 400) {
+    const batch = db.batch();
+    for (const r of records.slice(i, i + 400)) {
+      const { id, atMs, expiresAtMs, ...rest } = r;
+      batch.set(db.collection("crashRecords").doc(id), { ...rest, at: Timestamp.fromMillis(atMs), expiresAt: Timestamp.fromMillis(expiresAtMs) }, { merge: true });
+    }
+    await batch.commit();
+  }
   return { configured: true, count: snapshot.incidents.length, failedKinds: snapshot.failedKinds };
 }
 

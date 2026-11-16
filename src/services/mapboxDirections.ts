@@ -15,6 +15,7 @@ import { decodePolyline } from "@/utils/polyline";
 import type { Route, RouteStep } from "@/services/directions";
 import type { RouteAvoidPrefs, SpeedInterval } from "@/map/routeChoices";
 import { parseBannerLanes, parseIntersectionLanes, type Lane } from "@/nav/lanes";
+import { laneEndingsInStep } from "@/nav/laneEndings";
 import { maneuverTypeFor, manoeuvreKindFor, sideOf } from "@/nav/manoeuvre";
 
 const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
@@ -184,6 +185,10 @@ export function toAppSteps(mbSteps: any[], routeDrivingSide: "left" | "right" = 
       endLocation: next ? point(next.maneuver?.location) : polyline[polyline.length - 1] ?? point(here?.maneuver?.location),
       polyline,
       lanes: lanes ?? undefined,
+      laneEndings: (() => {
+        const ends = laneEndingsInStep(here?.intersections);
+        return ends.length ? ends : undefined;
+      })(),
       exitNumber: next ? exitNumberFrom(next, banner) : undefined,
       roadRef: typeof target?.ref === "string" && target.ref ? target.ref.split(";")[0].trim() : undefined,
       maneuverKind: next ? manoeuvreKindFor(m.type ?? "", m.modifier, lanes, roads) : "arrive",

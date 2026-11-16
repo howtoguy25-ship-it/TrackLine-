@@ -21,6 +21,8 @@ import { Sentry } from "@/services/sentry";
 // class ids it was trained on are documented next to where they're parsed, inside the Frame
 // Processor in VehicleDetectionScreen.tsx -- see assets/models/tflite_ssd_mobilenet_v2/labelmap.txt
 // for the model's full class list.
+// A binary model file: Metro only bundles it as an asset through require().
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const MODEL_ASSET = require("../../assets/models/tflite_ssd_mobilenet_v2/model.tflite");
 
 export const TFLITE_INPUT_SIZE = 300;

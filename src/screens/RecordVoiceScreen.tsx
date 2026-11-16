@@ -102,7 +102,6 @@ export function RecordVoiceScreen() {
     if (!key || !recorder.uri) return;
     const savedUri = await saveRecordedClip(key, recorder.uri, user && !user.isAnonymous ? user.uid : null);
     setRecorded((prev) => ({ ...prev, [key]: savedUri }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRecordingKey, recorder, user]);
 
   // Real auto-stop at 6 seconds -- recorderState.durationMillis is the recorder's own live,

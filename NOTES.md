@@ -921,3 +921,41 @@ fare + Opal note, 5 per-mode navigation (bike/walk warnings, "Get off in 2 stops
 - Other countries: not available ("Full check not available in your country yet"). Possible
   providers when expanding: NZ -- CarJam (NZ API); UK -- HPI Check, Experian AutoCheck;
   US -- Carfax, AutoCheck (Experian). Never shown: AU data for a foreign plate.
+
+## Future: CarPlay + Android Auto (scoped 2026-11-16 — NOT built)
+
+Waze has both. Scope so it can be planned; nothing in the app uses this yet.
+
+**What it takes before any code ships**
+- **CarPlay**: Apple's *CarPlay Navigation* entitlement (`com.apple.developer.carplay-maps`). You
+  request it from Apple (developer.apple.com › CarPlay) for the bundle `com.trackline.navigate`;
+  approval has historically taken weeks and Apple reviews the CarPlay UI against its guidelines.
+- **Android Auto**: an app built on Google's *Car App Library* (`androidx.car.app`), category
+  `androidx.car.app.category.NAVIGATION`, and Google Play's extra review for car apps. Navigation
+  apps must also meet Google's driver-distraction quality checklist.
+
+**How it would be built (Expo)**
+- No official Expo module. Options: `react-native-carplay` (CarPlay templates from JS, with
+  Android Auto support in recent versions) behind our own **Expo config plugin** that adds the
+  entitlement, a CarPlay scene (`CPTemplateApplicationSceneSessionRoleApplication` in
+  `UIApplicationSceneManifest`) and its scene delegate on iOS, and the `CarAppService`, car-app
+  metadata and `automotive_app_desc.xml` on Android. Alternative: native modules on the platform
+  SDKs directly (Mapbox's own CarPlay / Android Auto extensions draw the map on the car screen).
+- The map on the car screen is a second map instance (CarPlay window / Android Auto surface), fed
+  by the same route, matcher and guidance state the phone uses — the nav logic stays shared.
+- Needs a development build; tested in Xcode's CarPlay Simulator and Google's Desktop Head Unit.
+  Neither can be run in this cloud environment, so it needs a Mac and an Android device/emulator.
+
+**Screens (car templates, not our phone UI — the car OS draws them)**
+1. Map (CPMapTemplate / NavigationTemplate) with Re-centre, zoom, Sound, Report buttons.
+2. Where to: Home, Work, saved places, recents (list template); voice search (no typing while
+   moving — the car OS enforces this).
+3. Route preview: up to 3 route choices with ETA/distance, Go.
+4. Active guidance: manoeuvre panel (next turn + distance, "then"), lane guidance, ETA strip,
+   reroute, arrival.
+5. Report grid (Police, Crash, Hazard, Camera, Traffic…) — one tap, same server path + 3 s undo.
+6. Alerts on the map + the spoken alerts already built (Settings › Reports switches apply).
+
+**Effort**: about 4–6 weeks of engineering after the entitlement arrives (CarPlay first, Android
+Auto ~2 weeks more), plus device testing in real cars. Prerequisite: the Firebase deploy (reports,
+presence) so the car screens show the same live data.

@@ -248,3 +248,100 @@ const onEmulator = !!process.env.FIRESTORE_EMULATOR_HOST;
     expect(state.blockUntil).toBeGreaterThan(now);
   }, 30_000);
 });
+
+// ---- every item reportable; fixed features become permanent ------------------------------------
+
+describe("items", () => {
+  test("every item is filed under its base type; a mismatched or unknown item is refused", () => {
+    for (const [item, p] of Object.entries(POLICY.items)) {
+      const d = core.decide({ uid: "u", input: { ...input({ type: p.type }), item, comment: "words here" }, state: undefined, nearby: [], nowMs: 0 }).decision;
+      expect([item, d.action]).toEqual([item, "create"]);
+    }
+    expect(core.decide({ uid: "u", input: { ...input({ type: "police" }), item: "speedBump" }, state: undefined, nearby: [], nowMs: 0 }).decision.code).toBe("bad-type");
+    expect(core.decide({ uid: "u", input: { ...input(), item: "nonsense" }, state: undefined, nearby: [], nowMs: 0 }).decision.code).toBe("bad-type");
+  });
+
+  test("a map chat needs words", () => {
+    expect(core.decide({ uid: "u", input: { ...input({ type: "hazard" }), item: "mapChats" }, state: undefined, nearby: [], nowMs: 0 }).decision.code).toBe("needs-comment");
+  });
+
+  test("duplicates are per item: a speed bump next to a pothole report is its own report", () => {
+    const nearby = [{ id: "a1", type: "hazard", item: "otherHazards", ...near(110), createdBy: "x", expiresAtMs: 10 * MIN }];
+    expect(core.decide({ uid: "u", input: { ...input({ type: "hazard" }), item: "speedBump" }, state: undefined, nearby, nowMs: 0 }).decision.action).toBe("create");
+    expect(core.decide({ uid: "u", input: { ...input({ type: "hazard" }), item: "otherHazards" }, state: undefined, nearby, nowMs: 0 }).decision).toEqual({ action: "merge", alertId: "a1" });
+  });
+
+  test("temporary items use their own lifetime; fixed ones wait 30 days for confirmation", () => {
+    const p = { uid: "u", type: "hazard", lat: 1, lng: 2, geohash: "g", region: "NSW", publishAtMs: 0 };
+    expect(core.alertFromPending({ ...p, item: "roadwork" }).expiresAtMs).toBe(720 * MIN);
+    expect(core.alertFromPending({ ...p, item: "animals" }).expiresAtMs).toBe(60 * MIN);
+    const bump = core.alertFromPending({ ...p, item: "speedBump", customTtlMs: 5 * MIN });
+    expect(bump).toMatchObject({ item: "speedBump", awaitingApproval: true, permanent: false, expiresAtMs: POLICY.fixed.pendingLifetimeMinutes * MIN });
+    expect(core.alertFromPending({ ...p, type: "police" })).toMatchObject({ item: "police", awaitingApproval: false });
+  });
+
+  test("a fixed feature becomes permanent at 3 confirmations, not before", () => {
+    const a = { type: "camera", item: "stopSignCamera", createdAtMs: 0, expiresAtMs: 30 * 24 * 60 * MIN, notThere: 0, permanent: false };
+    expect(core.applyVote({ ...a, confirmCount: 2 }, "confirm", 1000).patch.permanent).toBeUndefined();
+    const r = core.applyVote({ ...a, confirmCount: 3 }, "confirm", 1000);
+    expect(r.patch).toMatchObject({ permanent: true, awaitingApproval: false });
+    expect(r.patch.expiresAtMs).toBeGreaterThan(1000 + 19 * 365 * 24 * 60 * MIN);
+    // a permanent one removed after two Not there in a row (the camera was taken down)
+    expect(core.applyVote({ ...a, permanent: true, notThere: 1 }, "deny", 2000).action).toBe("delete");
+  });
+
+  test("admin approval makes it permanent; rejection removes it; temporary items aren't moderated", () => {
+    expect(core.moderate({ type: "hazard", item: "narrowBridge" }, true, 5).patch).toMatchObject({ permanent: true, awaitingApproval: false, approvedAtMs: 5 });
+    expect(core.moderate({ type: "hazard", item: "narrowBridge" }, false, 5).action).toBe("delete");
+    expect(core.moderate({ type: "police", item: "police" }, true, 5).action).toBe("none");
+  });
+});
+
+describe("crash history records", () => {
+  const crashRecords = require("../functions/crashRecords");
+  test("official crash incidents become records; other incidents don't", () => {
+    const r = crashRecords.recordsFromIncidents(
+      [
+        { id: "1", kind: "incident", category: "Crash", headline: "Crash - two cars", lat: -33.8, lng: 151.1 },
+        { id: "2", kind: "incident", category: "Breakdown", headline: "Broken down vehicle", lat: -33.8, lng: 151.1 },
+        { id: "3", kind: "roadwork", category: "Roadwork", headline: "Roadwork", lat: -33.8, lng: 151.1 },
+      ],
+      0
+    );
+    expect(r.map((x) => x.id)).toEqual(["ltn_1"]);
+    expect(r[0]).toMatchObject({ source: "liveTrafficNsw", geohash: core.encodeGeohash(-33.8, 151.1, 7) });
+  });
+  test("a driver's crash report is kept only if someone else confirmed it", () => {
+    expect(crashRecords.recordFromAlert("a", { type: "crash", lat: 1, lng: 2, confirmCount: 1 }, 0)).toMatchObject({ id: "drv_a", source: "drivers" });
+    expect(crashRecords.recordFromAlert("a", { type: "crash", lat: 1, lng: 2, confirmCount: 0 }, 0)).toBeNull();
+    expect(crashRecords.recordFromAlert("a", { type: "police", lat: 1, lng: 2, confirmCount: 5 }, 0)).toBeNull();
+  });
+});
+
+(onEmulator ? describe : describe.skip)("moderation store (emulator)", () => {
+  const admin = require("firebase-admin");
+  const { firestoreReportStore } = require("../functions/reports/store");
+  let app;
+  let db;
+  let store;
+  beforeAll(() => {
+    app = admin.initializeApp({ projectId: "demo-trackline-rules-test" }, "moderation-store");
+    db = app.firestore();
+    store = firestoreReportStore(db, { FieldValue: admin.firestore.FieldValue, Timestamp: admin.firestore.Timestamp });
+  });
+  afterAll(() => app.delete());
+
+  test("a reported fixed feature is in the queue until approved, then stays", async () => {
+    const now = Date.now();
+    const r = await core.submit(store, { uid: "mq-u1", data: { ...input({ type: "camera", at: near(600) }), item: "busLaneCamera" }, nowMs: now });
+    await store.publish(r.pendingId);
+    const queue = await store.moderationQueue();
+    expect(queue.find((q) => q.id === r.pendingId)).toMatchObject({ item: "busLaneCamera", type: "camera" });
+    expect(await store.moderate(r.pendingId, true, "admin-1", now + 1000)).toBe("update");
+    const a = (await db.doc(`alerts/${r.pendingId}`).get()).data();
+    expect(a).toMatchObject({ permanent: true, awaitingApproval: false, approvedBy: "admin-1" });
+    expect((await store.moderationQueue()).find((q) => q.id === r.pendingId)).toBeUndefined();
+    const log = await db.collection("moderationLog").where("alertId", "==", r.pendingId).get();
+    expect(log.size).toBe(1);
+  }, 30_000);
+});

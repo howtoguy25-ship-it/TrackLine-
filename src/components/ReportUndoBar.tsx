@@ -8,7 +8,8 @@ import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 // The 3 s after sending a report: it's held on the server (pendingReports) and only goes on the
 // map when this runs out. Undo takes it back (the server allows 2 undos an hour).
-export function ReportUndoBar({ type, untilMs, onUndo, onDone, bottom }: { type: AlertType; untilMs: number; onUndo: () => void; onDone: () => void; bottom: number }) {
+export function ReportUndoBar({ type, label, untilMs, onUndo, onDone, bottom }: { type: AlertType; label?: string; untilMs: number; onUndo: () => void; onDone: () => void; bottom: number }) {
+  const name = label ?? ALERT_LABELS[type];
   const [left, setLeft] = useState(() => Math.max(0, untilMs - Date.now()));
   useEffect(() => {
     const t = setInterval(() => {
@@ -26,8 +27,8 @@ export function ReportUndoBar({ type, untilMs, onUndo, onDone, bottom }: { type:
       <View style={[styles.icon, { backgroundColor: ALERT_COLORS[type] }]}>
         <AlertTypeGlyph type={type} size={16} color="#FFFFFF" />
       </View>
-      <Text style={styles.text}>{`${ALERT_LABELS[type]} reported · ${Math.ceil(left / 1000)}`}</Text>
-      <Button variant="secondary" label="Undo" onPress={onUndo} accessibilityLabel={`Undo ${ALERT_LABELS[type]} report`} testID="report-undo" />
+      <Text style={styles.text}>{`${name} reported · ${Math.ceil(left / 1000)}`}</Text>
+      <Button variant="secondary" label="Undo" onPress={onUndo} accessibilityLabel={`Undo ${name} report`} testID="report-undo" />
     </View>
   );
 }

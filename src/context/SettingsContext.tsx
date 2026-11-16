@@ -66,17 +66,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   // new real (non-anonymous) uid.
   const pulledForUid = useRef<string | null>(null);
 
-  // DIAGNOSTIC BUILD -- see src/services/firebase.ts's DIAGNOSTIC_DISABLE_ASYNC_STORAGE_PERSISTENCE
-  // for the full rationale. This is the other unconditional-on-every-launch AsyncStorage call
-  // site (loadSettings/getVoiceEnabled, both backed by AsyncStorage.getItem), skipped here too
-  // so this build isolates AsyncStorage as a whole, not just Firebase's use of it.
-  const DIAGNOSTIC_DISABLE_ASYNC_STORAGE_SETTINGS = false;
 
   useEffect(() => {
-    if (DIAGNOSTIC_DISABLE_ASYNC_STORAGE_SETTINGS) {
-      setLoaded(true);
-      return;
-    }
     (async () => {
       const stored = await loadSettings();
       setSettings(stored);
