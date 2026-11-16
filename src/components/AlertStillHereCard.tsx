@@ -11,6 +11,8 @@ interface Props {
   alert: AlertDoc;
   onStillHere: () => void;
   onNotHere: () => void;
+  /** Distance from the bottom of the screen, so it sits above the nav bar while navigating. */
+  bottom?: number;
 }
 
 // Real, explicit request: an automatic (not tap-to-open) proximity prompt -- MapScreen decides
@@ -22,7 +24,7 @@ interface Props {
 // invents its own color or wording independent of what the alert actually is.
 const OFFSCREEN_Y = 180;
 
-export function AlertStillHereCard({ alert, onStillHere, onNotHere }: Props) {
+export function AlertStillHereCard({ alert, onStillHere, onNotHere, bottom }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useState(() => new Animated.Value(OFFSCREEN_Y))[0];
 
@@ -60,7 +62,7 @@ export function AlertStillHereCard({ alert, onStillHere, onNotHere }: Props) {
   return (
     <Animated.View
       pointerEvents="box-none"
-      style={[styles.wrap, { bottom: insets.bottom + spacing.lg, transform: [{ translateY }] }]}
+      style={[styles.wrap, { bottom: bottom ?? insets.bottom + spacing.lg, transform: [{ translateY }] }]}
     >
       <View style={[styles.card, { borderTopColor: accentColor }]}>
         <View style={styles.headerRow}>

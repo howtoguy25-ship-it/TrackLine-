@@ -19,28 +19,22 @@ service cloud.firestore {
           || request.auth.token.phone_number in ['+61474011265']);
     }
 
+    // A report waiting out its 3 s undo window, and each reporter's limits / trust: server only.
+    match /pendingReports/{id} {
+      allow read, write: if false;
+    }
+    match /reporterState/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
     match /alerts/{alertId} {
       allow read: if isSignedIn();
 
-      allow create: if isSignedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.confirmCount == 0
-        && request.resource.data.denyCount == 0
-        && request.resource.data.hiddenBy == {}
-        && request.resource.data.type in ['police', 'emergency_vehicle', 'hazard', 'camera', 'crash', 'traffic_light']
-        && request.resource.data.expiresAt is timestamp
-        && request.resource.data.lat is number
-        && request.resource.data.lng is number
-        && request.resource.data.geohash is string
-        && request.resource.data.region in ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']
-        // Thanks start at zero (or are absent on older clients) -- never pre-loaded.
-        && (!('thanksCount' in request.resource.data) || request.resource.data.thanksCount == 0)
-        // The optional byline is the reporter's own signed-in name, never free text: nobody can
-        // post a report "by" someone else.
-        && (!('reporterName' in request.resource.data)
-          || (request.auth.token.name is string
-            && request.resource.data.reporterName == request.auth.token.name
-            && request.resource.data.reporterName.size() <= 40));
+      // Reports are only ever created by the server (submitReport -> publishPendingReport in
+      // functions/index.js), after the anti-spam checks and the 3 s undo window. No client
+      // writes an alert directly.
+      allow create: if false;
 
       // Creator can delete their own alert outright (global delete) -- only the creator, per
       // explicit request ("only the users who places them can delete for the rest").

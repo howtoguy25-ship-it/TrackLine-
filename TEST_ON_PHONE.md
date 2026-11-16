@@ -357,6 +357,28 @@ Settings › Map information & overlays.
 7. **Restart**: force-quit and reopen: every switch is as you left it. Signed in on a second
    phone: the same switches arrive there.
 
+## 23. Report card: undo, anti-spam, Still there, saved places, Tracky bubble — NEEDS DEVICE TEST
+
+Server parts need the Firebase deploy first (DEPLOY.md).
+
+1. **Undo**: report Police. A dark bar "Police reported · 3" counts down with **Undo**. Tap Undo:
+   "Report taken back" and nothing appears on the map. Report again and let it run out: the pin
+   appears after 3 s. Undo a third time within an hour: "You can undo 2 reports an hour."
+2. **Duplicate**: on a second phone, report Police within ~150 m of the first: "Police was already
+   reported here -- you've confirmed it." No second pin.
+3. **Limits**: send 4 reports inside 2 minutes: "Too many reports in a short time" (15 min pause).
+   Move the pin more than 1 km from you and Set: "You can only report within 1 km".
+4. **Still there?**: on the second phone drive towards a 10-minute-old police report: the card
+   asks once, sits above the bottom bar while navigating, never appears during a turn close-up,
+   and never on the phone that reported it. "Still here" keeps it longer; two "Not here" from two
+   phones remove it.
+5. **Saved places**: set Home and Work. They show as pins on the home map. Tap Home: Send (share
+   sheet with a link), Routes (route preview), ••• → Preview location (map zooms there), Mark your
+   parking spot (a P pin appears), Find my car (route to the P), Edit address (search opens to pick
+   a new Home), Remove (pin goes). A saved place's ••• has Edit name.
+6. **Tracky bubble**: tap another driver's Tracky: a small bubble (their name only if they show
+   it, mood, "2 min ago"), Wave, More (the full card with Block / Report).
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

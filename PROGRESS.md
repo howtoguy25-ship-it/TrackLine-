@@ -2,10 +2,11 @@
 
 ## 100% completion run — where it's up to
 
-Item 1 (alert settings) DONE on branch `alert-settings`, merged. **Next step: item 2** — report card
-remaining parts (Tracky info bubble; Home/Work/saved popup with Send/Routes/Preview/parking P pin/Find my
-car/Edit/Remove; 3 s Undo pending server-side, max 2/hour; server anti-spam; "Still there?" per-type
-windows), on a new branch `report-card`. Then items 3-6 and the final checks (see the run prompt).
+Item 1 (alert settings) DONE (branch `alert-settings`, merged). Item 2 (report card remainder) DONE in
+code (branch `report-card`, merged); the server half is BLOCKED on the Firebase deploy like the rest of the
+server. **Next step: item 3** — brand/POI badge popularity ranking (Places rating count + business status +
+anonymous opted-in arrivals; max ~12 per screen, collision-free; z13/z15; 300 m nearby boost; ranking tests
++ per-screen cap render test), on a new branch `poi-ranking`. Then items 4-6 and the final checks.
 
 ## Honest status — 2026-11-16 (read this first)
 
@@ -38,6 +39,7 @@ me; everything visible needs your device check (`TEST_ON_PHONE.md`).
 | Travel modes | Step 1 of 6: CODE + tests, NOT on any screen | `__tests__/travel/modes.test.ts` | Circular Quay -> Manly test needs a recorded Google/TfNSW response (keys not available here) |
 | Vehicle full check (one product, incl. odometer) | CODE + tests DONE; BLOCKED for sale: provider keys, odometer adapter, store products | `firebase/tests/vehicleCheck.test.js` (20 + 2 emulator), rules + callable tests, `__tests__/vehicleCheck.test.tsx` (15), `presses/menu.test.tsx` | PROVIDERS.md steps 1-4; TEST_ON_PHONE §20 |
 | Alert settings: Settings › Map information & overlays › Reports (43 items), Speedometer, Map shortcuts | DONE + NEEDS DEVICE TEST; 11 items BLOCKED ("Coming soon in your area": no data source) | `__tests__/reports/{toggles,engine,screens,settingsLayout}.*` (180 tests), `ALERT_SETTINGS.md` table | TEST_ON_PHONE §22 |
+| Report card: Tracky bubble, Home/Work/saved popup (Send/Routes/•••, parking P pin, Find my car, Edit, Remove), 3 s Undo (pending on server, 2/hour), server anti-spam (1 km, 10/h, 30/day, burst 15 min → 24 h, duplicate merge, trust, low-trust needs confirmation), "Still there?" per-type windows / extend / remove after 2 | DONE in code + tests; server BLOCKED until deployed (app falls back to direct writes until then); NEEDS DEVICE TEST | `firebase/tests/reports.test.js` (17 + 4 emulator), rules tests, `__tests__/reportCard/client.test.tsx` (20) | Run the Firebase deploy (DEPLOY.md); TEST_ON_PHONE §23 |
 
 ### Map checklist (Mapbox map, style v5)
 

@@ -10,7 +10,7 @@ import type { ApproachFeature } from "@/alerts/approachAlerts";
 
 export interface FeatureSources {
   osm: OsmTrafficData | null;
-  alerts: readonly Pick<AlertDoc, "id" | "type" | "lat" | "lng" | "createdBy">[];
+  alerts: readonly (Pick<AlertDoc, "id" | "type" | "lat" | "lng" | "createdBy"> & { needsConfirmation?: boolean })[];
   incidents: readonly Pick<TrafficIncident, "id" | "kind" | "category" | "headline" | "lat" | "lng">[];
   /** The driver's own reports never alert them. */
   ownUid?: string | null;
@@ -35,6 +35,8 @@ export function collectApproachFeatures(settings: Settings, src: FeatureSources)
   }
   for (const a of src.alerts) {
     if (src.ownUid && a.createdBy === src.ownUid) continue;
+    // A low-trust reporter's report isn't announced until another driver confirms it.
+    if (a.needsConfirmation) continue;
     const item = COMMUNITY_ITEM[a.type];
     if (!item || !alertsWhileDriving(settings, item)) continue;
     out.push({ key: `alert:${a.id}`, item, lat: a.lat, lng: a.lng });

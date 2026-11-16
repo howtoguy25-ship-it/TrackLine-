@@ -1,0 +1,20 @@
+{
+  "_about": "Report rules shared by the app (src/types/alertPolicy.ts) and the server (reports/core.js). Times in minutes.",
+  "undoSeconds": 3,
+  "maxUndosPerHour": 2,
+  "maxPerHour": 10,
+  "maxPerDay": 30,
+  "maxDistanceFromDriverM": 1000,
+  "duplicateRadiusM": 150,
+  "burst": { "count": 4, "withinMinutes": 2, "firstBlockMinutes": 15, "repeatBlockMinutes": 1440, "repeatWithinMinutes": 1440 },
+  "trust": { "start": 50, "min": 0, "max": 100, "needsConfirmationBelow": 30, "confirmed": 2, "notThere": -3, "removed": -10, "undone": 0 },
+  "removeAfterNotThere": 2,
+  "types": {
+    "police": { "lifetimeMinutes": 45, "askAfterMinutes": 10, "extendMinutes": 20, "maxLifeMinutes": 180 },
+    "emergency_vehicle": { "lifetimeMinutes": 45, "askAfterMinutes": 5, "extendMinutes": 10, "maxLifeMinutes": 60 },
+    "hazard": { "lifetimeMinutes": 120, "askAfterMinutes": 20, "extendMinutes": 30, "maxLifeMinutes": 720 },
+    "crash": { "lifetimeMinutes": 120, "askAfterMinutes": 15, "extendMinutes": 30, "maxLifeMinutes": 360 },
+    "camera": { "lifetimeMinutes": 1440, "askAfterMinutes": 30, "extendMinutes": 120, "maxLifeMinutes": 2880 },
+    "traffic_light": { "lifetimeMinutes": 120, "askAfterMinutes": 30, "extendMinutes": 60, "maxLifeMinutes": 1440 }
+  }
+}

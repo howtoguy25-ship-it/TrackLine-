@@ -103,6 +103,10 @@ Add a key later and re-run with **Copy API keys** ticked -- no app update needed
 ## Afterwards
 
 - Re-run the workflow whenever server code changes (I'll tell you when).
+- **Reports (2026-11-16):** this deploy adds `submitReport`, `undoReport`, `publishPendingReport`
+  and `applyReportVote`, and the Firestore rules stop the app writing alerts directly. Deploy
+  functions and rules together (the default). Until then the app writes reports itself (no
+  anti-spam, Undo deletes the report instead) -- see `firebase/functions/reports/`.
 - School zones then refresh by themselves every Monday at 3:17 am Sydney time.
 - **Not deployed by this workflow**: Hosting (the website, including `privacy.html` that the app's
   Privacy policy link opens) and Firestore TTL policies. Hosting needs adding before App Store

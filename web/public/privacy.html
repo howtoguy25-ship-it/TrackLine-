@@ -205,8 +205,17 @@
         When you report a hazard, police, emergency vehicle, crash, speed camera, or traffic
         light, we store its type, location, and the time it was reported, linked to your account
         ID (not your name) so you can delete your own reports. Alerts expire and are automatically
-        deleted on a schedule — 45 minutes to 24 hours depending on type — they are not kept
-        indefinitely.
+        deleted on a schedule — 45 minutes to 24 hours depending on type (longer, up to 48 hours,
+        while other drivers keep confirming them) — they are not kept indefinitely.
+      </p>
+      <p>
+        To stop spam, our server checks each report before anyone sees it: that it's within 1 km
+        of where your phone says you are (that position is used for this check only and not
+        stored), and how many you've sent recently. For that we keep, linked to your account ID:
+        the times of your reports and undos from the last 24 hours, any short reporting pause,
+        and a trust score that goes up when other drivers confirm your reports and down when they
+        say they weren't there. A low score means your reports need another driver's
+        confirmation before they're announced. A report is held for 3 seconds so you can undo it.
       </p>
 
       <h3>Speed limit and school zone reports</h3>

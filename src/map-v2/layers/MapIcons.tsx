@@ -101,6 +101,28 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
         </Badge>
       );
     }
+    case "saved": {
+      // "saved:home|work|custom" -- your own saved places.
+      const name = rest[0] === "home" ? "home" : rest[0] === "work" ? "briefcase" : "star";
+      return (
+        <View style={styles.column}>
+          <Badge color={colors.accent} size={28}>
+            <Icon name={name} size={15} color="#FFFFFF" />
+          </Badge>
+          <View style={[styles.pointer, { borderTopColor: colors.accent }]} />
+        </View>
+      );
+    }
+    case "parking":
+      // Your parking spot: a P.
+      return (
+        <View style={styles.column}>
+          <View style={[styles.square, { backgroundColor: colors.accent }]}>
+            <Text style={styles.squareLetter}>P</Text>
+          </View>
+          <View style={[styles.pointer, { borderTopColor: colors.accent }]} />
+        </View>
+      );
     case "live-camera":
       return (
         <Badge color={colors.accent} size={26}>

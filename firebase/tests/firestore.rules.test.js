@@ -446,14 +446,25 @@ describe("alerts/{alertId} (votes, thanks, byline -- once per user)", () => {
     await assertFails(updateDoc(doc(db, ALERT), { "hiddenBy.c": deleteField() }));
   });
 
-  test("create: thanks start at zero; a byline must be the reporter's own token name", async () => {
+  test("create: no client writes an alert directly (only submitReport on the server)", async () => {
     const named = testEnv.authenticatedContext("d", { name: "Sam" }).firestore();
-    await assertSucceeds(addDoc(collection(named, "alerts"), newAlert("d")));
-    await assertSucceeds(addDoc(collection(named, "alerts"), newAlert("d", { reporterName: "Sam" })));
-    await assertFails(addDoc(collection(named, "alerts"), newAlert("d", { reporterName: "Live Traffic NSW" })));
-    await assertFails(addDoc(collection(named, "alerts"), newAlert("d", { thanksCount: 40 })));
-    const unnamed = testEnv.authenticatedContext("e").firestore();
-    await assertFails(addDoc(collection(unnamed, "alerts"), newAlert("e", { reporterName: "Sam" })));
+    await assertFails(addDoc(collection(named, "alerts"), newAlert("d")));
+    await assertFails(addDoc(collection(named, "alerts"), newAlert("d", { reporterName: "Sam" })));
+    await assertFails(setDoc(doc(named, "alerts/x1"), newAlert("d")));
+  });
+
+  test("pending reports and reporter limits are server only (owner may read their own limits)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "pendingReports/p1"), { uid: "d", type: "police" });
+      await setDoc(doc(ctx.firestore(), "reporterState/d"), { trust: 50, log: [] });
+    });
+    const d = testEnv.authenticatedContext("d").firestore();
+    await assertFails(getDoc(doc(d, "pendingReports/p1")));
+    await assertFails(setDoc(doc(d, "pendingReports/p2"), { uid: "d" }));
+    await assertFails(deleteDoc(doc(d, "pendingReports/p1")));
+    await assertSucceeds(getDoc(doc(d, "reporterState/d")));
+    await assertFails(setDoc(doc(d, "reporterState/d"), { trust: 100 }));
+    await assertFails(getDoc(doc(testEnv.authenticatedContext("e").firestore(), "reporterState/d")));
   });
 });
 
