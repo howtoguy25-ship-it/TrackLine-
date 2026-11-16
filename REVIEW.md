@@ -51,3 +51,4 @@ accounts, §19 brand badges; §16 street pill).
 
 EOF
 echo done
+Export: `npx expo export --platform ios --platform android` OK (2026-11-16): Android Bundled 68003ms (2951 modules);iOS Bundled 114685ms (2974 modules)
