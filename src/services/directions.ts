@@ -62,6 +62,8 @@ export interface RouteStep {
   /** Which side of the road traffic drives on here (Mapbox gives it per step, so a route that
    *  crosses a border -- the Channel Tunnel, Hong Kong to Shenzhen -- changes over mid-route). */
   drivingSide?: "left" | "right";
+  /** This step is a ferry crossing (Mapbox/OSRM step mode "ferry", or Google's FERRY manoeuvre). */
+  ferry?: { name: string | null };
 }
 
 export interface Route {
@@ -263,6 +265,8 @@ function parseRoute(route: any): Route {
     startLocation: { latitude: step.start_location.lat, longitude: step.start_location.lng },
     endLocation: { latitude: step.end_location.lat, longitude: step.end_location.lng },
     polyline: decodePolyline(step.polyline?.points ?? ""),
+    // Google marks the crossing step itself with maneuver "ferry" / "ferry-train".
+    ferry: step.maneuver === "ferry" || step.maneuver === "ferry-train" ? { name: null } : undefined,
   })));
 
   const durationSeconds: number = leg.duration?.value ?? 0;
@@ -526,6 +530,7 @@ function parseRoutesApiRoute(route: any, withTolls = false): Route {
       longitude: step.endLocation?.latLng?.longitude ?? 0,
     },
     polyline: decodePolyline(step.polyline?.encodedPolyline ?? ""),
+    ferry: step.navigationInstruction?.maneuver === "FERRY" || step.navigationInstruction?.maneuver === "FERRY_TRAIN" ? { name: null } : undefined,
   })));
 
   // Same encoded-polyline format as the classic API (both are Google's own standard polyline

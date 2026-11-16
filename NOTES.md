@@ -863,3 +863,24 @@ functions and the rules (not done -- "Don't deploy").
 Not done yet: drawing driver-reported zones on the map (they only change the sign); voice
 call-out wording in other voice-pack languages (English only); official zone data for any
 region other than NSW.
+
+## Travel modes: Drive · Motorbike · Bike · Walk · Transit · Ferry (branch `travel-modes`)
+
+Step 1 (done): the six modes and their order (`src/travel/modes.ts`), remembering the last mode
+(Drive by default), and ferry detection: a route step is a ferry when Mapbox/OSRM gives
+`mode: "ferry"` or Google gives the FERRY manoeuvre; transit legs with vehicle type FERRY.
+Ferry is offered only when a real option includes a ferry leg. Tested on real recorded OSRM
+routes: Putney -> Mortlake (Mortlake vehicle ferry) and Bankstown -> Parramatta (none).
+
+Data limits found:
+- No Google/Mapbox keys in this environment (they're sensitive EAS variables), so live
+  Google/Mapbox responses can't be recorded here. The Circular Quay -> Manly transit ferry test
+  needs a real recorded Google transit (or TfNSW Trip Planner) response: record it with
+  `GOOGLE_DIRECTIONS_API_KEY` set on a machine that has it (script to add in step 4).
+- Overpass (OpenStreetMap ferry routes) is unreachable through this environment's proxy.
+
+Next steps: 2 routing per mode (Mapbox cycling/walking profiles, Google Routes TWO_WHEELER with
+the car-roads fallback note), 3 the mode sheet + icon row with fastest times (selected mode
+first, others lazily, 2-minute cache, greyed "—" with a reason), 4 transit timeline + live/late +
+fare + Opal note, 5 per-mode navigation (bike/walk warnings, "Get off in 2 stops" + vibration),
+6 ferry details (wharves, departures, crossing time, cars, booking link, price).

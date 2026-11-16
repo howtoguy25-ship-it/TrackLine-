@@ -180,6 +180,7 @@ export function toAppSteps(mbSteps: any[], routeDrivingSide: "left" | "right" = 
       maneuverSide: sideOf(m.modifier),
       guidanceViewUrl: guidanceView(banner),
       drivingSide,
+      ferry: here?.mode === "ferry" ? { name: typeof here?.name === "string" && here.name ? here.name : null } : undefined,
     });
   }
   return steps;
