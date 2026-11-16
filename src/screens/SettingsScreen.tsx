@@ -962,6 +962,30 @@ export function SettingsScreen() {
           })}
         </View>
 
+        {/* Which language the map's place and street names are in. */}
+        <Text style={[styles.helperText, { marginTop: spacing.md }]}>Map labels</Text>
+        <View style={styles.themeGrid}>
+          {MAP_LABEL_OPTIONS.map(([value, label]) => {
+            const isSelected = settings.mapLabels === value;
+            return (
+              <Pressable
+                key={value}
+                onPress={() => updateSettings({ mapLabels: value })}
+                style={({ pressed }) => [styles.themeTile, isSelected && styles.themeTileSelected, pressed && { opacity: pressedOpacity }]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`Map labels: ${label}`}
+                testID={`map-labels-${value}`}
+              >
+                <Text style={[styles.themeTileLabel, isSelected && styles.themeTileLabelSelected]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.helperText}>
+          {"Local language shows names as they're signed (Arabic in Riyadh, Japanese in Tokyo). Both adds your language underneath where it's different."}
+        </Text>
+
         {/* Real, explicit request -- which camera pose the map opens into and starts
             navigation in, applied with no flash of a different style first (see MapScreen.tsx's
             own mapViewStyleAppliedRef/chase-cam effects). A live toggle (the existing 3D-
@@ -1743,6 +1767,12 @@ export function SettingsScreen() {
     </ScrollView>
   );
 }
+
+const MAP_LABEL_OPTIONS: ["local" | "app" | "both", string][] = [
+  ["local", "Local language"],
+  ["app", "My app language"],
+  ["both", "Both"],
+];
 
 // What the map, speed limits and school zones are built from (Settings > About).
 const DATA_SOURCES = [

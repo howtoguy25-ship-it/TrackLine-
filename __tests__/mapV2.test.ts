@@ -154,6 +154,26 @@ describe("map style", () => {
     expect(layer("road-label-primary").layout!["text-font"]).toContain("Arial Unicode MS Regular");
   });
 
+  it("Map labels: local by default; my app language; both (app language underneath where different)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { labelText, mapboxNameField } = require("../src/map-v2/styles/buildStyle");
+    expect(mapboxNameField("en-AU")).toBe("name_en");
+    expect(mapboxNameField("ar-SA")).toBe("name_ar");
+    expect(mapboxNameField("zh-TW")).toBe("name_zh-Hant");
+    expect(mapboxNameField("zh-CN")).toBe("name_zh-Hans");
+    expect(mapboxNameField("el-GR")).toBeNull(); // no Greek field in Mapbox Streets: local names
+    expect(labelText("local", "name_en")).toEqual(["coalesce", ["get", "name"], ["get", "name_en"]]);
+    expect(labelText("app", "name_en")).toEqual(["coalesce", ["get", "name_en"], ["get", "name"]]);
+    const both = labelText("both", "name_en") as unknown[];
+    expect(both[0]).toBe("case");
+    expect(JSON.stringify(both[2])).toContain('"format"');
+    expect(labelText("app", null)).toEqual(["coalesce", ["get", "name"], ["get", "name_en"]]);
+    const built = buildStyle(LIGHT_PALETTE, { labels: { mode: "app", field: "name_ja" } }) as { layers: Layer[] };
+    for (const id of ["suburb-labels", "road-label-primary", "poi-labels"]) {
+      expect(built.layers.find((l) => l.id === id)!.layout!["text-field"]).toEqual(["coalesce", ["get", "name_ja"], ["get", "name"]]);
+    }
+  });
+
   it("no rule is tied to one place: no country, coordinate or region filters in any layer", () => {
     for (const style of [light, buildStyle(DARK_PALETTE) as { layers: Layer[] }]) {
       const text = JSON.stringify(style.layers);

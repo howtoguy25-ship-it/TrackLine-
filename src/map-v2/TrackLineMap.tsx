@@ -14,6 +14,8 @@ import {
   SHIELD_PLATE_COLOURS,
   THEME_PALETTES,
   buildStyle,
+  mapboxNameField,
+  type LabelLanguage,
   type ThemeKey,
 } from "@/map-v2/styles/buildStyle";
 import trackLineLight from "@/map-v2/styles/trackline-light.json";
@@ -57,6 +59,8 @@ export interface PoiPress {
 
 interface Props {
   theme: ThemeKey;
+  /** Settings > Map appearance > Map labels. */
+  labelLanguage?: LabelLanguage;
   roadThickness: keyof typeof ROAD_SCALES;
   satellite: boolean;
   /** Fades the base map while routes are being chosen. */
@@ -84,13 +88,24 @@ interface CameraRef {
   setCamera(stop: CameraStop): void;
 }
 
-function styleFor(theme: ThemeKey, roadThickness: keyof typeof ROAD_SCALES, satellite: boolean, dimmed: boolean): string {
-  if (satellite) return JSON.stringify(trackLineSatellite);
+export function styleFor(theme: ThemeKey, roadThickness: keyof typeof ROAD_SCALES, satellite: boolean, dimmed: boolean, labels: LabelLanguage = "local", locale: string | null = deviceLocale()): string {
+  const local = labels === "local";
+  const labelOpt = local ? undefined : { mode: labels, field: mapboxNameField(locale) };
+  if (satellite) return JSON.stringify(local ? trackLineSatellite : buildStyle(SATELLITE_LABEL_PALETTE, { satellite: true, labels: labelOpt }));
   const scale = ROAD_SCALES[roadThickness] ?? 1;
-  if (!dimmed && scale === 1 && (theme === "light" || theme === "normal")) return JSON.stringify(trackLineLight);
-  if (!dimmed && scale === 1 && theme === "dark") return JSON.stringify(trackLineDark);
+  if (local && !dimmed && scale === 1 && (theme === "light" || theme === "normal")) return JSON.stringify(trackLineLight);
+  if (local && !dimmed && scale === 1 && theme === "dark") return JSON.stringify(trackLineDark);
   const palette = THEME_PALETTES[theme] ?? SATELLITE_LABEL_PALETTE;
-  return JSON.stringify(buildStyle(palette, { roadScale: scale, dimmed }));
+  return JSON.stringify(buildStyle(palette, { roadScale: scale, dimmed, labels: labelOpt }));
+}
+
+/** The phone's language ("en-AU"), for "My app language" labels. */
+function deviceLocale(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale || null;
+  } catch {
+    return null;
+  }
 }
 
 export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(props, ref) {
@@ -103,8 +118,8 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   const paddingRef = useLatest(props.padding);
 
   const styleJSON = useMemo(
-    () => styleFor(props.theme, props.roadThickness, props.satellite, props.dimmed),
-    [props.theme, props.roadThickness, props.satellite, props.dimmed]
+    () => styleFor(props.theme, props.roadThickness, props.satellite, props.dimmed, props.labelLanguage ?? "local"),
+    [props.theme, props.roadThickness, props.satellite, props.dimmed, props.labelLanguage]
   );
 
   const mapboxPadding = (extra?: Partial<EdgePadding>) => {

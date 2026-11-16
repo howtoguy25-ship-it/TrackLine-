@@ -97,6 +97,8 @@ export interface AppSettings {
   speedingThresholdKmh: number;
   /** Travel mode last picked (Drive by default): drive, motorbike, bike, walk, transit, ferry. */
   lastTravelMode: string;
+  /** Map labels: the local name (default), the app's language, or both. */
+  mapLabels: "local" | "app" | "both";
   /** Settings > Reports > Road features > School zones. */
   schoolZonesShowOnMap: boolean;
   /** Alert while driving: the school badge on the sign and "School zone, 40" when entering. */
@@ -184,6 +186,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speedWarningChimeEnabled: true,
   speedingThresholdKmh: 3,
   lastTravelMode: "drive",
+  mapLabels: "local",
   schoolZonesShowOnMap: true,
   schoolZonesAlert: true,
   defaultMapViewStyle: "tilted3d",

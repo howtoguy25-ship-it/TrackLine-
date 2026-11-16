@@ -4923,6 +4923,7 @@ export function MapScreen() {
         <TrackLineMap
           ref={mapRef}
           theme={settings.mapTheme}
+          labelLanguage={settings.mapLabels}
           roadThickness={settings.roadThickness}
           satellite={mapType === "hybrid"}
           dimmed={isPickingRoute}

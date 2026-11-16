@@ -78,6 +78,40 @@ export const STYLE_VERSION = 3;
  */
 export const LOCAL_NAME = ["coalesce", ["get", "name"], ["get", "name_en"]];
 
+/** Settings > Map appearance > Map labels. */
+export type LabelLanguage = "local" | "app" | "both";
+
+/** The languages Mapbox Streets v8 carries name_* fields for. */
+export const MAPBOX_NAME_LANGUAGES = ["ar", "en", "es", "fr", "de", "it", "pt", "ru", "zh-Hans", "zh-Hant", "ja", "ko", "vi"] as const;
+
+/** "en-AU" -> "name_en", "zh-TW" -> "name_zh-Hant", "zh-CN" -> "name_zh-Hans"; null if Mapbox has no field. */
+export function mapboxNameField(locale: string | null | undefined): string | null {
+  if (!locale) return null;
+  const [lang, ...rest] = locale.replace("_", "-").split("-");
+  const l = lang.toLowerCase();
+  if (l === "zh") {
+    const r = rest.join("-").toLowerCase();
+    return /hant|tw|hk|mo/.test(r) ? "name_zh-Hant" : "name_zh-Hans";
+  }
+  return (MAPBOX_NAME_LANGUAGES as readonly string[]).includes(l) ? `name_${l}` : null;
+}
+
+/**
+ * A label's text for the chosen mode. "app": the name in the app's language where the tiles have
+ * it, else the local name. "both": the local name, with the app-language name smaller underneath
+ * only where it's different. "local" (default): the local name.
+ */
+export function labelText(mode: LabelLanguage = "local", appField: string | null = null): unknown {
+  if (mode === "local" || !appField) return LOCAL_NAME;
+  if (mode === "app") return ["coalesce", ["get", appField], ["get", "name"]];
+  return [
+    "case",
+    ["all", ["has", appField], ["has", "name"], ["!=", ["get", appField], ["get", "name"]]],
+    ["format", ["get", "name"], {}, "\n", {}, ["get", appField], { "font-scale": 0.8 }],
+    LOCAL_NAME,
+  ];
+}
+
 /** Prefix of the runtime plate images the highway shields are drawn on (TrackLineMap adds them). */
 export const SHIELD_IMAGE = "tl-shield";
 
@@ -233,6 +267,8 @@ export interface BuildOptions {
   satellite?: boolean;
   /** Fades the base map while routes are being chosen, so the route lines stand out. */
   dimmed?: boolean;
+  /** Label language (default: local names). */
+  labels?: { mode: LabelLanguage; field: string | null };
 }
 
 type Json = Record<string, unknown>;
@@ -273,7 +309,7 @@ const LABEL_SIZES: Record<RoadClass, [number, number]> = {
 };
 
 /** The street-name layer for one road class. */
-export function roadLabelLayer(cls: RoadClass, palette: StylePalette): Json {
+export function roadLabelLayer(cls: RoadClass, palette: StylePalette, text: unknown = LOCAL_NAME): Json {
   const [small, large] = LABEL_SIZES[cls];
   return {
     id: `road-label-${cls}`,
@@ -286,7 +322,7 @@ export function roadLabelLayer(cls: RoadClass, palette: StylePalette): Json {
       "symbol-placement": "line",
       "symbol-spacing": LABEL_SPACING_PX,
       "symbol-sort-key": LABEL_PRIORITY[cls],
-      "text-field": LOCAL_NAME,
+      "text-field": text,
       "text-font": LABEL_FONT,
       "text-size": ["interpolate", ["linear"], ["zoom"], LABEL_MIN_ZOOM[cls], small, 18, large],
       "text-max-angle": 30,
@@ -440,7 +476,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     minzoom: 9,
     maxzoom: 16,
     layout: {
-      "text-field": LOCAL_NAME,
+      "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
       "text-font": LABEL_FONT,
       "text-size": ["interpolate", ["linear"], ["zoom"], 9, 14, 13, 20, 16, 22],
       "text-transform": "uppercase",
@@ -450,7 +486,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     },
     paint: { "text-color": p.suburbLabel, "text-halo-color": p.labelHalo, "text-halo-width": 2 },
   });
-  for (const cls of [...ROAD_DRAW_ORDER].reverse()) layers.push(roadLabelLayer(cls, p));
+  for (const cls of [...ROAD_DRAW_ORDER].reverse()) layers.push(roadLabelLayer(cls, p, labelText(options.labels?.mode, options.labels?.field ?? null)));
   layers.push(shieldLayer());
   // Places of interest: small, from close zoom only. Tapping one opens its details
   // (TrackLineMap reads these features at the tap point).
@@ -462,7 +498,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     minzoom: 15.5,
     filter: ["<=", ["get", "filterrank"], 2],
     layout: {
-      "text-field": LOCAL_NAME,
+      "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
       "text-font": LABEL_FONT,
       "text-size": 11,
       "text-max-width": 8,
