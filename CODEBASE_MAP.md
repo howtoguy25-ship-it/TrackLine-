@@ -14,7 +14,9 @@ phase-by-phase status.
 - Firebase (Auth, Firestore, Storage, Cloud Functions, FCM) via the `firebase` JS SDK — see
   `src/services/firebase.ts`.
 - React Navigation (native-stack) — `src/navigation/RootNavigator.tsx`.
-- Map rendering today: **`react-native-maps` (Google Maps SDK, `PROVIDER_GOOGLE`)** for the real,
+- **Update 2026-11-16: the live map is Mapbox (`src/map-v2/`); `react-native-maps` was removed on
+  branch `mapbox-map` (in builds 192+). The paragraph below is history.**
+- Map rendering (historical): **`react-native-maps` (Google Maps SDK, `PROVIDER_GOOGLE`)** for the real,
   live navigation map (`MapScreen.tsx`). The Phase 1B map-engine swap to real **`@rnmapbox/maps`**
   (commercial Mapbox GL) is installed and has real tokens live as EAS env vars, reached in
   isolation via an owner-only `MapboxMapScreen.tsx` preview — not yet the live navigation map. A
