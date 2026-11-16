@@ -13,12 +13,16 @@ import {
   SHIELD_PLATES,
   SHIELD_PLATE_COLOURS,
   THEME_PALETTES,
+  AU_SUBURB_LAYER_ID,
+  AU_SUBURB_MIN_ZOOM,
+  auSuburbLabelStyle,
   buildStyle,
   mapboxNameField,
   type LabelLanguage,
   type ThemeKey,
 } from "@/map-v2/styles/buildStyle";
 import trackLineLight from "@/map-v2/styles/trackline-light.json";
+import { auSuburbFeatures } from "@/map-v2/auSuburbs";
 import trackLineDark from "@/map-v2/styles/trackline-dark.json";
 import trackLineSatellite from "@/map-v2/styles/trackline-satellite-streets.json";
 import {
@@ -209,7 +213,8 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   };
 
   if (!Mapbox) return <View style={[StyleSheet.absoluteFill, styles.unavailable]} />;
-  const { MapView, Camera, Images, Image, FillExtrusionLayer, VectorSource, LineLayer, CameraGestureObserver } = Mapbox;
+  const { MapView, Camera, Images, Image, FillExtrusionLayer, VectorSource, LineLayer, CameraGestureObserver, ShapeSource, SymbolLayer } = Mapbox;
+  const labelPalette = props.satellite ? SATELLITE_LABEL_PALETTE : (THEME_PALETTES[props.theme] ?? SATELLITE_LABEL_PALETTE);
 
   return (
     <MapView
@@ -241,6 +246,16 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
         padding={mapboxPadding()}
         animationDuration={300}
       />
+      {/* Australian suburb names with postcodes (official ABS data), zoom 11-15. */}
+      <ShapeSource id="au-suburbs" shape={auSuburbFeatures()}>
+        <SymbolLayer
+          id={AU_SUBURB_LAYER_ID}
+          minZoomLevel={AU_SUBURB_MIN_ZOOM}
+          maxZoomLevel={16}
+          belowLayerID="road-label-motorway"
+          style={auSuburbLabelStyle(labelPalette) as never}
+        />
+      </ShapeSource>
       <Images>
         {/* Highway-shield plates, one per colour; the style picks one from each road's own shield
             type and stretches it around the route number. */}

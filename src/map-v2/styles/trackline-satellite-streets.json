@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Satellite Streets",
   "metadata": {
-    "trackline:styleVersion": 3
+    "trackline:styleVersion": 4
   },
   "sources": {
     "composite": {
@@ -655,6 +655,82 @@
         false
       ],
       "minzoom": 9,
+      "maxzoom": 11,
+      "layout": {
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name"
+          ],
+          [
+            "get",
+            "name_en"
+          ]
+        ],
+        "text-font": [
+          "DIN Pro Medium",
+          "Arial Unicode MS Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          14,
+          13,
+          20,
+          16,
+          22
+        ],
+        "text-transform": "uppercase",
+        "text-letter-spacing": 0.06,
+        "text-max-width": 8,
+        "symbol-sort-key": [
+          "get",
+          "symbolrank"
+        ]
+      },
+      "paint": {
+        "text-color": "#FFFFFF",
+        "text-halo-color": "#1F2125",
+        "text-halo-width": 2
+      }
+    },
+    {
+      "id": "suburb-labels-intl",
+      "type": "symbol",
+      "source": "composite",
+      "source-layer": "place_label",
+      "filter": [
+        "all",
+        [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "settlement",
+            "settlement_subdivision"
+          ],
+          true,
+          false
+        ],
+        [
+          "!=",
+          [
+            "get",
+            "iso_3166_1"
+          ],
+          "AU"
+        ]
+      ],
+      "minzoom": 11,
       "maxzoom": 16,
       "layout": {
         "text-field": [

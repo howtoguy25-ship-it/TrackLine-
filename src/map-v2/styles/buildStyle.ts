@@ -69,7 +69,27 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 3;
+export const STYLE_VERSION = 4;
+
+/** Australian suburb names with postcodes (ABS data) are drawn from this zoom up to 16. */
+export const AU_SUBURB_MIN_ZOOM = 11;
+export const AU_SUBURB_LAYER_ID = "au-suburb-labels";
+
+/** The Australian suburb layer's look: the same as every other suburb label. */
+export function auSuburbLabelStyle(palette: StylePalette) {
+  return {
+    textField: ["case", ["has", "postcode"], ["concat", ["get", "name"], " ", ["get", "postcode"]], ["get", "name"]],
+    textFont: LABEL_FONT,
+    textSize: ["interpolate", ["linear"], ["zoom"], 11, 15, 13, 20, 16, 22],
+    textTransform: "uppercase" as const,
+    textLetterSpacing: 0.06,
+    textMaxWidth: 9,
+    textColor: palette.suburbLabel,
+    textHaloColor: palette.labelHalo,
+    textHaloWidth: 2,
+    textAllowOverlap: false,
+  };
+}
 
 /**
  * Every label is the place's own name in the local language and script (Mapbox Streets `name`):
@@ -467,24 +487,42 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
   }
 
   // Labels: suburbs, then street names (most important first), then shields on top.
+  // Suburb and town names. Below zoom 11 (and outside Australia at every zoom) they're Mapbox's
+  // own. From zoom 11 in Australia they come from the official ABS suburb list instead, with the
+  // postcode ("PUNCHBOWL 2196") -- TrackLineMap draws that layer (AU_SUBURB_LAYER_ID). No other
+  // country has an official source wired, so no postcode is shown anywhere else.
+  const suburbLayout = {
+    "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
+    "text-font": LABEL_FONT,
+    "text-size": ["interpolate", ["linear"], ["zoom"], 9, 14, 13, 20, 16, 22],
+    "text-transform": "uppercase",
+    "text-letter-spacing": 0.06,
+    "text-max-width": 8,
+    "symbol-sort-key": ["get", "symbolrank"],
+  };
+  const suburbPaint = { "text-color": p.suburbLabel, "text-halo-color": p.labelHalo, "text-halo-width": 2 };
+  const settlement = ["match", ["get", "class"], ["settlement", "settlement_subdivision"], true, false];
   layers.push({
     id: "suburb-labels",
     type: "symbol",
     source: "composite",
     "source-layer": "place_label",
-    filter: ["match", ["get", "class"], ["settlement", "settlement_subdivision"], true, false],
+    filter: settlement,
     minzoom: 9,
+    maxzoom: AU_SUBURB_MIN_ZOOM,
+    layout: suburbLayout,
+    paint: suburbPaint,
+  });
+  layers.push({
+    id: "suburb-labels-intl",
+    type: "symbol",
+    source: "composite",
+    "source-layer": "place_label",
+    filter: ["all", settlement, ["!=", ["get", "iso_3166_1"], "AU"]],
+    minzoom: AU_SUBURB_MIN_ZOOM,
     maxzoom: 16,
-    layout: {
-      "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
-      "text-font": LABEL_FONT,
-      "text-size": ["interpolate", ["linear"], ["zoom"], 9, 14, 13, 20, 16, 22],
-      "text-transform": "uppercase",
-      "text-letter-spacing": 0.06,
-      "text-max-width": 8,
-      "symbol-sort-key": ["get", "symbolrank"],
-    },
-    paint: { "text-color": p.suburbLabel, "text-halo-color": p.labelHalo, "text-halo-width": 2 },
+    layout: suburbLayout,
+    paint: suburbPaint,
   });
   for (const cls of [...ROAD_DRAW_ORDER].reverse()) layers.push(roadLabelLayer(cls, p, labelText(options.labels?.mode, options.labels?.field ?? null)));
   layers.push(shieldLayer());

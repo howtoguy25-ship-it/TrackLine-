@@ -34,3 +34,4 @@ functions/lib/
 # never a real credential (see firebase/tests/README.md), but still never committed on principle.
 firebase/functions/.secret.local
 firebase/tests/node_modules/
+.cache-abs/

@@ -147,7 +147,7 @@ describe("map style", () => {
   });
 
   it("labels are in the local language and script, everywhere", () => {
-    for (const id of ["suburb-labels", "road-label-residential", "road-label-motorway", "poi-labels"]) {
+    for (const id of ["suburb-labels", "suburb-labels-intl", "road-label-residential", "road-label-motorway", "poi-labels"]) {
       expect(layer(id).layout!["text-field"]).toEqual(["coalesce", ["get", "name"], ["get", "name_en"]]);
     }
     // The fallback font covers Arabic, CJK and Cyrillic.
@@ -176,7 +176,9 @@ describe("map style", () => {
 
   it("no rule is tied to one place: no country, coordinate or region filters in any layer", () => {
     for (const style of [light, buildStyle(DARK_PALETTE) as { layers: Layer[] }]) {
-      const text = JSON.stringify(style.layers);
+      // The one exception, by design: Australian suburb labels from z11 come from the ABS layer
+      // (with postcodes), so Mapbox's own are left out there -- "suburb-labels-intl".
+      const text = JSON.stringify(style.layers.filter((l) => l.id !== "suburb-labels-intl"));
       expect(text).not.toMatch(/iso_3166|worldview|"within"|"distance"|\bAU\b|Sydney|NSW/);
     }
     expect((light as unknown as { metadata: Record<string, unknown> }).metadata["trackline:styleVersion"]).toBe(STYLE_VERSION);

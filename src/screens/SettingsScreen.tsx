@@ -1781,6 +1781,7 @@ const DATA_SOURCES = [
   "NSW school zones and their hours: Transport for NSW, Speed Zones dataset (CC BY 4.0)",
   "NSW school terms: Transport for NSW (zone operating calendar) and NSW Department of Education",
   "NSW public holidays: NSW Government, Guide to Public Holidays",
+  "Australian suburb names and postcodes: Australian Bureau of Statistics, ASGS Edition 3 (2021) Suburbs and Localities and Postal Areas (CC BY 4.0)",
   "NSW live traffic incidents and cameras: Transport for NSW, Live Traffic NSW (CC BY 4.0)",
   "Places, search and Street View: Google",
 ];
