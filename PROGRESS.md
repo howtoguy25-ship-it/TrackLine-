@@ -1,5 +1,32 @@
 # Waze-style redesign — progress
 
+## Honest status — 2026-11-16 (read this first)
+
+DONE = wired into a real screen AND has a passing test. Nothing here has been run on a phone by
+me; everything visible needs your device check (`TEST_ON_PHONE.md`).
+
+| Feature | Status | Evidence | What you need to do |
+|---|---|---|---|
+| Waze redesign phases 1-6 (home, Where to?, voice picker/record, menu, Plan a drive, Inbox, settings groups) | DONE + NEEDS DEVICE TEST | `__tests__/presses/{homeScreen,menu,search,settings}.test.tsx`, `scripts/test-ui-logic.ts` (61), `scripts/test-nav-speech.ts` (32) | TEST_ON_PHONE §9. Note: `src/map/cameraZoom.ts` is unused; the speed zoom actually used is in MapScreen (~line 1714) and has no test |
+| UI pass 2 | DONE + NEEDS DEVICE TEST | `__tests__/uiPass2.test.ts`, `presses/placePage.test.tsx`, `presses/routeSelection.test.tsx` | §9 |
+| Button fix | DONE + NEEDS DEVICE TEST | `presses/navigationConfig.test.ts`, `presses/wiring.test.ts`, `presses/menu.test.tsx` | §10 |
+| Mapbox map | DONE + NEEDS DEVICE TEST | `__tests__/mapV2.test.ts`; in builds 192 and 194 | §11 |
+| Buttons / colour meaning | DONE | `design/colours.test.ts`, `design/buttons.test.tsx`, `design/appWide.test.ts` | §12 |
+| Trackys, Ghost mode, customiser | DONE (app side) + NEEDS DEVICE TEST | `presses/menu.test.tsx`, `firebase/tests/firestore.rules.test.js` | §1-8 |
+| Presence (other drivers on the map) | BLOCKED: server never deployed | `firebase/tests/functions.test.js` (updatePresence, clearPresence, sendWave), `scripts/test-presence-playback.ts` (19) | Run the Firebase deploy workflow (it has never run); `MAPBOX_SERVER_TOKEN` must be a GitHub secret |
+| Live Traffic NSW (incidents, congestion) | BLOCKED: server never deployed | `firebase/tests/trafficNswCore.test.js`, `scripts/test-traffic-nsw.ts` (14) | Deploy; `TFNSW_API_KEY` GitHub secret |
+| Police | Driver reports only. No official police feed exists (TfNSW doesn't publish police) | alerts rules in `firestore.rules.test.js` | -- |
+| School zones + speed limits | DONE (code + tests), server BLOCKED until deployed, NEEDS DEVICE TEST | `__tests__/schoolZones/*` (4 files), emulator: road-report rules + `confirmRoadReport/syncRoadReport` | Deploy, then run `refreshSchoolZones` once; §14 |
+| Lane guidance + exit zoom | DONE + NEEDS DEVICE TEST | `__tests__/nav/{approach,laneStrip,allManoeuvres,worldwide,routing}.test.*` | §13 |
+| Robust progress matching | DONE + NEEDS DEVICE TEST | `__tests__/nav/robustness.test.ts`, `nav/missingData.test.tsx` | §13 (tunnel, airplane mode) |
+| Report cards, anti-spam, expiry | NOT STARTED (existing: report pins, `AlertDetailSheet`, confirm/deny counts, `cleanupExpiredAlerts` 45 min-24 h, `validateAlertOnCreate` shape check only -- no rate limits) | -- | -- |
+| Travel modes | Step 1 of 6: CODE + tests, NOT on any screen | `__tests__/travel/modes.test.ts` | Circular Quay -> Manly test needs a recorded Google/TfNSW response (keys not available here) |
+
+Server tests: `npx firebase-tools emulators:exec --only firestore,storage,functions,auth "npm --prefix firebase/tests test"`
+runs here -- 6 suites, 131 tests passed (2026-11-16). They also run on every push now
+(`.github/workflows/tests.yml`, with typecheck, Jest and `scripts/test-*.ts`).
+
+
 Tracks the two specs given for this redesign: the original 6-phase UI/UX spec, and the newer
 "Phase 1B" + "full redesign, one prompt, all phases" spec (map engine swap to Mapbox/MapLibre,
 Live Traffic NSW, full settings reorg, etc.). Kept current so a new session can pick up exactly
