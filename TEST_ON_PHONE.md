@@ -260,6 +260,47 @@ Real data only: NSW official zones (Transport for NSW). Do these as a passenger.
 - [ ] Settings › Map appearance › Map labels: Local / My app language / Both change the map's names straight away (try Both in Tokyo, Riyadh or Beirut on the map).
 - [ ] Zoom to street level in Sydney: suburb labels read e.g. "PUNCHBOWL 2196". Overseas: suburb names with no postcode.
 
+## 17. Tap a pin: alert card + spotlight — NEEDS DEVICE TEST
+
+Before this, deploy the Firestore rules (DEPLOY.md). Until you do, thumbs-up and "Still here /
+Not here" are refused by the old server rules.
+
+1. On the home map (not navigating), tap any report pin. A dark card slides down from the top:
+   type, live distance ("Here" under 20 m), road + suburb, the note in quotes if it has one,
+   "N min ago by anonymous", a big round icon, and a blue thumbs-up with a count.
+2. The map dims everywhere except a soft circle on the pin, and the camera glides to the pin
+   without zooming.
+3. Close it three ways: tap the dimmed map; swipe the card up; leave it 8 seconds. Each time the
+   camera returns to where it was.
+4. Tap the card itself: the full details sheet opens (delete / hide / still here), as before.
+5. Thumbs-up on someone else's report: the count goes up by one; tap again, nothing happens.
+   On your own report the pill is grey.
+6. Drive somewhere with a Live Traffic NSW incident and tap it: the card says
+   "by Live Traffic NSW" with Transport for NSW's place and advice; no thumbs-up.
+7. Start navigation and tap a pin: a smaller card appears under the instruction card (never over
+   it or the lane arrows), no dimming, the map keeps following you.
+
+## 18. Trackys between two accounts — NEEDS DEVICE TEST
+
+Needs the Firebase deploy run first (functions + rules; `MAPBOX_SERVER_TOKEN` as a GitHub secret).
+Two phones (or a phone and a friend's), two different accounts, both with Ghost mode off.
+
+1. Phone A: Settings › Visibility = Everyone. Drive (over 15 km/h) for a minute.
+2. Phone B, within a few km: A's Tracky appears on the map, moving along the road, with A's
+   chosen mood/look. Tap it: the card shows the name only if A allowed names.
+3. Phone A: turn on Ghost mode. Within a minute A's Tracky disappears from B.
+4. Phone A: stop for a while (under 15 km/h). A's Tracky disappears from B.
+5. Swap roles and repeat.
+
+## 19. Brand badges on the map — NEEDS DEVICE TEST
+
+1. Zoom to street level in a shopping area. At zoom 13+ fuel stations and hospitals show as small
+   square badges with a pointer (fuel pump / "H"); at 15+ supermarkets, cafés, fast food, shops
+   and parking appear too, each with its name beside it.
+2. They never overlap each other; zoom in to see more.
+3. No brand logos: only our own icons.
+4. Tap a badge: that place's page opens.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

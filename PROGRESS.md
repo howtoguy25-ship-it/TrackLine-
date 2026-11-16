@@ -13,14 +13,35 @@ me; everything visible needs your device check (`TEST_ON_PHONE.md`).
 | Mapbox map | DONE + NEEDS DEVICE TEST | `__tests__/mapV2.test.ts`; in builds 192 and 194 | §11 |
 | Buttons / colour meaning | DONE | `design/colours.test.ts`, `design/buttons.test.tsx`, `design/appWide.test.ts` | §12 |
 | Trackys, Ghost mode, customiser | DONE (app side) + NEEDS DEVICE TEST | `presses/menu.test.tsx`, `firebase/tests/firestore.rules.test.js` | §1-8 |
-| Presence (other drivers on the map) | BLOCKED: server never deployed | `firebase/tests/functions.test.js` (updatePresence, clearPresence, sendWave), `scripts/test-presence-playback.ts` (19) | Run the Firebase deploy workflow (it has never run); `MAPBOX_SERVER_TOKEN` must be a GitHub secret |
+| Presence (other drivers on the map) | BLOCKED: server never deployed (two-account check: TEST_ON_PHONE §18) | `firebase/tests/functions.test.js` (updatePresence, clearPresence, sendWave), `scripts/test-presence-playback.ts` (19) | Run the Firebase deploy workflow (it has never run); `MAPBOX_SERVER_TOKEN` must be a GitHub secret |
 | Live Traffic NSW (incidents, congestion) | BLOCKED: server never deployed | `firebase/tests/trafficNswCore.test.js`, `scripts/test-traffic-nsw.ts` (14) | Deploy; `TFNSW_API_KEY` GitHub secret |
 | Police | Driver reports only. No official police feed exists (TfNSW doesn't publish police) | alerts rules in `firestore.rules.test.js` | -- |
 | School zones + speed limits | DONE (code + tests), server BLOCKED until deployed, NEEDS DEVICE TEST | `__tests__/schoolZones/*` (4 files), emulator: road-report rules + `confirmRoadReport/syncRoadReport` | Deploy, then run `refreshSchoolZones` once; §14 |
 | Lane guidance + exit zoom | DONE + NEEDS DEVICE TEST | `__tests__/nav/{approach,laneStrip,allManoeuvres,worldwide,routing}.test.*` | §13 |
 | Robust progress matching | DONE + NEEDS DEVICE TEST | `__tests__/nav/robustness.test.ts`, `nav/missingData.test.tsx` | §13 (tunnel, airplane mode) |
-| Report cards, anti-spam, expiry | NOT STARTED (existing: report pins, `AlertDetailSheet`, confirm/deny counts, `cleanupExpiredAlerts` 45 min-24 h, `validateAlertOnCreate` shape check only -- no rate limits) | -- | -- |
+| Report alert card + spotlight (spec §1) | DONE + NEEDS DEVICE TEST | `__tests__/presses/alertCard.test.tsx` (12); `src/components/AlertCard.tsx`, `MapSpotlight.tsx`, `src/map/alertCard.ts` | TEST_ON_PHONE §17 |
+| Thanks + votes once per user (§1, §7 votes) | DONE in rules; BLOCKED until rules are deployed | `firebase/tests/firestore.rules.test.js` alerts block (11 new, 38/38) | Deploy rules. Until then the new build's "Still here / Not here" and thumbs-up are refused by the old server rules |
+| Official Live Traffic NSW alerts in the card (§4) | DONE (NSW). Thanks / "still there?" on official alerts NOT DONE | `alertCard.test.tsx` official cases | Other countries: no official feed integrated, none shown |
+| Tap a Tracky → info bubble (§2) | NOT DONE | no code; tapping a Tracky still opens the existing PresenceCard | -- |
+| Home/Work/saved place popup, Send/Routes/•••, parking spot (§3) | NOT DONE | no code | -- |
+| Brand & popular-place badges (§5) | PARTIAL: badges DONE from Mapbox POI data (brand + prominence), logo hook DONE; ranking by Google Places rating counts + anonymous visits NOT DONE; 300 m nearby boost NOT DONE | `__tests__/poiBadges.test.ts` (6); `src/map/poiBadges.ts`; `licences/README.md` | -- |
+| 3 s undo, max 2/hour (§6) | NOT DONE | no code; reporters can still delete their own report from the details sheet | -- |
+| Server-side anti-spam (§6) | NOT DONE (only the rules' shape checks, `validateAlertOnCreate`, and now once-per-user votes) | -- | -- |
+| Expiry + "Still here?" (§7) | PARTIAL: per-type TTL (`ALERT_TTL_MS`), `cleanupExpiredAlerts`, proximity prompt (`AlertStillHereCard`) exist; extend-on-confirm and remove-after-2-"Not there" NOT DONE | -- | -- |
 | Travel modes | Step 1 of 6: CODE + tests, NOT on any screen | `__tests__/travel/modes.test.ts` | Circular Quay -> Manly test needs a recorded Google/TfNSW response (keys not available here) |
+
+### Map checklist (Mapbox map, style v5)
+
+| Item | Status | Evidence / reason |
+|---|---|---|
+| Map engine line in Settings › About | DONE | `mapEngineLine()` in `src/config/mapEngine.ts`, testID `map-engine`, `mapV2.test.ts` |
+| Road shields from Mapbox's own `shield` data | DONE | `SHIELD_PLATE_FOR` (documented values only), `mapV2.test.ts` |
+| Map labels: Local / My app language / Both | DONE + NEEDS DEVICE TEST | Settings › Map appearance; `mapV2.test.ts` label modes |
+| Suburb postcodes (ABS POA, z11-15, "Punchbowl 2196") | DONE (Australia); other countries name only | `src/data/auSuburbPostcodes.json`, `scripts/build-au-postcodes.py`, `__tests__/auSuburbs.test.ts` |
+| Live street-name pill | DONE + NEEDS DEVICE TEST (drive past 3 streets) | `__tests__/presses/streetPill.test.tsx` at 320/375/390/430pt |
+| Tap a pin → alert card + spotlight | DONE + NEEDS DEVICE TEST | `__tests__/presses/alertCard.test.tsx` |
+| Brand / POI badges | PARTIAL (see table above), NEEDS DEVICE TEST §19 | `__tests__/poiBadges.test.ts` |
+| Worldwide previews | BLOCKED: no Mapbox token in this environment | `docs/map-previews/README.md`, `scripts/render-map-previews.mjs` |
 
 Server tests: `npx firebase-tools emulators:exec --only firestore,storage,functions,auth "npm --prefix firebase/tests test"`
 runs here -- 6 suites, 131 tests passed (2026-11-16). They also run on every push now

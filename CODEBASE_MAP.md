@@ -146,3 +146,35 @@ prototype entirely). What's left is wiring the engine into the live navigation m
 (teal user marker, real route ShapeSource/SymbolLayer rendering, the camera/zoom logic already
 written in `src/map/cameraZoom.ts`, light/dark style switching) — tracked in PROGRESS.md, not yet
 started.
+
+## Full index (2026-11-16, after the code review)
+
+File counts are `.ts`/`.tsx` under each folder. Every folder's files are listed by `ls`; this is
+what each folder is for and the files added in the review / finish-the-map rounds.
+
+| Folder | Files | What's in it |
+|---|---|---|
+| `src/screens/` | 37 | One file per screen or sheet. `MapScreen.tsx` is the hub (map, navigation, home controls, every sheet). |
+| `src/components/` | 45 | Shared views. New: `AlertCard.tsx` (dark card when a pin is tapped; full + compact), `MapSpotlight.tsx` (45% dim with a feathered circle on the pin). `StreetPill.tsx` rewritten (bottom-centre, 200 ms cross-fade). |
+| `src/components/ui/` | -- | Design-system primitives: `Button`, `Icon` (lucide line icons by name), `Surface`, `surfaceScheme`. |
+| `src/map/` | 5 | Pure map rules, unit-tested: `homeMapLogic` (button fade, arrow + pill position, pill width), `routeChoices`, `speedZoom` (zoom by speed), `alertCard` (card text, "Here" < 20 m, road + suburb, spotlight centre, 8 s idle), `poiBadges` (brand badges from Mapbox `poi_label`: categories, zoom 13/15, prominence, partner-logo hook). |
+| `src/map-v2/` | 15 | The Mapbox map: `TrackLineMap` (MapView, camera handle, label language, AU suburb labels), `MapboxLayers`, `layers/*`, `styles/buildStyle.ts` (style v5; shields, labels, badges) + generated JSON, `auSuburbs.ts` (ABS suburb + postcode features). |
+| `src/nav/` | 6 | Turn-by-turn: route matcher, approach state machine, lanes, manoeuvres, reroute trigger, pipeline. |
+| `src/travel/` | 2 | Travel modes: mode list/icons/ferry detection (`modes`), per-mode routing with fallbacks and a 2-minute cache (`modeRouting`). |
+| `src/schoolZones/` | 9 | Official NSW school zones: store, matching, calendar/opening hours, community reports. |
+| `src/speedLimits/` | 1 | Which speed limit wins (school zone > sign > map data). |
+| `src/services/` | 68 | Data + device services. `alerts.ts` now has `voteOnAlert`/`thankAlert`/`hasThankedAlert` (once per user, batched with a marker doc) and the optional `reporterName`. `liveVehiclePositions.ts` is kept on purpose for transit step 4 (not imported yet). |
+| `src/hooks/` | 6 | `useLatest` (ref updated in a layout effect), live speed, Tracky mood/appearance, reduce motion, auto Ghost mode. |
+| `src/context/` | 3 | Auth, location (incl. GPS replay), settings. |
+| `src/config/` | 6 | Env keys, admin list, build stamp, `mapEngine` (the "Map engine: Mapbox · style vN · commit" line in About). |
+| `src/theme/` | 4 | Colours (meaning colours live only here), tokens (incl. `pillShadow`), scale, Rubik typography. |
+| `src/utils/` | 19 | Geo, formatting (`navFormat`), comment filter, AU states, marker styles, misc. |
+| `src/data/` | json | `auSuburbPostcodes.json` (ABS ASGS 2021 SAL + POA, CC BY 4.0; built by `scripts/build-au-postcodes.py`). |
+| `src/dev/`, `src/debug/` | 6 | Simulate drive / GPS replay; touch debugger. Dev only. |
+| `src/native/`, `modules/`, `plugins/` | -- | YAMNet siren detection bridge; native modules; Expo config plugins. |
+| `firebase/` | -- | `firestore.rules` (alerts: once-per-user votes/thanks via `votes/{uid}` + `thanks/{uid}` markers), `storage.rules`, `functions/index.js`, `tests/` (emulator suites, 142 tests). |
+| `licences/` | md | What's needed before any brand logo may be shown (none yet). |
+| `__tests__/`, `scripts/test-*.ts` | -- | Jest (34 suites) and 7 script suites; both run in CI (`.github/workflows/tests.yml`). |
+
+Removed as dead code in the review: `src/services/vehicleClassifier.ts`, `src/types/liveShare.ts`,
+`src/components/trackys/index.ts`, `src/map/cameraZoom.ts` (replaced by the tested `speedZoom.ts`).
