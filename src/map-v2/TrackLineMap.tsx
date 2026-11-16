@@ -1,4 +1,5 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useLatest } from "@/hooks/useLatest";
 import { StyleSheet, View } from "react-native";
 import type { CameraStop, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { loadMapbox } from "@/map-v2/mapbox";
@@ -99,8 +100,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   const lastCamera = useRef<CameraLike>({ center: props.initialCenter, heading: 0, pitch: 0, zoom: props.initialZoom });
   const gestures = useRef(new GestureTracker());
   const [raised, setRaised] = useState(false);
-  const paddingRef = useRef(props.padding);
-  paddingRef.current = props.padding;
+  const paddingRef = useLatest(props.padding);
 
   const styleJSON = useMemo(
     () => styleFor(props.theme, props.roadThickness, props.satellite, props.dimmed),

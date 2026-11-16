@@ -275,7 +275,7 @@ export function SignInScreen() {
         disabled={busy}
       />
       {!env.googleIosClientId && (
-        <Text style={styles.disabledNote}>Google sign-in isn't configured for this build yet.</Text>
+        <Text style={styles.disabledNote}>Google sign-in isn&apos;t configured for this build yet.</Text>
       )}
 
       <View style={styles.divider}>

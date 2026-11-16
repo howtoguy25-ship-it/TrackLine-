@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Animated, StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
@@ -29,8 +29,8 @@ function formatDistance(meters: number): string {
 }
 
 export function ExitLaneGuidance({ direction, distanceMeters, instruction, bottom }: Props) {
-  const translateY = useRef(new Animated.Value(60)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useState(() => new Animated.Value(60))[0];
+  const opacity = useState(() => new Animated.Value(0))[0];
 
   useEffect(() => {
     Animated.parallel([

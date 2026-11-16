@@ -129,5 +129,8 @@
       "/node_modules/react-native-reanimated/plugin/",
       "/node_modules/@react-native/babel-preset/"
     ]
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6"
   }
 }

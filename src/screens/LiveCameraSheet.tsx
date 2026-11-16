@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { View, StyleSheet, Animated } from "react-native";
@@ -39,7 +39,7 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
   // itself only changes once a minute, so without this the label would freeze at "0s ago" until
   // the next real frame landed instead of counting up live.
   const [, setClockTick] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useState(() => new Animated.Value(0))[0];
 
   useEffect(() => {
     if (!camera) return;

@@ -1,4 +1,5 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { useLatest } from "@/hooks/useLatest";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, ActivityIndicator, FlatList, Keyboard } from "react-native";
@@ -166,10 +167,8 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
   // Refs updated on every render (cheap, no effect re-run) hold the latest versions, and the
   // effect itself only re-runs when the real station DATA changes, never when a caller's
   // callback identity does.
-  const onViewDetailsRef = useRef(onViewDetails);
-  onViewDetailsRef.current = onViewDetails;
-  const onStationsChangeRef = useRef(onStationsChange);
-  onStationsChangeRef.current = onStationsChange;
+  const onViewDetailsRef = useLatest(onViewDetails);
+  const onStationsChangeRef = useLatest(onStationsChange);
 
   // Reports the FULL (un-filtered) result set, not filteredStations -- map pins showing every
   // real station found stays independent of this sheet's own text search.

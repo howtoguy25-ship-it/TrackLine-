@@ -733,13 +733,13 @@ export function SettingsScreen() {
           />
         </Row>
         <Text style={styles.helperText}>
-          Off — you won't see or receive any community alerts.
+          Off — you won&apos;t see or receive any community alerts.
         </Text>
 
         <Text style={styles.rowLabel}>Regions</Text>
         <Text style={styles.helperText}>
           Toggle on whichever real Australian states/territories you want to see alerts from --
-          you'll see every alert in every region toggled on, regardless of how far away it is.
+          you&apos;ll see every alert in every region toggled on, regardless of how far away it is.
         </Text>
         <View style={styles.alertTypeGrid}>
           {AU_STATES.map((state) => (
@@ -777,7 +777,7 @@ export function SettingsScreen() {
         </Text>
         <Text style={styles.helperText}>
           How long an alert or incident YOU report stays visible before it auto-disappears for
-          everyone. "Default" uses this app's own per-type timing (45 min for police/emergency
+          everyone. &quot;Default&quot; uses this app&apos;s own per-type timing (45 min for police/emergency
           vehicle, 2 hours for hazards/crashes/traffic lights, 24 hours for speed cameras).
         </Text>
         <View style={styles.expiryChipRow}>
@@ -1159,8 +1159,8 @@ export function SettingsScreen() {
           />
         </Row>
         <Text style={styles.helperText}>
-          Every known traffic light and fixed speed camera location, mapped by OpenStreetMap's
-          community — shown independently on the map, whether or not "Live alerts" is on, out to
+          Every known traffic light and fixed speed camera location, mapped by OpenStreetMap&apos;s
+          community — shown independently on the map, whether or not &quot;Live alerts&quot; is on, out to
           however far from your own location the radius above is set (1-200 km).
         </Text>
         {/* Boxed off from the OSM layer rows above -- per explicit request, a real, visually
@@ -1193,7 +1193,7 @@ export function SettingsScreen() {
             />
           </Row>
           <Text style={styles.helperText}>
-            Real, live-refreshing government road camera images (Transport for NSW's open
+            Real, live-refreshing government road camera images (Transport for NSW&apos;s open
             dataset) — separate from the mapped OSM layer above. NSW only for now; tap a camera
             pin on the map to see its actual current image.
           </Text>
@@ -1290,9 +1290,9 @@ export function SettingsScreen() {
       {__DEV__ && (
         <Section title="GPS replay (dev only)" visible={shouldShow("GPS replay (dev only)")}>
           <Text style={styles.helperText}>
-            Paste a real recorded drive's GPX XML below, then Start -- every screen that reads
+            Paste a real recorded drive&apos;s GPX XML below, then Start -- every screen that reads
             live location (this map, the speedometer, off-route rerouting) will play it back as
-            if it were your real GPS, at the file's own real recorded pace.
+            if it were your real GPS, at the file&apos;s own real recorded pace.
           </Text>
           <TextInput
             value={gpxText}
@@ -1353,7 +1353,7 @@ export function SettingsScreen() {
         <Text style={[styles.rowLabel, { marginTop: spacing.md }]}>Night mode</Text>
         <Text style={styles.helperText}>
           Brightens the camera feed and loosens detection thresholds for real low-light
-          conditions. "Auto" turns on 10 minutes after sunset and off at sunrise, calculated for
+          conditions. &quot;Auto&quot; turns on 10 minutes after sunset and off at sunrise, calculated for
           your own real current location -- never a fixed clock time.
         </Text>
         <View style={styles.expiryChipRow}>
@@ -1379,7 +1379,7 @@ export function SettingsScreen() {
 
       <Section title="Vehicle REV Checks" visible={shouldShow("Vehicle REV Checks")}>
         <Text style={styles.helperText}>
-          Look up a vehicle's 5-year registration &amp; odometer history and stolen/written-off/
+          Look up a vehicle&apos;s 5-year registration &amp; odometer history and stolen/written-off/
           money-owing status -- Australia only. Vehicles the AI detector fully identifies (a
           confirmed plate read) are saved here automatically; you can also enter any plate by
           hand.
@@ -1415,12 +1415,12 @@ export function SettingsScreen() {
 
             <Text style={[styles.rowLabel, { marginTop: spacing.lg }]}>Provider keys (owner only)</Text>
             <Text style={styles.helperText}>
-              Real vehicle history isn't free -- PPSR (stolen/written-off/money-owing) and NEVDIS
+              Real vehicle history isn&apos;t free -- PPSR (stolen/written-off/money-owing) and NEVDIS
               (registration + odometer history) both require your own signed-up broker account.
-              Paste your keys below once you have them; every user's check stays clearly marked
-              "not connected" until then -- nothing here is ever fabricated. Saved to Firestore,
+              Paste your keys below once you have them; every user&apos;s check stays clearly marked
+              &quot;not connected&quot; until then -- nothing here is ever fabricated. Saved to Firestore,
               never bundled into the app itself, and only ever readable by your own signed-in
-              account or the server-side check function -- no other user's device can read it.
+              account or the server-side check function -- no other user&apos;s device can read it.
             </Text>
             {!keysLoaded ? (
               <ActivityIndicator size="small" color={SETTINGS_TEXT_MUTED} />
@@ -1521,9 +1521,9 @@ export function SettingsScreen() {
               Plate recognition provider (owner only)
             </Text>
             <Text style={styles.helperText}>
-              Cloud OCR for AI Vehicle Detection's plate reads via Plate Recognizer -- a separate
+              Cloud OCR for AI Vehicle Detection&apos;s plate reads via Plate Recognizer -- a separate
               provider from the ones above. When connected, cropped plate images are sent to
-              platerecognizer.com's own servers instead of staying fully on-device. Sign up there
+              platerecognizer.com&apos;s own servers instead of staying fully on-device. Sign up there
               for a real account, then paste the apiKey it gives you below.
             </Text>
             {!plateRecognizerKeyLoaded ? (
@@ -1586,7 +1586,7 @@ export function SettingsScreen() {
             <Text style={styles.modalBody}>
               AI Vehicle Detection runs a real, live camera feed through on-device AI several
               times a second — genuinely one of the heaviest things this app does. Both iOS and
-              Android automatically slow the phone's processor down once battery gets low (and
+              Android automatically slow the phone&apos;s processor down once battery gets low (and
               more aggressively in Low Power/Battery Saver mode) to save power. That same
               slowdown affects any app doing heavy real-time processing, not just this one.
             </Text>
@@ -1613,8 +1613,8 @@ export function SettingsScreen() {
           </Text>
         </View>
         <Text style={styles.helperText}>
-          Everywhere else — and for anything NSW's live feed doesn't cover — tapping Transit
-          still finds real nearby buses and trains to wherever you're headed, using published
+          Everywhere else — and for anything NSW&apos;s live feed doesn&apos;t cover — tapping Transit
+          still finds real nearby buses and trains to wherever you&apos;re headed, using published
           timetables (the real line, real stop, and real scheduled departure time, just not a
           live-tracked vehicle position).
         </Text>
@@ -1629,7 +1629,7 @@ export function SettingsScreen() {
           />
         </Row>
         <Text style={styles.helperText}>
-          When on, a confirmed siren detection automatically posts an "Emergency Vehicle" alert
+          When on, a confirmed siren detection automatically posts an &quot;Emergency Vehicle&quot; alert
           at your location for nearby drivers. Off by default — your location is never shared
           from an audio detection without this opt-in.
         </Text>

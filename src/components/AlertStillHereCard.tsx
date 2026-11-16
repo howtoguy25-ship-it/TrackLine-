@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
@@ -24,7 +24,7 @@ const OFFSCREEN_Y = 180;
 
 export function AlertStillHereCard({ alert, onStillHere, onNotHere }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(OFFSCREEN_Y)).current;
+  const translateY = useState(() => new Animated.Value(OFFSCREEN_Y))[0];
 
   useEffect(() => {
     Animated.spring(translateY, {
@@ -69,7 +69,7 @@ export function AlertStillHereCard({ alert, onStillHere, onNotHere }: Props) {
           </View>
           <View style={styles.textWrap}>
             <Text style={styles.title}>{label} still here?</Text>
-            <Text style={styles.subtitle}>You're approaching where this was reported</Text>
+            <Text style={styles.subtitle}>You&apos;re approaching where this was reported</Text>
           </View>
         </View>
         <View style={styles.buttonRow}>

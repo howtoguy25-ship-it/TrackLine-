@@ -71,7 +71,7 @@ export const AlertDetailSheet = forwardRef<BottomSheet, Props>(function AlertDet
                 lines at a much smaller size to fit on the map itself). */}
             {alert.comment && (
               <View style={styles.commentBox}>
-                <Text style={styles.commentText}>"{alert.comment}"</Text>
+                <Text style={styles.commentText}>&quot;{alert.comment}&quot;</Text>
               </View>
             )}
 

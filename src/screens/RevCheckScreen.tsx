@@ -417,7 +417,7 @@ export function RevCheckScreen() {
           <View style={styles.costNotice}>
             <Icon name="alert-circle-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
-              REV Check payments aren't available yet -- try again shortly.
+              REV Check payments aren&apos;t available yet -- try again shortly.
             </Text>
           </View>
         )}
@@ -425,7 +425,7 @@ export function RevCheckScreen() {
           <View style={styles.costNotice}>
             <Icon name="information-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
-              Your last check didn't complete after payment -- retrying is free, no second charge.
+              Your last check didn&apos;t complete after payment -- retrying is free, no second charge.
             </Text>
           </View>
         )}

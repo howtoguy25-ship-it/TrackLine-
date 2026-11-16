@@ -45,7 +45,7 @@ interface Props {
 // this fades the real loaded image in itself via a genuine Animated.Image opacity transition
 // fired from the real onLoad event -- not a fixed timer guessing how long the fetch will take.
 function FadeInImage({ uri, style }: { uri: string; style: any }) {
-  const opacity = useRef(new Animated.Value(0)).current;
+  const opacity = useState(() => new Animated.Value(0))[0];
   useEffect(() => {
     opacity.setValue(0);
   }, [uri, opacity]);
@@ -71,10 +71,9 @@ function StreetViewPanel({
   staticUrl: string;
   style: any;
 }) {
-  const [embedFailed, setEmbedFailed] = useState(false);
-  useEffect(() => {
-    setEmbedFailed(false);
-  }, [embedUrl]);
+  // Which embed failed: a new place's embed is tried afresh without resetting anything.
+  const [failedEmbedUrl, setFailedEmbedUrl] = useState<string | null>(null);
+  const embedFailed = !!embedUrl && failedEmbedUrl === embedUrl;
   if (!embedUrl || embedFailed) {
     return <FadeInImage uri={staticUrl} style={style} />;
   }
@@ -82,8 +81,8 @@ function StreetViewPanel({
     <WebView
       source={{ uri: embedUrl }}
       style={style}
-      onError={() => setEmbedFailed(true)}
-      onHttpError={() => setEmbedFailed(true)}
+      onError={() => setFailedEmbedUrl(embedUrl ?? null)}
+      onHttpError={() => setFailedEmbedUrl(embedUrl ?? null)}
       startInLoadingState
       renderLoading={() => <FadeInImage uri={staticUrl} style={style} />}
     />

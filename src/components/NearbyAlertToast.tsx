@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Animated, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
@@ -27,7 +27,7 @@ interface Props {
 // distance instead of a fixed message.
 export function NearbyAlertToast({ notification, onDismiss }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(-120)).current;
+  const translateY = useState(() => new Animated.Value(-120))[0];
   const visible = notification != null;
 
   useEffect(() => {

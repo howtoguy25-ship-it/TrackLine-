@@ -19,6 +19,7 @@ import { getSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { getSearchHistory } from "@/services/searchHistory";
 import { getDirections, DirectionsApiError } from "@/services/directions";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { useLatest } from "@/hooks/useLatest";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- main menu's "Plan a drive" card).
 // Picks a real destination (same search/saved-places/history data every other picker in this
@@ -63,9 +64,15 @@ export function PlanADriveScreen() {
   const planRoute = useRoute<RouteProp<RootStackParamList, "PlanADrive">>();
   const [destination, setDestination] = useState<PlaceDetails | null>(planRoute.params?.initialDestination ?? null);
   const [minutesFromNow, setMinutesFromNow] = useState(0);
-  const [eta, setEta] = useState<{ etaText: string; distanceText: string } | null>(null);
-  const [etaLoading, setEtaLoading] = useState(false);
-  const [etaError, setEtaError] = useState<string | null>(null);
+  // The ETA belongs to one destination + departure time; it's loading until the answer for
+  // exactly that pair arrives (so a new pick never shows the previous place's ETA).
+  const [etaResult, setEtaResult] = useState<{ key: string; eta: { etaText: string; distanceText: string } | null; error: string | null } | null>(null);
+  const hasLocation = !!location;
+  const etaKey = destination && hasLocation ? `${destination.placeId}|${minutesFromNow}` : null;
+  const etaLoading = etaKey !== null && etaResult?.key !== etaKey;
+  const eta = etaResult && etaResult.key === etaKey ? etaResult.eta : null;
+  const etaError = etaResult && etaResult.key === etaKey ? etaResult.error : null;
+  const locationRef = useLatest(location);
 
   const onChangeText = (text: string) => {
     setQuery(text);
@@ -89,8 +96,6 @@ export function PlanADriveScreen() {
   const pickPlace = useCallback(async (place: PlaceDetails) => {
     Keyboard.dismiss();
     setDestination(place);
-    setEta(null);
-    setEtaError(null);
     setQuery("");
     setPredictions([]);
   }, []);
@@ -100,32 +105,33 @@ export function PlanADriveScreen() {
     pickPlace(place);
   };
 
+  // Asked once per destination + departure time -- not on every GPS fix (it used to re-ask
+  // Google for a route every time the location updated while this screen was open).
   useEffect(() => {
-    if (!destination || !location) return;
+    const loc = locationRef.current;
+    if (!etaKey || !destination || !loc) return;
     let cancelled = false;
-    setEtaLoading(true);
-    setEtaError(null);
     const departureUnixSeconds = minutesFromNow === 0 ? true : Math.floor(Date.now() / 1000) + minutesFromNow * 60;
-    getDirections(location.coords, destination.location, { useTraffic: departureUnixSeconds })
+    getDirections(loc.coords, destination.location, { useTraffic: departureUnixSeconds })
       .then((route) => {
-        if (cancelled) return;
-        setEta({ etaText: route.etaInTrafficText ?? route.etaText, distanceText: route.distanceText });
+        if (!cancelled) setEtaResult({ key: etaKey, eta: { etaText: route.etaInTrafficText ?? route.etaText, distanceText: route.distanceText }, error: null });
       })
       .catch((err) => {
         if (cancelled) return;
-        setEtaError(
-          err instanceof DirectionsApiError || err instanceof PlacesApiError
-            ? "Couldn't get a route to this destination"
-            : "Couldn't get a route -- check your connection"
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setEtaLoading(false);
+        setEtaResult({
+          key: etaKey,
+          eta: null,
+          error:
+            err instanceof DirectionsApiError || err instanceof PlacesApiError
+              ? "Couldn't get a route to this destination"
+              : "Couldn't get a route -- check your connection",
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [destination, location, minutesFromNow]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on etaKey (destination + time); location is read fresh from the ref
+  }, [etaKey]);
 
   // Real, honest scope limit -- this app has no scheduled/unattended-start capability, so
   // "Start" always begins the normal real route-selection flow right now, the same as picking

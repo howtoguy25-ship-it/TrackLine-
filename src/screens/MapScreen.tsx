@@ -1,4 +1,5 @@
 import { useReduceMotion } from "@/hooks/useReduceMotion";
+import { useLatest } from "@/hooks/useLatest";
 import { MapSurface } from "@/components/ui/Surface";
 import { showLaneStrip } from "@/nav/lanes";
 import {
@@ -27,6 +28,7 @@ import type { ZoneShape } from "@/schoolZones/zoneMatch";
 import { communityZoneAt, type CommunityFeature } from "@/schoolZones/communityZones";
 import { communityFeaturesAround } from "@/services/roadFeatureReports";
 import { RoadReportSheet } from "@/components/RoadReportSheet";
+import { speedZoomFor } from "@/map/speedZoom";
 import { MODE_NAVIGATES_AS, MODE_ORDER, asModeId, ferryBadge, ferryModeAvailable, ferryOptions, type ModeId } from "@/travel/modes";
 import { ModeRouteCache, fastestSeconds, fetchRoutesForMode, type ModeRoutes } from "@/travel/modeRouting";
 import type { SchoolCalendar } from "@/schoolZones/calendar";
@@ -389,13 +391,11 @@ export function MapScreen() {
   // firing in a tight loop exactly while the slider is being dragged. A ref instead of a
   // dependency lets speak() still read the live volume without the effect needing to re-run
   // (and re-touch guidance state) just because volume changed.
-  const voiceVolumeRef = useRef(voiceVolume);
-  voiceVolumeRef.current = voiceVolume;
+  const voiceVolumeRef = useLatest(voiceVolume);
   // Same ref pattern as voiceVolumeRef immediately above, for the same reason -- picking a
   // different navigation voice in Settings must not make the guidance-advancement effect
   // re-run (and re-touch guidanceRef's shared state) just because this changed.
-  const voiceIdentifierRef = useRef(voiceIdentifier);
-  voiceIdentifierRef.current = voiceIdentifier;
+  const voiceIdentifierRef = useLatest(voiceIdentifier);
   // The sound settings the non-turn call-outs need (setting off, re-routing, arriving, a report
   // nearby). Those are fired from callbacks that are deliberately kept referentially stable, so
   // they read the live values from here rather than closing over them.
@@ -1086,32 +1086,29 @@ export function MapScreen() {
   // The fallback below derives a real heading from the bearing between the last two GPS fixes
   // instead of giving up -- genuine, live movement direction, just computed from position deltas
   // rather than read off the GPS chip's own course field.
-  const derivedHeadingRef = useRef(0);
-  const prevLatLngForHeadingRef = useRef<LatLng | null>(null);
-  useEffect(() => {
-    if (!currentLatLng) return;
-    const prev = prevLatLngForHeadingRef.current;
-    prevLatLngForHeadingRef.current = currentLatLng;
-    if (!prev) return;
-    const movedMeters =
-      distanceKm(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude) * 1000;
-    // Skip tiny/noisy movement (GPS jitter while stationary or barely moving) -- recomputing a
-    // bearing from a couple of meters of noise would make the arrow/camera spin erratically
-    // instead of just holding the last known real direction of travel, which is what every real
-    // nav app does while stopped at a light or in traffic.
-    if (movedMeters < 3) return;
-    derivedHeadingRef.current = bearingDegrees(
-      prev.latitude,
-      prev.longitude,
-      currentLatLng.latitude,
-      currentLatLng.longitude
-    );
-  }, [currentLatLng]);
+  // Kept as state, updated while rendering when a new fix arrives (React's "adjust state when an
+  // input changes" pattern), so the heading used in this render is from THIS fix -- it used to
+  // be computed in an effect after render and read from a ref, always one fix behind.
+  const [headingTrack, setHeadingTrack] = useState<{ at: LatLng | null; derived: number }>({ at: null, derived: 0 });
+  if (
+    currentLatLng &&
+    (headingTrack.at?.latitude !== currentLatLng.latitude || headingTrack.at?.longitude !== currentLatLng.longitude)
+  ) {
+    const prev = headingTrack.at;
+    let derived = headingTrack.derived;
+    if (prev) {
+      const movedMeters = distanceKm(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude) * 1000;
+      // Skip tiny/noisy movement (GPS jitter while stationary or barely moving) -- a bearing from
+      // a couple of metres of noise would spin the arrow; hold the last real direction instead.
+      if (movedMeters >= 3) derived = bearingDegrees(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude);
+    }
+    setHeadingTrack({ at: currentLatLng, derived });
+  }
 
   const heading =
     location?.coords.heading != null && location.coords.heading >= 0
       ? location.coords.heading
-      : derivedHeadingRef.current;
+      : headingTrack.derived;
 
   // Real Waze/Google Maps nav convention -- the car sits low on screen (roughly the lower third)
   // with most of the view showing the road ahead, not dead-center. Google Maps SDK's own
@@ -1722,16 +1719,7 @@ export function MapScreen() {
   // already follows for pan/tilt: the instant a real pinch starts, onRegionChangeComplete's own
   // isGesture handling drops followTilt to false (see that handler's comment), which gates this
   // off immediately too, so a manual pinch is never overridden mid-gesture.
-  const SPEED_ZOOM_BANDS: { maxKmh: number; zoom: number }[] = [
-    { maxKmh: 40, zoom: 18.5 },
-    { maxKmh: 80, zoom: 17.5 },
-    { maxKmh: Infinity, zoom: 16.5 },
-  ];
-  const speedZoom = useMemo(() => {
-    const kmh = currentSpeedKmh ?? 0;
-    return (SPEED_ZOOM_BANDS.find((b) => kmh <= b.maxKmh) ?? SPEED_ZOOM_BANDS[SPEED_ZOOM_BANDS.length - 1]).zoom;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSpeedKmh]);
+  const speedZoom = speedZoomFor(currentSpeedKmh);
   const appliedSpeedZoomRef = useRef<number | null>(null);
   useEffect(() => {
     const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
@@ -2446,14 +2434,10 @@ export function MapScreen() {
   // update -- several times a minute while driving. Reads to those values only ever happen
   // inside the onDetection callback, which is why refs (updated every render, not causing a
   // re-run) are enough here -- there's no need for the effect itself to see fresh values.
-  const currentLatLngRef = useRef(currentLatLng);
-  currentLatLngRef.current = currentLatLng;
-  const userRef = useRef(user);
-  userRef.current = user;
-  const autoShareDetectionsRef = useRef(settings.autoShareDetections);
-  autoShareDetectionsRef.current = settings.autoShareDetections;
-  const alertExpiryMsRef = useRef(settings.alertExpiryMs);
-  alertExpiryMsRef.current = settings.alertExpiryMs;
+  const currentLatLngRef = useLatest(currentLatLng);
+  const userRef = useLatest(user);
+  const autoShareDetectionsRef = useLatest(settings.autoShareDetections);
+  const alertExpiryMsRef = useLatest(settings.alertExpiryMs);
 
   useEffect(() => {
     sirenDetection.start();
@@ -5559,7 +5543,7 @@ export function MapScreen() {
           <Icon name="bus" size={18} color="#FFFFFF" />
           <View style={{ flex: 1 }}>
             <Text style={styles.transitWaitTitle}>
-              You've arrived at {firstBoardingStop.departureStop || "the stop"}
+              You&apos;ve arrived at {firstBoardingStop.departureStop || "the stop"}
             </Text>
             <Text style={styles.transitWaitSubtitle}>
               {firstBoardingStop.lineName ? `${firstBoardingStop.lineName} ` : ""}
@@ -5715,7 +5699,7 @@ export function MapScreen() {
           />
           <View style={styles.placementCommentFooter}>
             {alertCommentBlocked ? (
-              <Text style={styles.placementCommentError}>That wording isn't allowed -- please rephrase.</Text>
+              <Text style={styles.placementCommentError}>That wording isn&apos;t allowed -- please rephrase.</Text>
             ) : (
               <View />
             )}

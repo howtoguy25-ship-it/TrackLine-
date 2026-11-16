@@ -161,7 +161,7 @@ export function DocumentScanScreen() {
         <View style={styles.overlay}>
           <Icon name="alert-circle-outline" size={40} color="#FFFFFF" />
           <Text style={styles.overlayText}>
-            Couldn't read a {isVin ? "VIN" : "plate"} from that photo -- move closer, fill the
+            Couldn&apos;t read a {isVin ? "VIN" : "plate"} from that photo -- move closer, fill the
             guide box, and avoid glare, then try again.
           </Text>
           <Button variant="secondary" label="Try again" onPress={onRetake} />
@@ -205,7 +205,7 @@ export function DocumentScanScreen() {
           {isVin && (
             <Text style={styles.confirmHelper}>
               A REV check also needs a plate -- enter or scan one on the next screen if you
-              haven't already.
+              haven&apos;t already.
             </Text>
           )}
 

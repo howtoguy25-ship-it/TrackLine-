@@ -70,7 +70,7 @@ export function LiveSpeedometer({
   const isAmber = speedLimitKmh != null && overBy >= AMBER_OVER_KMH && overBy < RED_OVER_KMH;
   const isRed = speedLimitKmh != null && overBy >= RED_OVER_KMH;
 
-  const opacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const opacity = useState(() => new Animated.Value(visible ? 1 : 0))[0];
   useEffect(() => {
     Animated.timing(opacity, {
       toValue: visible ? 1 : 0,
@@ -82,7 +82,7 @@ export function LiveSpeedometer({
   // One small bump when the speed first turns red, not a looping pulse: nothing on screen
   // loops except the Go now fill and Tracky's idle bob. With Reduce Motion on, no bump at all.
   const reduceMotion = useReduceMotion();
-  const pulse = useRef(new Animated.Value(1)).current;
+  const pulse = useState(() => new Animated.Value(1))[0];
   useEffect(() => {
     if (!isRed || reduceMotion) {
       pulse.setValue(1);

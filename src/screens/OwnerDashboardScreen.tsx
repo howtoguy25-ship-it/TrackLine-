@@ -128,9 +128,9 @@ export function OwnerDashboardScreen() {
     <ScrollView keyboardShouldPersistTaps="handled" style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.sectionTitle}>Live usage</Text>
       <Text style={styles.helperText}>
-        Real numbers from every device that's opened this app, refreshed automatically while this
-        screen is open. "Total installs" counts real unique devices recorded here — App Store/Play
-        Store's own official download totals live in App Store Connect/Play Console and aren't
+        Real numbers from every device that&apos;s opened this app, refreshed automatically while this
+        screen is open. &quot;Total installs&quot; counts real unique devices recorded here — App Store/Play
+        Store&apos;s own official download totals live in App Store Connect/Play Console and aren&apos;t
         reachable from inside the app itself.
       </Text>
 
@@ -163,7 +163,7 @@ export function OwnerDashboardScreen() {
       <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Send notification to all users</Text>
       <Text style={styles.helperText}>
         A real push notification, sent immediately to every device with notifications enabled —
-        there's no draft or preview mode, tapping Send always sends for real.
+        there&apos;s no draft or preview mode, tapping Send always sends for real.
       </Text>
 
       <TextInput

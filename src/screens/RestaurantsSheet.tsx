@@ -285,7 +285,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
         {loading && (
           <View style={styles.centerRow}>
             <ActivityIndicator color={colors.accent} />
-            <Text style={styles.centerText}>Finding what's nearby…</Text>
+            <Text style={styles.centerText}>Finding what&apos;s nearby…</Text>
           </View>
         )}
         {/* Non-blocking -- filteredPlaces above already shows whatever local matches exist while

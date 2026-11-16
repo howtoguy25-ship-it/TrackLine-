@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Animated, StyleSheet } from "react-native";
@@ -14,7 +14,7 @@ interface Props {
 
 export function AlertBanner({ visible, message, onDismiss }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(-120)).current;
+  const translateY = useState(() => new Animated.Value(-120))[0];
 
   useEffect(() => {
     Animated.spring(translateY, {

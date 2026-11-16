@@ -1844,17 +1844,17 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           <>
             <Text style={styles.bannerText}>
               Detecting vehicles — amber target-lock box,
-              generic "Vehicle"/"Heavy Vehicle". Turns red with "lights active" only once an
-              actual strobing red/blue light is confirmed near the vehicle's own roofline for a
+              generic &quot;Vehicle&quot;/&quot;Heavy Vehicle&quot;. Turns red with &quot;lights active&quot; only once an
+              actual strobing red/blue light is confirmed near the vehicle&apos;s own roofline for a
               few seconds — real detected evidence, not a guess at vehicle type (a
               marked/unmarked car with no lights on shows no different to any other car, the
-              same way a driver wouldn't notice one either). Speed (top-center of box) shows a
-              real km/h estimate of that vehicle's own road speed once your own GPS speed is
-              available to combine with it (assumes it's ahead of you, same direction); with no
+              same way a driver wouldn&apos;t notice one either). Speed (top-center of box) shows a
+              real km/h estimate of that vehicle&apos;s own road speed once your own GPS speed is
+              available to combine with it (assumes it&apos;s ahead of you, same direction); with no
               GPS fix it falls back to an arrow + closing/receding rate instead, and shows
-              "0 km/h" once a vehicle has been still for a couple of seconds. A plate number
+              &quot;0 km/h&quot; once a vehicle has been still for a couple of seconds. A plate number
               only appears once the same on-device text read comes back at least twice in a
-              row — it's never stored or sent anywhere, just shown live while that vehicle
+              row — it&apos;s never stored or sent anywhere, just shown live while that vehicle
               stays in view. Tap any box for its full details. Drag the zoom slider on the right
               (1x-3x) to zoom in on a distant vehicle — this zooms the real camera capture, not
               just the preview, so it can genuinely help detect something too far away to

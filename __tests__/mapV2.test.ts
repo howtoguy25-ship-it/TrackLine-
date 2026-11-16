@@ -33,7 +33,7 @@ import {
 } from "../src/map-v2/geo";
 import { GestureTracker } from "../src/map-v2/gestures";
 import { clusteredPins, groupByCell, iconsUsed, pinsToFeatures, type MapPin } from "../src/map-v2/pins";
-import { computeAutoZoom, shouldAnimateZoomChange } from "../src/map/cameraZoom";
+import { speedZoomFor } from "../src/map/speedZoom";
 
 type Layer = { id: string; type: string; minzoom?: number; layout?: Record<string, unknown>; paint?: Record<string, unknown>; filter?: unknown };
 const STYLE_DIR = path.join(__dirname, "../src/map-v2/styles");
@@ -265,16 +265,17 @@ describe("re-centre state", () => {
   });
 });
 
-describe("auto-zoom by speed and near turns", () => {
-  it("zooms out with speed, in near a turn, furthest on a long fast straight", () => {
-    expect(computeAutoZoom({ speedKmh: 10, distanceToNextManeuverMeters: 1000 })).toBe(17.5);
-    expect(computeAutoZoom({ speedKmh: 60, distanceToNextManeuverMeters: 1000 })).toBe(16);
-    expect(computeAutoZoom({ speedKmh: 90, distanceToNextManeuverMeters: 200 })).toBe(17.5);
-    expect(computeAutoZoom({ speedKmh: 100, distanceToNextManeuverMeters: 5000 })).toBe(14);
+describe("navigation zoom by speed (the bands MapScreen applies)", () => {
+  it("closer in town, further out on the motorway", () => {
+    expect(speedZoomFor(10)).toBe(18.5);
+    expect(speedZoomFor(40)).toBe(18.5);
+    expect(speedZoomFor(41)).toBe(17.5);
+    expect(speedZoomFor(80)).toBe(17.5);
+    expect(speedZoomFor(110)).toBe(16.5);
   });
-  it("ignores changes under 0.2 of a zoom level", () => {
-    expect(shouldAnimateZoomChange(16, 16.1)).toBe(false);
-    expect(shouldAnimateZoomChange(16, 16.2)).toBe(true);
+  it("no speed yet (or a bad reading) is treated as stopped", () => {
+    expect(speedZoomFor(null)).toBe(18.5);
+    expect(speedZoomFor(NaN)).toBe(18.5);
   });
 });
 

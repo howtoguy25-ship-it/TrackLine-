@@ -55,7 +55,7 @@ const COCO_SSD_MODEL_URL =
 
 // COCO-SSD (the pretrained model this runs) only knows generic COCO classes — "car" /
 // "truck" / "bus" / "motorcycle" -- not "police car" or "ambulance". This app used to run a
-// second, custom-trained classifier (src/services/vehicleClassifier.ts, still present but no
+// second, custom-trained classifier (the former src/services/vehicleClassifier.ts, removed as unused;
 // longer called from here) behind each box to guess ambulance/firetruck/police-car. Dropped
 // for the same reason the web app already dropped its identical model: repeated real-world
 // testing kept producing confidently-wrong "Police car" results on ordinary cars even after
