@@ -255,7 +255,8 @@ export function manoeuvresAtStepEnds(steps: RouteStep[]): RouteStep[] {
   });
 }
 
-function parseRoute(route: any): Route {
+/** Google Directions (classic) route -> the app's Route. Exported for tests on recorded responses. */
+export function parseRoute(route: any): Route {
   const leg = route.legs[0];
 
   const steps: RouteStep[] = manoeuvresAtStepEnds(leg.steps.map((step: any) => ({
