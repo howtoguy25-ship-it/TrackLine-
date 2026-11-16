@@ -19,7 +19,12 @@ import { maneuverTypeFor, manoeuvreKindFor, sideOf } from "@/nav/manoeuvre";
 const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
 
 
+/** Mapbox Directions profiles: car with live traffic, car, bicycle, on foot. */
+export type MapboxProfile = "driving-traffic" | "driving" | "cycling" | "walking";
+
 export interface MapboxRequest {
+  /** Default "driving-traffic" (the drive). */
+  profile?: MapboxProfile;
   origin: LatLng;
   destination: LatLng;
   /** Degrees, so the route starts the way the car is facing (reroutes). */
@@ -42,18 +47,22 @@ export function excludeParam(avoid: Partial<RouteAvoidPrefs> | undefined): strin
 
 export function directionsUrl(req: MapboxRequest, token: string): string {
   const coords = `${req.origin.longitude},${req.origin.latitude};${req.destination.longitude},${req.destination.latitude}`;
+  const profile = req.profile ?? "driving-traffic";
+  const driving = profile === "driving-traffic" || profile === "driving";
   const params: Record<string, string> = {
     steps: "true",
     banner_instructions: "true",
     voice_instructions: "true",
     overview: "full",
     geometries: "polyline6",
-    annotations: "congestion,maxspeed",
+    // congestion only exists with live traffic; maxspeed only for driving.
+    annotations: driving ? (profile === "driving-traffic" ? "congestion,maxspeed" : "maxspeed") : "duration,distance",
     alternatives: req.alternatives === false ? "false" : "true",
     language: req.language ?? "en",
     access_token: token,
   };
-  const exclude = excludeParam(req.avoid);
+  // The Avoid options are road options: only sent for driving profiles.
+  const exclude = driving ? excludeParam(req.avoid) : null;
   if (exclude) params.exclude = exclude;
   if (req.heading != null && Number.isFinite(req.heading)) {
     params.bearings = `${Math.round(((req.heading % 360) + 360) % 360)},45;`;
@@ -61,7 +70,7 @@ export function directionsUrl(req: MapboxRequest, token: string): string {
   const query = Object.entries(params)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join("&");
-  return `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?${query}`;
+  return `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coords}?${query}`;
 }
 
 function point(location: any): LatLng {
@@ -181,6 +190,8 @@ export function toAppSteps(mbSteps: any[], routeDrivingSide: "left" | "right" = 
       guidanceViewUrl: guidanceView(banner),
       drivingSide,
       ferry: here?.mode === "ferry" ? { name: typeof here?.name === "string" && here.name ? here.name : null } : undefined,
+      // A stretch where you walk the bike (steps, a footpath, the wrong way on a one-way street).
+      pushingBike: here?.mode === "pushing bike" ? true : undefined,
     });
   }
   return steps;

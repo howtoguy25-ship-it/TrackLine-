@@ -64,6 +64,8 @@ export interface RouteStep {
   drivingSide?: "left" | "right";
   /** This step is a ferry crossing (Mapbox/OSRM step mode "ferry", or Google's FERRY manoeuvre). */
   ferry?: { name: string | null };
+  /** Bike routes: a stretch where the rider has to walk the bike (OSRM/Mapbox "pushing bike"). */
+  pushingBike?: boolean;
 }
 
 export interface Route {
@@ -409,7 +411,7 @@ const SAFEST_OPTIONS: DirectionsOptions = { avoidTolls: true };
 // directions request. Never called speculatively -- see getRouteOptions below, which only ever
 // calls this once it's already confirmed (via a real, separate no-tolls request) that this
 // specific trip actually crosses a toll road at all.
-const ROUTES_API_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+export const ROUTES_API_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
 
 interface RoutesApiMoney {
   currencyCode: string;
@@ -514,7 +516,7 @@ function parseProtoDurationSeconds(duration: string | undefined): number {
  *  Routes-API-sourced Route identically to a classic-Directions-API one. Only ever used for the
  *  heading-aware reroute below -- getRouteOptions/getDirections above keep using the classic API
  *  they already work well with. */
-function parseRoutesApiRoute(route: any, withTolls = false): Route {
+export function parseRoutesApiRoute(route: any, withTolls = false): Route {
   const steps: RouteStep[] = manoeuvresAtStepEnds((route.legs ?? []).flatMap((leg: any) => leg.steps ?? []).map((step: any) => ({
     instruction: step.navigationInstruction?.instructions ?? "",
     targetStreetName: roadFromInstruction(step.navigationInstruction?.instructions ?? "", directionsLanguage),

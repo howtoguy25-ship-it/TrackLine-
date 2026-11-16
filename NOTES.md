@@ -879,7 +879,17 @@ Data limits found:
   `GOOGLE_DIRECTIONS_API_KEY` set on a machine that has it (script to add in step 4).
 - Overpass (OpenStreetMap ferry routes) is unreachable through this environment's proxy.
 
-Next steps: 2 routing per mode (Mapbox cycling/walking profiles, Google Routes TWO_WHEELER with
+Step 2 (done, not yet on a screen): `src/travel/modeRouting.ts` -- Mapbox cycling/walking
+profiles (Avoid options only sent for driving), Google Routes TWO_WHEELER for motorbikes with the
+labelled car-roads fallback, reasons for unavailable modes ("No walking route...", connection),
+2-minute per-mode cache, "walk the bike" stretches from OSRM/Mapbox "pushing bike" steps. Tested
+on real OSRM bike/foot/car routes (Circular Quay -> Opera House). Data limits, not built rather
+than guessed: Mapbox gives no elevation (bike "elevation gain" needs a terrain/elevation source),
+no bike-lane vs shared-road classification, no stairs flag for walking, and no "avoid hills / busy
+roads / stairs" options. Whether Google supports TWO_WHEELER in Australia is unknown until a real
+request is made with the key; the fallback covers either answer.
+
+Next steps: 2b (Mapbox cycling/walking profiles, Google Routes TWO_WHEELER with
 the car-roads fallback note), 3 the mode sheet + icon row with fastest times (selected mode
 first, others lazily, 2-minute cache, greyed "—" with a reason), 4 transit timeline + live/late +
 fare + Opal note, 5 per-mode navigation (bike/walk warnings, "Get off in 2 stops" + vibration),

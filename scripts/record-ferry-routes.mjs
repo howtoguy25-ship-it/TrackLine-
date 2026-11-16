@@ -20,3 +20,14 @@ for (const [name, [a, b]] of Object.entries(routes)) {
   const modes = json.routes[0].legs.flatMap((l) => l.steps.map((s) => s.mode));
   console.log(name, Math.round(json.routes[0].distance), "m", [...new Set(modes)].join(","));
 }
+
+// Real bike and walking routes (OSRM bike / foot profiles on routing.openstreetmap.de, same
+// response format as Mapbox Directions): Circular Quay -> Sydney Opera House forecourt.
+for (const p of ["bike", "foot"]) {
+  const url = `https://routing.openstreetmap.de/routed-${p}/route/v1/driving/151.2108,-33.8610;151.2153,-33.8568?steps=true&overview=full&geometries=polyline6`;
+  const json = await (await fetch(url)).json();
+  if (json.code !== "Ok") throw new Error(`${p}: ${json.code}`);
+  json._source = `OSRM ${p} profile (routing.openstreetmap.de, OpenStreetMap data, ODbL), recorded ${new Date().toISOString().slice(0, 10)}: ${url}`;
+  fs.writeFileSync(path.join(OUT, `circular-quay-opera-house-${p}.json`), JSON.stringify(json));
+  console.log(p, Math.round(json.routes[0].distance), "m");
+}
