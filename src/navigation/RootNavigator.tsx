@@ -11,6 +11,7 @@ import { InboxScreen } from "@/screens/InboxScreen";
 import { SignInScreen } from "@/screens/SignInScreen";
 import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
+import { VehicleCheckScreen } from "@/screens/VehicleCheckScreen";
 import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
@@ -78,7 +79,10 @@ export type RootStackParamList = {
   TrackyCustomizer: undefined;
   SignIn: undefined;
   VehicleHistory: undefined;
+  // Superseded by VehicleCheck (the one paid full check); kept registered, no longer linked.
   RevCheck: RevCheckParams | undefined;
+  // Menu > Vehicle check. Same prefill params as the old REV check, plus an open report.
+  VehicleCheck: (RevCheckParams & { reportId?: string }) | undefined;
   // Real camera capture for a VIN or a plate/registration -- see DocumentScanScreen's own
   // header comment for why one screen serves both as two distinct, purpose-built experiences.
   DocumentScan: { mode: "vin" | "plate" };
@@ -199,6 +203,11 @@ export function RootNavigator() {
           name="VehicleHistory"
           component={VehicleHistoryScreen}
           options={{ headerShown: true, title: "Vehicle History" }}
+        />
+        <Stack.Screen
+          name="VehicleCheck"
+          component={VehicleCheckScreen}
+          options={{ headerShown: true, title: "Vehicle check", presentation: MODAL_SCREENS.VehicleCheck as "modal" }}
         />
         <Stack.Screen
           name="RevCheck"

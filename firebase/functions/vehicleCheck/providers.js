@@ -5,10 +5,12 @@
 //   -> Promise<{ source: string, asAt: "YYYY-MM-DD", data: object, recalls?: array|null }>
 //   throws ProviderError (errors.js). Each adapter also exposes `name` and `costs` (one entry per
 //   paid call, logged to providerUsage).
+//
+// Keys are Firebase secrets, read only inside Cloud Functions (index.js passes them in).
 
 const { createCarJamAu } = require("./carjamAu");
 const { createBusinessApiPpsr } = require("./ppsrBusinessApi");
-const { createAucn, createMotorWeb, createEquifax } = require("./stubAdapters");
+const { PROVIDERS: BUSINESS, createBusinessAdapter } = require("./businessAdapters");
 const { SECTIONS } = require("./config");
 
 // Values of a Firebase secret that mean "not set" (the deploy workflow creates "unset").
@@ -17,16 +19,32 @@ function realKey(value) {
   return v && v !== "unset" && v !== "emulator-placeholder" ? v : "";
 }
 
+/** Provider name -> the Firebase secret that holds its key. */
+const ADAPTER_KEYS = Object.freeze({
+  carjam: "CARJAM_API_KEY",
+  aucn: "AUCN_API_KEY",
+  motorweb: "MOTORWEB_API_KEY",
+  equifax: "EQUIFAX_API_KEY",
+  ppsr: "PPSR_API_KEY",
+  // An alternative PPSR route that is already integrated (the old REV check's provider).
+  businessapi: "PPSR_BUSINESSAPI_KEY",
+});
+
+/** Which methods each provider covers. */
+const COVERS = Object.freeze({
+  carjam: ["vehicleDetails", "rego", "stolen", "writtenOff"],
+  businessapi: ["ppsr"],
+  ...Object.fromEntries(Object.entries(BUSINESS).map(([k, v]) => [k, v.covers])),
+});
+
+/** Adapters with a real integration (the rest answer BLOCKED until they're built). */
+const IMPLEMENTED = Object.freeze(["carjam", "businessapi"]);
+
 const ADAPTERS = {
   carjam: ({ keys, fetchImpl, now }) => createCarJamAu({ apiKey: realKey(keys.CARJAM_API_KEY), fetchImpl, now }),
   businessapi: ({ keys, fetchImpl, sleep, now }) => createBusinessApiPpsr({ apiKey: realKey(keys.PPSR_BUSINESSAPI_KEY), fetchImpl, sleep, now }),
-  aucn: () => createAucn(),
-  motorweb: () => createMotorWeb(),
-  equifax: () => createEquifax(),
+  ...Object.fromEntries(Object.keys(BUSINESS).map((k) => [k, ({ keys }) => createBusinessAdapter(k, realKey(keys[ADAPTER_KEYS[k]]))])),
 };
-
-/** Which secret each adapter needs; stubs need nothing but can never be "ready". */
-const ADAPTER_KEYS = { carjam: "CARJAM_API_KEY", businessapi: "PPSR_BUSINESSAPI_KEY" };
 
 /** One instance per adapter name for one check (so CarJam's calls are shared across sections). */
 function buildAdapters(config, deps) {
@@ -47,19 +65,33 @@ function buildAdapters(config, deps) {
   return { instances, bySection };
 }
 
-/**
- * Can the full check be sold? Only when every section's provider is a real adapter with its key
- * set -- otherwise a buyer would pay $19.99 for a report with holes. Returns the reasons it can't.
- */
-function availability(config, keys) {
-  const missing = [];
+/** For each section: "ready", or why it's BLOCKED. */
+function sectionReadiness(config, keys) {
+  const out = {};
   for (const section of SECTIONS) {
     const name = config.providers[section.method];
-    if (!ADAPTERS[name]) missing.push(`${section.key}: unknown provider "${name}"`);
-    else if (!ADAPTER_KEYS[name]) missing.push(`${section.key}: ${name} adapter is a stub (no real integration yet)`);
-    else if (!realKey(keys[ADAPTER_KEYS[name]])) missing.push(`${section.key}: ${ADAPTER_KEYS[name]} not set`);
+    let status = "ready";
+    if (!ADAPTERS[name]) status = `BLOCKED: unknown provider "${name}"`;
+    else if (!COVERS[name]?.includes(section.method)) status = `BLOCKED: ${name} doesn't cover ${section.key}`;
+    else if (!realKey(keys[ADAPTER_KEYS[name]])) status = `BLOCKED: ${ADAPTER_KEYS[name]} not set`;
+    else if (!IMPLEMENTED.includes(name)) status = `BLOCKED: ${name} adapter not built yet (needs their API docs)`;
+    out[section.key] = { provider: name, status };
   }
-  return { available: missing.length === 0, missing: Array.from(new Set(missing)) };
+  return out;
 }
 
-module.exports = { ADAPTERS, ADAPTER_KEYS, buildAdapters, availability, realKey };
+/**
+ * Is the full check on sale? Only when the owner has switched it on (config enabled: true) AND
+ * every section's provider is real and keyed -- a buyer never pays $19.99 for a report with
+ * BLOCKED holes. `missing` says what's still in the way.
+ */
+function availability(config, keys) {
+  const sections = sectionReadiness(config, keys);
+  const missing = Object.entries(sections)
+    .filter(([, v]) => v.status !== "ready")
+    .map(([k, v]) => `${k}: ${v.status.replace(/^BLOCKED: /, "")}`);
+  if (!config.enabled) missing.unshift("switched off (config/vehicleCheck enabled is false)");
+  return { available: missing.length === 0, missing, sections };
+}
+
+module.exports = { ADAPTERS, ADAPTER_KEYS, COVERS, IMPLEMENTED, buildAdapters, availability, sectionReadiness, realKey };

@@ -17,6 +17,8 @@ import { Tracky } from "@/components/trackys/Tracky";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
 import { subscribeVisibleAlerts, getInboxLastViewedAt } from "@/services/alerts";
 import type { AlertDoc } from "@/types/alert";
+import { getVehicleCheckInfo } from "@/services/vehicleCheck";
+import { isOwnerEmail } from "@/config/admin";
 import {
   getUpcomingEventsWithLocation,
   getCalendarPermissionStatus,
@@ -42,6 +44,20 @@ export function MainMenuScreen() {
   const isGhostMode = settings.visibility === "ghost";
   const appearance = useTrackyAppearance(isGhostMode);
   const firstName = (user?.displayName ?? "").split(" ")[0];
+
+  // Vehicle check is listed only once it's on sale (every provider keyed on the server); the
+  // owner and development builds always see it, to test it.
+  const [vehicleCheckOnSale, setVehicleCheckOnSale] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getVehicleCheckInfo()
+      .then((i) => !cancelled && setVehicleCheckOnSale(i.available))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const showVehicleCheck = vehicleCheckOnSale || isOwnerEmail(user?.email) || __DEV__;
 
   // Other visible drivers near here, from the live presence feed (the same one that draws them
   // on the map). Not listened to at all when the driver has switched Trackys off.
@@ -203,6 +219,9 @@ export function MainMenuScreen() {
           label="Dashcam (AI vehicle detection)"
           onPress={() => navigation.navigate("VehicleDetection")}
         />
+        {showVehicleCheck && (
+          <MenuRow icon="car-search" label="Vehicle check" onPress={() => navigation.navigate("VehicleCheck", undefined)} />
+        )}
         <MenuRow
           icon="map-outline"
           label="Map display"

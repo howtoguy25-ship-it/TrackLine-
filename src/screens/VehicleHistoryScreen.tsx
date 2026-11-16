@@ -74,7 +74,7 @@ export function VehicleHistoryScreen() {
       // A synthetic "VIN:<vin>" key (see vehicleHistory.ts's recordManualCheck) means this entry
       // never had a real plate -- don't prefill the plate field with that placeholder text.
       const isSyntheticVinKey = entry.plate.startsWith("VIN:");
-      navigation.navigate("RevCheck", {
+      navigation.navigate("VehicleCheck", {
         plate: isSyntheticVinKey ? undefined : entry.plate,
         state: entry.state ?? undefined,
         vin: entry.vin ?? undefined,
@@ -187,7 +187,7 @@ export function VehicleHistoryScreen() {
           variant="primary"
           icon="add-circle"
           label="Enter a plate manually"
-          onPress={() => navigation.navigate("RevCheck", undefined)}
+          onPress={() => navigation.navigate("VehicleCheck", undefined)}
           fullWidth
         />
         {headerRight}

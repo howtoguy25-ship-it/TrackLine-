@@ -606,7 +606,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         },
         (index) => {
           if (index === 0) {
-            navigation.navigate("RevCheck", {
+            navigation.navigate("VehicleCheck", {
               plate: plateText,
               vehicleLabel: box.label as "Vehicle" | "Heavy Vehicle",
               speedKmh: box.state === "parked" ? 0 : box.speedKmh,
@@ -1977,7 +1977,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
             label={selectedPlate ? "Run REV check" : "Waiting for plate read…"}
             onPress={() =>
               selectedPlate &&
-              navigation.navigate("RevCheck", {
+              navigation.navigate("VehicleCheck", {
                 plate: selectedPlate.text,
                 vehicleLabel: selectedBox.label as "Vehicle" | "Heavy Vehicle",
                 speedKmh: selectedBox.state === "parked" ? 0 : selectedBox.speedKmh,

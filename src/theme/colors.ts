@@ -243,3 +243,19 @@ export const PRESS_DARKEN = 0.06;
 /** WCAG AA: 4.5:1 for body text, 3:1 for large text (18pt, or 14pt bold) and for icons. */
 export const AA_TEXT = 4.5;
 export const AA_LARGE = 3;
+
+/**
+ * Report status (vehicle full check sections): a soft fill with text that reads on it, plus the
+ * strong dot colour. Green = clear, amber = check this, red = problem.
+ * Text on fill (measured): green 4.86:1, amber 6.20:1, red 5.49:1 -- all pass WCAG AA for body text.
+ */
+export const AMBER = "#E08A00";
+export const AMBER_TEXT = "#8A4B00";
+export const AMBER_SOFT = "#FFF3DF";
+export const GREEN_SOFT = "#E6F6EC";
+export type ReportStatusKey = "green" | "amber" | "red";
+export const REPORT_STATUS: Record<ReportStatusKey, { fill: string; on: string; dot: string; label: string }> = {
+  green: { fill: GREEN_SOFT, on: GREEN_TEXT, dot: GREEN, label: "Clear" },
+  amber: { fill: AMBER_SOFT, on: AMBER_TEXT, dot: AMBER, label: "Check" },
+  red: { fill: RED_SOFT, on: RED_TEXT, dot: RED, label: "Problem" },
+};

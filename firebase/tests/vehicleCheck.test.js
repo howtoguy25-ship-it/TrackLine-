@@ -115,11 +115,12 @@ const CLEAN_READINGS = [
 let verifyCalls;
 function verifier({ sandbox = false, fail = false, key = "ios_2000000123" } = {}) {
   verifyCalls = 0;
-  return async ({ platform, token, productId }) => {
+  return async ({ platform, productIds }) => {
     verifyCalls++;
     if (fail) throw new Error("Apple purchase couldn't be verified (INVALID_JWT_FORMAT).");
-    expect(productId).toBe("full_check");
-    return { platform, key, transactionId: key.split("_")[1], productId, sandbox };
+    // Both price tiers pay for a check.
+    expect(productIds).toEqual(["full_check", "full_check_2499"]);
+    return { platform, key, transactionId: key.split("_")[1], productId: "full_check", sandbox };
   };
 }
 
@@ -132,8 +133,9 @@ function deps(over = {}) {
     verifyPurchase: over.verifyPurchase || verifier(),
     sleep: async () => {},
     now: over.now || (() => new Date("2022-06-01T02:00:00Z")),
-    configOverride: { providers: { odometerHistory: "testOdo" }, ...(over.configOverride || {}) },
-    extraAdapters: { testOdo: odometerAdapter(over.readings || CLEAN_READINGS), ...(over.extraAdapters || {}) },
+    // PPSR via the integrated BusinessAPI adapter; odometer from the in-test adapter.
+    configOverride: { ppsr: "businessapi", odometer: "testodo", ...(over.configOverride || {}) },
+    extraAdapters: { testodo: odometerAdapter(over.readings || CLEAN_READINGS), ...(over.extraAdapters || {}) },
   };
 }
 
@@ -259,10 +261,10 @@ describe("full check scenarios", () => {
     expect((await core.retrySection({ uid: "u1", reportId: "req_000001", section: "ppsr" }, d)).outcome).toBe("limit");
   });
 
-  test("CarJam's error reply (no key) shows the section as unavailable, never as 'clear'", async () => {
+  test("CarJam's error reply (no key) shows the section as BLOCKED, never as 'clear'", async () => {
     const d = deps({ fetchImpl: fakeFetch({ carjam: (t) => (t === "SC" ? "carjam_error.xml" : carjamFor("TEST00")(t)) }) });
     await run(d);
-    expect(report(d).sections.stolen).toMatchObject({ status: "unavailable" });
+    expect(report(d).sections.stolen).toMatchObject({ status: "blocked" });
     expect(() => parseCarJamXml(fixture("carjam_error.xml"))).toThrow("Requires an API key");
   });
 });
@@ -354,17 +356,47 @@ describe("cache, cost log, countries, availability", () => {
     expect(parseQuery({ country: "AU", vin: "WAUZZZ8X4GB00TESO" }).reason).toBe("invalid_vin");
   });
 
-  test("not sold while any section's provider is a stub or has no key", () => {
+  test("routing config: defaults, flat keys, price tiers, the on/off switch", () => {
     const defaults = mergeConfig(null);
-    const keys = { CARJAM_API_KEY: "k", PPSR_BUSINESSAPI_KEY: "k" };
-    const a = availability(defaults, keys);
-    expect(a.available).toBe(false);
-    expect(a.missing).toEqual(["odometer: aucn adapter is a stub (no real integration yet)"]);
-    expect(availability(defaults, { CARJAM_API_KEY: "unset", PPSR_BUSINESSAPI_KEY: "" }).missing).toEqual(
-      expect.arrayContaining(["vehicle: CARJAM_API_KEY not set", "ppsr: PPSR_BUSINESSAPI_KEY not set"])
-    );
-    expect(mergeConfig({ priceAud: 24.99 }).priceAud).toBe(24.99);
-    expect(mergeConfig({ providers: { ppsr: "equifax" } }).providers).toMatchObject({ ppsr: "equifax", vehicleDetails: "carjam" });
+    expect(defaults).toMatchObject({ enabled: false, priceTier: "19.99", productId: "full_check", priceAud: 19.99 });
+    expect(defaults.providers).toEqual({ vehicleDetails: "carjam", rego: "carjam", stolen: "carjam", writtenOff: "carjam", ppsr: "aucn", odometerHistory: "aucn" });
+    const c = mergeConfig({ details: "carjam", rego: "motorweb", ppsr: "PPSR", odometer: "equifax", priceTier: "24.99", enabled: true });
+    expect(c).toMatchObject({ enabled: true, productId: "full_check_2499", priceAud: 24.99 });
+    expect(c.providers).toMatchObject({ rego: "motorweb", ppsr: "ppsr", odometerHistory: "equifax" });
+    // Unknown tier -> the default; enabled must be exactly true.
+    expect(mergeConfig({ priceTier: "9.99", enabled: "yes" })).toMatchObject({ priceTier: "19.99", enabled: false });
+  });
+
+  test("not sold until switched on AND every section is real and keyed; BLOCKED reasons are exact", () => {
+    const keys = { CARJAM_API_KEY: "k" };
+    const off = availability(mergeConfig(null), keys);
+    expect(off.available).toBe(false);
+    expect(off.missing).toEqual([
+      "switched off (config/vehicleCheck enabled is false)",
+      "ppsr: AUCN_API_KEY not set",
+      "odometer: AUCN_API_KEY not set",
+    ]);
+    expect(off.sections.vehicle).toEqual({ provider: "carjam", status: "ready" });
+    // Key present but no adapter built yet: still BLOCKED.
+    const aucnKeyed = availability(mergeConfig({ enabled: true }), { CARJAM_API_KEY: "k", AUCN_API_KEY: "k" });
+    expect(aucnKeyed.sections.ppsr.status).toBe("BLOCKED: aucn adapter not built yet (needs their API docs)");
+    expect(aucnKeyed.available).toBe(false);
+    // A provider that doesn't cover a section can't be routed to it.
+    expect(availability(mergeConfig({ details: "ppsr" }), {}).sections.vehicle.status).toBe("BLOCKED: ppsr doesn't cover vehicle");
+    expect(availability(mergeConfig({ rego: "nope" }), {}).sections.registration.status).toBe('BLOCKED: unknown provider "nope"');
+    // Placeholder values count as unset.
+    expect(availability(mergeConfig(null), { CARJAM_API_KEY: "unset" }).sections.vehicle.status).toBe("BLOCKED: CARJAM_API_KEY not set");
+    // Everything real + keyed + switched on: on sale.
+    const ready = availability(mergeConfig({ enabled: true, ppsr: "businessapi", odometer: "carjam" }), { CARJAM_API_KEY: "k", PPSR_BUSINESSAPI_KEY: "k" });
+    expect(ready.sections.odometer.status).toBe("BLOCKED: carjam doesn't cover odometer");
+  });
+
+  test("a section routed to a provider without its key answers BLOCKED with the reason, never data", async () => {
+    const d = deps({ configOverride: { odometer: "equifax", ppsr: "aucn" } });
+    await run(d);
+    expect(report(d).sections.odometer).toEqual({ status: "blocked", reason: "Waiting for Equifax CarHistory: EQUIFAX_API_KEY isn't set." });
+    expect(report(d).sections.ppsr).toEqual({ status: "blocked", reason: "Waiting for AUCN: AUCN_API_KEY isn't set." });
+    expect(report(d).status).toBe("partial");
   });
 });
 

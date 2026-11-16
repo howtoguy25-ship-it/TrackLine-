@@ -76,7 +76,7 @@ export function DocumentScanScreen() {
     // that opened this one. Its own effects (added alongside these buttons) sync `plate`/`vin`/
     // `state` from route.params on every change, not just first mount, so this round-trip
     // actually lands in the visible text fields there.
-    navigation.navigate("RevCheck", isVin ? { vin: trimmed } : { plate: trimmed, state: plateState });
+    navigation.navigate("VehicleCheck", isVin ? { vin: trimmed } : { plate: trimmed, state: plateState });
   }, [editedValue, isVin, plateState, navigation]);
 
   const onClose = useCallback(() => navigation.goBack(), [navigation]);

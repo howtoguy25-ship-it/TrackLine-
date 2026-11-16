@@ -11,7 +11,7 @@
 //   6. the cost of every paid call is logged to providerUsage
 
 const crypto = require("crypto");
-const { SECTIONS, mergeConfig } = require("./config");
+const { SECTIONS, PRODUCT_IDS, mergeConfig } = require("./config");
 const { parseQuery } = require("./query");
 const { buildAdapters } = require("./providers");
 const { gradeSection } = require("./grade");
@@ -36,7 +36,7 @@ function loadingSections() {
 /** Calls one section's provider, retrying once on a temporary failure. */
 async function loadSection(section, adapter, query, deps) {
   if (!adapter || typeof adapter[section.method] !== "function") {
-    return { status: "unavailable", reason: "No provider is set up for this section." };
+    return { status: "blocked", reason: "No provider covers this section." };
   }
   let lastErr = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -53,8 +53,9 @@ async function loadSection(section, adapter, query, deps) {
       if (attempt === 0 && deps.sleep) await deps.sleep(deps.retryDelayMs ?? 1500);
     }
   }
-  if (lastErr instanceof ProviderError && lastErr.kind === "not_configured") {
-    return { status: "unavailable", reason: lastErr.message };
+  if (lastErr instanceof ProviderError && (lastErr.kind === "not_configured" || lastErr.kind === "blocked")) {
+    // BLOCKED: no key yet, or the provider's adapter isn't built. Never filled in with guesses.
+    return { status: "blocked", reason: lastErr.message };
   }
   if (lastErr instanceof ProviderError && lastErr.kind === "not_found") {
     return { status: "failed", notFound: true, error: lastErr.message, retries: 0 };
@@ -145,7 +146,8 @@ async function runFullCheck({ uid, isAdmin = false, input, payment, requestId },
   } else if (payment?.type === "purchase") {
     let receipt;
     try {
-      receipt = await d.verifyPurchase({ platform: payment.platform, token: payment.token, productId: config.productId });
+      // Either price tier verifies, so switching tiers never strands a purchase already made.
+      receipt = await d.verifyPurchase({ platform: payment.platform, token: payment.token, productIds: PRODUCT_IDS, productId: payment.productId });
     } catch (err) {
       return { outcome: "invalid_purchase", message: err.message || "That purchase couldn't be verified." };
     }

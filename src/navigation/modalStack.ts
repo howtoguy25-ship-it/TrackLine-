@@ -20,7 +20,8 @@ export const MODAL_SCREENS: Readonly<Record<string, ModalPresentation>> = {
   VehicleDetection: "fullScreenModal",
   // Opened from the dashcam ("Run REV Check"), so it must be presented above it.
   RevCheck: "modal",
-  // Opened from REV Check.
+  VehicleCheck: "modal",
+  // Opened from the vehicle check.
   DocumentScan: "modal",
 };
 

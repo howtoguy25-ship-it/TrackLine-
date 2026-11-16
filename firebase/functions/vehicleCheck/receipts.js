@@ -33,7 +33,7 @@ function appleRootCerts() {
   return [fs.readFileSync(path.join(__dirname, "..", "certs", "AppleRootCA-G3.cer"))];
 }
 
-async function verifyApple(signedTransaction, productId) {
+async function verifyApple(signedTransaction, productIds) {
   const { SignedDataVerifier, Environment } = require("@apple/app-store-server-library");
   const roots = appleRootCerts();
   let payload = null;
@@ -51,13 +51,15 @@ async function verifyApple(signedTransaction, productId) {
   }
   if (!payload) throw new ReceiptError(`Apple purchase couldn't be verified (${lastErr?.status ?? lastErr?.message ?? "invalid"}).`);
   if (payload.bundleId !== BUNDLE_ID) throw new ReceiptError("Purchase is for another app.");
-  if (payload.productId !== productId) throw new ReceiptError("Purchase is for another product.");
+  if (!productIds.includes(payload.productId)) throw new ReceiptError("Purchase is for another product.");
   if (payload.revocationDate) throw new ReceiptError("This purchase was refunded.");
   if (!payload.transactionId) throw new ReceiptError("Purchase has no transaction ID.");
-  return { platform: "ios", key: `ios_${payload.transactionId}`, transactionId: payload.transactionId, productId, sandbox };
+  return { platform: "ios", key: `ios_${payload.transactionId}`, transactionId: payload.transactionId, productId: payload.productId, sandbox };
 }
 
-async function verifyGoogle(purchaseToken, productId) {
+async function verifyGoogle(purchaseToken, productIds, productId) {
+  // Play needs the product ID in the URL; the app says which one it bought.
+  if (!productIds.includes(productId)) throw new ReceiptError("Purchase is for another product.");
   const { GoogleAuth } = require("google-auth-library");
   const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/androidpublisher"] });
   const client = await auth.getClient();
@@ -77,11 +79,11 @@ async function verifyGoogle(purchaseToken, productId) {
   return { platform: "android", key: `android_${id}`, transactionId: id, productId, sandbox };
 }
 
-/** -> { platform, key, transactionId, productId, sandbox } or throws ReceiptError. */
-async function verifyPurchase({ platform, token, productId }) {
+/** productIds: every product that pays for a full check. -> { platform, key, transactionId, productId, sandbox } or throws ReceiptError. */
+async function verifyPurchase({ platform, token, productIds, productId }) {
   if (typeof token !== "string" || token.length < 10) throw new ReceiptError("No purchase token.");
-  if (platform === "ios") return verifyApple(token, productId);
-  if (platform === "android") return verifyGoogle(token, productId);
+  if (platform === "ios") return verifyApple(token, productIds);
+  if (platform === "android") return verifyGoogle(token, productIds, productId);
   throw new ReceiptError("Unknown platform.");
 }
 

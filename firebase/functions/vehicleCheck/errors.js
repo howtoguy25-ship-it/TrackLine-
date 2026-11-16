@@ -1,7 +1,7 @@
 // One error type for every provider, so the orchestration can tell "try again" from "this car
 // isn't on the register" from "this provider isn't set up".
 class ProviderError extends Error {
-  /** kind: "down" | "not_found" | "not_configured" | "bad_response" */
+  /** kind: "down" | "not_found" | "not_configured" | "blocked" | "bad_response" */
   constructor(kind, message, details) {
     super(message);
     this.name = "ProviderError";

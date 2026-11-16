@@ -1187,8 +1187,9 @@ const vehicleCheckProviders = require("./vehicleCheck/providers");
 const vehicleCheckConfig = require("./vehicleCheck/config");
 const { firestoreStore: vehicleCheckStore } = require("./vehicleCheck/store");
 const { verifyPurchase: verifyVehiclePurchase } = require("./vehicleCheck/receipts");
-const CARJAM_API_KEY = defineSecret("CARJAM_API_KEY");
-const PPSR_BUSINESSAPI_KEY = defineSecret("PPSR_BUSINESSAPI_KEY");
+// Provider keys: Firebase secrets only, read only here (see PROVIDERS.md / DEPLOY.md).
+const VEHICLE_CHECK_SECRET_NAMES = ["CARJAM_API_KEY", "AUCN_API_KEY", "MOTORWEB_API_KEY", "EQUIFAX_API_KEY", "PPSR_API_KEY", "PPSR_BUSINESSAPI_KEY"];
+const VEHICLE_CHECK_SECRETS = VEHICLE_CHECK_SECRET_NAMES.map((n) => defineSecret(n));
 
 async function vehicleCheckDeps() {
   const db = getFirestore();
@@ -1196,7 +1197,7 @@ async function vehicleCheckDeps() {
   return {
     store: vehicleCheckStore(db, FieldValue),
     configOverride: snap && snap.exists ? snap.data() : null,
-    keys: { CARJAM_API_KEY: CARJAM_API_KEY.value(), PPSR_BUSINESSAPI_KEY: PPSR_BUSINESSAPI_KEY.value() },
+    keys: Object.fromEntries(VEHICLE_CHECK_SECRET_NAMES.map((n, i) => [n, VEHICLE_CHECK_SECRETS[i].value()])),
     fetchImpl: fetch,
     verifyPurchase: verifyVehiclePurchase,
     sleep,
@@ -1204,15 +1205,18 @@ async function vehicleCheckDeps() {
 }
 
 // Whether it's on sale, the price label, and how many free re-checks this user has.
-exports.getVehicleCheckInfo = onCall({ secrets: [CARJAM_API_KEY, PPSR_BUSINESSAPI_KEY] }, async (request) => {
+exports.getVehicleCheckInfo = onCall({ secrets: VEHICLE_CHECK_SECRETS }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
   const deps = await vehicleCheckDeps();
   const config = vehicleCheckConfig.mergeConfig(deps.configOverride);
-  const { available, missing } = vehicleCheckProviders.availability(config, deps.keys);
+  const { available, missing, sections } = vehicleCheckProviders.availability(config, deps.keys);
+  const owner = isAdminRequest(request);
   return {
     available,
-    // Only the owner sees what's missing.
-    missing: isAdminRequest(request) ? missing : undefined,
+    // Only the owner sees what's missing and each section's provider status.
+    missing: owner ? missing : undefined,
+    sections: owner ? sections : undefined,
+    enabled: config.enabled,
     productId: config.productId,
     priceAud: config.priceAud,
     countries: ["AU"],
@@ -1221,7 +1225,7 @@ exports.getVehicleCheckInfo = onCall({ secrets: [CARJAM_API_KEY, PPSR_BUSINESSAP
 });
 
 exports.runVehicleCheck = onCall(
-  { secrets: [CARJAM_API_KEY, PPSR_BUSINESSAPI_KEY], timeoutSeconds: 180, memory: "512MiB" },
+  { secrets: VEHICLE_CHECK_SECRETS, timeoutSeconds: 180, memory: "512MiB" },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
     const deps = await vehicleCheckDeps();
@@ -1235,7 +1239,7 @@ exports.runVehicleCheck = onCall(
         uid: request.auth.uid,
         isAdmin: isAdminRequest(request),
         input: { country: data.country, plate: data.plate, state: data.state, vin: data.vin },
-        payment: data.useCredit ? { type: "credit" } : { type: "purchase", platform: data.platform, token: data.purchaseToken },
+        payment: data.useCredit ? { type: "credit" } : { type: "purchase", platform: data.platform, token: data.purchaseToken, productId: data.productId },
         requestId: data.requestId,
       },
       deps
@@ -1244,7 +1248,7 @@ exports.runVehicleCheck = onCall(
 );
 
 exports.retryVehicleCheckSection = onCall(
-  { secrets: [CARJAM_API_KEY, PPSR_BUSINESSAPI_KEY], timeoutSeconds: 120 },
+  { secrets: VEHICLE_CHECK_SECRETS, timeoutSeconds: 120 },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
     const deps = await vehicleCheckDeps();

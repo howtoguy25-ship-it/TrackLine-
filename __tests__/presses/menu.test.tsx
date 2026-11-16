@@ -1,7 +1,7 @@
 // Pressing every Main menu row opens the right screen.
 import React from "react";
 import { Share } from "react-native";
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { mockNavigation, resetMockNavigation } from "./mockNavigation";
 
@@ -29,6 +29,10 @@ jest.mock("@/services/calendarEvents", () => ({
   requestCalendarAccess: () => Promise.resolve(false),
 }));
 jest.mock("@/services/places", () => ({ searchPlaces: jest.fn(), getPlaceDetails: jest.fn() }));
+const mockVehicleCheckAvailable = { current: false };
+jest.mock("@/services/vehicleCheck", () => ({
+  getVehicleCheckInfo: () => Promise.resolve({ available: mockVehicleCheckAvailable.current, productId: "full_check", priceAud: 19.99, countries: ["AU"], credits: 0 }),
+}));
 jest.mock("@/components/trackys/Tracky", () => ({ Tracky: () => null }));
 jest.mock("@/hooks/useTrackyAppearance", () => ({ useTrackyAppearance: () => ({ mode: "mood", displayMood: "chill" }) }));
 
@@ -83,3 +87,30 @@ describe("Main menu rows", () => {
     expect(mockNavigation.goBack).toHaveBeenCalled();
   });
 });
+
+describe("Vehicle check row", () => {
+  // Development builds always list it (to test it); these check the production rule.
+  const dev = (global as { __DEV__?: boolean }).__DEV__;
+  beforeEach(() => {
+    (global as { __DEV__?: boolean }).__DEV__ = false;
+    mockUser.current = null;
+  });
+  afterEach(() => {
+    (global as { __DEV__?: boolean }).__DEV__ = dev;
+  });
+
+  it("is hidden in production while the full check isn't on sale", async () => {
+    mockVehicleCheckAvailable.current = false;
+    await render(<MainMenuScreen />);
+    expect(screen.queryByText("Vehicle check")).toBeNull();
+  });
+
+  it("appears once it's on sale and opens the vehicle check", async () => {
+    mockVehicleCheckAvailable.current = true;
+    await render(<MainMenuScreen />);
+    const row = await screen.findByText("Vehicle check");
+    await fireEvent.press(row);
+    expect(mockNavigation.navigate).toHaveBeenCalledWith("VehicleCheck", undefined);
+  });
+});
+

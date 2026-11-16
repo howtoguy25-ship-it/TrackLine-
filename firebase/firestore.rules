@@ -363,6 +363,12 @@ service cloud.firestore {
     // Real vehicle REV check (PPSR) provider credentials -- split into two docs so the raw
     // secret key and its own "is a real provider actually connected" status can have
     // genuinely different read rules (Firestore rules are per-document, not per-field).
+    match /config/vehicleCheck {
+      // Vehicle full check routing + on/off switch (no keys in here -- those are Firebase
+      // secrets). Read by the functions with the Admin SDK; only the owner reads or edits it.
+      allow read, write: if isAdmin();
+    }
+
     match /config/revCheckProvider {
       // The raw API key itself. Admin (owner) only, both ways -- this is a real, paid business
       // credential; no other signed-in user, anonymous or not, can ever read or write it. The
