@@ -301,6 +301,21 @@ Two phones (or a phone and a friend's), two different accounts, both with Ghost 
 3. No brand logos: only our own icons.
 4. Tap a badge: that place's page opens.
 
+## 20. Vehicle full check — NEEDS DEVICE TEST (after keys + products, PROVIDERS.md)
+
+Signed in as the owner, on TestFlight (sandbox purchases work for the owner only).
+
+1. Menu → Vehicle check. The owner panel lists each section `ready` / `BLOCKED: …`.
+2. "See a sample report": the banner says Sample; every section shows green/amber/red.
+3. Enter a plate and state (state pre-selected from where you are), or a 17-character VIN. A
+   VIN with I, O or Q, or the wrong length, is refused before paying.
+4. "Get full check — $19.99" → sandbox purchase → the sections fill in one by one → report.
+5. Share / export PDF opens the share sheet with a PDF; PPSR certificate opens.
+6. Buy again for the same car: "Open today's report", with no second charge.
+7. Airplane mode right after paying, then reopen Vehicle check: the check continues by itself.
+8. With your phone region set to New Zealand and location off: "Full check not available in
+   your country yet".
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

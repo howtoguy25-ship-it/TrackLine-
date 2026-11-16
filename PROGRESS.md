@@ -29,6 +29,7 @@ me; everything visible needs your device check (`TEST_ON_PHONE.md`).
 | Server-side anti-spam (§6) | NOT DONE (only the rules' shape checks, `validateAlertOnCreate`, and now once-per-user votes) | -- | -- |
 | Expiry + "Still here?" (§7) | PARTIAL: per-type TTL (`ALERT_TTL_MS`), `cleanupExpiredAlerts`, proximity prompt (`AlertStillHereCard`) exist; extend-on-confirm and remove-after-2-"Not there" NOT DONE | -- | -- |
 | Travel modes | Step 1 of 6: CODE + tests, NOT on any screen | `__tests__/travel/modes.test.ts` | Circular Quay -> Manly test needs a recorded Google/TfNSW response (keys not available here) |
+| Vehicle full check (one product, incl. odometer) | CODE + tests DONE; BLOCKED for sale: provider keys, odometer adapter, store products | `firebase/tests/vehicleCheck.test.js` (20 + 2 emulator), rules + callable tests, `__tests__/vehicleCheck.test.tsx` (15), `presses/menu.test.tsx` | PROVIDERS.md steps 1-4; TEST_ON_PHONE §20 |
 
 ### Map checklist (Mapbox map, style v5)
 

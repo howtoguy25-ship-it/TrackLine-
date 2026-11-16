@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Alert, Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRoute, type RouteProp } from "@react-navigation/native";
 import { useIAP, ErrorCode, type Purchase } from "react-native-iap";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -13,6 +13,7 @@ import { colors, radius, spacing } from "@/theme/tokens";
 import { useAuth } from "@/context/AuthContext";
 import { useLocation } from "@/context/LocationContext";
 import { isOwnerEmail } from "@/config/admin";
+import { env } from "@/config/env";
 import { AU_STATES, DEFAULT_AU_STATE, classifyAuRegion } from "@/utils/auStates";
 import { VehicleReportView } from "@/components/vehicleCheck/VehicleReportView";
 import { SAMPLE_REPORT } from "@/vehicleCheck/sample";
@@ -375,6 +376,13 @@ export function VehicleCheckScreen() {
               testID="buy-full-check"
             />
           )}
+          <Text style={styles.muted} testID="vehicle-check-terms">
+            {"By buying you agree to the "}
+            <Text style={styles.link} onPress={() => Linking.openURL(`https://${env.firebase.projectId}.web.app/vehicle-check-terms.html`).catch(() => {})}>
+              Vehicle check terms
+            </Text>
+            {". Always inspect the vehicle and get a mechanic's check."}
+          </Text>
           {!onSale && info && <Text style={styles.muted} testID="not-on-sale">{"The full check isn't available yet."}</Text>}
           {isOwner && info?.sections && (
             // Owner only: which provider answers each section, and what's still BLOCKED.
@@ -454,4 +462,5 @@ const styles = StyleSheet.create({
   checkTitle: { color: colors.text, fontWeight: "600" },
   ownerPanel: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, padding: spacing.md, gap: 2 },
   ownerTitle: { color: colors.text, fontWeight: "700" },
+  link: { color: colors.primary, fontWeight: "600" },
 });

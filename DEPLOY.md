@@ -70,8 +70,16 @@ The GitHub app can't edit secrets, so use the phone browser:
 | `MAPBOX_SERVER_TOKEN` | **Required** -- other drivers' Trackys snapped to roads | account.mapbox.com › Tokens (the same token as the app's `MAPBOX_PUBLIC_TOKEN` works) |
 | `TFNSW_API_KEY` | Live Traffic NSW incidents and congestion | opendata.transport.nsw.gov.au › sign up › My account › Applications › Create › copy the API key (free) |
 | `ELEVENLABS_API_KEY` | The four character voices (paid service) | elevenlabs.io › profile › API keys |
+| `CARJAM_API_KEY` | Vehicle full check: details, VIN, rego, stolen, written-off | dev.carjam.co.nz › sign up (consumer resale connection) |
+| `AUCN_API_KEY` | Vehicle full check: PPSR, written-off, stolen, odometer | aucn.net.au/business (business account) |
+| `MOTORWEB_API_KEY` | Vehicle full check: rego, stolen, written-off | MotorWeb AU (business account) |
+| `EQUIFAX_API_KEY` | Vehicle full check: odometer, written-off, stolen | equifax.com.au CarHistory (business account) |
+| `PPSR_API_KEY` | Vehicle full check: PPSR (government B2G) | ppsr.gov.au B2G access |
+| `PPSR_BUSINESSAPI_KEY` | Vehicle full check: PPSR via BusinessAPI (already built) | businessapi.com.au |
 
-Skip the optional two and the deploy still works; those features say "not set up" in the app.
+Only `MAPBOX_SERVER_TOKEN` is required. Skip the others and the deploy still works; those
+features say "not set up" in the app (vehicle check sections say BLOCKED). Which vehicle-check
+keys you need, the store products and how to switch the check on: **PROVIDERS.md**.
 Add a key later and re-run with **Copy API keys** ticked -- no app update needed.
 
 ## Step 5 -- Run it

@@ -903,3 +903,21 @@ the car-roads fallback note), 3 the mode sheet + icon row with fastest times (se
 first, others lazily, 2-minute cache, greyed "—" with a reason), 4 transit timeline + live/late +
 fare + Opal note, 5 per-mode navigation (bike/walk warnings, "Get off in 2 stops" + vibration),
 6 ferry details (wharves, departures, crossing time, cars, booking link, price).
+
+## Vehicle full check -- BLOCKED until keys (2026-11-16)
+
+- **BLOCKED: no provider keys in Firebase secrets.** `CARJAM_API_KEY` (details, rego, stolen,
+  written-off; adapter built), `AUCN_API_KEY` / `MOTORWEB_API_KEY` / `EQUIFAX_API_KEY` /
+  `PPSR_API_KEY` (adapters answer BLOCKED until their API docs arrive and the adapter is built),
+  `PPSR_BUSINESSAPI_KEY` (built alternative for PPSR). See PROVIDERS.md.
+- **BLOCKED: no odometer provider.** CarJam has no AU odometer product; AUCN or Equifax needed.
+- **BLOCKED: store products** `full_check` (A$19.99) and `full_check_2499` (A$24.99) must be
+  created in App Store Connect and Play Console (steps in PROVIDERS.md).
+- Hidden in production until `config/vehicleCheck.enabled` is true AND every section is ready.
+- The CarJam test fixtures come from CarJam's published AU examples, not live recordings
+  (no key). Re-record with `scripts/record-vehicle-check.mjs`.
+- Margin: CarJam consumer-resale lookups alone are ~NZ$14.81 per check; PPSR + odometer add
+  more; Apple/Google take 15-30% of $19.99. Watch `providerUsage`.
+- Other countries: not available ("Full check not available in your country yet"). Possible
+  providers when expanding: NZ -- CarJam (NZ API); UK -- HPI Check, Experian AutoCheck;
+  US -- Carfax, AutoCheck (Experian). Never shown: AU data for a foreign plate.

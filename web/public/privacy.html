@@ -228,22 +228,29 @@
         checked on the phone against your location. Your location is not sent to us for this.
       </p>
 
-      <h3>Vehicle history checks (REV Check)</h3>
+      <h3>Vehicle full check</h3>
       <p>
-        If you run a REV Check, the number plate, state, and optional VIN you enter are sent to
-        our vehicle-data provider (BusinessAPI.com.au's PPSR Searches API) to return real
-        make/model/spec data and, if a VIN is provided, stolen/written-off/money-owing status.
-        This lookup is performed server-side using our own provider account — we don't store the
-        plate/VIN beyond what's needed to show you the result and, if you choose, save it to your
-        own vehicle history log in your account.
+        If you buy a vehicle full check, the number plate and state (or the VIN) you enter are sent
+        from our server to the vehicle-data providers that answer each part of the report (see
+        "Third-Party Services" below) to look up that vehicle's details, registration, write-off,
+        stolen, finance-owing (PPSR) and odometer records. Your location is used only on your phone
+        to pre-select your state and to check you're in Australia; it is not sent with the check.
+      </p>
+      <p>
+        Reports never include owner names, addresses or the details of anyone with a security
+        interest in the vehicle -- only facts about the vehicle itself. Your report is saved to
+        "My checks" in your account so you can open it again; a complete result for the same vehicle
+        is kept on our server for 24 hours (with nothing about you in it) so a repeat check doesn't
+        cost twice. We record the cost of each provider lookup for our own accounting.
       </p>
 
       <h3>Purchases &amp; subscriptions</h3>
       <p>
-        Some features (like REV Check) are paid, one-time or subscription purchases made through
+        Some features (like the vehicle full check) are paid, one-time or subscription purchases made through
         Apple's App Store or Google Play. We never see or store your payment card details — Apple
         and Google handle billing directly and only tell us that a purchase succeeded, for which
-        product, so we can unlock the feature on your account.
+        product, so we can unlock the feature on your account. For the vehicle full check our server
+        checks that confirmation directly with Apple or Google before running any lookup.
       </p>
 
       <h3>Advertising</h3>
@@ -269,7 +276,7 @@
         <li>Deliver speed camera and road alerts</li>
         <li>Display maps and routing information</li>
         <li>Run AI vehicle detection and emergency-lighting/siren alerts</li>
-        <li>Provide vehicle history (REV Check) results</li>
+        <li>Provide vehicle full check reports</li>
         <li>Improve application performance and reliability</li>
         <li>Detect and resolve technical issues</li>
         <li>Analyze usage trends</li>
@@ -315,7 +322,7 @@
 
       <h2>Third-Party Services We Use</h2>
       <ul>
-        <li><strong>Firebase (Google)</strong> — authentication, the alerts database, and REV Check/fuel-price server functions.</li>
+        <li><strong>Firebase (Google)</strong> — authentication, the alerts database, and the vehicle-check / fuel-price server functions.</li>
         <li><strong>Mapbox</strong> — the map itself (map tiles and styles), driving routes and
           reroutes (Directions API: start, destination, direction of travel and Avoid options), and
           (Map Matching API) snapping a visible, driving account's location samples to the road they
@@ -332,7 +339,9 @@
           voice search (see "Microphone" above).</li>
         <li><strong>OpenStreetMap (Overpass API)</strong> — community-mapped traffic-light and speed-camera locations.</li>
         <li><strong>NSW Government FuelCheck</strong> — live fuel prices, when you use that feature.</li>
-        <li><strong>BusinessAPI.com.au (PPSR Searches API)</strong> — vehicle history/spec data for REV Check.</li>
+        <li><strong>CarJam</strong> — vehicle details, registration, stolen and written-off records for the vehicle full check.</li>
+        <li><strong>PPSR providers</strong> (BusinessAPI.com.au, AUCN, MotorWeb or the Australian Government PPSR) — finance-owing (PPSR) results and the official PPSR certificate.</li>
+        <li><strong>Odometer-history providers</strong> (AUCN or Equifax CarHistory, once connected) — recorded odometer readings.</li>
         <li><strong>Plate Recognizer</strong> — optional cloud fallback for plate OCR, only when connected on our end (see "Camera — AI Vehicle Detection" above).</li>
         <li><strong>Google AdMob</strong> — advertising.</li>
         <li><strong>Apple App Store / Google Play</strong> — purchases and subscriptions.</li>
@@ -350,8 +359,8 @@
         about 2 minutes after your last update, and immediately on arrival or turning on Ghost
         mode — see "Presence" above; nothing from it is kept any longer than that. Speed limit and
         school zone reports are kept until they are reviewed, and a confirmed school zone for as
-        long as it is useful on the map; you can ask us to delete yours at any time. Saved REV
-        Check/vehicle history entries and account sign-in info are kept for as long as your
+        long as it is useful on the map; you can ask us to delete yours at any time. Saved vehicle
+        checks ("My checks"), vehicle history entries and account sign-in info are kept for as long as your
         account exists, or until you ask us to delete them. Anonymous analytics and
         crash-diagnostic data may be retained for statistical purposes.
       </p>
