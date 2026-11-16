@@ -12,6 +12,8 @@ import BadgeCheckIcon from "lucide-react-native/icons/badge-check";
 import BedIcon from "lucide-react-native/icons/bed";
 import BellIcon from "lucide-react-native/icons/bell";
 import BikeIcon from "lucide-react-native/icons/bike";
+import MotorbikeIcon from "lucide-react-native/icons/motorbike";
+import ShipIcon from "lucide-react-native/icons/ship";
 import BluetoothIcon from "lucide-react-native/icons/bluetooth";
 import BookmarkIcon from "lucide-react-native/icons/bookmark";
 import BriefcaseIcon from "lucide-react-native/icons/briefcase";
@@ -154,6 +156,8 @@ const ICONS = {
   "arrow-undo": Undo2Icon,
   "bed": BedIcon,
   "bicycle": BikeIcon,
+  "motorbike": MotorbikeIcon,
+  "ferry": ShipIcon,
   "bluetooth": BluetoothIcon,
   "bookmark": BookmarkIcon,
   "briefcase": BriefcaseIcon,

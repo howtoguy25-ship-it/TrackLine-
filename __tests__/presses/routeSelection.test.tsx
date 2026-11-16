@@ -35,7 +35,7 @@ function topCard(overrides: Partial<React.ComponentProps<typeof RouteSelectionTo
     avoidLabel: "Avoid",
     avoidActive: false,
     onOpenAvoid: jest.fn(),
-    travelMode: "driving" as const,
+    travelMode: "drive" as const,
     onOpenMode: jest.fn(),
     ...overrides,
   };
@@ -94,11 +94,35 @@ describe("Avoid sheet", () => {
 });
 
 describe("Travel mode sheet", () => {
-  it("picking Walk reports walking", async () => {
+  const summaries = {
+    drive: { seconds: 720, reason: null },
+    motorbike: { seconds: 700, reason: null },
+    bike: { seconds: 1500, reason: null },
+    walk: { seconds: null, reason: "No walking route between these places" },
+    transit: { seconds: undefined, reason: null },
+  };
+  it("picking Bike reports bike; times show under each mode", async () => {
     const onSelect = jest.fn();
-    await render(<TravelModeSheet visible mode="driving" onSelect={onSelect} onClose={jest.fn()} />);
-    await fireEvent.press(screen.getByText("Walk"));
-    expect(onSelect).toHaveBeenCalledWith("walking");
+    await render(<TravelModeSheet visible mode="drive" summaries={summaries} ferryAvailable={false} onSelect={onSelect} onClose={jest.fn()} />);
+    await fireEvent.press(screen.getByTestId("mode-row-bike"));
+    expect(onSelect).toHaveBeenCalledWith("bike");
+    expect(screen.getAllByText("12 min").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("25 min").length).toBeGreaterThan(0);
+  });
+  it("an unavailable mode is greyed with its reason and can't be picked", async () => {
+    const onSelect = jest.fn();
+    await render(<TravelModeSheet visible mode="drive" summaries={summaries} ferryAvailable={false} onSelect={onSelect} onClose={jest.fn()} />);
+    expect(screen.getByText("No walking route between these places")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("mode-row-walk"));
+    await fireEvent.press(screen.getByTestId("mode-icon-walk"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+  it("Ferry appears only when a real option has a ferry", async () => {
+    await render(<TravelModeSheet visible mode="drive" summaries={summaries} ferryAvailable={false} onSelect={jest.fn()} onClose={jest.fn()} />);
+    expect(screen.queryByTestId("mode-row-ferry")).toBeNull();
+    await render(<TravelModeSheet visible mode="drive" summaries={summaries} ferryAvailable onSelect={jest.fn()} onClose={jest.fn()} />);
+    expect(screen.getByTestId("mode-row-ferry")).toBeTruthy();
+    expect(screen.getByTestId("mode-icon-ferry")).toBeTruthy();
   });
 });
 

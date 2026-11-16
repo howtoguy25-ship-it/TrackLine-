@@ -239,6 +239,16 @@ Real data only: NSW official zones (Transport for NSW). Do these as a passenger.
 - [ ] Turn on airplane mode after driving an area once: zones still work there (cached), for up to 30 days.
 - [ ] Settings › About › Data sources lists where the map, limits and school zones come from.
 
+## 15. Travel modes — NEEDS DEVICE TEST
+
+- [ ] Pick a destination, tap the **Drive ▾** pill: "Getting there" shows Drive, Motorbike, Bike, Walk, Transit, each with a time (or "—" and why). The selected one is blue.
+- [ ] Pick Bike: bike routes are drawn and listed; the pill says Bike. Close the screen, pick another destination: it opens in Bike (remembered).
+- [ ] Pick Motorbike: routes are shown; if Google has no motorbike routing here, the sheet says "Motorbike routes use car roads here".
+- [ ] Putney → Mortlake (the Mortlake car ferry): Ferry appears in the picker and the drive route row says "Includes ferry". Avoid › Ferries on: the ferry route disappears.
+- [ ] Circular Quay → Manly: Ferry appears; picking it shows the transit trip with the Manly ferry.
+- [ ] Bankstown → Parramatta: no Ferry in the picker.
+- [ ] Switching modes keeps From, To and any stop.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

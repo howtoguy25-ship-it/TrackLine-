@@ -27,6 +27,8 @@ import type { ZoneShape } from "@/schoolZones/zoneMatch";
 import { communityZoneAt, type CommunityFeature } from "@/schoolZones/communityZones";
 import { communityFeaturesAround } from "@/services/roadFeatureReports";
 import { RoadReportSheet } from "@/components/RoadReportSheet";
+import { MODE_NAVIGATES_AS, MODE_ORDER, asModeId, ferryBadge, ferryModeAvailable, ferryOptions, type ModeId } from "@/travel/modes";
+import { ModeRouteCache, fastestSeconds, fetchRoutesForMode, type ModeRoutes } from "@/travel/modeRouting";
 import type { SchoolCalendar } from "@/schoolZones/calendar";
 import { resolveSpeedLimit, routeLimitAt, signStyleFor, signUnitFor, signValue } from "@/speedLimits/resolveLimit";
 import { buildRouteGeometry, createMatchState, deadReckon, matchFix, type MatchResult } from "@/nav/routeMatcher";
@@ -89,6 +91,7 @@ import {
   RouteSelectionTopCard,
   TravelModeSheet,
   transitRouteTitle,
+  type ModeSummary,
   type RouteChoiceRow,
 } from "@/components/RouteSelection";
 import { AlertStillHereCard } from "@/components/AlertStillHereCard";
@@ -2577,6 +2580,126 @@ export function MapScreen() {
     [fitRoutesOnScreen, settings.routeAvoid]
   );
 
+  // ---- Travel modes (src/travel): Drive · Motorbike · Bike · Walk · Transit · Ferry ----
+  // Drive and Transit keep the Google route choices above (traffic, tolls, timetables). Bike and
+  // Walk come from Mapbox (Google if this build has no Mapbox token), Motorbike from Google's
+  // TWO_WHEELER routing with a labelled car-road fallback, and Ferry is the real drive/transit
+  // options that include a ferry leg. One cache per trip, 2 minutes.
+  const [selectedMode, setSelectedMode] = useState<ModeId>("drive");
+  const [modeSummaries, setModeSummaries] = useState<Partial<Record<ModeId, ModeSummary>>>({});
+  const [modeResults, setModeResults] = useState<Partial<Record<ModeId, ModeRoutes>>>({});
+  const [modeCache] = useState(
+    () =>
+      new ModeRouteCache((mode, req) =>
+        fetchRoutesForMode(mode, req, {
+          mapboxToken: env.mapboxPublicToken,
+          googleKey: env.googleDirectionsApiKey,
+          transit: (o, d) => getModeRouteOptions(o, d, "transit").catch(() => []),
+          fallback: (mode, o, d) =>
+            mode === "drive" ? getRouteChoices(o, d, {}).catch(() => []) : getModeRouteOptions(o, d, mode === "bike" ? "bicycling" : "walking").catch(() => []),
+        })
+      )
+  );
+  const routeTripRef = useRef(0);
+
+  /** Routes for the chosen mode; remembers it as the last mode used. */
+  const requestRoutes = useCallback(
+    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, mode: ModeId, avoidOverride?: RouteAvoidPrefs) => {
+      setSelectedMode(mode);
+      if (settings.lastTravelMode !== mode) updateSettings({ lastTravelMode: mode });
+      const avoid = avoidOverride ?? settings.routeAvoid;
+      const trip = ++routeTripRef.current;
+      // Drive, Transit, and any trip with a stop: the Google flow (it handles waypoints).
+      if (mode === "drive" || mode === "transit" || (waypoint && mode !== "ferry")) {
+        const navMode = MODE_NAVIGATES_AS[mode as Exclude<ModeId, "ferry">];
+        setTravelMode(navMode);
+        await fetchRouteOptions(origin, destination, waypoint, navMode, avoidOverride);
+        return;
+      }
+      Keyboard.dismiss();
+      setLoadingRouteOptions(true);
+      setRouteOptionsError(null);
+      try {
+        const req = { origin, destination, avoid };
+        const showModeRoutes = (routes: Route[], navMode: "walking" | "bicycling" | "transit") => {
+          setTravelMode(navMode);
+          setModeRouteOptions(routes);
+          setSelectedModeRouteIndex(0);
+          setModeRoute(routes[0]);
+          setRouteChoices(null);
+          setRouteAvoidNote(null);
+          fitRoutesOnScreen(routes.slice(0, 3).map(detailedRoutePolyline));
+        };
+        const showDriveRoutes = (routes: Route[], note: string | null) => {
+          setTravelMode("driving");
+          const choices = distinctRoutes(routes);
+          setRouteChoices(choices);
+          setSelectedChoiceIndex(0);
+          setRouteAvoidNote(note);
+          setModeRoute(null);
+          setModeRouteOptions([]);
+          fitRoutesOnScreen(choices.map(detailedRoutePolyline));
+        };
+        if (mode === "ferry") {
+          const [drive, transit] = await Promise.all([modeCache.get("drive", req), modeCache.get("transit", req)]);
+          if (trip !== routeTripRef.current) return;
+          const opts = ferryOptions({ drive: [...(routeChoices ?? []), ...drive.routes], transit: transit.routes });
+          const byTransit = opts.filter((o) => o.mode === "transit").map((o) => o.route);
+          const byDrive = opts.filter((o) => o.mode === "drive").map((o) => o.route);
+          if (byTransit.length) showModeRoutes(byTransit, "transit");
+          else if (byDrive.length) showDriveRoutes(byDrive, null);
+          else setRouteOptionsError("No ferry on this trip");
+          return;
+        }
+        const result = await modeCache.get(mode, req);
+        if (trip !== routeTripRef.current) return;
+        setModeResults((m) => ({ ...m, [mode]: result }));
+        if (!result.routes.length) {
+          setRouteOptionsError(result.unavailable ?? "No route for this mode");
+          return;
+        }
+        if (mode === "motorbike") showDriveRoutes(result.routes, result.note);
+        else showModeRoutes(result.routes, mode === "bike" ? "bicycling" : "walking");
+      } finally {
+        if (trip === routeTripRef.current) setLoadingRouteOptions(false);
+      }
+    },
+    [fetchRouteOptions, fitRoutesOnScreen, settings.routeAvoid, settings.lastTravelMode, updateSettings, modeCache, routeChoices]
+  );
+
+  // The icon row's times: the selected mode first, the others when the mode sheet opens.
+  useEffect(() => {
+    if (!modeSheetOpen || !pendingDestination || !routeOriginLatLng) return;
+    let live = true;
+    const req = { origin: routeOriginLatLng, destination: pendingDestination.location, avoid: settings.routeAvoid };
+    const order = [selectedMode, ...MODE_ORDER.filter((m) => m !== selectedMode && m !== "ferry")].filter((m) => m !== "ferry");
+    for (const m of order) {
+      modeCache.get(m, req).then((r) => {
+        if (!live) return;
+        setModeResults((prev) => ({ ...prev, [m]: r }));
+        setModeSummaries((prev) => ({ ...prev, [m]: { seconds: fastestSeconds(r), reason: r.unavailable } }));
+      });
+    }
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modeSheetOpen, pendingDestination, routeOriginLatLng]);
+  const ferryAvailable = ferryModeAvailable({
+    drive: [...(routeChoices ?? []), ...(modeResults.drive?.routes ?? [])],
+    transit: modeResults.transit?.routes ?? (travelMode === "transit" ? modeRouteOptions : []),
+  });
+  const ferrySummary: ModeSummary | undefined = ferryAvailable
+    ? {
+        seconds: Math.min(
+          ...ferryOptions({ drive: [...(routeChoices ?? []), ...(modeResults.drive?.routes ?? [])], transit: modeResults.transit?.routes ?? [] }).map(
+            (o) => o.route.durationInTrafficSeconds ?? o.route.durationSeconds
+          )
+        ),
+        reason: null,
+      }
+    : undefined;
+
   // Rough degrees-of-latitude span for a given real km distance (111km per degree of
   // latitude) -- good enough for sizing an Overpass bounding box, not meant for precise
   // long-distance navigation math the way distanceKm's real haversine calculation is.
@@ -3142,12 +3265,14 @@ export function MapScreen() {
       closeAllPlaceSheets();
       setPendingDestination(place);
       setStopLocation(null);
-      // A fresh destination pick always starts from Drive -- predictable default, matches how
-      // the picker looked before travel modes existed.
-      setTravelMode("driving");
-      fetchRouteOptions(routeOriginLatLng, place.location, undefined, "driving");
+      // A fresh destination starts in the mode used last (Drive the first time). Ferry depends
+      // on the trip, so it starts from Drive.
+      const last = asModeId(settings.lastTravelMode);
+      setModeSummaries({});
+      setModeResults({});
+      requestRoutes(routeOriginLatLng, place.location, undefined, last === "ferry" ? "drive" : last);
     },
-    [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]
+    [routeOriginLatLng, requestRoutes, closeAllPlaceSheets, settings.lastTravelMode]
   );
 
   // Real, explicit request -- the Plan a Drive screen's own "Start" hand-off (see
@@ -3210,8 +3335,7 @@ export function MapScreen() {
       closeAllPlaceSheets();
       setPendingDestination(station);
       setStopLocation(null);
-      setTravelMode("walking");
-      fetchRouteOptions(routeOriginLatLng, station.location, undefined, "walking");
+      requestRoutes(routeOriginLatLng, station.location, undefined, "walk");
     } catch (err) {
       console.warn("[map] find nearest station failed", err);
       Sentry.logger.error("map: find nearest station failed", { error: String(err) });
@@ -3225,9 +3349,9 @@ export function MapScreen() {
       if (!pendingDestination || !routeOriginLatLng) return;
       setStopLocation(place.location);
       setPickingStop(false);
-      fetchRouteOptions(routeOriginLatLng, pendingDestination.location, place.location, travelMode);
+      requestRoutes(routeOriginLatLng, pendingDestination.location, place.location, selectedMode);
     },
-    [pendingDestination, routeOriginLatLng, fetchRouteOptions, travelMode]
+    [pendingDestination, routeOriginLatLng, requestRoutes, selectedMode]
   );
 
   // Real mid-trip "add a stop" -- previously the only Add Stop control was on the pre-Start
@@ -3514,13 +3638,13 @@ export function MapScreen() {
   }, [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid]);
 
   const onSelectTravelMode = useCallback(
-    (mode: TravelMode) => {
-      setTravelMode(mode);
+    (mode: ModeId) => {
+      // From/To and the stop stay as they are; only the mode changes.
       if (pendingDestination && routeOriginLatLng) {
-        fetchRouteOptions(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, mode);
-      }
+        requestRoutes(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, mode);
+      } else setSelectedMode(mode);
     },
-    [pendingDestination, stopLocation, routeOriginLatLng, fetchRouteOptions]
+    [pendingDestination, stopLocation, routeOriginLatLng, requestRoutes]
   );
 
   // Tapping a route (its line, its bubble, or its row) selects it; tapping the selected one
@@ -3708,9 +3832,10 @@ export function MapScreen() {
           const hasToll = r.tollEstimate?.hasToll === true;
           const price = hasToll ? r.tollEstimate?.priceText : null;
           const routeTag = tag as Parameters<typeof routeSummaryLine>[0];
-          subtitle = routeSummaryLine(routeTag, trafficLevel(r), hasToll) + (price ? ` ${price}` : "");
+          const ferry = ferryBadge(r);
+          subtitle = routeSummaryLine(routeTag, trafficLevel(r), hasToll) + (price ? ` ${price}` : "") + (ferry ? ` · ${ferry}` : "");
           const parts = routeSummaryParts(routeTag, trafficLevel(r), hasToll);
-          subtitleParts = { ...parts, tail: parts.tail + (price ? ` ${price}` : "") };
+          subtitleParts = { ...parts, tail: parts.tail + (price ? ` ${price}` : "") + (ferry ? ` · ${ferry}` : "") };
         } else if (travelMode === "transit") {
           const firstLeg = r.transitSummary?.legs[0];
           const transfers = r.transitSummary?.transfers ?? 0;
@@ -3785,10 +3910,10 @@ export function MapScreen() {
       const next = { ...settings.routeAvoid, [key]: value };
       updateSettings({ routeAvoid: next });
       if (travelMode === "driving" && pendingDestination && routeOriginLatLng) {
-        fetchRouteOptions(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, "driving", next);
+        requestRoutes(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, selectedMode, next);
       }
     },
-    [settings.routeAvoid, updateSettings, travelMode, pendingDestination, routeOriginLatLng, stopLocation, fetchRouteOptions]
+    [settings.routeAvoid, updateSettings, travelMode, pendingDestination, routeOriginLatLng, stopLocation, requestRoutes, selectedMode]
   );
 
   // "From" row tap on the initial search panel -- opens a second DestinationSearchBar configured
@@ -3804,10 +3929,10 @@ export function MapScreen() {
       setPickingOrigin(false);
       if (pendingDestination) {
         const origin = next?.location ?? currentLatLng;
-        if (origin) fetchRouteOptions(origin, pendingDestination.location, stopLocation ?? undefined, travelMode);
+        if (origin) requestRoutes(origin, pendingDestination.location, stopLocation ?? undefined, selectedMode);
       }
     },
-    [pendingDestination, stopLocation, travelMode, currentLatLng, fetchRouteOptions]
+    [pendingDestination, stopLocation, selectedMode, currentLatLng, requestRoutes]
   );
 
   // Real, explicit request -- a real swap button (like Apple/Google Maps) that flips the
@@ -3830,8 +3955,8 @@ export function MapScreen() {
     const newDestination = currentOriginPlace;
     setOriginOverride(newOrigin);
     setPendingDestination(newDestination);
-    fetchRouteOptions(newOrigin.location, newDestination.location, stopLocation ?? undefined, travelMode);
-  }, [pendingDestination, routeOriginLatLng, originOverride, liveAddress, stopLocation, travelMode, fetchRouteOptions]);
+    requestRoutes(newOrigin.location, newDestination.location, stopLocation ?? undefined, selectedMode);
+  }, [pendingDestination, routeOriginLatLng, originOverride, liveAddress, stopLocation, selectedMode, requestRoutes]);
 
   // Real, explicit request: "choose starting point" opens straight into the pin-drop picker
   // (below), seeded from wherever the current origin already is (a previously custom-picked
@@ -3962,9 +4087,9 @@ export function MapScreen() {
   const clearOriginOverride = useCallback(() => {
     setOriginOverride(null);
     if (pendingDestination && currentLatLng) {
-      fetchRouteOptions(currentLatLng, pendingDestination.location, stopLocation ?? undefined, travelMode);
+      requestRoutes(currentLatLng, pendingDestination.location, stopLocation ?? undefined, selectedMode);
     }
-  }, [pendingDestination, currentLatLng, stopLocation, travelMode, fetchRouteOptions]);
+  }, [pendingDestination, currentLatLng, stopLocation, selectedMode, requestRoutes]);
 
   // Real, explicit request: the confirmed starting-point pin now stays visible on the map (see
   // its own Marker below) specifically so it's there to tap -- a real options menu instead of a
@@ -5107,7 +5232,7 @@ export function MapScreen() {
               avoidLabel={avoidPillLabel(settings.routeAvoid)}
               avoidActive={avoidCount(settings.routeAvoid) > 0}
               onOpenAvoid={() => setAvoidSheetOpen(true)}
-              travelMode={travelMode}
+              travelMode={selectedMode}
               onOpenMode={() => setModeSheetOpen(true)}
               onHeightChange={setRouteTopCardBottom}
             />
@@ -5145,7 +5270,10 @@ export function MapScreen() {
           <MapSurface>
             <TravelModeSheet
               visible={modeSheetOpen}
-              mode={travelMode}
+              mode={selectedMode}
+              summaries={ferrySummary ? { ...modeSummaries, ferry: ferrySummary } : modeSummaries}
+              ferryAvailable={ferryAvailable}
+              note={selectedMode === "motorbike" ? modeResults.motorbike?.note ?? null : null}
               onSelect={(mode) => {
                 setModeSheetOpen(false);
                 onSelectTravelMode(mode);

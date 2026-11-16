@@ -22,6 +22,7 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { Text } from "@/components/AppText";
 import { colors, pressedOpacity, scaleFor, shadow } from "@/theme/tokens";
 import { TRAVEL_MODE_LABELS, type Route, type TravelMode } from "@/services/directions";
+import { MODE_ICONS, MODE_LABELS, shortDuration, visibleModes, type ModeId } from "@/travel/modes";
 import {
   GO_NOW_COUNTDOWN_MS,
   ROUTE_AVOID_LABELS,
@@ -49,13 +50,6 @@ export const TRAVEL_MODE_ICONS: Record<TravelMode, IconName> = {
   transit: "bus-outline",
 };
 
-// "Drive", not "Driving" -- the pill reads as a verb, like the screen's other pill ("Avoid").
-const MODE_PILL_LABELS: Record<TravelMode, string> = {
-  driving: "Drive",
-  walking: "Walk",
-  bicycling: "Bike",
-  transit: "Transit",
-};
 
 /** "Bus 418", "T2 Train", or "Bus 418 + Bus 333" -- the lines a transit itinerary rides. */
 export function transitRouteTitle(route: Route): string {
@@ -85,7 +79,7 @@ interface TopCardProps {
   avoidLabel: string;
   avoidActive: boolean;
   onOpenAvoid: () => void;
-  travelMode: TravelMode;
+  travelMode: ModeId;
   onOpenMode: () => void;
   /** Distance from the top of the screen to the bottom of the pills, for fitting the routes. */
   onHeightChange?: (height: number) => void;
@@ -161,11 +155,11 @@ export function RouteSelectionTopCard({
         />
         <Chip
           onMap
-          icon={TRAVEL_MODE_ICONS[travelMode]}
-          label={MODE_PILL_LABELS[travelMode]}
+          icon={MODE_ICONS[travelMode]}
+          label={MODE_LABELS[travelMode]}
           trailingIcon="chevron-down"
           onPress={onOpenMode}
-          accessibilityLabel={`${TRAVEL_MODE_LABELS[travelMode]}. Change how you're getting there.`}
+          accessibilityLabel={`${MODE_LABELS[travelMode]}. Change how you're getting there.`}
         />
       </View>
     </View>
@@ -231,36 +225,104 @@ export function AvoidSheet({
   );
 }
 
+export interface ModeSummary {
+  /** Fastest time in seconds, null when unavailable, undefined while still loading. */
+  seconds: number | null | undefined;
+  /** Why the mode can't be used for this trip (shown greyed). */
+  reason: string | null;
+}
+
+/** The six travel modes: own line icons, the fastest time under each (or a greyed "—" with
+ *  why), the selected one blue. Ferry only appears when a real option includes a ferry leg. */
 export function TravelModeSheet({
   visible,
   mode,
+  summaries,
+  ferryAvailable,
+  note,
   onSelect,
   onClose,
 }: {
   visible: boolean;
-  mode: TravelMode;
-  onSelect: (mode: TravelMode) => void;
+  mode: ModeId;
+  summaries: Partial<Record<ModeId, ModeSummary>>;
+  ferryAvailable: boolean;
+  note?: string | null;
+  onSelect: (mode: ModeId) => void;
   onClose: () => void;
 }) {
   return (
     <SheetFrame visible={visible} title="Getting there" onClose={onClose}>
-      {TRAVEL_MODE_ORDER.map((m, i) => {
+      <ModeIconRow mode={mode} summaries={summaries} ferryAvailable={ferryAvailable} onSelect={onSelect} />
+      {visibleModes(ferryAvailable).map((m, i) => {
         const active = m === mode;
+        const sum = summaries[m];
+        const unavailable = sum?.seconds === null;
         return (
           <Pressable
             key={m}
-            onPress={() => onSelect(m)}
+            onPress={() => !unavailable && onSelect(m)}
+            disabled={unavailable}
             accessibilityRole="button"
-            accessibilityState={{ selected: active }}
+            accessibilityState={{ selected: active, disabled: unavailable }}
+            accessibilityLabel={`${MODE_LABELS[m]}${sum?.seconds ? `, ${shortDuration(sum.seconds)}` : unavailable && sum?.reason ? `, not available: ${sum.reason}` : ""}`}
+            testID={`mode-row-${m}`}
             style={({ pressed }) => [styles.modeRow, i > 0 && styles.rowDivider, pressed && { opacity: pressedOpacity }]}
           >
-            <Icon name={TRAVEL_MODE_ICONS[m]} size={24} color={active ? colors.accent : colors.textMuted} />
-            <Text style={[styles.avoidLabel, { flex: 1 }, active && { color: colors.accent }]}>{MODE_PILL_LABELS[m]}</Text>
+            <Icon name={MODE_ICONS[m]} size={24} color={active ? colors.accent : unavailable ? colors.textFaint : colors.textMuted} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.avoidLabel, active && { color: colors.accent }, unavailable && { color: colors.textFaint }]}>{MODE_LABELS[m]}</Text>
+              {unavailable && sum?.reason ? <Text style={styles.modeReason}>{sum.reason}</Text> : null}
+            </View>
+            <Text style={[styles.modeTime, unavailable && { color: colors.textFaint }]}>
+              {sum?.seconds ? shortDuration(sum.seconds) : sum?.seconds === null ? "—" : ""}
+            </Text>
             {active && <Icon name="checkmark" size={22} color={colors.accent} />}
           </Pressable>
         );
       })}
+      {note ? <Text style={styles.modeReason}>{note}</Text> : null}
     </SheetFrame>
+  );
+}
+
+/** The compact icon row: each mode's icon with its fastest time (or "—"). */
+export function ModeIconRow({
+  mode,
+  summaries,
+  ferryAvailable,
+  onSelect,
+}: {
+  mode: ModeId;
+  summaries: Partial<Record<ModeId, ModeSummary>>;
+  ferryAvailable: boolean;
+  onSelect: (mode: ModeId) => void;
+}) {
+  return (
+    <View style={styles.modeIconRow} testID="mode-icon-row">
+      {visibleModes(ferryAvailable).map((m) => {
+        const active = m === mode;
+        const sum = summaries[m];
+        const unavailable = sum?.seconds === null;
+        return (
+          <Pressable
+            key={m}
+            onPress={() => !unavailable && onSelect(m)}
+            disabled={unavailable}
+            accessibilityRole="button"
+            accessibilityLabel={MODE_LABELS[m]}
+            accessibilityState={{ selected: active, disabled: unavailable }}
+            testID={`mode-icon-${m}`}
+            style={({ pressed }) => [styles.modeIcon, active && styles.modeIconActive, pressed && { opacity: pressedOpacity }]}
+          >
+            <Icon name={MODE_ICONS[m]} size={22} color={active ? colors.accent : unavailable ? colors.textFaint : colors.textMuted} />
+            <Text style={[styles.modeIconTime, active && { color: colors.accent }, unavailable && { color: colors.textFaint }]}>
+              {sum?.seconds ? shortDuration(sum.seconds) : sum?.seconds === null ? "—" : " "}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -575,6 +637,12 @@ const styles = StyleSheet.create({
   avoidHint: { fontSize: 14, color: colors.textFaint, marginTop: 2 },
   avoidNote: { fontSize: 15, color: colors.textMuted, marginTop: 8 },
   modeRow: { flexDirection: "row", alignItems: "center", gap: 14, minHeight: 56 },
+  modeReason: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  modeTime: { fontSize: 15, fontWeight: "600", color: colors.text },
+  modeIconRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8, gap: 4 },
+  modeIcon: { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 12, minHeight: 56 },
+  modeIconActive: { backgroundColor: colors.accentSoft },
+  modeIconTime: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
   rowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
 
   sheet: {

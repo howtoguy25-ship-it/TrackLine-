@@ -40,6 +40,8 @@ export interface ModeDeps {
   mapboxToken: string;
   googleKey: string;
   transit: (origin: LatLng, destination: LatLng) => Promise<Route[]>;
+  /** Google routes for drive / bike / walk when this build has no Mapbox token. */
+  fallback?: (mode: "drive" | "bike" | "walk", origin: LatLng, destination: LatLng) => Promise<Route[]>;
   fetchImpl?: typeof fetch;
 }
 
@@ -88,6 +90,9 @@ async function motorbikeRoutes(req: ModeRequest, deps: ModeDeps): Promise<Route[
 }
 
 async function mapboxFor(mode: ModeId, req: ModeRequest, deps: ModeDeps): Promise<Route[]> {
+  if (!deps.mapboxToken && deps.fallback && (mode === "drive" || mode === "bike" || mode === "walk")) {
+    return deps.fallback(mode, req.origin, req.destination);
+  }
   return fetchMapboxRoutes({ ...req, profile: PROFILE[mode] }, deps.mapboxToken, { fetchImpl: deps.fetchImpl, timeoutMs: 8000 });
 }
 
@@ -102,11 +107,11 @@ export async function fetchRoutesForMode(mode: ModeId, req: ModeRequest, deps: M
     if (mode === "motorbike") {
       const bike = await motorbikeRoutes(req, deps);
       if (bike) return { routes: bike, note: null, unavailable: null };
-      if (!deps.mapboxToken) return { routes: [], note: null, unavailable: "Routing isn't set up in this build" };
+      if (!deps.mapboxToken && !deps.fallback) return { routes: [], note: null, unavailable: "Routing isn't set up in this build" };
       const car = await mapboxFor("drive", req, deps);
       return { routes: car, note: car.length ? MOTORBIKE_FALLBACK_NOTE : null, unavailable: car.length ? null : NO_ROUTE.motorbike! };
     }
-    if (!deps.mapboxToken) return { routes: [], note: null, unavailable: "Routing isn't set up in this build" };
+    if (!deps.mapboxToken && !deps.fallback) return { routes: [], note: null, unavailable: "Routing isn't set up in this build" };
     const routes = await mapboxFor(mode, req, deps);
     return { routes, note: null, unavailable: routes.length ? null : NO_ROUTE[mode]! };
   } catch (err) {

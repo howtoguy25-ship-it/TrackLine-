@@ -99,6 +99,24 @@ describe("unavailable modes say why; nothing invented", () => {
   });
 });
 
+describe("a build without Mapbox", () => {
+  it("bike and walk come from the Google fallback instead of being greyed out", async () => {
+    const asked: string[] = [];
+    const r = await fetchRoutesForMode("walk", { origin: quay, destination: opera }, {
+      mapboxToken: "",
+      googleKey: "",
+      transit: async () => [],
+      fallback: async (mode) => {
+        asked.push(mode);
+        return (await fetchRoutesForMode("walk", { origin: quay, destination: opera }, deps(stub(() => json(footJson)).fetchImpl))).routes;
+      },
+    });
+    expect(asked).toEqual(["walk"]);
+    expect(r.unavailable).toBeNull();
+    expect(r.routes.length).toBe(1);
+  });
+});
+
 describe("cache: 2 minutes per mode and trip", () => {
   it("switching back within 2 min doesn't refetch; after, it does; a failure isn't kept", async () => {
     let now = 0;

@@ -26,6 +26,39 @@ export const MODE_LABELS: Record<ModeId, string> = {
 
 export const DEFAULT_MODE: ModeId = "drive";
 
+/** Line icons (components/ui/Icon names). */
+export const MODE_ICONS: Record<ModeId, "car" | "motorbike" | "bicycle" | "walk" | "bus" | "ferry"> = {
+  drive: "car",
+  motorbike: "motorbike",
+  bike: "bicycle",
+  walk: "walk",
+  transit: "bus",
+  ferry: "ferry",
+};
+
+/** How the trip is navigated once started (the app's existing navigation modes). */
+export const MODE_NAVIGATES_AS: Record<Exclude<ModeId, "ferry">, "driving" | "walking" | "bicycling" | "transit"> = {
+  drive: "driving",
+  motorbike: "driving",
+  bike: "bicycling",
+  walk: "walking",
+  transit: "transit",
+};
+
+/** "12 min", "1 h 5 min" for the icon row. */
+export function shortDuration(seconds: number): string {
+  const mins = Math.max(1, Math.round(seconds / 60));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+/** Which modes the picker shows: Ferry only when a real option includes a ferry leg. */
+export function visibleModes(ferryAvailable: boolean): ModeId[] {
+  return MODE_ORDER.filter((m) => m !== "ferry" || ferryAvailable);
+}
+
 /** A remembered mode from storage, or Drive if it isn't one we know. */
 export function asModeId(v: unknown): ModeId {
   return typeof v === "string" && (MODE_ORDER as string[]).includes(v) ? (v as ModeId) : DEFAULT_MODE;

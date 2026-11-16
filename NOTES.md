@@ -889,6 +889,15 @@ no bike-lane vs shared-road classification, no stairs flag for walking, and no "
 roads / stairs" options. Whether Google supports TWO_WHEELER in Australia is unknown until a real
 request is made with the key; the fallback covers either answer.
 
+Step 3 (done): the mode picker on the route screen. The "Drive ▾" pill opens "Getting there": a
+compact icon row (own line icons, selected blue, fastest time under each, "—" when unavailable)
+and a row per mode with its time or the reason it's greyed. Ferry only appears when a real drive
+or transit option has a ferry leg; drive routes with a car ferry say "Includes ferry". The last
+mode is remembered (Drive the first time; Ferry falls back to Drive because it depends on the
+trip). From/To and the stop are kept when switching. Motorbike routes are navigated as a drive;
+bike/walk/transit use the existing walk/bike/transit navigation. Not yet: a separate dirt-bike
+icon, per-mode navigation screens (step 5), transit timeline (step 4), ferry details (step 6).
+
 Next steps: 2b (Mapbox cycling/walking profiles, Google Routes TWO_WHEELER with
 the car-roads fallback note), 3 the mode sheet + icon row with fastest times (selected mode
 first, others lazily, 2-minute cache, greyed "—" with a reason), 4 transit timeline + live/late +

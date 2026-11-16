@@ -95,6 +95,8 @@ export interface AppSettings {
   speedWarningChimeEnabled: boolean;
   /** Warn (chime/colour) this many km/h over the limit -- school-zone limits included. 1-10. */
   speedingThresholdKmh: number;
+  /** Travel mode last picked (Drive by default): drive, motorbike, bike, walk, transit, ferry. */
+  lastTravelMode: string;
   /** Settings > Reports > Road features > School zones. */
   schoolZonesShowOnMap: boolean;
   /** Alert while driving: the school badge on the sign and "School zone, 40" when entering. */
@@ -181,6 +183,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
   speedingThresholdKmh: 3,
+  lastTravelMode: "drive",
   schoolZonesShowOnMap: true,
   schoolZonesAlert: true,
   defaultMapViewStyle: "tilted3d",
