@@ -183,15 +183,17 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
         onPress: () => onViewDetailsRef.current(s.placeId),
       }))
     );
-  }, [stations]);
+  }, [stations, onStationsChangeRef, onViewDetailsRef]);
 
   // Clears any reported pins the instant this sheet unmounts (a route starting -- see
   // MapScreen.tsx's place-sheets block) so a stale set of petrol pins never lingers on the map
   // once the sheet that produced them is gone. Reads the ref (always current), not a value
   // closed over at mount time.
   useEffect(() => {
-    return () => onStationsChangeRef.current?.([]);
-  }, []);
+    // useLatest's ref: deliberately the newest callback at unmount, not the one from mount.
+    const latest = onStationsChangeRef;
+    return () => latest.current?.([]);
+  }, [onStationsChangeRef]);
 
   return (
     <SimpleBottomSheet

@@ -70,6 +70,9 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
+  const birthdayUid = user && !user.isAnonymous ? user.uid : null;
+  const lat = location?.coords.latitude;
+  const lng = location?.coords.longitude;
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -77,8 +80,8 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
       if (cancelled) return;
       setDrivingStreakDays(streakDays);
 
-      const birthdayMonthDay = user && !user.isAnonymous ? await getUserBirthday(user.uid).catch(() => null) : null;
-      const isRaining = location ? await isRainingAt(location.coords).catch(() => false) : false;
+      const birthdayMonthDay = birthdayUid ? await getUserBirthday(birthdayUid).catch(() => null) : null;
+      const isRaining = lat != null && lng != null ? await isRainingAt({ latitude: lat, longitude: lng }).catch(() => false) : false;
       if (cancelled) return;
 
       const birthdayToday = isBirthdayToday(birthdayMonthDay);
@@ -95,7 +98,7 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
     return () => {
       cancelled = true;
     };
-  }, [user?.uid, location?.coords.latitude, location?.coords.longitude, isGhostMode]);
+  }, [birthdayUid, lat, lng, isGhostMode]);
 
   useEffect(() => subscribeMoodState(setState), []);
 

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Chip } from "@/components/ui/Button";
 import { TEST_DRIVE_LABELS, requestTestDrive, type TestDriveKind } from "@/dev/testDrives";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { View, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Alert, ActivityIndicator } from "react-native";
+import { View, Image, StyleSheet, Switch, ScrollView, Pressable, Modal, Alert, ActivityIndicator, Linking } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { StatusBar } from "expo-status-bar";
 import Slider from "@react-native-community/slider";
@@ -31,7 +31,6 @@ import {
   reauthenticateWithGoogleCredential,
 } from "@/services/firebase";
 import { env } from "@/config/env";
-import { Linking } from "react-native";
 import { Sentry } from "@/services/sentry";
 import { REV_CHECK_PRODUCT_ID } from "@/services/iap";
 import { getRevCheckProviderConfig, saveRevCheckProviderConfig } from "@/services/revCheckAdmin";
@@ -277,7 +276,7 @@ export function SettingsScreen() {
         },
       ]
     );
-  }, []);
+  }, [reauthenticateCurrentUser]);
 
   // Real "Restore Purchases" -- required by App Store review whenever an app has any IAP, even
   // though the app's one product (a REV check, see iap.ts) is a Consumable, which Apple's own
