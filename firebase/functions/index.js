@@ -21,6 +21,7 @@ const schoolZonesCore = require("./schoolZonesCore");
 const roadReportsCore = require("./roadReportsCore");
 const reportsCore = require("./reports/core");
 const { firestoreReportStore } = require("./reports/store");
+const poiPopularity = require("./poiPopularity");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -176,6 +177,66 @@ exports.applyReportVote = onDocumentCreated("alerts/{alertId}/votes/{uid}", asyn
   const data = event.data && event.data.data();
   if (!data || (data.vote !== "confirm" && data.vote !== "deny")) return;
   await reportStore().applyVote(event.params.alertId, event.params.uid, data.vote, Date.now());
+});
+
+// ---- Badge popularity (src/map/poiRanking.ts) ----------------------------------------------
+const GOOGLE_PLACES_SERVER_KEY = defineSecret("GOOGLE_PLACES_SERVER_KEY");
+
+function poiStore(db) {
+  return {
+    async getCached(ids) {
+      if (!ids.length) return {};
+      const snaps = await db.getAll(...ids.map((id) => db.collection("poiPopularity").doc(id)));
+      return Object.fromEntries(snaps.filter((s) => s.exists).map((s) => [s.id, s.data()]));
+    },
+    async putCached(id, value) {
+      await db.collection("poiPopularity").doc(id).set(value);
+    },
+    async getArrivals(ids) {
+      if (!ids.length) return {};
+      const snaps = await db.getAll(...ids.map((id) => db.collection("poiArrivals").doc(id)));
+      return Object.fromEntries(snaps.filter((s) => s.exists).map((s) => [s.id, s.data().count || 0]));
+    },
+    async takeFetchBudget(uid, n, nowMs) {
+      const day = new Date(nowMs).toISOString().slice(0, 10);
+      const ref = db.collection("poiLookupBudget").doc(`${uid}_${day}`);
+      return db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const used = snap.exists ? snap.data().used || 0 : 0;
+        const allowed = Math.max(0, Math.min(n, poiPopularity.MAX_FETCHES_PER_USER_PER_DAY - used));
+        tx.set(ref, { used: used + allowed, day });
+        return allowed;
+      });
+    },
+    async countArrivalOnce(id, mark, nowMs) {
+      const markRef = db.collection("poiArrivalMarks").doc(mark);
+      const countRef = db.collection("poiArrivals").doc(id);
+      return db.runTransaction(async (tx) => {
+        if ((await tx.get(markRef)).exists) return false;
+        tx.set(markRef, { at: Timestamp.fromMillis(nowMs), expiresAt: Timestamp.fromMillis(nowMs + 2 * 86_400_000) });
+        tx.set(countRef, { count: FieldValue.increment(1) }, { merge: true });
+        return true;
+      });
+    },
+  };
+}
+
+exports.poiPopularity = onCall({ secrets: [GOOGLE_PLACES_SERVER_KEY] }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  return poiPopularity.lookup({
+    uid: request.auth.uid,
+    places: request.data && request.data.places,
+    store: poiStore(getFirestore()),
+    apiKey: GOOGLE_PLACES_SERVER_KEY.value(),
+    fetchImpl: fetch,
+    nowMs: Date.now(),
+  });
+});
+
+// Only called by the app when the driver has switched on "Share arrivals" (Settings > Privacy).
+exports.recordArrival = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  return poiPopularity.recordArrival({ uid: request.auth.uid, place: request.data && request.data.place, store: poiStore(getFirestore()), nowMs: Date.now() });
 });
 
 /**

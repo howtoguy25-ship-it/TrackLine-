@@ -20,6 +20,12 @@ service cloud.firestore {
     }
 
     // A report waiting out its 3 s undo window, and each reporter's limits / trust: server only.
+    // Badge popularity caches, arrival counts and lookup budgets: server only.
+    match /poiPopularity/{id} { allow read, write: if false; }
+    match /poiArrivals/{id} { allow read, write: if false; }
+    match /poiArrivalMarks/{id} { allow read, write: if false; }
+    match /poiLookupBudget/{id} { allow read, write: if false; }
+
     match /pendingReports/{id} {
       allow read, write: if false;
     }

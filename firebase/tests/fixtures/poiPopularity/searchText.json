@@ -1,0 +1,10 @@
+{
+  "places": [
+    {
+      "displayName": { "text": "Example Cafe", "languageCode": "en" },
+      "location": { "latitude": -33.86881, "longitude": 151.20932 },
+      "userRatingCount": 1240,
+      "businessStatus": "OPERATIONAL"
+    }
+  ]
+}
