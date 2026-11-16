@@ -1,0 +1,46 @@
+name: Tests (typecheck, app tests, Firebase emulator tests)
+
+# Runs on every push and pull request. Never deploys anything and uses no real keys: the Cloud
+# Functions emulator only needs placeholder values for the functions' secrets, written to a
+# throwaway .secret.local on the runner (the same file is gitignored locally).
+on:
+  push:
+  pull_request:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit -p .
+      - name: App tests
+        run: npx jest --ci
+      - name: Script tests (scripts/test-*.ts)
+        run: for f in scripts/test-*.ts; do echo "== $f"; npx tsx "$f" || exit 1; done
+
+  firebase-emulators:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install functions and test dependencies
+        run: |
+          npm ci --prefix firebase/functions
+          npm ci --prefix firebase/tests
+      - name: Placeholder secrets for the Functions emulator (not real keys)
+        run: |
+          printf 'MAPBOX_SERVER_TOKEN=emulator-placeholder\nELEVENLABS_API_KEY=emulator-placeholder\nTFNSW_API_KEY=emulator-placeholder\n' > firebase/functions/.secret.local
+      - name: Firestore + Storage rules and Cloud Functions, on the real emulators
+        run: npx -y firebase-tools@14 emulators:exec --project demo-trackline-rules-test --only firestore,storage,functions,auth "npm --prefix firebase/tests test"
