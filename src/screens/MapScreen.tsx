@@ -55,9 +55,12 @@ import {
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
+import { AlertCard } from "@/components/AlertCard";
+import { MapSpotlight } from "@/components/MapSpotlight";
+import { cardForOfficial, cardForReport, distanceLine, roadAndSuburb, spotlightCentre, type AlertCardModel } from "@/map/alertCard";
 import { MapboxLayers } from "@/map-v2/MapboxLayers";
 import { isMapboxUsable } from "@/map-v2/mapbox";
-import type { Region } from "@/map-v2/geo";
+import type { CameraLike, Region } from "@/map-v2/geo";
 import type { MapPin } from "@/map-v2/pins";
 import { startSimulatedDrive, stopSimulatedDrive } from "@/dev/simulateDrive";
 import { onTestDriveRequested, testDrive } from "@/dev/testDrives";
@@ -219,6 +222,8 @@ import {
   confirmAlert,
   denyAlert,
   getInboxLastViewedAt,
+  hasThankedAlert,
+  thankAlert,
 } from "@/services/alerts";
 import { classifyAuRegion } from "@/utils/auStates";
 import { sirenDetection } from "@/services/sirenDetection";
@@ -246,6 +251,10 @@ const DIAGNOSTIC_DISABLE_MAPVIEW = false;
 // re-check, how long to stay quiet after a decline, the minimum genuine time savings worth
 // interrupting for, and how close to the destination it stops bothering to check at all.
 const TRAFFIC_CHECK_INTERVAL_MS = 90_000;
+/** The camera eases to a tapped pin, and back, over this long. */
+const ALERT_CARD_CAMERA_MS = 600;
+/** The alert card that's up: a community report or an official Live Traffic NSW incident. */
+type OpenAlertCard = { model: AlertCardModel; alert: AlertDoc | null; incident: NearbyIncident | null };
 const TRAFFIC_SUGGESTION_COOLDOWN_MS = 8 * 60_000;
 const MIN_SAVED_SECONDS_TO_SUGGEST = 180;
 const MIN_REMAINING_METERS_TO_CHECK = 1500;
@@ -598,6 +607,7 @@ export function MapScreen() {
   // showed as an oddly clipped sliver peeking out from behind it.
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const detailSheetOpenRef = useLatest(detailSheetOpen);
   const [placeInfoSheetOpen, setPlaceInfoSheetOpen] = useState(false);
   const [directionsSheetOpen, setDirectionsSheetOpen] = useState(false);
   const [osmMarkerSheetOpen, setOsmMarkerSheetOpen] = useState(false);
@@ -4333,10 +4343,119 @@ export function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placingAlert]);
 
-  const onMarkerPress = useCallback((alert: AlertDoc) => {
-    setSelectedAlert(alert);
-    detailSheetRef.current?.expand();
-  }, []);
+  // ── Tap a pin → the dark alert card (components/AlertCard.tsx) ────────────────────────────
+  // On the home map: the card slides down, the map dims around a spotlight on the pin, and the
+  // camera eases to it (centre only -- the zoom doesn't change). Dismissing (tap the map, swipe
+  // the card up, or 8 s idle) restores the camera the driver had. During navigation the compact
+  // card sits under the instruction card: no dim, no camera move, follow mode carries on.
+  // Tapping the card opens the full details sheet it used to open directly.
+  const [alertCard, setAlertCard] = useState<OpenAlertCard | null>(null);
+  const [alertCardPlaces, setAlertCardPlaces] = useState<Readonly<Record<string, string | null>>>({});
+  const [thankedAlertIds, setThankedAlertIds] = useState<ReadonlySet<string>>(() => new Set());
+  const alertCardCameraRef = useRef<{ camera: CameraLike | null; userMoved: boolean } | null>(null);
+  const alertPlaceRequestedRef = useRef(new Set<string>());
+  // A pin tap can also reach the map's own onPress on some platforms; that same tap mustn't
+  // close the card it just opened.
+  const alertCardOpenedAtRef = useRef(0);
+
+  const openAlertCard = useCallback(
+    async (next: OpenAlertCard) => {
+      alertCardOpenedAtRef.current = Date.now();
+      setAlertCard(next);
+      if (next.alert && user && next.alert.createdBy !== user.uid) {
+        const alertId = next.alert.id;
+        hasThankedAlert(alertId, user.uid).then((done) => {
+          if (done) setThankedAlertIds((prev) => new Set(prev).add(alertId));
+        });
+      }
+      if (routeActiveRef.current) return;
+      // Keep the camera from before the FIRST card; tapping another pin just moves on.
+      if (!alertCardCameraRef.current) {
+        alertCardCameraRef.current = { camera: null, userMoved: userMovedMapRef.current };
+        // Pause the home follow while the card is up, so it doesn't drag the camera away.
+        userMovedMapRef.current = true;
+        const camera = (await mapRef.current?.getCamera().catch(() => null)) ?? null;
+        if (alertCardCameraRef.current) alertCardCameraRef.current.camera = camera;
+      }
+      mapRef.current?.animateCamera(
+        { center: { latitude: next.model.latitude, longitude: next.model.longitude } },
+        { duration: ALERT_CARD_CAMERA_MS }
+      );
+    },
+    [user]
+  );
+
+  const dismissAlertCard = useCallback(
+    (options?: { keepSelection?: boolean }) => {
+      setAlertCard(null);
+      if (!options?.keepSelection) setSelectedAlert((current) => (detailSheetOpenRef.current ? current : null));
+      const saved = alertCardCameraRef.current;
+      alertCardCameraRef.current = null;
+      if (!saved) return;
+      userMovedMapRef.current = saved.userMoved;
+      // Navigation started meanwhile: its own follow camera takes over.
+      if (routeActiveRef.current || !saved.camera) return;
+      mapRef.current?.animateCamera(saved.camera, { duration: ALERT_CARD_CAMERA_MS });
+    },
+    []
+  );
+
+  const onMarkerPress = useCallback(
+    (alert: AlertDoc) => {
+      setSelectedAlert(alert);
+      openAlertCard({ model: cardForReport(alert, user?.uid ?? null), alert, incident: null });
+    },
+    [openAlertCard, user]
+  );
+
+  const onOfficialPinPress = useCallback(
+    (incident: NearbyIncident) => openAlertCard({ model: cardForOfficial(incident), alert: null, incident }),
+    [openAlertCard]
+  );
+
+  const openAlertCardDetails = useCallback(() => {
+    const open = alertCard;
+    dismissAlertCard({ keepSelection: true });
+    if (!open) return;
+    if (open.alert) {
+      setSelectedAlert(open.alert);
+      detailSheetRef.current?.expand();
+    } else if (open.incident) {
+      onSelectIncident(open.incident);
+    }
+  }, [alertCard, dismissAlertCard, onSelectIncident]);
+
+  const onThankAlertCard = useCallback(() => {
+    const alert = alertCard?.alert;
+    if (!user || !alert || alert.createdBy === user.uid) return;
+    setThankedAlertIds((prev) => new Set(prev).add(alert.id));
+    thankAlert(alert.id, user.uid).catch((err) => console.warn("[map] thanks failed", err));
+  }, [alertCard, user]);
+
+  // The card follows the live alert (its thanks count updates as people tap).
+  const liveAlertCard = useMemo(() => {
+    if (!alertCard?.alert) return alertCard;
+    const live = visibleAlerts.find((a) => a.id === alertCard.alert!.id) ?? alertCard.alert;
+    return { ...alertCard, alert: live, model: cardForReport(live, user?.uid ?? null) };
+  }, [alertCard, visibleAlerts, user]);
+
+  // Road + suburb under the distance: the official incident's own "where" when it has one, else
+  // one reverse geocode per alert (kept for the session). Left out until it's known.
+  const alertCardKey = alertCard?.model.key ?? null;
+  const alertCardNeedsPlace = !!alertCard && !alertCard.model.officialWhere;
+  const alertCardLat = alertCard?.model.latitude ?? 0;
+  const alertCardLng = alertCard?.model.longitude ?? 0;
+  useEffect(() => {
+    if (!alertCardKey || !alertCardNeedsPlace) return;
+    const requested = alertPlaceRequestedRef.current;
+    if (requested.has(alertCardKey)) return;
+    requested.add(alertCardKey);
+    reverseGeocode({ latitude: alertCardLat, longitude: alertCardLng })
+      .then((address) => setAlertCardPlaces((prev) => ({ ...prev, [alertCardKey]: roadAndSuburb(address) })))
+      .catch(() => requested.delete(alertCardKey));
+    // The coordinates belong to the key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alertCardKey, alertCardNeedsPlace]);
 
   const onDeleteAlert = useCallback(async (alert: AlertDoc) => {
     await deleteAlert(alert.id);
@@ -4799,7 +4918,7 @@ export function MapScreen() {
         case "fuelPin":
           return target.pin.onPress();
         case "incident":
-          return onSelectIncident(target.incident);
+          return onOfficialPinPress(target.incident);
         case "liveCamera":
           return onLiveCameraPress(target.camera);
         case "origin":
@@ -4814,7 +4933,7 @@ export function MapScreen() {
       onTrafficLightClusterPress,
       onSpeedCameraClusterPress,
       onViewVenueDetails,
-      onSelectIncident,
+      onOfficialPinPress,
       onLiveCameraPress,
       onOriginMarkerPress,
     ]
@@ -4945,6 +5064,13 @@ export function MapScreen() {
           initialZoom={17}
           onRegionChangeComplete={onRegionChangeComplete}
           onPanDrag={onMapPanDrag}
+          onPress={
+            alertCard
+              ? () => {
+                  if (Date.now() - alertCardOpenedAtRef.current > 350) dismissAlertCard();
+                }
+              : undefined
+          }
           onPoiPress={onMapboxPoiPress}
           onMapReady={() => setMapReady(true)}
         >
@@ -5986,6 +6112,38 @@ export function MapScreen() {
           dismissGhostExplainer();
         }}
       />
+
+      {alertCard && !route && (
+        <MapSpotlight
+          width={windowWidth}
+          height={mapAreaHeight}
+          centre={spotlightCentre(windowWidth, mapAreaHeight, mapPadding)}
+          onPress={() => dismissAlertCard()}
+        />
+      )}
+      {liveAlertCard && (
+        <AlertCard
+          key={liveAlertCard.model.key}
+          card={liveAlertCard.model}
+          incident={liveAlertCard.incident}
+          distanceText={distanceLine(
+            currentLatLng
+              ? distanceKm(currentLatLng.latitude, currentLatLng.longitude, liveAlertCard.model.latitude, liveAlertCard.model.longitude) * 1000
+              : null,
+            settings.distanceUnit
+          )}
+          place={liveAlertCard.model.officialWhere ?? alertCardPlaces[liveAlertCard.model.key] ?? null}
+          now={clockNow}
+          thanked={!!liveAlertCard.alert && thankedAlertIds.has(liveAlertCard.alert.id)}
+          compact={!!route}
+          // Compact: below the instruction card (the lane strip is inside it), never over it.
+          top={route ? insets.top + spacing.md + instructionCardHeight + spacing.md : insets.top + spacing.sm}
+          scale={scaleFor(windowWidth)}
+          onThanks={onThankAlertCard}
+          onOpenDetails={openAlertCardDetails}
+          onDismiss={() => dismissAlertCard()}
+        />
+      )}
 
       <TrafficIncidentCard
         incident={selectedIncident}

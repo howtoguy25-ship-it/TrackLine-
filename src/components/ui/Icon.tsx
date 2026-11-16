@@ -128,6 +128,7 @@ import CirclePlayIcon from "lucide-react-native/icons/circle-play";
 import DownloadIcon from "lucide-react-native/icons/download";
 import BatteryWarningIcon from "lucide-react-native/icons/battery-warning";
 import BatteryFullIcon from "lucide-react-native/icons/battery-full";
+import ThumbsUpIcon from "lucide-react-native/icons/thumbs-up";
 
 // The app's one icon set: Lucide's line icons (ISC licence), drawn at a 1.75 stroke and 24pt
 // unless a smaller inline size is asked for. Screens name icons the way they always have
@@ -263,6 +264,7 @@ const ICONS = {
   "straight": ArrowUpIcon,
   "swap-vertical": ArrowUpDownIcon,
   "sync": RefreshCwIcon,
+  "thumbs-up": ThumbsUpIcon,
   "time": ClockIcon,
   "train": TrainFrontIcon,
   "trash": Trash2Icon,
