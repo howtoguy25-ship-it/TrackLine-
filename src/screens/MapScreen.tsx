@@ -186,7 +186,6 @@ import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/se
 import { parseDriveLink } from "@/services/driveLink";
 import { useSharedValue } from "react-native-reanimated";
 import { HomeMapControls } from "@/components/HomeMapControls";
-import { StreetPill } from "@/components/StreetPill";
 import {
   HOME_FOLLOW_ZOOM,
   RoadLookupTracker,
@@ -194,6 +193,7 @@ import {
   arrowScreenY,
   countReportsAround,
   homeMapPadding,
+  homeArrowTargetY,
   roadFromRouteSteps,
   shouldClusterAlerts,
   zoomFromLatitudeDelta,
@@ -1139,7 +1139,8 @@ export function MapScreen() {
   const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, WHERE_TO_SNAP_FRACTIONS);
   // Home: the sheet's peek height is padded off the bottom (keeping the arrow and the Google
   // logo clear of it) and the arrow sits at 62% of the screen -- see homeMapPadding.
-  const homePadding = homeMapPadding(mapAreaHeight, whereToHeights.peek, windowHeight);
+  // The arrow sits directly above the street pill, which rides the sheet's peek edge.
+  const homePadding = homeMapPadding(mapAreaHeight, whereToHeights.peek, windowHeight, homeArrowTargetY(mapAreaHeight, whereToHeights.peek, scaleFor(windowWidth)));
   const homeArrowY = arrowScreenY(mapAreaHeight, homePadding);
   const mapPadding = isNavChaseView
     ? { top: windowHeight * 0.34, right: 0, bottom: 0, left: 0 }
@@ -5360,17 +5361,8 @@ export function MapScreen() {
       {/* The street-name pill under the driver's arrow on the home map (components/StreetPill).
           Shown only while the map is actually following the driver -- once they pan away the
           arrow is no longer above it, so a pill there would be labelling empty road. */}
-      {isHomeIdle && !anySheetOpen && !pannedAwayIdle && (
-        <MapSurface>
-          <StreetPill
-            streetName={currentRoadName}
-            reportsAround={reportsAround}
-            stationary={stationary}
-            top={homeArrowY + 30 * uiScale}
-            scale={uiScale}
-          />
-        </MapSurface>
-      )}
+      {/* The street-name pill now rides the sheet inside HomeMapControls (same baseline as
+          Report); see the streetPill prop below. */}
 
       {/* Real, explicit request: a dedicated exit-lane guidance bar, shown only during the
           exit-zoom camera window above (see exitZoomActive) -- deliberately separate from the
@@ -5644,6 +5636,7 @@ export function MapScreen() {
           sheetVisibleHeight={sheetVisibleHeight}
           sheetHalfHeight={whereToHeights.half}
           bottomInset={0}
+          streetPill={!anySheetOpen && !pannedAwayIdle ? { streetName: currentRoadName, reportsAround, stationary } : null}
           topInset={insets.top}
           unreadCount={inboxUnreadCount}
           dashcamBadge={detectionBatteryLow}

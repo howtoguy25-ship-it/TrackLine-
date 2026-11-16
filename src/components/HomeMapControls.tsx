@@ -13,6 +13,8 @@ import { FloatingButton } from "@/components/ui/Button";
 import { CompassNeedle, ReportIcon } from "@/components/icons/MapControlIcons";
 import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity } from "@/map/homeMapLogic";
 import { colors, scaleFor } from "@/theme/tokens";
+import { StreetPill } from "@/components/StreetPill";
+import { streetPillMaxWidth } from "@/map/homeMapLogic";
 
 // Every floating button on the idle home map, in one place:
 //
@@ -55,6 +57,9 @@ interface Props {
   /** True only once the driver has panned or zoomed away from their own position. */
   showRecenter: boolean;
   onRecenter: () => void;
+
+  /** The street-name pill, bottom-centre on the same baseline as Report (null = no pill). */
+  streetPill?: { streetName: string | null; reportsAround: number; stationary: boolean } | null;
 }
 
 export function HomeMapControls(props: Props) {
@@ -147,11 +152,25 @@ export function HomeMapControls(props: Props) {
       </View>
 
       {/* Bottom-right, riding on the sheet: Report */}
-      <Animated.View pointerEvents="box-none" style={[styles.anchored, { right: size.side }, aboveSheetStyle]}>
+      <Animated.View pointerEvents="box-none" style={[styles.anchored, { right: size.side }, aboveSheetStyle]} testID="report-anchor">
         <FloatingButton tone="report" size={size.round} onPress={props.onReport} accessibilityLabel="Report something on the road">
           <ReportIcon size={34 * k} />
         </FloatingButton>
       </Animated.View>
+
+      {/* Bottom-centre, riding on the sheet on Report's baseline: the street-name pill. Never
+          wider than the space between the side buttons, so it can't overlap Report. */}
+      {props.streetPill && (
+        <Animated.View pointerEvents="none" style={[styles.anchored, styles.pillRow, aboveSheetStyle]} testID="street-pill-row">
+          <StreetPill
+            streetName={props.streetPill.streetName}
+            reportsAround={props.streetPill.reportsAround}
+            stationary={props.streetPill.stationary}
+            maxWidth={streetPillMaxWidth(width, size.round, size.side)}
+            scale={k}
+          />
+        </Animated.View>
+      )}
 
       {/* Bottom-left, riding on the sheet: Re-centre -- only after panning away */}
       <Animated.View
@@ -167,6 +186,7 @@ export function HomeMapControls(props: Props) {
 const styles = StyleSheet.create({
   column: { position: "absolute", alignItems: "center" },
   anchored: { position: "absolute" },
+  pillRow: { left: 0, right: 0, alignItems: "center" },
   unreadDot: {
     position: "absolute",
     top: 9,

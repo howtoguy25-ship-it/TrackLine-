@@ -25,7 +25,7 @@ describe("wired into the live app", () => {
     ["src/screens/MapScreen.tsx", "TrackLineMap"],
     ["src/screens/MapScreen.tsx", "MapboxLayers"],
     ["src/screens/MapScreen.tsx", "HomeMapControls"],
-    ["src/screens/MapScreen.tsx", "StreetPill"],
+    ["src/components/HomeMapControls.tsx", "StreetPill"], // rides the sheet with Report; MapScreen renders HomeMapControls
     ["src/screens/MapScreen.tsx", "WhereToSheet"],
     ["src/screens/MapScreen.tsx", "PlacePage"],
     ["src/screens/MapScreen.tsx", "RouteSelectionTopCard"],

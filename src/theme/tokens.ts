@@ -99,6 +99,10 @@ export const shadow = {
   card: ONE_SHADOW,
 } as const;
 
+/** The one exception: the street-name pill on the home map has the softer shadow its spec gives
+ *  (0 4 12, 15% black). */
+export const pillShadow = { boxShadow: "0px 4px 12px rgba(0,0,0,0.15)" } as const;
+
 // Opacity a plain Pressable row dims to while held. (Buttons use components/ui's press feedback.)
 export const pressedOpacity = 0.7;
 

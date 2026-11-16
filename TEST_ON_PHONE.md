@@ -249,6 +249,17 @@ Real data only: NSW official zones (Transport for NSW). Do these as a passenger.
 - [ ] Bankstown → Parramatta: no Ferry in the picker.
 - [ ] Switching modes keeps From, To and any stop.
 
+## 16. Street-name pill and home buttons — NEEDS DEVICE TEST
+
+- [ ] Home map, sheet at its lowest: the white pill is bottom-centre, 12pt above the sheet, level with the yellow report button (same height, same bottom). Your arrow sits right above it, the pill just touching the bottom of the grey accuracy circle.
+- [ ] Drag the sheet up: the pill and Report ride up together and fade out past half height.
+- [ ] Drive past 3 streets (as a passenger): the pill changes at each corner, cross-fading, to the street you're on -- not a parallel or cross street.
+- [ ] A long street name shrinks a little, then ends with "…"; it never touches the report button (try iPhone SE and Pro Max if you have them).
+- [ ] Stop for 10 s where there are reports nearby: "N reports around you"; drive off: back to the street name. No reports: stays the street name.
+- [ ] Start navigation: the pill disappears (top card and bottom banner take over). Pan the map away: the pill hides and the dark re-centre button appears bottom-left.
+- [ ] Settings › Map appearance › Map labels: Local / My app language / Both change the map's names straight away (try Both in Tokyo, Riyadh or Beirut on the map).
+- [ ] Zoom to street level in Sydney: suburb labels read e.g. "PUNCHBOWL 2196". Overseas: suburb names with no postcode.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

@@ -52,17 +52,45 @@ export interface MapPadding {
  * If the sheet is so tall that 62% would fall behind it, the arrow goes to the middle of the
  * uncovered map instead -- visible beats exact.
  */
-export function homeMapPadding(mapHeight: number, coveredBottom: number, screenHeight = mapHeight): MapPadding {
+export function homeMapPadding(mapHeight: number, coveredBottom: number, screenHeight = mapHeight, targetY?: number): MapPadding {
   // `mapHeight` is the map view's own height; `screenHeight` is the whole screen's, which is
   // taller when something (the ad banner) is laid out beneath the map. The 62% is of the screen.
   const bottom = Math.max(0, Math.min(coveredBottom, mapHeight * 0.6));
-  const target = screenHeight * HOME_ARROW_SCREEN_FRACTION;
+  const target = targetY ?? screenHeight * HOME_ARROW_SCREEN_FRACTION;
   // centreY = top + (mapHeight - top - bottom) / 2  =>  top = 2*centreY - mapHeight + bottom
   const top = Math.max(0, 2 * target - mapHeight + bottom);
   // Never pad away the whole map.
   const maxTop = Math.max(0, mapHeight - bottom - 120);
   return { top: Math.min(top, maxTop), right: 0, bottom, left: 0 };
 }
+
+// ---------------------------------------------------------------------------------------------
+// The street-name pill's place on screen
+
+/** The pill is as tall as the report button and rides the sheet on the same baseline. */
+export const STREET_PILL_HEIGHT = 56;
+/** The arrow's centre sits this far above the pill's top edge, so the pill overlaps the bottom
+ *  of the accuracy circle slightly. */
+export const ARROW_ABOVE_PILL = 30;
+
+/** The pill's top edge (px from the top of the map) for a sheet showing `sheetVisible` px. */
+export function streetPillTopY(mapHeight: number, sheetVisible: number, scale = 1): number {
+  return mapHeight - sheetVisible - FLOATING_GAP - STREET_PILL_HEIGHT * scale;
+}
+
+/** Where the home map puts the driver's arrow: directly above the pill. */
+export function homeArrowTargetY(mapHeight: number, sheetPeek: number, scale = 1): number {
+  return streetPillTopY(mapHeight, sheetPeek, scale) - ARROW_ABOVE_PILL * scale;
+}
+
+/** The pill never reaches the report button: screen width - (report button width + 16) x 2.
+ *  (On big phones the buttons sit further in than 16pt; the real side margin is used then.) */
+export function streetPillMaxWidth(screenWidth: number, reportButtonWidth: number, sideMargin = 16): number {
+  return Math.max(0, screenWidth - (reportButtonWidth + Math.max(16, sideMargin)) * 2);
+}
+
+/** Pill text: 22pt, shrinking to 16pt for a long name before it's cut with "...". */
+export const STREET_PILL_FONT = { size: 22, min: 16 };
 
 /** Where the arrow actually ends up (px from the top) for a given padding -- the pill sits under it. */
 export function arrowScreenY(mapHeight: number, padding: MapPadding): number {
