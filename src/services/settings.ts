@@ -93,6 +93,12 @@ export interface AppSettings {
   // the posted limit by 3+ km/h, at most once every 30s (see LiveSpeedometer.tsx). Default ON,
   // same as every other audible-alert setting in this app.
   speedWarningChimeEnabled: boolean;
+  /** Warn (chime/colour) this many km/h over the limit -- school-zone limits included. 1-10. */
+  speedingThresholdKmh: number;
+  /** Settings > Reports > Road features > School zones. */
+  schoolZonesShowOnMap: boolean;
+  /** Alert while driving: the school badge on the sign and "School zone, 40" when entering. */
+  schoolZonesAlert: boolean;
   // Real, explicit request -- which camera pose the map opens into (idle browsing) and starts
   // navigation in, applied with no flash of a different style first. "tilted3d" is a true no-op
   // default (byte-identical to this app's existing always-on tilted chase-cam/idle-3D-buildings
@@ -174,6 +180,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertIconTheme: "default",
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
+  speedingThresholdKmh: 3,
+  schoolZonesShowOnMap: true,
+  schoolZonesAlert: true,
   defaultMapViewStyle: "tilted3d",
   showCompass: true,
   showAudioPlayer: false,

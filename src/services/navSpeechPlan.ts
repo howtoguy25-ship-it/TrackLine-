@@ -276,7 +276,9 @@ export type NavPhrase =
   | { kind: "rerouting" }
   | { kind: "arrived" }
   | { kind: "heavyTraffic" }
-  | { kind: "report"; alertType: AlertType };
+  | { kind: "report"; alertType: AlertType }
+  /** Entering a school zone that's in force now: "School zone, 40" (the limit in the sign's unit). */
+  | { kind: "schoolZone"; limit: number };
 
 const REPORT_SEGMENTS: Record<AlertType, SpeechSegment> = {
   police: { clipKey: "report_police", text: "Police reported" },
@@ -305,6 +307,12 @@ export interface PhraseContext {
 
 export function planPhrase(phrase: NavPhrase, context: PhraseContext = {}): SpeechPlan {
   const language = context.language ?? "en";
+  if (phrase.kind === "schoolZone") {
+    // No recorded clip for this one: always spoken. English wording for now (other voice packs
+    // don't have a translation yet -- see NOTES).
+    const text = `School zone, ${phrase.limit}`;
+    return { segments: [{ text }], fullText: text };
+  }
   if (language !== "en") {
     const text =
       phrase.kind === "report" ? localizedReport(language, phrase.alertType) : localizedPhrase(language, phrase.kind);

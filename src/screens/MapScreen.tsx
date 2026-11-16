@@ -18,6 +18,14 @@ import { ManoeuvreChip, type ChipTone } from "@/components/nav/ManoeuvreChip";
 import { JunctionViewCard } from "@/components/nav/JunctionViewCard";
 import { mapboxReroute, mapboxRouteForChoice, mapboxRoutingAvailable } from "@/services/navRouting";
 import { prepareNavigationAudio } from "@/services/audioSession";
+import { calendarFor, tileKey as schoolTileKey, zonesAround } from "@/schoolZones/zoneStore";
+import { INITIAL_SCHOOL_ZONE_TRACKER, trackSchoolZone, type SchoolZoneNow } from "@/schoolZones/schoolZoneTracker";
+import { zoneStatus } from "@/schoolZones/zoneStatus";
+import { parseMaxspeedConditional } from "@/schoolZones/openingHours";
+import { deviceRegion, regionAt } from "@/schoolZones/regions";
+import type { ZoneShape } from "@/schoolZones/zoneMatch";
+import type { SchoolCalendar } from "@/schoolZones/calendar";
+import { resolveSpeedLimit, routeLimitAt, signStyleFor, signUnitFor, signValue } from "@/speedLimits/resolveLimit";
 import { buildRouteGeometry, createMatchState, deadReckon, matchFix, type MatchResult } from "@/nav/routeMatcher";
 import { approachTick } from "@/nav/navPipeline";
 import { INITIAL_REROUTE_TRIGGER, rerouteTrigger } from "@/nav/rerouteTrigger";
@@ -1206,7 +1214,8 @@ export function MapScreen() {
   // more than 25m or turning more than 30 degrees since the last one, never while one is
   // already in flight, and never for a stretch of road that's been answered before. In between
   // -- and it is re-read every second -- everything comes from memory.
-  const roadTrackerRef = useRef(new RoadLookupTracker<{ roadName: string | null; kmh: number | null; estimated: boolean }>());
+  const roadTrackerRef = useRef(new RoadLookupTracker<{ roadName: string | null; kmh: number | null; estimated: boolean; conditional: string | null }>());
+  const [speedLimitConditional, setSpeedLimitConditional] = useState<string | null>(null);
   const roadFixRef = useRef<{ latitude: number; longitude: number; heading: number; speedKmh: number | null } | null>(null);
   // When the driver last actually moved -- the street pill swaps to "N reports around you"
   // after ten seconds without.
@@ -1226,6 +1235,7 @@ export function MapScreen() {
       const road = tracker.value;
       setSpeedLimitKmh(road?.kmh ?? null);
       setSpeedLimitEstimated(road?.estimated ?? false);
+      setSpeedLimitConditional(road?.conditional ?? null);
       setCurrentRoadName(road?.roadName ?? null);
     };
     if (tracker.update(fix)) {
@@ -1233,7 +1243,9 @@ export function MapScreen() {
         .then((result) => {
           tracker.resolve(
             fix,
-            result ? { roadName: result.roadName ?? null, kmh: result.kmh ?? null, estimated: result.estimated ?? false } : null
+            result
+              ? { roadName: result.roadName ?? null, kmh: result.kmh ?? null, estimated: result.estimated ?? false, conditional: result.conditional ?? null }
+              : null
           );
           apply();
         })
@@ -1502,6 +1514,121 @@ export function MapScreen() {
     }, 1000);
     return () => clearInterval(id);
   }, [navGeo]);
+
+  // ---- School zones (official data) and which speed limit the sign shows ----
+  // Zones for the tiles around the car load when it moves into a new tile; the zone it's in, and
+  // whether that zone is in force (school day + its own hours, its own timezone), is worked out
+  // on every fix and again at the exact minute a zone switches on or off.
+  const [schoolShapes, setSchoolShapes] = useState<ZoneShape[]>([]);
+  const [schoolCalendars, setSchoolCalendars] = useState<Record<string, SchoolCalendar | null>>({});
+  const schoolTileRef = useRef<string | null>(null);
+  const schoolLoadSeqRef = useRef(0);
+  useEffect(() => {
+    if (!currentLatLng) return;
+    const k = schoolTileKey(currentLatLng.latitude, currentLatLng.longitude);
+    if (schoolTileRef.current === k) return;
+    schoolTileRef.current = k;
+    const seq = ++schoolLoadSeqRef.current;
+    const here = regionAt(currentLatLng.latitude, currentLatLng.longitude);
+    zonesAround(currentLatLng.latitude, currentLatLng.longitude)
+      .then(async (shapes) => {
+        const regions = [...new Set([...shapes.map((sz) => sz.zone.region), ...(here.region ? [here.region] : [])])];
+        const cals = Object.fromEntries(await Promise.all(regions.map(async (r) => [r, await calendarFor(r).catch(() => null)] as const)));
+        if (seq !== schoolLoadSeqRef.current) return;
+        setSchoolShapes(shapes);
+        setSchoolCalendars(cals);
+      })
+      .catch(() => {
+        // Retried on the next fix.
+        if (seq === schoolLoadSeqRef.current) schoolTileRef.current = null;
+      });
+  }, [currentLatLng]);
+
+  const signUnit = signUnitFor(null, settings.distanceUnit === "miles" ? "miles" : "km");
+  const signStyle = useMemo(() => signStyleFor(deviceRegion()), []);
+  // The clock school zones are judged by: ticks at every wall-clock minute (zone hours are whole
+  // minutes), so a zone -- the one you're in, and every one drawn on the map -- switches on or off
+  // at the exact minute, even when parked.
+  const [schoolNowMs, setSchoolNowMs] = useState(() => Date.now());
+  const hasSchoolShapes = schoolShapes.length > 0;
+  useEffect(() => {
+    if (!hasSchoolShapes) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = Date.now();
+      timer = setTimeout(() => {
+        setSchoolNowMs(Date.now());
+        schedule();
+      }, 60_000 - (now % 60_000) + 200);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [hasSchoolShapes]);
+  const moving = (currentSpeedKmh ?? 0) >= 5;
+  const schoolZoneNow = useMemo<SchoolZoneNow | null>(
+    () =>
+      currentLatLng && hasSchoolShapes
+        ? trackSchoolZone(INITIAL_SCHOOL_ZONE_TRACKER, {
+            position: currentLatLng,
+            heading: moving ? heading : null,
+            shapes: schoolShapes,
+            calendars: schoolCalendars,
+            nowMs: schoolNowMs,
+          }).now
+        : null,
+    [currentLatLng, hasSchoolShapes, moving, heading, schoolShapes, schoolCalendars, schoolNowMs]
+  );
+  // "School zone, 40" once on entering a zone in force (or it switching on while you're in it).
+  const lastActiveSchoolZoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = schoolZoneNow?.status.active ? schoolZoneNow.shape.zone.id : null;
+    if (id && id !== lastActiveSchoolZoneRef.current && settings.schoolZonesAlert && schoolZoneNow) {
+      announcePhrase({ kind: "schoolZone", limit: signValue(schoolZoneNow.status.limitKmh, signUnit) });
+    }
+    lastActiveSchoolZoneRef.current = id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schoolZoneNow]);
+
+  // An OpenStreetMap conditional limit on the matched road (where there's no official zone),
+  // judged against the same official calendar. Outside a known calendar an SH/PH condition is
+  // unknown -- not shown.
+  const osmSchoolZone = (() => {
+    if (!speedLimitConditional || !currentLatLng) return null;
+    const rules = parseMaxspeedConditional(speedLimitConditional);
+    if (!rules?.length) return null;
+    const here = regionAt(currentLatLng.latitude, currentLatLng.longitude);
+    for (const rule of rules) {
+      const st = zoneStatus(
+        { id: "osm", source: "OSM", region: here.region ?? "", timezone: here.timezone, limit: rule.display, conditional: rule.condition },
+        here.region ? schoolCalendars[here.region] ?? null : null,
+        schoolNowMs
+      );
+      if (st.active) return { kmh: rule.kmh, display: rule.display, untilLabel: st.untilLabel };
+    }
+    return null;
+  })();
+
+  const resolvedLimit = resolveSpeedLimit({
+    // The sign always shows the limit in force; "Alert while driving" only controls the call-out.
+    schoolZone: schoolZoneNow?.status.active
+        ? { active: true, kmh: schoolZoneNow.status.limitKmh, display: schoolZoneNow.shape.zone.limit, untilLabel: schoolZoneNow.status.untilLabel, name: schoolZoneNow.shape.zone.name }
+        : osmSchoolZone
+          ? { active: true, kmh: osmSchoolZone.kmh, display: osmSchoolZone.display, untilLabel: osmSchoolZone.untilLabel }
+          : null,
+    route: route && navMatch ? routeLimitAt(route.polyline, route.maxSpeedsKmh, navMatch.along) : null,
+    osm: speedLimitKmh != null ? { kmh: speedLimitKmh, estimated: speedLimitEstimated } : null,
+  });
+  const schoolZoneDrawings = useMemo(
+    () =>
+      settings.schoolZonesShowOnMap
+        ? schoolShapes.map((sz) => ({
+            id: sz.zone.id,
+            rings: sz.rings,
+            active: zoneStatus(sz.zone, schoolCalendars[sz.zone.region] ?? null, schoolNowMs).active,
+          }))
+        : [],
+    [schoolShapes, schoolCalendars, schoolNowMs, settings.schoolZonesShowOnMap]
+  );
 
   // A new route (or none) ends any approach in progress.
   useEffect(() => {
@@ -4702,6 +4829,7 @@ export function MapScreen() {
               selectedAlert?.comment ? { coordinate: { latitude: selectedAlert.lat, longitude: selectedAlert.lng }, text: selectedAlert.comment } : null
             }
             manoeuvre={approachDrawing}
+            schoolZones={schoolZoneDrawings}
           />
         </TrackLineMap>
       )
@@ -4754,8 +4882,11 @@ export function MapScreen() {
         (!!route || whereToSheetIndex === 0) && (
         <LiveSpeedometer
           speedKmh={liveSpeed.speedKmh}
-          speedLimitKmh={speedLimitKmh}
-          estimated={speedLimitEstimated}
+          speedLimitKmh={resolvedLimit?.kmh ?? null}
+          unit={signUnit}
+          signStyle={signStyle}
+          schoolZone={resolvedLimit?.schoolZone ?? null}
+          thresholdKmh={settings.speedingThresholdKmh}
           visible={speedometerVisible}
           chimeEnabled={settings.speedWarningChimeEnabled}
           // Real, confirmed bug this fixes: this dial used a fixed bottom:24 regardless of

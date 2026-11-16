@@ -1210,9 +1210,48 @@ export function SettingsScreen() {
             trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
+        <Row label={`Alert at threshold — ${settings.speedingThresholdKmh} km/h over`}>
+          <Slider
+            minimumValue={1}
+            maximumValue={10}
+            step={1}
+            value={settings.speedingThresholdKmh}
+            onSlidingComplete={(v: number) => updateSettings({ speedingThresholdKmh: Math.round(v) })}
+            minimumTrackTintColor={colors.accent}
+            testID="speeding-threshold-slider"
+          />
+        </Row>
         <Text style={styles.helperText}>
-          A single soft chime when your live speed goes 3+ km/h over the posted limit, at most
-          once every 30 seconds. Shown alongside the live speedometer, bottom-left on the map.
+          {`A single soft chime when your live speed goes ${settings.speedingThresholdKmh}+ km/h over the limit on the sign (school-zone limits included), at most once every 30 seconds. The sign shows only a limit from real data -- an active school zone, the route's limit, or the road's posted limit -- and is hidden rather than guessed.`}
+        </Text>
+      </Section>
+
+      <Section title="Road features" visible={shouldShow("Road features")}>
+        <Text style={styles.rowLabel}>School zones</Text>
+        <Row
+          label="Show on map"
+          icon={<Icon name="school" size={18} color={settings.schoolZonesShowOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.schoolZonesShowOnMap}
+            onValueChange={(value) => updateSettings({ schoolZonesShowOnMap: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="school-zones-show-switch"
+          />
+        </Row>
+        <Row
+          label="Alert while driving"
+          icon={<Icon name="volume-high" size={18} color={settings.schoolZonesAlert ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.schoolZonesAlert}
+            onValueChange={(value) => updateSettings({ schoolZonesAlert: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="school-zones-alert-switch"
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          {`Official school zones (NSW: Transport for NSW). A zone is in force only on a school day and inside its posted hours, in the zone's own time zone; the sign then shows the school-zone limit and when it ends. "Alert while driving" says "School zone" and the limit once as you enter one in force (with your voice settings).`}
         </Text>
       </Section>
 
@@ -1675,6 +1714,14 @@ export function SettingsScreen() {
         >
           <Text style={styles.licensesLinkText}>Licences &amp; attributions</Text>
         </Pressable>
+        <View style={styles.dataSources} testID="data-sources">
+          <Text style={styles.aboutMeta}>Data sources</Text>
+          {DATA_SOURCES.map((d) => (
+            <Text key={d} style={styles.helperText}>
+              • {d}
+            </Text>
+          ))}
+        </View>
         {/* The same privacy policy that's on the website (web/public/privacy.html, Firebase
             Hosting), so what the app says it does and what it does stay in one place. */}
         {env.firebase.projectId ? (
@@ -1691,6 +1738,17 @@ export function SettingsScreen() {
     </ScrollView>
   );
 }
+
+// What the map, speed limits and school zones are built from (Settings > About).
+const DATA_SOURCES = [
+  "Map, directions, traffic and route speed limits: Mapbox (© Mapbox, © OpenStreetMap contributors)",
+  "Posted road speed limits, traffic lights, speed cameras: OpenStreetMap contributors (ODbL)",
+  "NSW school zones and their hours: Transport for NSW, Speed Zones dataset (CC BY 4.0)",
+  "NSW school terms: Transport for NSW (zone operating calendar) and NSW Department of Education",
+  "NSW public holidays: NSW Government, Guide to Public Holidays",
+  "NSW live traffic incidents and cameras: Transport for NSW, Live Traffic NSW (CC BY 4.0)",
+  "Places, search and Street View: Google",
+];
 
 function Section({
   title,
@@ -1768,6 +1826,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md + 2,
     ...shadow.low,
+  },
+  dataSources: {
+    marginTop: 12,
+    alignSelf: "stretch",
   },
   sectionTitle: {
     fontSize: 13,

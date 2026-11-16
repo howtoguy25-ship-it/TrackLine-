@@ -1,3 +1,4 @@
+import type { SignStyle } from "@/speedLimits/resolveLimit";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { shadow } from "@/theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
@@ -18,11 +19,15 @@ const EXPLAINER_VISIBLE_MS = 5000;
 
 interface Props {
   speedKmh: number;
+  /** A real limit (speedLimits/resolveLimit.ts), or null: then no sign at all, never a guess. */
   speedLimitKmh: number | null;
-  // True when speedLimitKmh came from the Australian road-type default table, not a real posted
-  // OSM maxspeed tag -- shown as a small grey dot on the sign rather than presented as a
-  // confirmed sign (see osmTrafficData.ts's own SpeedLimitResult.estimated).
-  estimated: boolean;
+  /** Unit and sign shape for where the driver is (or the unit chosen in Settings). */
+  unit?: "km/h" | "mph";
+  signStyle?: SignStyle;
+  /** While a school zone is in force: badge + "until 9:30 am" on the sign. */
+  schoolZone?: { untilLabel: string | null } | null;
+  /** Settings > Speedometer: warn this many km/h over the limit (school zones included). */
+  thresholdKmh?: number;
   // Whether this should be on screen at all right now -- Home view only shows it while moving
   // above 3km/h or during navigation (MapScreen decides which; this component just fades
   // in/out on whatever it's told).
@@ -46,8 +51,19 @@ const CHIME_COOLDOWN_MS = 30_000;
  *  with a gentle pulse 6+ km/h over -- plus an optional soft chime (real, synthesized two-tone
  *  WAV asset, not a placeholder) the first time the driver crosses 3+ km/h over, at most once
  *  every 30s. */
-export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, chimeEnabled, bottom }: Props) {
+export function LiveSpeedometer({
+  speedKmh,
+  speedLimitKmh,
+  unit = "km/h",
+  signStyle = "ring",
+  schoolZone = null,
+  thresholdKmh = CHIME_TRIGGER_OVER_KMH,
+  visible,
+  chimeEnabled,
+  bottom,
+}: Props) {
   const overBy = speedLimitKmh != null ? speedKmh - speedLimitKmh : 0;
+  const shownSpeed = unit === "mph" ? Math.round(speedKmh / 1.609344) : Math.round(speedKmh);
   const isAmber = speedLimitKmh != null && overBy >= AMBER_OVER_KMH && overBy < RED_OVER_KMH;
   const isRed = speedLimitKmh != null && overBy >= RED_OVER_KMH;
 
@@ -93,7 +109,7 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
       wasOverRef.current = false;
       return;
     }
-    const isOverNow = overBy >= CHIME_TRIGGER_OVER_KMH;
+    const isOverNow = overBy >= thresholdKmh;
     if (isOverNow && !wasOverRef.current) {
       const now = Date.now();
       if (now - lastChimeAtRef.current >= CHIME_COOLDOWN_MS) {
@@ -116,15 +132,13 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
     // derived every render and would otherwise fire the effect (and re-read the cooldown ref)
     // far more often than the real speed actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [speedKmh, speedLimitKmh, chimeEnabled]);
+  }, [speedKmh, speedLimitKmh, chimeEnabled, thresholdKmh]);
 
   return (
     <Animated.View
       pointerEvents="none"
       style={[styles.wrap, { opacity }, bottom != null && { bottom }]}
-      accessibilityLabel={`Current speed ${speedKmh} kilometers per hour${
-        speedLimitKmh != null ? `, speed limit ${speedLimitKmh}` : ""
-      }`}
+      accessibilityLabel={`Current speed ${shownSpeed} ${unit === "mph" ? "miles" : "kilometers"} per hour`}
     >
       <Animated.View
         style={[
@@ -134,10 +148,10 @@ export function LiveSpeedometer({ speedKmh, speedLimitKmh, estimated, visible, c
           { transform: [{ scale: pulse }] },
         ]}
       >
-        <Text style={[styles.dialValue, (isAmber || isRed) && styles.dialValueDark]}>{Math.round(speedKmh)}</Text>
-        <Text style={[styles.dialUnit, (isAmber || isRed) && styles.dialValueDark]}>km/h</Text>
+        <Text style={[styles.dialValue, (isAmber || isRed) && styles.dialValueDark]}>{shownSpeed}</Text>
+        <Text style={[styles.dialUnit, (isAmber || isRed) && styles.dialValueDark]}>{unit}</Text>
       </Animated.View>
-      {speedLimitKmh != null && <SpeedLimitSign kmh={speedLimitKmh} estimated={estimated} />}
+      {speedLimitKmh != null && <SpeedLimitSign kmh={speedLimitKmh} unit={unit} signStyle={signStyle} schoolZone={schoolZone} />}
       {explainerVisible && (
         <Animated.View style={styles.explainerBubble}>
           <Text style={styles.explainerText}>{EXPLAINER_TEXT}</Text>

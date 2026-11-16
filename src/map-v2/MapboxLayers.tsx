@@ -6,6 +6,7 @@ import { Tracky } from "@/components/trackys/Tracky";
 import { RouteLine } from "@/map-v2/layers/RouteLine";
 import { PinLayer } from "@/map-v2/layers/PinLayer";
 import { MarkerPin } from "@/map-v2/layers/MarkerPin";
+import { SchoolZoneLayer, type SchoolZoneDrawing } from "@/map-v2/layers/SchoolZoneLayer";
 import { MapIcons, type IconExtras } from "@/map-v2/layers/MapIcons";
 import { UserPuck, BLANK_ICON } from "@/map-v2/layers/UserPuck";
 import { PresenceLayerV2, presenceIconName } from "@/map-v2/layers/PresenceLayerV2";
@@ -74,6 +75,8 @@ interface Props {
   selectedComment: { coordinate: LatLng; text: string } | null;
   /** During the approach view: the road through the manoeuvre, the road taken, and the label. */
   manoeuvre?: { through: LatLng[]; exitSide: LatLng[]; callout: { coordinate: LatLng; text: string } | null } | null;
+  /** Official school zones nearby (Settings > Road features > School zones > Show on map). */
+  schoolZones?: SchoolZoneDrawing[];
 }
 
 const FIXED_ICONS = [
@@ -148,6 +151,7 @@ export function MapboxLayers(props: Props) {
       {turnArrow.length > 1 && (
         <RouteLine id="nav-turn-arrow" coordinates={turnArrow} color="#FFFFFF" width={5} casingColor={ROUTE_PURPLE_CASING} casingWidth={9} aboveLayerID="nav-route-line" />
       )}
+      {props.schoolZones && props.schoolZones.length > 0 && <SchoolZoneLayer zones={props.schoolZones} />}
       {/* Approach view: a soft glow on the road being taken, and the route through the split
           wider and brighter on top of the normal route. */}
       {props.manoeuvre && props.manoeuvre.exitSide.length > 1 && (

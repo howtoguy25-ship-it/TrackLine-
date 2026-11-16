@@ -167,7 +167,11 @@ export interface SpeedLimitResult {
   // True when kmh came from the Australian road-type default table (no real maxspeed tag on
   // the matched way) rather than an actual posted OSM maxspeed value -- callers show a small
   // grey "estimated" dot on the speed-limit sign rather than presenting a guess as a fact.
+  // (The sign no longer shows estimated limits at all -- see speedLimits/resolveLimit.ts.)
   estimated: boolean;
+  /** The road's raw maxspeed:conditional (e.g. a school zone), judged by the caller against the
+   *  official school calendar (schoolZones/*) -- never applied here by the clock alone. */
+  conditional: string | null;
 }
 
 const MPH_TO_KMH = 1.60934;
@@ -350,24 +354,6 @@ function parseMaxspeedConditional(raw: string): ConditionalSpeedRule[] {
   return rules;
 }
 
-/** Whichever conditional rule applies to the device's current real local time right now, or null
- *  if none do (outside school hours, wrong day, or the tag couldn't be confidently parsed). Uses
- *  the device's own clock -- the same real "now" every other time-gated feature in this app
- *  (night mode, alert expiry) already relies on. */
-function activeConditionalSpeedKmh(rules: ConditionalSpeedRule[], now: Date): number | null {
-  // JS getDay(): 0=Sunday..6=Saturday -- remapped to this file's own Mo-first (0=Mo..6=Su)
-  // index so it lines up with OSM_DAY_TOKENS/expandDayTokens above.
-  const day = (now.getDay() + 6) % 7;
-  const minuteOfDay = now.getHours() * 60 + now.getMinutes();
-  for (const rule of rules) {
-    if (!rule.days.includes(day)) continue;
-    if (rule.timeWindows.some(([start, end]) => minuteOfDay >= start && minuteOfDay < end)) {
-      return rule.kmh;
-    }
-  }
-  return null;
-}
-
 // Real per-road-segment cache (by OSM way id) so the exact same road's speed limit isn't
 // re-fetched from Overpass every time MapScreen's own movement-based refetch effect fires while
 // still driving down that same road -- only once the matched way actually changes. In-memory for
@@ -386,13 +372,16 @@ interface SpeedLimitCacheEntry {
   // whether a conditional limit was active, since that genuinely changes as the clock moves past
   // 09:30 while the driver's still sitting on the same cached road.
   conditionalRules: ConditionalSpeedRule[];
+  /** The raw tag, for the school-calendar-aware check (schoolZones/*). */
+  conditionalRaw?: string | null;
   roadName: string | null;
   geometry: { lat: number; lon: number }[];
 }
 
-function resolveCachedSpeed(entry: SpeedLimitCacheEntry, now: Date): { kmh: number; estimated: boolean } {
-  const active = entry.conditionalRules.length > 0 ? activeConditionalSpeedKmh(entry.conditionalRules, now) : null;
-  return active != null ? { kmh: active, estimated: false } : { kmh: entry.baseKmh, estimated: entry.baseEstimated };
+// The road's own limit only. A conditional (school-zone) limit is NOT applied here: whether it's
+// in force depends on school days and holidays, which only the school-zone code knows.
+function resolveCachedSpeed(entry: SpeedLimitCacheEntry): { kmh: number; estimated: boolean } {
+  return { kmh: entry.baseKmh, estimated: entry.baseEstimated };
 }
 const speedLimitCache = new Map<number, SpeedLimitCacheEntry>();
 const SPEED_LIMIT_CACHE_STORAGE_KEY = "@trackline/speedLimitCache";
@@ -459,8 +448,8 @@ export async function fetchSpeedLimitNear(
   if (lastMatchedWayId != null) {
     const cached = speedLimitCache.get(lastMatchedWayId);
     if (cached && cacheEntryMatchesPosition(cached, lat, lng)) {
-      const resolved = resolveCachedSpeed(cached, new Date());
-      return { kmh: resolved.kmh, roadName: cached.roadName, wayId: lastMatchedWayId, estimated: resolved.estimated };
+      const resolved = resolveCachedSpeed(cached);
+      return { kmh: resolved.kmh, roadName: cached.roadName, wayId: lastMatchedWayId, estimated: resolved.estimated, conditional: cached.conditionalRaw ?? null };
     }
   }
 
@@ -500,7 +489,6 @@ export async function fetchSpeedLimitNear(
     controller.abort();
   }
 
-  const now = new Date();
   let best:
     | {
         score: number;
@@ -510,6 +498,7 @@ export async function fetchSpeedLimitNear(
         baseKmh: number;
         baseEstimated: boolean;
         conditionalRules: ConditionalSpeedRule[];
+        conditionalRaw: string | null;
         roadName: string | null;
         geometry: { lat: number; lon: number }[];
       }
@@ -525,7 +514,9 @@ export async function fetchSpeedLimitNear(
     // (see below) -- `kmh`/`estimated` here are just this moment's resolved display value.
     const conditionalRaw = way.tags["maxspeed:conditional"];
     const conditionalRules = conditionalRaw ? parseMaxspeedConditional(conditionalRaw) : [];
-    const activeConditional = conditionalRules.length > 0 ? activeConditionalSpeedKmh(conditionalRules, now) : null;
+    // Not applied here (see resolveCachedSpeed): only kept so a road with nothing but a
+    // conditional limit still counts as a match.
+    const activeConditional = conditionalRules.length > 0 ? 0 : null;
 
     let baseKmh: number | null = way.tags.maxspeed ? parseMaxSpeedKmh(way.tags.maxspeed) : null;
     let baseEstimated = false;
@@ -537,9 +528,10 @@ export async function fetchSpeedLimitNear(
         baseEstimated = true;
       }
     }
-    const kmh = activeConditional ?? baseKmh;
-    if (kmh === null) continue;
-    const estimated = activeConditional == null && baseEstimated;
+    // A road with only a conditional limit has no posted limit of its own: 0 + estimated, which
+    // the sign never shows (it's kept for the road name and the conditional check).
+    const kmh = baseKmh ?? 0;
+    const estimated = baseKmh === null || baseEstimated;
 
     let minDist = Infinity;
     let closestSegmentBearing = 0;
@@ -566,9 +558,10 @@ export async function fetchSpeedLimitNear(
         wayId: way.id,
         kmh,
         estimated,
-        baseKmh: baseKmh as number,
+        baseKmh: baseKmh ?? 0,
         baseEstimated,
         conditionalRules,
+        conditionalRaw: conditionalRaw ?? null,
         roadName: way.tags.name ?? null,
         geometry: way.geometry,
       };
@@ -582,10 +575,11 @@ export async function fetchSpeedLimitNear(
     baseKmh: best.baseKmh,
     baseEstimated: best.baseEstimated,
     conditionalRules: best.conditionalRules,
+    conditionalRaw: best.conditionalRaw,
     roadName: best.roadName,
     geometry: best.geometry,
   });
   persistSpeedLimitCache();
 
-  return { kmh: best.kmh, roadName: best.roadName, wayId: best.wayId, estimated: best.estimated };
+  return { kmh: best.kmh, roadName: best.roadName, wayId: best.wayId, estimated: best.estimated, conditional: best.conditionalRaw };
 }

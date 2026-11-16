@@ -14,7 +14,6 @@ import { parseMapboxResponse } from "@/services/mapboxDirections";
 import { driveTrack } from "@/dev/simulateDrive";
 import type { LatLng } from "@/utils/polyline";
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const core = require("../../firebase/functions/schoolZonesCore");
 
 const cal = asSchoolCalendar(nsw)!;

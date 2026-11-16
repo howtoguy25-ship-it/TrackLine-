@@ -41,6 +41,9 @@ export const RED_SOFT = "#FDECEC";
 /** Red text on dark surfaces (5.9:1 on #26282C, 4.9:1 on #33363B). */
 export const RED_TEXT_DARK = "#FF7A7D";
 export const RED_SOFT_DARK = "#3A2427";
+/** School zones: the amber of real school-zone signs (sign badge, map overlay). */
+export const SCHOOL_ZONE = "#F5A524";
+export const SCHOOL_ZONE_SOFT = "#FDE7B8";
 export const GREEN = "#12A150";
 /** Green for text on white (5.4:1). */
 export const GREEN_TEXT = "#0B7A3B";

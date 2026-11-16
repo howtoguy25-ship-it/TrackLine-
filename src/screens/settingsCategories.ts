@@ -30,7 +30,7 @@ export const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   privacy: ["Privacy"],
   mapDisplay: ["Map view", "Map shortcuts", "Map appearance", "Navigation card colors", "Your map marker", "Map layers"],
   navigationVoice: ["Voice guidance", "Speed", "Public transit"],
-  alertsCommunity: ["Live alerts", "Alert icons"],
+  alertsCommunity: ["Live alerts", "Road features", "Alert icons"],
   vehicleAI: ["AI Vehicle Detection", "Vehicle REV Checks", "EV Radar (siren detection)"],
   developer: ["Touch debugger (dev only)", "GPS replay (dev only)"],
 };
