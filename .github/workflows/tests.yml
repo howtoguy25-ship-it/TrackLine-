@@ -44,5 +44,10 @@ jobs:
       - name: Placeholder secrets for the Functions emulator (not real keys)
         run: |
           printf 'MAPBOX_SERVER_TOKEN=emulator-placeholder\nELEVENLABS_API_KEY=emulator-placeholder\nTFNSW_API_KEY=emulator-placeholder\n' > firebase/functions/.secret.local
+      # The functions' non-secret parameters (defineString), set to the defaults in index.js.
+      # Without them the emulator stops to ask for each value and the job hangs.
+      - name: Function parameters for the emulator (the code's own defaults)
+        run: |
+          printf 'ELEVENLABS_MODEL=eleven_multilingual_v2\nELEVENLABS_VOICE_MATILDA=XrExE9yKIg1WjnnlVkGX\nELEVENLABS_VOICE_FOOTY_FAN=IKne3meq5aSn9XLyUdCD\nELEVENLABS_VOICE_SARCASTIC_COPILOT=onwK4e9ZLuTAKqWW03F9\nELEVENLABS_VOICE_DRY_WIT=JBFqnCBsd6RMkjVDRZzb\n' > firebase/functions/.env.local
       - name: Firestore + Storage rules and Cloud Functions, on the real emulators
         run: npx -y firebase-tools@14 emulators:exec --project demo-trackline-rules-test --only firestore,storage,functions,auth "npm --prefix firebase/tests test"
