@@ -1,85 +1,120 @@
-# Deploying Firebase (functions, Firestore rules, Storage rules)
+# Deploying the server (from your phone)
 
-This repo has no checked-in Firebase CLI session and this cloud dev environment can't run one
-(`firebase` isn't installed here, and there's no interactive login). Deploys instead go through
-`.github/workflows/firebase-deploy.yml`, a manual-only (never on push) GitHub Action you run
-yourself from your phone or a browser. This doc is the one-time setup for that, plus how to run
-it afterward.
+Everything server-side (Cloud Functions, Firestore rules + indexes, Storage rules) is deployed by
+the GitHub Action **"Deploy Firebase (functions, Firestore rules, Storage rules)"**
+(`.github/workflows/firebase-deploy.yml`). It only runs when you press **Run workflow**, never on
+a push. Each run:
 
-## One-time setup
+1. runs the Firestore/Storage rules and Cloud Functions tests on the real Firebase emulators
+   (placeholder keys only) -- **if any test fails, nothing is deployed**;
+2. copies your API keys into Firebase (only when you tick "Copy API keys");
+3. deploys;
+4. runs `refreshSchoolZones` once, so the official NSW school zones are on the server straight
+   away, and waits until it has written them (the log says how many zones loaded).
 
-### 1. Create the service account (Google Cloud Console)
+Until the first successful run, none of these work in the app: other drivers' Trackys, Live
+Traffic NSW, school zones, speed-limit/school-zone reports, character voices, REV Check.
 
-1. Go to https://console.cloud.google.com/iam-admin/serviceaccounts and make sure your
-   **TrackLine Firebase project** is selected at the top (the same project this app's Firebase
-   config already points at).
-2. **Create Service Account** → name it something like `github-deploy` → Create and Continue.
-3. **Grant this service account access to the project** — add these roles:
-   - **Firebase Admin** (`roles/firebase.admin`) — covers Firestore rules and Storage rules
-     deploy, and most of what Functions deploy needs too.
-   - **Cloud Functions Admin** (`roles/cloudfunctions.admin`) — functions deploy specifically.
-   - **Service Account User** (`roles/iam.serviceAccountUser`) — functions deploy runs as a
-     service identity; this lets the deploy actually attach it.
-   - **Cloud Run Admin** (`roles/run.admin`) — this project's Cloud Functions are 2nd-gen, which
-     deploy on top of Cloud Run under the hood.
-   - **Artifact Registry Administrator** (`roles/artifactregistry.admin`) — 2nd-gen functions
-     build a container image during deploy; this lets that image be pushed.
-   - **Secret Manager Admin** (`roles/secretmanager.admin`) — lets the workflow store the API
-     keys the functions use (step 4) so you never need a command line for them.
-   These are broader than a perfectly minimal set would be, but they're the real, documented
-   combination Firebase's own CI guidance uses — a narrower set is easy to get subtly wrong and
-   have deploys fail partway through.
-4. Continue, skip "Grant users access," click **Done**.
+You need: a phone browser (Safari/Chrome) and the GitHub app (or github.com). About 15 minutes,
+once.
 
-### 2. Create and download the key
+---
 
-1. Click the new service account in the list → **Keys** tab → **Add Key** → **Create new key**
-   → **JSON** → Create. This downloads a `.json` file to your device — treat it like a
-   password; it's a real, long-lived credential.
+## Step 1 -- Create the deploy account (Google Cloud, phone browser)
 
-### 3. Add it as a GitHub secret (from your phone)
+Tip: Google Cloud Console works on a phone, but turn on **"Request Desktop Website"** (Safari:
+the **aA** button; Chrome: **⋮ › Desktop site**) so every menu shows.
 
-1. Open the **GitHub mobile app** (or github.com in your phone's browser) → your `trackline`
-   (or whatever this repo is named) repository → **Settings** tab.
-   - On the mobile app: repo → the "..." / settings icon → **Secrets and variables** → **Actions**.
-   - In a mobile browser, GitHub's settings pages work the same as desktop, just scrolled.
-2. **New repository secret**.
-3. Name: `FIREBASE_SERVICE_ACCOUNT` (exact name — the workflow reads this exact secret name).
-4. Value: open the downloaded `.json` key file and paste its **entire contents** (the whole
-   `{ "type": "service_account", ... }` object) into the value box.
-5. **Add secret**.
-6. Delete the downloaded `.json` file from your device once it's saved as the secret — you
-   don't need to keep a second copy lying around.
+1. Open **https://console.cloud.google.com/iam-admin/serviceaccounts**.
+2. At the top, tap the project picker and choose your **TrackLine Firebase project**.
+3. Tap **+ Create service account**. Name: `github-deploy`. Tap **Create and continue**.
+4. **Grant this service account access to project** -- add each of these roles (tap **Add
+   another role** between them; type the name in the role search box):
 
-That's it for the GitHub Action itself — no other GitHub secret or variable is needed, the
-workflow reads the Firebase project ID directly out of the service account key at run time.
+   | Role | Why |
+   |---|---|
+   | **Firebase Admin** | Firestore rules, indexes, Storage rules |
+   | **Cloud Functions Admin** | Deploy the functions |
+   | **Service Account User** | Functions run as a service identity |
+   | **Cloud Run Admin** | 2nd-gen functions run on Cloud Run |
+   | **Artifact Registry Administrator** | Functions are built into a container image |
+   | **Secret Manager Admin** | Store the API keys (step 4) |
+   | **Cloud Scheduler Admin** | The scheduled functions (weekly school zones, traffic refresh), and the "load school zones now" step |
+   | **Service Usage Consumer** | The Firebase CLI checks which Google APIs are on |
 
-### 4. API keys (from your phone — no command line)
+5. Tap **Continue**, skip the last section, tap **Done**.
 
-The Cloud Functions need a few API keys. Each is added the same way as the service account key
-in step 3: **GitHub → this repo → Settings → Secrets and variables → Actions → New repository
-secret**, using exactly the name below. Then run the deploy workflow with **"Copy API keys"**
-ticked (see "Running a deploy") and it copies them into Firebase for you.
+## Step 2 -- Download its key
 
-| GitHub secret name | Needed for | Where to get it |
+1. In the list, tap **github-deploy@...** › **Keys** tab › **Add key** › **Create new key** ›
+   **JSON** › **Create**. A `.json` file downloads.
+   - iPhone: it's in the **Files** app › **Downloads**.
+   - Android: **Files** › **Downloads**.
+2. Treat this file like a password.
+
+## Step 3 -- Save it as a GitHub secret
+
+The GitHub app can't edit secrets, so use the phone browser:
+
+1. Open the `.json` file (tap it in Files -- it shows as text), **Select All**, **Copy**.
+2. Go to **https://github.com/howtoguy25-ship-it/TrackLine-/settings/secrets/actions**
+   (sign in if asked; Desktop Website mode helps here too).
+3. **New repository secret**. Name: `FIREBASE_SERVICE_ACCOUNT` (exactly). Secret: paste the
+   whole file contents (it starts with `{` and ends with `}`). **Add secret**.
+4. Delete the `.json` file from Downloads.
+
+## Step 4 -- API keys (same page, one secret each)
+
+| Secret name | Needed for | Where to get it |
 |---|---|---|
-| `MAPBOX_SERVER_TOKEN` | **Required.** Snapping other drivers' Trackys to roads. | Your Mapbox account — the same value as `MAPBOX_PUBLIC_TOKEN` works. |
-| `ELEVENLABS_API_KEY` | Optional. Unlocks the four character voices (Matilda, Aussie Footy Fan, Sarcastic Co-pilot, Dry Wit). | elevenlabs.io → your profile → API keys. This is a paid service billed per character of speech; each sentence is generated once and then reused for every driver. |
-| `TFNSW_API_KEY` | Optional. Unlocks live NSW traffic incidents on the map. | opendata.transport.nsw.gov.au → register → create an application → its API key. Free. |
+| `MAPBOX_SERVER_TOKEN` | **Required** -- other drivers' Trackys snapped to roads | account.mapbox.com › Tokens (the same token as the app's `MAPBOX_PUBLIC_TOKEN` works) |
+| `TFNSW_API_KEY` | Live Traffic NSW incidents and congestion | opendata.transport.nsw.gov.au › sign up › My account › Applications › Create › copy the API key (free) |
+| `ELEVENLABS_API_KEY` | The four character voices (paid service) | elevenlabs.io › profile › API keys |
 
-What happens if you skip the optional ones: the deploy still succeeds (the workflow creates a
-harmless placeholder for each), and the app shows those features as not available yet. Add the
-key later, re-run the workflow with "Copy API keys" ticked, and they switch on — no app update.
+Skip the optional two and the deploy still works; those features say "not set up" in the app.
+Add a key later and re-run with **Copy API keys** ticked -- no app update needed.
 
-You only need to tick "Copy API keys" when you've added or changed a key. Leaving it unticked
-keeps whatever is already in Firebase.
+## Step 5 -- Run it
 
-**Character voices — which voice is which.** Each character is mapped to one of ElevenLabs'
-stock voices in `firebase/functions/index.js` (`PERSONA_ELEVENLABS_VOICE`). Those mappings were
-chosen from ElevenLabs' public voice list and have **not been tested against a real account** —
-no key has ever been available to this project. If a character stays silent (the app falls back
-to your phone's voice) or you'd simply prefer a different voice, put the voice ID from your
-ElevenLabs voice library in a file named `firebase/functions/.env`, for example:
+1. **GitHub app** › this repository › **Actions** › **Deploy Firebase (functions, Firestore
+   rules, Storage rules)** › **Run workflow**. (If your app version doesn't show the button, use
+   github.com › Actions in the browser -- same thing.)
+2. Branch: **`claude/go-session-0d5bup`** (that's where the current app builds come from).
+3. Leave **Deploy Cloud Functions / Firestore rules / Storage rules** ticked. The first time,
+   tick **Copy API keys**. Leave the **"load the official NSW school zones now"** box ticked.
+4. **Run workflow**. It takes about 10-15 minutes: tests (~3 min), deploy (~5-8 min), school
+   zones (~2 min).
+5. Green tick = deployed and school zones loaded. The last step's log says e.g.
+   "School zones loaded: 3301 zones in 697 tiles". A red cross: tap the failed step and read the
+   last lines. Common ones:
+   - "Permission denied" / "does not have ... permission" → a role from step 1 is missing.
+   - "API ... has not been used in project ... or it is disabled" → open the link in the error
+     and tap **Enable**, then re-run.
+   - A test failed → nothing was deployed; tell me which test.
+
+## Afterwards
+
+- Re-run the workflow whenever server code changes (I'll tell you when).
+- School zones then refresh by themselves every Monday at 3:17 am Sydney time.
+- **Not deployed by this workflow**: Hosting (the website, including `privacy.html` that the app's
+  Privacy policy link opens) and Firestore TTL policies. Hosting needs adding before App Store
+  review if the privacy page isn't already live -- check the link in Settings › About opens.
+
+### Optional: Firestore cleanup policies (needs a computer with gcloud)
+
+A scheduled function already does this cleanup every two minutes; this just lets Firestore do it
+itself:
+
+```
+gcloud firestore fields ttl-policies create expireAt --collection-group=presence --project=<project-id>
+gcloud firestore fields ttl-policies create expireAt --collection-group=presencePending --project=<project-id>
+```
+
+### Character voice IDs
+
+Each character uses an ElevenLabs stock voice (`PERSONA_ELEVENLABS_VOICE` in
+`firebase/functions/index.js`), never tested against a real account. To change one, put voice
+IDs in `firebase/functions/.env` (not secret, can be committed):
 
 ```
 ELEVENLABS_VOICE_MATILDA=<voice id>
@@ -87,58 +122,3 @@ ELEVENLABS_VOICE_FOOTY_FAN=<voice id>
 ELEVENLABS_VOICE_SARCASTIC_COPILOT=<voice id>
 ELEVENLABS_VOICE_DRY_WIT=<voice id>
 ```
-
-Voice IDs aren't secret, so that file can be committed.
-
-### 5. One-time Firestore cleanup policies
-
-This is **not** part of the GitHub Action and can't be — it's an account-level setting, set once
-from a computer with the `gcloud` CLI. Skip it and everything still works; a scheduled function
-does the same cleanup every two minutes.
-
-Firestore's own automatic deletion of stale presence data (`presence.expireAt` and
-`presencePending.expireAt`):
-
-```
-gcloud firestore fields ttl-policies create expireAt \
-  --collection-group=presence \
-  --project=<your-project-id>
-
-gcloud firestore fields ttl-policies create expireAt \
-  --collection-group=presencePending \
-  --project=<your-project-id>
-```
-
-(`presencePending` is the private holding area behind the 60-second privacy delay — the second
-command makes Firestore clean that up by itself too.)
-
-This needs the `gcloud` CLI logged in (`gcloud auth login`) with the same Google account that
-has access to the Firebase project. You only ever need to run this once per project — it's a
-standing policy, not something that re-runs on every deploy.
-
-## Running a deploy
-
-1. GitHub app (or github.com) → this repo → **Actions** tab → **Deploy Firebase (functions,
-   Firestore rules, Storage rules)** in the left sidebar.
-2. **Run workflow** (top right) → pick the branch (normally your default branch) → tick which
-   of the three targets you want deployed (all three are ticked by default). The first time,
-   and any time you've added or changed an API key in step 4, also tick **"Copy API keys"**.
-   Then **Run workflow**.
-3. Tap into the run to watch it — it checks out the repo, installs the functions' dependencies,
-   writes the service account key to a file that only exists for this one run, and runs a real
-   `firebase deploy`. The key file is deleted at the end of the run either way (success or
-   failure).
-4. A green check means it deployed for real. A red X means something failed — open the run's
-   logs (GitHub automatically redacts the secret's literal value from any log line) and read the
-   actual Firebase CLI error at the bottom.
-
-## What this deploys
-
-- **Functions** (`firebase/functions/index.js`) — all existing functions (REV Check checkout,
-  alert cleanup, plate lookup, broadcast notifications, etc.) plus anything new added for the
-  Tracky presence feature.
-- **Firestore rules** (`firebase/firestore.rules`).
-- **Storage rules** (`firebase/storage.rules`).
-
-It does **not** deploy Hosting (the web app), Firestore indexes, or the Firestore TTL policies
-(step 5). API keys are only copied when you tick "Copy API keys" (step 4).
