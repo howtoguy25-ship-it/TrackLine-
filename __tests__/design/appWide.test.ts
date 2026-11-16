@@ -61,6 +61,8 @@ describe("one icon set", () => {
       "src/screens/OsmMarkerSheet.tsx",
       "src/screens/InboxScreen.tsx",
       "src/screens/SettingsScreen.tsx",
+      // Settings > Reports: each item's icon is the same glyph as its map pin (MapIcons "feature:").
+      "src/components/settings/ReportItemIcon.tsx",
     ].map((p) => p.split("/").join(path.sep))
   );
 
@@ -72,7 +74,7 @@ describe("one icon set", () => {
   it("in those files, vector icons only draw alert / marker artwork", () => {
     for (const f of ARTWORK) {
       for (const o of openings(read(f), ["Ionicons", "MaterialCommunityIcons", "MaterialIcons"])) {
-        if (f.includes("MapIcons") || f.includes("AlertTypeGlyph") || f.includes("LocationMarkers")) continue;
+        if (f.includes("MapIcons") || f.includes("AlertTypeGlyph") || f.includes("LocationMarkers") || f.includes("ReportItemIcon")) continue;
         expect([f, o.line, /ALERT_ICONS|iconSpec|marker\.icon|ICON_NAMES|glyph\.name/.test(o.text)]).toEqual([f, o.line, true]);
       }
     }

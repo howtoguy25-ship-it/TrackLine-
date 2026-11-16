@@ -1,5 +1,12 @@
 # Waze-style redesign — progress
 
+## 100% completion run — where it's up to
+
+Item 1 (alert settings) DONE on branch `alert-settings`, merged. **Next step: item 2** — report card
+remaining parts (Tracky info bubble; Home/Work/saved popup with Send/Routes/Preview/parking P pin/Find my
+car/Edit/Remove; 3 s Undo pending server-side, max 2/hour; server anti-spam; "Still there?" per-type
+windows), on a new branch `report-card`. Then items 3-6 and the final checks (see the run prompt).
+
 ## Honest status — 2026-11-16 (read this first)
 
 DONE = wired into a real screen AND has a passing test. Nothing here has been run on a phone by
@@ -30,6 +37,7 @@ me; everything visible needs your device check (`TEST_ON_PHONE.md`).
 | Expiry + "Still here?" (§7) | PARTIAL: per-type TTL (`ALERT_TTL_MS`), `cleanupExpiredAlerts`, proximity prompt (`AlertStillHereCard`) exist; extend-on-confirm and remove-after-2-"Not there" NOT DONE | -- | -- |
 | Travel modes | Step 1 of 6: CODE + tests, NOT on any screen | `__tests__/travel/modes.test.ts` | Circular Quay -> Manly test needs a recorded Google/TfNSW response (keys not available here) |
 | Vehicle full check (one product, incl. odometer) | CODE + tests DONE; BLOCKED for sale: provider keys, odometer adapter, store products | `firebase/tests/vehicleCheck.test.js` (20 + 2 emulator), rules + callable tests, `__tests__/vehicleCheck.test.tsx` (15), `presses/menu.test.tsx` | PROVIDERS.md steps 1-4; TEST_ON_PHONE §20 |
+| Alert settings: Settings › Map information & overlays › Reports (43 items), Speedometer, Map shortcuts | DONE + NEEDS DEVICE TEST; 11 items BLOCKED ("Coming soon in your area": no data source) | `__tests__/reports/{toggles,engine,screens,settingsLayout}.*` (180 tests), `ALERT_SETTINGS.md` table | TEST_ON_PHONE §22 |
 
 ### Map checklist (Mapbox map, style v5)
 

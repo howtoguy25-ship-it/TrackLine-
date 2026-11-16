@@ -16,6 +16,7 @@ import { LIVE_TRAFFIC_BADGE } from "@/theme/colors";
 import { Icon, isIconName } from "@/components/ui/Icon";
 import { Text } from "@/components/AppText";
 import { BADGE_COLOURS, type BadgeCategory } from "@/map/poiBadges";
+import { REPORT_ITEM_BY_ID, type ReportItemId } from "@/settings/reportCatalog";
 
 // Every icon the Mapbox map draws, each one an ordinary React view rendered ONCE into a map
 // image (Mapbox's Images/Image), then reused by any number of pins through the SymbolLayer.
@@ -89,6 +90,17 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
           <Ionicons name="bed" size={15} color="#FFFFFF" />
         </Badge>
       );
+    case "feature": {
+      // "feature:<reportItemId>" -- a Settings > Reports item from OpenStreetMap (a railway
+      // crossing, a red light camera ...): that item's own colour and glyph, small.
+      const item = REPORT_ITEM_BY_ID[rest[0] as ReportItemId];
+      if (!item) return null;
+      return (
+        <Badge color={item.icon.colour} size={24} border={1.5}>
+          <MaterialCommunityIcons name={item.icon.glyph as never} size={14} color="#FFFFFF" />
+        </Badge>
+      );
+    }
     case "live-camera":
       return (
         <Badge color={colors.accent} size={26}>

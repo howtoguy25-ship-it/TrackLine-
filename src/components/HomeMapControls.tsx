@@ -49,6 +49,8 @@ interface Props {
   showAudioPlayer: boolean;
   onAudioPlayer: () => void;
 
+  /** Settings > Map shortcuts > Sound button. */
+  showSoundButton?: boolean;
   soundOff: boolean;
   onSound: () => void;
 
@@ -142,13 +144,15 @@ export function HomeMapControls(props: Props) {
         {props.showAudioPlayer && (
           <FloatingButton tone="map" size={size.round} icon="musical-notes" onPress={props.onAudioPlayer} accessibilityLabel="Audio player" />
         )}
-        <FloatingButton
-          tone="map"
-          size={size.round}
-          icon={props.soundOff ? "volume-mute" : "volume-high"}
-          onPress={props.onSound}
-          accessibilityLabel={props.soundOff ? "Sound: off" : "Sound"}
-        />
+        {props.showSoundButton !== false && (
+          <FloatingButton
+            tone="map"
+            size={size.round}
+            icon={props.soundOff ? "volume-mute" : "volume-high"}
+            onPress={props.onSound}
+            accessibilityLabel={props.soundOff ? "Sound: off" : "Sound"}
+          />
+        )}
       </View>
 
       {/* Bottom-right, riding on the sheet: Report */}

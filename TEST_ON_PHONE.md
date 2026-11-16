@@ -335,6 +335,28 @@ Signed in as the owner, on TestFlight (sandbox purchases work for the owner only
    keep their order (leftmost lane on the left), turn arrows point the right way, and the voice
    says the correct side ("انعطف يميناً" for a right turn).
 
+## 22. Alert settings (Reports, Speedometer, Map shortcuts) — NEEDS DEVICE TEST
+
+Settings › Map information & overlays.
+
+1. **Reports**: every row has its own icon, a title, a grey line and a chevron. Open "Railway
+   crossing": icon, explanation, "Data: OpenStreetMap", two switches. Open "Bus lane camera": it
+   says "Coming soon in your area" and both switches are greyed out.
+2. **Show on map**: near a mapped level crossing, switch Railway crossing › Show on map off — its
+   pin goes; on — it comes back. Same for Police (with a police report nearby) and Roadwork (with a
+   Live Traffic NSW roadwork nearby).
+3. **Alert while driving**: drive towards a mapped red light camera / railway crossing at 50+ km/h.
+   About 300-500 m before it, a chip with its icon appears and the voice says "Red light camera
+   ahead" once. Switch that item's alert off and drive past again: no chip, no voice.
+4. **Speed limit changes**: drive from a 60 into an 80 zone: after a few seconds the voice says
+   "Speed limit 80". Off: nothing is said (the sign still changes).
+5. **Speedometer**: Show speedometer off hides the dial. Speed limit › "When above the limit":
+   the sign only appears while you're over. Pick "+10%": at 100 km/h the chime sounds from 110.
+6. **Map shortcuts**: Sound button off removes the speaker button on the home map; Traffic flow
+   off removes the coloured traffic (home map and route); Show Trackys off hides other drivers.
+7. **Restart**: force-quit and reopen: every switch is as you left it. Signed in on a second
+   phone: the same switches arrive there.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

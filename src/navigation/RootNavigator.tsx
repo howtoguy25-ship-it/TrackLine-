@@ -12,6 +12,8 @@ import { SignInScreen } from "@/screens/SignInScreen";
 import { VehicleHistoryScreen } from "@/screens/VehicleHistoryScreen";
 import { RevCheckScreen } from "@/screens/RevCheckScreen";
 import { VehicleCheckScreen } from "@/screens/VehicleCheckScreen";
+import { ReportItemSettingsScreen, ReportsSettingsScreen } from "@/screens/ReportsSettingsScreen";
+import type { ReportItemId } from "@/settings/reportCatalog";
 import { OwnerDashboardScreen } from "@/screens/OwnerDashboardScreen";
 import { DocumentScanScreen } from "@/screens/DocumentScanScreen";
 import { VehicleDetectionScreen } from "@/screens/VehicleDetectionScreen";
@@ -83,6 +85,9 @@ export type RootStackParamList = {
   RevCheck: RevCheckParams | undefined;
   // Menu > Vehicle check. Same prefill params as the old REV check, plus an open report.
   VehicleCheck: (RevCheckParams & { reportId?: string }) | undefined;
+  // Settings > Map information & overlays > Reports, and one item's detail.
+  ReportsSettings: undefined;
+  ReportItemSettings: { id: ReportItemId };
   // Real camera capture for a VIN or a plate/registration -- see DocumentScanScreen's own
   // header comment for why one screen serves both as two distinct, purpose-built experiences.
   DocumentScan: { mode: "vin" | "plate" };
@@ -204,6 +209,8 @@ export function RootNavigator() {
           component={VehicleHistoryScreen}
           options={{ headerShown: true, title: "Vehicle History" }}
         />
+        <Stack.Screen name="ReportsSettings" component={ReportsSettingsScreen} options={{ headerShown: true, title: "Reports" }} />
+        <Stack.Screen name="ReportItemSettings" component={ReportItemSettingsScreen} options={{ headerShown: true, title: "" }} />
         <Stack.Screen
           name="VehicleCheck"
           component={VehicleCheckScreen}

@@ -20,6 +20,7 @@ const CATEGORY_ORDER: SettingsCategory[] = [
   "account",
   "privacy",
   "mapDisplay",
+  "mapInfo",
   "navigationVoice",
   "alertsCommunity",
   "vehicleAI",

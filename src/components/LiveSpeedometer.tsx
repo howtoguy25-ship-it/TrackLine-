@@ -40,6 +40,8 @@ interface Props {
   bottom?: number;
   /** Tap the sign (or long-press the dial when there's no sign): report / confirm a limit or zone. */
   onPressSign?: () => void;
+  /** Settings > Speedometer > Speed limit: whether the sign is drawn right now (the chime doesn't depend on it). */
+  showLimit?: boolean;
 }
 
 const AMBER_OVER_KMH = 1;
@@ -64,6 +66,7 @@ export function LiveSpeedometer({
   chimeEnabled,
   bottom,
   onPressSign,
+  showLimit = true,
 }: Props) {
   const overBy = speedLimitKmh != null ? speedKmh - speedLimitKmh : 0;
   const shownSpeed = unit === "mph" ? Math.round(speedKmh / 1.609344) : Math.round(speedKmh);
@@ -156,7 +159,7 @@ export function LiveSpeedometer({
         <Text style={[styles.dialUnit, (isAmber || isRed) && styles.dialValueDark]}>{unit}</Text>
       </Animated.View>
       </Pressable>
-      {speedLimitKmh != null && (
+      {speedLimitKmh != null && showLimit && (
         <Pressable onPress={onPressSign} disabled={!onPressSign} accessibilityRole={onPressSign ? "button" : undefined} accessibilityHint={onPressSign ? "Report a wrong limit or a school zone" : undefined} hitSlop={8}>
           <SpeedLimitSign kmh={speedLimitKmh} unit={unit} signStyle={signStyle} schoolZone={schoolZone} />
         </Pressable>

@@ -120,6 +120,13 @@ import { PlacePage, PLACE_PAGE_SHEET_FRACTION } from "@/screens/PlacePage";
 import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
+import { showLimitSign, thresholdKmhFor } from "@/settings/speedometer";
+import { COMMUNITY_ITEM, REPORT_ITEM_BY_ID, alertsWhileDriving, isShown, osmFetchWanted, routeItemFor, type ReportItemId } from "@/settings/reportCatalog";
+import { osmFeaturePins, showsSpeedCameraPins, showsTrafficLightPins, visibleCommunityAlerts, visibleIncidents } from "@/map/reportPins";
+import { collectApproachFeatures } from "@/alerts/collectFeatures";
+import { nextApproachAlert, type ApproachMemory } from "@/alerts/approachAlerts";
+import { INITIAL_LIMIT_CHANGE, stepLimitChange, type LimitChangeState } from "@/alerts/speedLimitChange";
+import { ReportItemIcon } from "@/components/settings/ReportItemIcon";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
 import { PresenceCard } from "@/screens/PresenceCard";
 import {
@@ -483,7 +490,8 @@ export function MapScreen() {
   // Real, confirmed request -- show a driver what the live traffic layer's own colors actually
   // mean, but only briefly and only the moment it actually turns on (route picking/following
   // starts), not a permanent fixture competing with the map for attention.
-  const showsTrafficLayer = !!pendingDestination || !!route;
+  // Settings > Map shortcuts > Traffic flow: on the home map too, not just once a route is picked.
+  const showsTrafficLayer = settings.showTrafficFlow;
   const [trafficLegendVisible, setTrafficLegendVisible] = useState(false);
   const wasShowingTrafficRef = useRef(false);
   useEffect(() => {
@@ -1486,6 +1494,10 @@ export function MapScreen() {
     chipTimerRef.current = ms === null ? null : setTimeout(() => setManoeuvreChip(null), ms);
   }, []);
 
+  // Settings > Reports > Complex intersection / Multi-lane merge: "Alert while driving" is the
+  // close-up camera before one, "Show on map" is its label at the turn.
+  const routeItemSettingsRef = useLatest(settings);
+  const approachStepsRef = useLatest(route?.steps ?? null);
   const dispatchApproach = useCallback(
     (event: ApproachEvent) => {
       const before = approachRef.current;
@@ -1495,7 +1507,9 @@ export function MapScreen() {
       const cam = approachCameraRef.current;
       for (const effect of effects) {
         if (effect.kind === "zoomIn") {
-          if (cam.followTilt) {
+          const routeItem = routeItemFor(approachStepsRef.current?.[effect.stepIndex]?.maneuverKind);
+          const zoomAllowed = !routeItem || alertsWhileDriving(routeItemSettingsRef.current, routeItem);
+          if (cam.followTilt && zoomAllowed) {
             mapRef.current?.animateCamera(
               { center: effect.center, heading: effect.heading, pitch: APPROACH_CAMERA.pitch, zoom: APPROACH_CAMERA.zoom },
               { duration: APPROACH_CAMERA.durationMs }
@@ -1531,7 +1545,7 @@ export function MapScreen() {
         }
       }
     },
-    [chimePlayer, showManoeuvreChip]
+    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef]
   );
   const dispatchApproachRef = useRef(dispatchApproach);
   useEffect(() => {
@@ -1689,6 +1703,20 @@ export function MapScreen() {
     route: route && navMatch ? routeLimitAt(route.polyline, route.maxSpeedsKmh, navMatch.along) : null,
     osm: speedLimitKmh != null ? { kmh: speedLimitKmh, estimated: speedLimitEstimated } : null,
   });
+  // Settings > Reports > Speed limit changes. A change into a school zone is already announced
+  // as "School zone, 40", so it isn't said twice.
+  const limitChangeRef = useRef<LimitChangeState>(INITIAL_LIMIT_CHANGE);
+  const resolvedKmh = resolvedLimit?.kmh ?? null;
+  const resolvedIsSchoolZone = !!resolvedLimit?.schoolZone;
+  useEffect(() => {
+    const { state, announce } = stepLimitChange(limitChangeRef.current, resolvedKmh, location?.timestamp ?? 0, currentSpeedKmh);
+    limitChangeRef.current = state;
+    if (announce != null && !resolvedIsSchoolZone && travelMode === "driving" && alertsWhileDriving(settings, "speedLimitChanges")) {
+      announcePhrase({ kind: "speedLimit", limit: signValue(announce, signUnit) });
+    }
+    // A new fix or a new limit runs this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedKmh, location?.timestamp]);
   const schoolZoneDrawings = useMemo(
     () =>
       settings.schoolZonesShowOnMap
@@ -1753,9 +1781,11 @@ export function MapScreen() {
     const highlight = manoeuvreHighlight(route.steps, approach.stepIndex);
     if (!highlight) return null;
     const step = route.steps[approach.stepIndex];
-    const text = calloutLabel(step);
+    const routeItem = routeItemFor(step.maneuverKind);
+    const text = routeItem && !isShown(settings, routeItem) ? null : calloutLabel(step);
     return { ...highlight, callout: text ? { coordinate: step.endLocation, text } : null };
-  }, [route, approach]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, approach, settings.reportPrefs]);
 
   // Real, explicit request -- Waze/Google-Maps-style auto-zoom that pulls the camera OUT as
   // real driving speed increases (more road ahead visible at highway speed) and back IN at low
@@ -2150,8 +2180,10 @@ export function MapScreen() {
   // Per-type visibility filter, applied on top of the radius subscription above -- lets a
   // driver e.g. only care about police + hazards without changing what's actually fetched.
   const visibleAlerts = useMemo(
-    () => nearbyAlerts.filter((alert) => settings.visibleAlertTypes.includes(alert.type)),
-    [nearbyAlerts, settings.visibleAlertTypes]
+    () => visibleCommunityAlerts(settings, nearbyAlerts),
+    // Settings > Reports per-item "Show on map" (the older per-type list is its default).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nearbyAlerts, settings.reportPrefs, settings.visibleAlertTypes, settings.showTrafficLights]
   );
 
   // Real, explicit audit fix -- the top-left Menu button's own unread badge (MenuButton.tsx)
@@ -2182,6 +2214,7 @@ export function MapScreen() {
   // (createdBy === user.uid) -- this is "someone else nearby just reported," not an echo of your
   // own action.
   const seenAlertIdsRef = useRef<Set<string> | null>(null);
+  const reportSettingsRef = useLatest(settings);
   const [alertToastQueue, setAlertToastQueue] = useState<NearbyAlertNotification[]>([]);
   const NEARBY_ALERT_TOAST_RADIUS_METERS = 1000;
   useEffect(() => {
@@ -2197,6 +2230,7 @@ export function MapScreen() {
       if (seen.has(alert.id)) continue;
       freshlySeen.add(alert.id);
       if (alert.createdBy === user?.uid) continue;
+      if (!alertsWhileDriving(reportSettingsRef.current, COMMUNITY_ITEM[alert.type])) continue;
       const distanceM = distanceKm(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng) * 1000;
       if (distanceM > NEARBY_ALERT_TOAST_RADIUS_METERS) continue;
       newToasts.push({ id: alert.id, type: alert.type, distanceM });
@@ -2765,13 +2799,29 @@ export function MapScreen() {
   // the on/off toggles) -- without this, dragging the radius slider after the layer had already
   // loaded once silently did nothing until the driver also flipped a toggle off and back on.
   const lastOsmRadiusRef = useRef(settings.osmLayerRadiusKm);
+  // What Settings > Reports wants from OpenStreetMap (shown on the map or alerting). Keyed so
+  // the fetches re-run only when that set changes, and a newly switched-on item is fetched.
+  const osmWant = osmFetchWanted(settings);
+  const osmWantKey = `${osmWant.trafficLights ? "t" : ""}${osmWant.speedCameras ? "s" : ""}|${osmWant.features.join(",")}`;
+  const osmWantAny = osmWant.trafficLights || osmWant.speedCameras || osmWant.features.length > 0;
+  const osmFetchOptions = useMemo(
+    () => ({ wantTrafficLights: osmWant.trafficLights, wantSpeedCameras: osmWant.speedCameras, wantFeatures: osmWant.features }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [osmWantKey]
+  );
+  const lastOsmWantKeyRef = useRef(osmWantKey);
+  useEffect(() => {
+    if (lastOsmWantKeyRef.current === osmWantKey) return;
+    lastOsmWantKeyRef.current = osmWantKey;
+    osmInitialLoadRef.current = false;
+  }, [osmWantKey]);
   useEffect(() => {
     if (lastOsmRadiusRef.current === settings.osmLayerRadiusKm) return;
     lastOsmRadiusRef.current = settings.osmLayerRadiusKm;
     osmInitialLoadRef.current = false;
   }, [settings.osmLayerRadiusKm]);
   useEffect(() => {
-    if (!settings.showTrafficLights && !settings.showSpeedCameras) {
+    if (!osmWantAny) {
       osmInitialLoadRef.current = false;
       return;
     }
@@ -2789,14 +2839,13 @@ export function MapScreen() {
       },
     };
     setOsmLoading(true);
-    fetchOsmTrafficData(bounds, {
-      wantTrafficLights: settings.showTrafficLights,
-      wantSpeedCameras: settings.showSpeedCameras,
-    })
+    fetchOsmTrafficData(bounds, osmFetchOptions)
       .then(setOsmData)
       .catch((err) => console.warn("[map] initial OSM traffic layer fetch failed", err))
       .finally(() => setOsmLoading(false));
-  }, [currentLatLng, settings.showTrafficLights, settings.showSpeedCameras, settings.osmLayerRadiusKm]);
+    // osmFetchOptions is keyed by osmWantKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLatLng, osmWantKey, settings.osmLayerRadiusKm]);
 
   // Min zoom before the fuel/restaurant/hotel viewport pin layer fetches at all -- same real
   // reasoning as OSM_LAYER_MAX_DELTA above (a zoomed-out view spans too wide an area for a
@@ -2969,7 +3018,7 @@ export function MapScreen() {
       }
 
       if (osmDebounceRef.current) clearTimeout(osmDebounceRef.current);
-      if (!settings.showTrafficLights && !settings.showSpeedCameras) {
+      if (!osmWantAny) {
         setOsmData(null);
         setOsmLoading(false);
         return;
@@ -2990,10 +3039,7 @@ export function MapScreen() {
           },
         };
         setOsmLoading(true);
-        fetchOsmTrafficData(bounds, {
-          wantTrafficLights: settings.showTrafficLights,
-          wantSpeedCameras: settings.showSpeedCameras,
-        })
+        fetchOsmTrafficData(bounds, osmFetchOptions)
           .then(setOsmData)
           .catch((err) => console.warn("[map] OSM traffic layer fetch failed", err))
           .finally(() => setOsmLoading(false));
@@ -3005,8 +3051,8 @@ export function MapScreen() {
       originPickerView,
       pickingDestinationPoint,
       destinationPickerView,
-      settings.showTrafficLights,
-      settings.showSpeedCameras,
+      osmWantAny,
+      osmFetchOptions,
       settings.osmLayerRadiusKm,
       followTilt,
       openPlaceCategories,
@@ -3490,6 +3536,7 @@ export function MapScreen() {
     otherFlowActiveRef.current = !!stopPreviewRoute || addingStopDuringNav || placingAlert;
   }, [trafficSuggestionRoute, stopLocation, stopPreviewRoute, addingStopDuringNav, placingAlert]);
   const trafficCheckInFlightRef = useRef(false);
+  const slowdownAheadRef = useRef(false);
   const trafficSuggestionDismissedAtRef = useRef(0);
 
   useEffect(() => {
@@ -3515,6 +3562,10 @@ export function MapScreen() {
           pointAheadOnPolylineMeters(latLng.latitude, latLng.longitude, route.polyline, NEAR_TERM_TRAFFIC_CHECK_METERS) ??
           destinationLatLng;
         const nearTerm = await getDirections(latLng, aheadPoint, { useTraffic: true });
+        // Settings > Reports > Sudden slowdown: said once as a jam appears just ahead.
+        const jamStarted = nearTerm.hasTrafficDelay && !slowdownAheadRef.current;
+        slowdownAheadRef.current = !!nearTerm.hasTrafficDelay;
+        if (jamStarted && alertsWhileDriving(reportSettingsRef.current, "suddenSlowdown")) announcePhrase({ kind: "slowdown" });
         if (!nearTerm.hasTrafficDelay) return;
 
         // Step 2: only once a real, near-term jam is confirmed does this fetch the actual
@@ -4640,6 +4691,38 @@ export function MapScreen() {
         : incidentsNear(trafficIncidents, { latitude: trafficCenterLat, longitude: trafficCenterLng }),
     [trafficIncidents, trafficCenterLat, trafficCenterLng]
   );
+  // ---- Settings > Reports "Alert while driving" ----
+  // Every real feature whose item alerts (OSM cameras/crossings, driver reports, Live Traffic NSW
+  // incidents), checked each fix: the nearest one coming up gets a short chip and one spoken
+  // line, once (alerts/approachAlerts.ts). Driving only -- not walking, cycling or transit.
+  const approachFeatures = useMemo(
+    () => collectApproachFeatures(settings, { osm: osmData, alerts: nearbyAlerts, incidents: settings.showLiveTraffic ? nearbyTrafficIncidents : [], ownUid: user?.uid }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [osmData, nearbyAlerts, nearbyTrafficIncidents, user?.uid, settings.reportPrefs, settings.showLiveTraffic, settings.visibleAlertTypes]
+  );
+  const approachMemoryRef = useRef<ApproachMemory>({});
+  const [approachChip, setApproachChip] = useState<{ item: ReportItemId; distanceM: number } | null>(null);
+  useEffect(() => {
+    if (!approachChip) return;
+    const t = setTimeout(() => setApproachChip(null), 6000);
+    return () => clearTimeout(t);
+  }, [approachChip]);
+  useEffect(() => {
+    if (!currentLatLng || travelMode !== "driving" || approachFeatures.length === 0) return;
+    const onRoute = route && navMatch?.onRoute ? { polyline: route.polyline, alongM: navMatch.along } : null;
+    const { alert, memory } = nextApproachAlert(
+      approachFeatures,
+      { nowMs: location?.timestamp ?? 0, position: currentLatLng, headingDeg: heading, speedKmh: currentSpeedKmh, route: onRoute },
+      approachMemoryRef.current
+    );
+    approachMemoryRef.current = memory;
+    if (!alert) return;
+    setApproachChip({ item: alert.item, distanceM: alert.distanceM });
+    announcePhrase({ kind: "feature", item: alert.item });
+    // Only a new fix (or a newly loaded feature list) runs this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLatLng, approachFeatures]);
+
   // "On your route" on the incident card: within 80m of the road still to be driven.
   const selectedIncidentOnRoute = useMemo(
     () =>
@@ -4833,7 +4916,7 @@ export function MapScreen() {
         { kind: "alert", alert }
       );
     }
-    if (settings.showTrafficLights) {
+    if (showsTrafficLightPins(settings)) {
       for (const c of trafficLightClusters) {
         if (c.count === 1) {
           add({ id: `tl:${c.points[0].id}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "traffic-light", priority: 5 }, {
@@ -4849,7 +4932,7 @@ export function MapScreen() {
         }
       }
     }
-    if (settings.showSpeedCameras) {
+    if (showsSpeedCameraPins(settings)) {
       for (const c of speedCameraClusters) {
         if (c.count === 1) {
           add({ id: `sc:${c.points[0].id}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "speed-camera", priority: 8 }, {
@@ -4864,6 +4947,14 @@ export function MapScreen() {
           );
         }
       }
+    }
+    // The other OpenStreetMap items switched on in Settings > Reports (crossings, other cameras ...).
+    for (const p of osmFeaturePins(settings, osmData)) {
+      add({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, icon: p.icon, priority: 7 }, {
+        kind: "osm",
+        osm: p.kind,
+        at: { latitude: p.lat, longitude: p.lng },
+      });
     }
     const venueLayer = (
       kind: "fuel" | "restaurant" | "hotel",
@@ -4889,8 +4980,8 @@ export function MapScreen() {
     }
     if (restaurantsSheetOpen) venueLayer("restaurant", restaurantViewportClusters);
     if (hotelsSheetOpen) venueLayer("hotel", hotelViewportClusters);
-    if (settings.showLiveTraffic) {
-      for (const incident of nearbyTrafficIncidents) {
+    {
+      for (const incident of visibleIncidents(settings, nearbyTrafficIncidents)) {
         const st = incidentStyle(incident);
         add(
           {
@@ -4920,8 +5011,11 @@ export function MapScreen() {
     selectedAlert?.id,
     settings.showTrafficLights,
     settings.showSpeedCameras,
+    settings.reportPrefs,
+    settings.visibleAlertTypes,
     settings.showLiveTraffic,
     settings.showLiveCameras,
+    osmData,
     trafficLightClusters,
     speedCameraClusters,
     fuelStationsSheetOpen,
@@ -5202,9 +5296,10 @@ export function MapScreen() {
           unit={signUnit}
           signStyle={signStyle}
           schoolZone={resolvedLimit?.schoolZone ?? null}
-          thresholdKmh={settings.speedingThresholdKmh}
+          thresholdKmh={thresholdKmhFor(settings, resolvedLimit?.kmh ?? null)}
+          showLimit={showLimitSign(settings.speedLimitDisplay, liveSpeed.speedKmh, resolvedLimit?.kmh ?? null)}
           onPressSign={() => setRoadReportOpen(true)}
-          visible={speedometerVisible}
+          visible={speedometerVisible && settings.showSpeedometer}
           chimeEnabled={settings.speedWarningChimeEnabled}
           // Real, confirmed bug this fixes: this dial used a fixed bottom:24 regardless of
           // whether NavBottomBar (the full-width live ETA/distance/arrival-time strip, only
@@ -5694,6 +5789,19 @@ export function MapScreen() {
       {/* Real, explicit request -- surfaces a genuinely faster real alternative the reroute's
           own alternates search found (see the off-route effect above). Auto-dismisses itself;
           never blocks anything underneath. */}
+      {approachChip && (
+        <Pressable
+          style={[styles.reroutingBadge, { top: insets.top + spacing.md + (route ? instructionCardHeight + spacing.md : 0) + (fasterRouteBanner || rerouting ? 48 : 0) }]}
+          onPress={() => setApproachChip(null)}
+          accessibilityRole="alert"
+          accessibilityLabel={`${REPORT_ITEM_BY_ID[approachChip.item].title} ahead, ${formatDistance(approachChip.distanceM, settings.distanceUnit)}`}
+          testID="approach-chip"
+        >
+          <ReportItemIcon id={approachChip.item} size={24} />
+          <Text style={styles.reroutingBadgeText}>{`${REPORT_ITEM_BY_ID[approachChip.item].title} ahead · ${formatDistance(approachChip.distanceM, settings.distanceUnit)}`}</Text>
+        </Pressable>
+      )}
+
       {!rerouting && fasterRouteBanner && (
         <Pressable
           style={[styles.reroutingBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
@@ -5788,7 +5896,7 @@ export function MapScreen() {
         {/* Overpass (OSM) traffic-light/speed-camera lookups can genuinely take a few
             seconds -- a visible spinner while one is in flight replaces what used to look
             like the layer being permanently stuck with no feedback at all. */}
-        {osmLoading && (settings.showTrafficLights || settings.showSpeedCameras) && (
+        {osmLoading && osmWantAny && (
           <View style={styles.osmLoadingBadge} accessibilityLabel="Loading traffic light and speed camera data">
             <ActivityIndicator size="small" color={colors.textMuted} />
           </View>
@@ -5832,6 +5940,7 @@ export function MapScreen() {
           }}
           showAudioPlayer={settings.showAudioPlayer}
           onAudioPlayer={openAudioPlayer}
+          showSoundButton={settings.showSoundButton}
           soundOff={settings.spokenDirections === "off"}
           onSound={() => soundSheetRef.current?.expand()}
           onReport={openAlertTypePicker}
