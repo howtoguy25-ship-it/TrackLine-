@@ -30,14 +30,57 @@ export interface OsmPoint {
 export interface OsmTrafficData {
   trafficLights: OsmPoint[];
   speedCameras: OsmPoint[];
+  /** The other road features and cameras (Settings > Reports), by kind. */
+  features: Partial<Record<OsmFeatureKind, OsmPoint[]>>;
 }
 
-interface OverpassElement {
+/**
+ * Road features and cameras read from OpenStreetMap, each from a tag documented on the OSM wiki:
+ *   enforcement relations (Relation:enforcement), device members:
+ *     traffic_signals -> red light camera; + maxspeed on the same device -> red light & speed;
+ *     mindistance -> safe distance; mobile_phone -> mobile phone; seatbelt -> seat belt
+ *   railway=level_crossing; barrier=toll_booth / highway=toll_gantry;
+ *   traffic_calming=bump|hump|cushion|mini_bumps; hazard=curve;
+ *   highway=crossing (+ traffic_calming=table -> raised crossing)
+ */
+export type OsmFeatureKind =
+  | "redLightCamera"
+  | "redLightSpeedCamera"
+  | "safeDistanceCamera"
+  | "mobilePhoneCamera"
+  | "seatBeltCamera"
+  | "railwayCrossing"
+  | "tollBooth"
+  | "speedBump"
+  | "sharpCurve"
+  | "raisedCrossing"
+  | "pedestrianCrossing";
+
+export const OSM_FEATURE_KINDS: readonly OsmFeatureKind[] = [
+  "redLightCamera",
+  "redLightSpeedCamera",
+  "safeDistanceCamera",
+  "mobilePhoneCamera",
+  "seatBeltCamera",
+  "railwayCrossing",
+  "tollBooth",
+  "speedBump",
+  "sharpCurve",
+  "raisedCrossing",
+  "pedestrianCrossing",
+];
+
+const MAX_PER_FEATURE = 2000;
+const BUMP_VALUES = new Set(["bump", "hump", "cushion", "mini_bumps"]);
+const CAMERA_KINDS = new Set<OsmFeatureKind>(["redLightCamera", "redLightSpeedCamera", "safeDistanceCamera", "mobilePhoneCamera", "seatBeltCamera"]);
+
+export interface OverpassElement {
   type: string;
   id: number;
   lat: number;
   lon: number;
   tags?: Record<string, string>;
+  members?: { type: string; ref: number; role: string }[];
 }
 
 interface OverpassResponse {
@@ -52,6 +95,8 @@ export interface LatLngBoundsPlain {
 export interface FetchOsmOptions {
   wantTrafficLights: boolean;
   wantSpeedCameras: boolean;
+  /** Further feature kinds (only these are queried). */
+  wantFeatures?: readonly OsmFeatureKind[];
 }
 
 // Render-cost caps -- a fully zoomed-out view over a dense city could otherwise return
@@ -72,7 +117,7 @@ const cache = new Map<string, OsmTrafficData>();
 
 function cacheKey(bounds: LatLngBoundsPlain, options: FetchOsmOptions): string {
   const round = (n: number) => n.toFixed(3);
-  return `${round(bounds.sw.latitude)},${round(bounds.sw.longitude)},${round(bounds.ne.latitude)},${round(bounds.ne.longitude)}|${options.wantTrafficLights ? "t" : ""}${options.wantSpeedCameras ? "s" : ""}`;
+  return `${round(bounds.sw.latitude)},${round(bounds.sw.longitude)},${round(bounds.ne.latitude)},${round(bounds.ne.longitude)}|${options.wantTrafficLights ? "t" : ""}${options.wantSpeedCameras ? "s" : ""}|${[...(options.wantFeatures ?? [])].sort().join(",")}`;
 }
 
 export async function fetchOsmTrafficData(
@@ -87,15 +132,8 @@ export async function fetchOsmTrafficData(
 
   // Only query for the node types actually needed -- if only one layer is toggled on,
   // there's no reason to make Overpass search, transfer, and have us parse the other.
-  const clauses: string[] = [];
-  if (options.wantTrafficLights) {
-    clauses.push(`node["highway"="traffic_signals"](${bbox});`);
-  }
-  if (options.wantSpeedCameras) {
-    clauses.push(`node["highway"="speed_camera"](${bbox});`);
-    clauses.push(`node["enforcement"="maxspeed"](${bbox});`);
-  }
-  if (clauses.length === 0) return { trafficLights: [], speedCameras: [] };
+  const clauses = overpassClauses(bbox, options);
+  if (clauses.length === 0) return { trafficLights: [], speedCameras: [], features: {} };
 
   const query = `[out:json][timeout:25];(${clauses.join("")});out body;`;
   const body = `data=${encodeURIComponent(query)}`;
@@ -139,22 +177,84 @@ export async function fetchOsmTrafficData(
     controller.abort();
   }
 
-  const trafficLights: OsmPoint[] = [];
-  const speedCameras: OsmPoint[] = [];
-
-  for (const el of data.elements) {
-    if (el.type !== "node") continue;
-    const point: OsmPoint = { id: el.id, lat: el.lat, lng: el.lon };
-    if (el.tags?.highway === "traffic_signals") {
-      if (trafficLights.length < MAX_TRAFFIC_LIGHTS) trafficLights.push(point);
-    } else if (el.tags?.highway === "speed_camera" || el.tags?.enforcement === "maxspeed") {
-      if (speedCameras.length < MAX_SPEED_CAMERAS) speedCameras.push(point);
-    }
-  }
-
-  const result = { trafficLights, speedCameras };
+  const result = classifyOverpass(data.elements, options);
   cache.set(key, result);
   return result;
+}
+
+/** The Overpass clauses for what's wanted. */
+export function overpassClauses(bbox: string, options: FetchOsmOptions): string[] {
+  const want = new Set(options.wantFeatures ?? []);
+  const clauses: string[] = [];
+  if (options.wantTrafficLights) clauses.push(`node["highway"="traffic_signals"](${bbox});`);
+  if (options.wantSpeedCameras) {
+    clauses.push(`node["highway"="speed_camera"](${bbox});`);
+    clauses.push(`node["enforcement"="maxspeed"](${bbox});`);
+  }
+  if (options.wantSpeedCameras || [...want].some((k) => CAMERA_KINDS.has(k))) {
+    // Enforcement relations and their device nodes (the relation says what's enforced).
+    clauses.push(`rel["type"="enforcement"](${bbox})->.enf;.enf;node(r.enf:"device");`);
+  }
+  if (want.has("railwayCrossing")) clauses.push(`node["railway"="level_crossing"](${bbox});`);
+  if (want.has("tollBooth")) clauses.push(`node["barrier"="toll_booth"](${bbox});node["highway"="toll_gantry"](${bbox});`);
+  if (want.has("speedBump")) clauses.push(`node["traffic_calming"~"^(bump|hump|cushion|mini_bumps)$"](${bbox});`);
+  if (want.has("sharpCurve")) clauses.push(`node["hazard"="curve"](${bbox});`);
+  if (want.has("raisedCrossing") || want.has("pedestrianCrossing")) clauses.push(`node["highway"="crossing"](${bbox});`);
+  return clauses;
+}
+
+/** Overpass elements -> points by kind. Pure; tested in __tests__/reports/engine.test.ts. */
+export function classifyOverpass(elements: OverpassElement[], options: FetchOsmOptions): OsmTrafficData {
+  const want = new Set(options.wantFeatures ?? []);
+  // What each device node enforces, from the relations it belongs to.
+  const enforces = new Map<number, Set<string>>();
+  for (const el of elements) {
+    if (el.type !== "relation" || el.tags?.type !== "enforcement" || !el.tags.enforcement) continue;
+    for (const m of el.members ?? []) {
+      if (m.type !== "node" || m.role !== "device") continue;
+      const set = enforces.get(m.ref) ?? new Set<string>();
+      for (const v of el.tags.enforcement.split(";")) set.add(v.trim());
+      enforces.set(m.ref, set);
+    }
+  }
+  const trafficLights: OsmPoint[] = [];
+  const speedCameras: OsmPoint[] = [];
+  const features: Partial<Record<OsmFeatureKind, OsmPoint[]>> = {};
+  const seen = new Set<string>();
+  const put = (kind: OsmFeatureKind, p: OsmPoint) => {
+    if (!want.has(kind)) return;
+    const k = `${kind}:${p.id}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    const list = (features[kind] ??= []);
+    if (list.length < MAX_PER_FEATURE) list.push(p);
+  };
+  for (const el of elements) {
+    if (el.type !== "node" || typeof el.lat !== "number") continue;
+    const t = el.tags ?? {};
+    const point: OsmPoint = { id: el.id, lat: el.lat, lng: el.lon };
+    const enf = new Set([...(enforces.get(el.id) ?? []), ...(t.enforcement ? t.enforcement.split(";").map((v) => v.trim()) : [])]);
+    const speed = t.highway === "speed_camera" || enf.has("maxspeed") || enf.has("average_speed");
+    const redLight = enf.has("traffic_signals");
+    if (redLight && speed) put("redLightSpeedCamera", point);
+    else if (redLight) put("redLightCamera", point);
+    else if (speed && options.wantSpeedCameras && !seen.has(`speed:${el.id}`) && speedCameras.length < MAX_SPEED_CAMERAS) {
+      seen.add(`speed:${el.id}`);
+      speedCameras.push(point);
+    }
+    if (enf.has("mindistance")) put("safeDistanceCamera", point);
+    if (enf.has("mobile_phone")) put("mobilePhoneCamera", point);
+    if (enf.has("seatbelt")) put("seatBeltCamera", point);
+    if (t.highway === "traffic_signals" && options.wantTrafficLights && trafficLights.length < MAX_TRAFFIC_LIGHTS) trafficLights.push(point);
+    if (t.railway === "level_crossing") put("railwayCrossing", point);
+    if (t.barrier === "toll_booth" || t.highway === "toll_gantry") put("tollBooth", point);
+    if (t.highway === "crossing") {
+      if (t.crossing === "no" || t.crossing === "informal") continue;
+      put(t.traffic_calming === "table" ? "raisedCrossing" : "pedestrianCrossing", point);
+    } else if (t.traffic_calming && BUMP_VALUES.has(t.traffic_calming)) put("speedBump", point);
+    if (t.hazard === "curve") put("sharpCurve", point);
+  }
+  return { trafficLights, speedCameras, features };
 }
 
 export interface SpeedLimitResult {

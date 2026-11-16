@@ -1,3 +1,4 @@
+import type { ReportPrefs } from "@/settings/reportCatalog";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/services/firebase";
@@ -155,6 +156,19 @@ export interface AppSettings {
   // (see presence.ts/MapScreen.tsx) -- independent of this device's OWN visibility above, which
   // controls whether it's shown to others, not whether it sees others.
   showTrackysOnMap: boolean;
+  // Settings > Map information & overlays > Reports: per-item "Show on map" / "Alert while
+  // driving" (settings/reportCatalog.ts). Missing = that item's default.
+  reportPrefs: ReportPrefs;
+  // Speedometer section.
+  showSpeedometer: boolean;
+  /** The limit sign next to the speedometer: only when over the limit, never, or always. */
+  speedLimitDisplay: "whenAbove" | "never" | "always";
+  /** A percentage threshold over the limit (5/10/15); null = use speedingThresholdKmh. */
+  speedingThresholdPercent: number | null;
+  // Map shortcuts.
+  showSoundButton: boolean;
+  /** Live traffic flow colours on the map (home map too). */
+  showTrafficFlow: boolean;
 }
 
 export type VisibilityMode = "everyone" | "friendsOnly" | "ghost";
@@ -200,6 +214,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visibility: "ghost",
   showNameOnReports: false,
   showTrackysOnMap: true,
+  reportPrefs: {},
+  showSpeedometer: true,
+  speedLimitDisplay: "always",
+  speedingThresholdPercent: null,
+  showSoundButton: true,
+  showTrafficFlow: true,
 };
 
 const STORAGE_KEY = "@trackline/settings";

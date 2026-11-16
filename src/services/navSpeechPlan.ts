@@ -1,3 +1,5 @@
+import { featureLine, slowdownLine, speedLimitLine } from "@/alerts/featurePhrases";
+import type { ReportItemId } from "@/settings/reportCatalog";
 import type { ManeuverType, RouteStep } from "@/services/directions";
 import type { AlertType } from "@/types/alert";
 import type { SpokenDirectionsMode } from "@/services/settings";
@@ -278,7 +280,13 @@ export type NavPhrase =
   | { kind: "heavyTraffic" }
   | { kind: "report"; alertType: AlertType }
   /** Entering a school zone that's in force now: "School zone, 40" (the limit in the sign's unit). */
-  | { kind: "schoolZone"; limit: number };
+  | { kind: "schoolZone"; limit: number }
+  /** Approaching a report item with "Alert while driving" on (alerts/approachAlerts.ts). */
+  | { kind: "feature"; item: ReportItemId }
+  /** The posted limit just changed (Settings > Reports > Speed limit changes). */
+  | { kind: "speedLimit"; limit: number }
+  /** A jam just ahead on the route (Settings > Reports > Sudden slowdown). */
+  | { kind: "slowdown" };
 
 const REPORT_SEGMENTS: Record<AlertType, SpeechSegment> = {
   police: { clipKey: "report_police", text: "Police reported" },
@@ -307,6 +315,12 @@ export interface PhraseContext {
 
 export function planPhrase(phrase: NavPhrase, context: PhraseContext = {}): SpeechPlan {
   const language = context.language ?? "en";
+  if (phrase.kind === "feature" || phrase.kind === "speedLimit" || phrase.kind === "slowdown") {
+    // Always spoken (no recorded clips for these), in the guidance language.
+    const text =
+      phrase.kind === "feature" ? featureLine(language, phrase.item) ?? "" : phrase.kind === "speedLimit" ? speedLimitLine(language, phrase.limit) : slowdownLine(language);
+    return { segments: [{ text }], fullText: text };
+  }
   if (phrase.kind === "schoolZone") {
     // No recorded clip for this one: always spoken. English wording for now (other voice packs
     // don't have a translation yet -- see NOTES).
@@ -359,7 +373,13 @@ export function shouldSpeakStep(
 
 export function shouldSpeakPhrase(mode: SpokenDirectionsMode, phrase: NavPhrase): boolean {
   if (mode === "off") return false;
-  const isAlert = phrase.kind === "report" || phrase.kind === "heavyTraffic";
+  const isAlert =
+    phrase.kind === "report" ||
+    phrase.kind === "heavyTraffic" ||
+    phrase.kind === "feature" ||
+    phrase.kind === "speedLimit" ||
+    phrase.kind === "slowdown" ||
+    phrase.kind === "schoolZone";
   if (isAlert) return true;
   if (mode === "onlyAlerts") return false;
   // Re-routing and arriving are things a driver needs to know; the cheerful opener isn't.

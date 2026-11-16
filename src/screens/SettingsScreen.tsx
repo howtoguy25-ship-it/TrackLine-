@@ -40,13 +40,13 @@ import { getPlateRecognizerProviderConfig, savePlateRecognizerProviderConfig } f
 import { isOwnerEmail } from "@/config/admin";
 import { BUSINESS_INFO } from "@/config/business";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
-import { ALL_ALERT_TYPES, type AppSettings, type VisibilityMode } from "@/services/settings";
+import { type AppSettings, type VisibilityMode } from "@/services/settings";
 import { parseGpx, startGpsReplay, stopGpsReplay, isGpsReplayActive } from "@/dev/gpsReplay";
 import { TouchDebuggerRow } from "@/debug/TouchDebuggerRow";
 import { getBuildStamp } from "@/config/getBuildStamp";
 import { CATEGORY_SECTIONS } from "@/screens/settingsCategories";
 import { mapEngineLine } from "@/config/mapEngine";
-import { ALERT_LABELS, type AlertType } from "@/types/alert";
+import { type AlertType } from "@/types/alert";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
 import { NAV_CARD_THEME_LABELS, NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
@@ -55,7 +55,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { shadeColor } from "@/utils/color";
 import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
-import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
+import { anyOsmWanted } from "@/settings/reportCatalog";
+import { SPEED_LIMIT_DISPLAY_OPTIONS, selectedThresholdKey, thresholdOptions, thresholdPatch } from "@/settings/speedometer";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 
 // Real, explicit request (Waze-style redesign Phase 5) -- group this screen's 15 real sections
@@ -341,17 +342,6 @@ export function SettingsScreen() {
     [updateSettings]
   );
 
-  const onAlertTypeToggle = useCallback(
-    (type: AlertType, value: boolean) => {
-      updateSettings({
-        visibleAlertTypes: value
-          ? [...settings.visibleAlertTypes, type]
-          : settings.visibleAlertTypes.filter((t) => t !== type),
-      });
-    },
-    [updateSettings, settings.visibleAlertTypes]
-  );
-
   const [customExpiryOpen, setCustomExpiryOpen] = useState(false);
   const [customHoursText, setCustomHoursText] = useState("");
   const [customMinutesText, setCustomMinutesText] = useState("");
@@ -371,16 +361,6 @@ export function SettingsScreen() {
     updateSettings({ alertExpiryMs: ms });
     setCustomExpiryOpen(false);
   }, [customHoursText, customMinutesText, updateSettings]);
-
-  const onShowTrafficLightsToggle = useCallback(
-    (value: boolean) => updateSettings({ showTrafficLights: value }),
-    [updateSettings]
-  );
-
-  const onShowSpeedCamerasToggle = useCallback(
-    (value: boolean) => updateSettings({ showSpeedCameras: value }),
-    [updateSettings]
-  );
 
   const onShowLiveCamerasToggle = useCallback(
     (value: boolean) => updateSettings({ showLiveCameras: value }),
@@ -755,19 +735,13 @@ export function SettingsScreen() {
           ))}
         </View>
 
-        <View style={styles.alertTypeGrid}>
-          {ALL_ALERT_TYPES.map((type) => (
-            <View key={type} style={styles.alertTypeRow}>
-              <Text style={styles.alertTypeLabel}>{ALERT_LABELS[type]}</Text>
-              <Switch
-                value={settings.visibleAlertTypes.includes(type)}
-                onValueChange={(value) => onAlertTypeToggle(type, value)}
-                disabled={!settings.alertsEnabled}
-                trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-              />
-            </View>
-          ))}
-        </View>
+        <LinkRow
+          label="Which reports show and alert"
+          hint="Police, crashes, hazards, cameras and more -- each on its own"
+          icon="layers-outline"
+          onPress={() => navigation.navigate("ReportsSettings")}
+          testID="live-alerts-reports-link"
+        />
 
         {/* Real, applied override for how long an alert THIS device reports stays live before
             it auto-expires and disappears for everyone -- see EXPIRY_PRESETS' own comment. */}
@@ -882,9 +856,38 @@ export function SettingsScreen() {
             trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
           />
         </Row>
+        <Row
+          label="Sound button"
+          icon={<Icon name="volume-high" size={18} color={settings.showSoundButton ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.showSoundButton}
+            onValueChange={(value) => updateSettings({ showSoundButton: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="shortcut-sound-switch"
+          />
+        </Row>
+        <Row label="Show Trackys" icon={<Icon name="happy-outline" size={18} color={settings.showTrackysOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}>
+          <Switch
+            value={settings.showTrackysOnMap}
+            onValueChange={(value) => updateSettings({ showTrackysOnMap: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="shortcut-trackys-switch"
+          />
+        </Row>
+        <Row label="Traffic flow" icon={<Icon name="car-outline" size={18} color={settings.showTrafficFlow ? colors.accent : SETTINGS_TEXT_MUTED} />}>
+          <Switch
+            value={settings.showTrafficFlow}
+            onValueChange={(value) => updateSettings({ showTrafficFlow: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="shortcut-traffic-flow-switch"
+          />
+        </Row>
         <Text style={styles.helperText}>
           Audio player adds a music button to the map that opens your music app (Spotify, Apple Music or YouTube
-          Music). It opens the app -- it can&apos;t control what&apos;s playing from here.
+          Music). It opens the app -- it can&apos;t control what&apos;s playing from here. Sound button is the
+          quick mute on the map. Show Trackys draws other visible drivers (it doesn&apos;t change who sees you -- see
+          Privacy). Traffic flow colours roads by live traffic, on the home map as well as on a route.
         </Text>
       </Section>
 
@@ -1139,53 +1142,27 @@ export function SettingsScreen() {
       </Section>
 
       <Section title="Map layers" visible={shouldShow("Map layers")}>
-        <Row label="Show Trackys" icon={<Icon name="happy-outline" size={18} color={settings.showTrackysOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}>
-          <Switch
-            value={settings.showTrackysOnMap}
-            onValueChange={(value) => updateSettings({ showTrackysOnMap: value })}
-            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-          />
-        </Row>
-        <Text style={styles.helperText}>
-          Shows other visible, currently-driving drivers&apos; Trackys on the map. Turning this
-          off only affects what you see -- it doesn&apos;t change your own visibility to others
-          (see Privacy above).
-        </Text>
-        <Row
-          label="Traffic lights"
-          icon={<OsmLayerIcon marker={TRAFFIC_LIGHT_MARKER} enabled={settings.showTrafficLights} />}
-        >
-          <Switch
-            value={settings.showTrafficLights}
-            onValueChange={onShowTrafficLightsToggle}
-            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-          />
-        </Row>
-        <Row
-          label="Speed cameras"
-          icon={<OsmLayerIcon marker={SPEED_CAMERA_MARKER} enabled={settings.showSpeedCameras} />}
-        >
-          <Switch
-            value={settings.showSpeedCameras}
-            onValueChange={onShowSpeedCamerasToggle}
-            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-          />
-        </Row>
-        <Row label={`Traffic light & speed camera radius — ${settings.osmLayerRadiusKm} km`}>
+        <LinkRow
+          label="Cameras, traffic lights and road features"
+          hint="Moved to Map information & overlays > Reports"
+          icon="layers-outline"
+          onPress={() => navigation.navigate("ReportsSettings")}
+        />
+        <Row label={`Mapped cameras & road features radius — ${settings.osmLayerRadiusKm} km`}>
           <Slider
             minimumValue={1}
             maximumValue={200}
             step={1}
             value={settings.osmLayerRadiusKm}
             onSlidingComplete={onOsmRadiusChange}
-            disabled={!settings.showTrafficLights && !settings.showSpeedCameras}
+            disabled={!anyOsmWanted(settings)}
             minimumTrackTintColor={colors.accent}
           />
         </Row>
         <Text style={styles.helperText}>
-          Every known traffic light and fixed speed camera location, mapped by OpenStreetMap&apos;s
-          community — shown independently on the map, whether or not &quot;Live alerts&quot; is on, out to
-          however far from your own location the radius above is set (1-200 km).
+          Every traffic light, camera, crossing and other road feature switched on in Reports, mapped by
+          OpenStreetMap&apos;s community — shown whether or not &quot;Live alerts&quot; is on, out to however far
+          from your own location the radius above is set (1-200 km).
         </Text>
         {/* Boxed off from the OSM layer rows above -- per explicit request, a real, visually
             distinct rectangle rather than just another inline row, since this is genuinely a
@@ -1224,59 +1201,68 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="Speed" visible={shouldShow("Speed")}>
+      <Section title="Reports" visible={shouldShow("Reports")}>
+        <LinkRow
+          label="Reports"
+          hint="Cameras, road features, police, crashes, hazards and more"
+          icon="layers-outline"
+          onPress={() => navigation.navigate("ReportsSettings")}
+          testID="reports-link"
+        />
+        <Text style={styles.helperText}>
+          Each item has its own Show on map and Alert while driving switches. School zones are there too.
+        </Text>
+      </Section>
+
+      <Section title="Speedometer" visible={shouldShow("Speedometer")}>
         <Row
-          label="Speed warning chime"
+          label="Show speedometer"
+          icon={<Icon name="car-sport-outline" size={18} color={settings.showSpeedometer ? colors.accent : SETTINGS_TEXT_MUTED} />}
+        >
+          <Switch
+            value={settings.showSpeedometer}
+            onValueChange={(value) => updateSettings({ showSpeedometer: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="show-speedometer-switch"
+          />
+        </Row>
+        <Text style={styles.rowLabel}>Speed limit</Text>
+        {SPEED_LIMIT_DISPLAY_OPTIONS.map((opt) => (
+          <TickRow
+            key={opt.value}
+            label={opt.label}
+            hint={opt.hint}
+            selected={settings.speedLimitDisplay === opt.value}
+            onPress={() => updateSettings({ speedLimitDisplay: opt.value })}
+            testID={`speed-limit-display-${opt.value}`}
+          />
+        ))}
+        <Text style={styles.rowLabel}>Speeding alert</Text>
+        {thresholdOptions(settings.distanceUnit).map((opt) => (
+          <TickRow
+            key={opt.key}
+            label={opt.label}
+            selected={selectedThresholdKey(settings, settings.distanceUnit) === opt.key}
+            onPress={() => updateSettings(thresholdPatch(opt))}
+            testID={`speeding-threshold-${opt.key}`}
+          />
+        ))}
+        {selectedThresholdKey(settings, settings.distanceUnit) === null && (
+          <Text style={styles.helperText}>{`Currently ${settings.speedingThresholdKmh} km/h over (set earlier). Pick one above to change it.`}</Text>
+        )}
+        <Row
+          label="Alert at threshold (chime)"
           icon={<Icon name="volume-high" size={18} color={settings.speedWarningChimeEnabled ? colors.accent : SETTINGS_TEXT_MUTED} />}
         >
           <Switch
             value={settings.speedWarningChimeEnabled}
             onValueChange={onSpeedWarningChimeToggle}
             trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-          />
-        </Row>
-        <Row label={`Alert at threshold — ${settings.speedingThresholdKmh} km/h over`}>
-          <Slider
-            minimumValue={1}
-            maximumValue={10}
-            step={1}
-            value={settings.speedingThresholdKmh}
-            onSlidingComplete={(v: number) => updateSettings({ speedingThresholdKmh: Math.round(v) })}
-            minimumTrackTintColor={colors.accent}
-            testID="speeding-threshold-slider"
+            testID="speed-chime-switch"
           />
         </Row>
         <Text style={styles.helperText}>
-          {`A single soft chime when your live speed goes ${settings.speedingThresholdKmh}+ km/h over the limit on the sign (school-zone limits included), at most once every 30 seconds. The sign shows only a limit from real data -- an active school zone, the route's limit, or the road's posted limit -- and is hidden rather than guessed.`}
-        </Text>
-      </Section>
-
-      <Section title="Road features" visible={shouldShow("Road features")}>
-        <Text style={styles.rowLabel}>School zones</Text>
-        <Row
-          label="Show on map"
-          icon={<Icon name="school" size={18} color={settings.schoolZonesShowOnMap ? colors.accent : SETTINGS_TEXT_MUTED} />}
-        >
-          <Switch
-            value={settings.schoolZonesShowOnMap}
-            onValueChange={(value) => updateSettings({ schoolZonesShowOnMap: value })}
-            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-            testID="school-zones-show-switch"
-          />
-        </Row>
-        <Row
-          label="Alert while driving"
-          icon={<Icon name="volume-high" size={18} color={settings.schoolZonesAlert ? colors.accent : SETTINGS_TEXT_MUTED} />}
-        >
-          <Switch
-            value={settings.schoolZonesAlert}
-            onValueChange={(value) => updateSettings({ schoolZonesAlert: value })}
-            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
-            testID="school-zones-alert-switch"
-          />
-        </Row>
-        <Text style={styles.helperText}>
-          {`Official school zones (NSW: Transport for NSW). A zone is in force only on a school day and inside its posted hours, in the zone's own time zone; the sign then shows the school-zone limit and when it ends. "Alert while driving" says "School zone" and the limit once as you enter one in force (with your voice settings).`}
+          {"A single soft chime when your speed passes the threshold over the limit on the sign (school-zone limits included), at most once every 30 seconds. The sign only ever shows a limit from real data -- an active school zone, the route's limit, or the road's posted limit -- and is hidden rather than guessed."}
         </Text>
       </Section>
 
@@ -1816,42 +1802,34 @@ function Row({ label, icon, children }: { label: string; icon?: React.ReactNode;
   );
 }
 
-// Same icon/color the map pin itself uses (see osmMarkerStyle.ts) -- muted to grey while the
-// layer is off, full color once it's on, so the toggle visually previews what you're about to
-// see on the map instead of a plain, unrelated on/off switch.
-function OsmLayerIcon({
-  marker,
-  enabled,
-}: {
-  marker: { icon: string; color: string; badgeSize: number; glyphSize: number };
-  enabled: boolean;
-}) {
-  const size = Math.max(marker.badgeSize, 22);
-  // Real, confirmed cause of the traffic-light row icon looking blank: marker.glyphSize (9px)
-  // is calibrated for TRAFFIC_LIGHT_MARKER's own tiny 14px on-map badge, not this row's 22px
-  // floor -- speed cameras' 30px badge/18px glyph never hit that floor so it happened to look
-  // fine, but traffic lights' 14px badge did, leaving a 9px glyph adrift in a 22px circle
-  // (effectively invisible, especially against the muted grey "off" background). Scaling the
-  // glyph by the marker's own real badge-to-glyph ratio instead of reusing glyphSize verbatim
-  // keeps speed cameras pixel-identical to before while actually fixing traffic lights.
-  const glyphSize = size * (marker.glyphSize / marker.badgeSize);
-  // Real, second confirmed cause (beyond the size floor above): the glyph was hardcoded white
-  // regardless of enabled state, which is fine against the marker's own real color when ON but
-  // near-invisible white-on-light-grey against SETTINGS_BORDER when OFF -- not just small, actually
-  // low enough contrast to read as a blank circle. Dark when off, matching the same "muted until
-  // enabled" intent the background color already has.
-  const glyphColor = enabled ? "#FFFFFF" : SETTINGS_TEXT_MUTED;
+function LinkRow({ label, hint, icon, onPress, testID }: { label: string; hint?: string; icon: IconName; onPress: () => void; testID?: string }) {
   return (
-    <View
-      style={[
-        styles.rowIconBadge,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: enabled ? marker.color : SETTINGS_BORDER },
-      ]}
-    >
-      <MaterialCommunityIcons name={marker.icon as any} size={glyphSize} color={glyphColor} />
-    </View>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]} accessibilityRole="button" accessibilityLabel={hint ? `${label}. ${hint}` : label} testID={testID}>
+      <View style={styles.rowLabelWrap}>
+        <Icon name={icon} size={18} color={colors.accent} />
+        <View style={{ flexShrink: 1 }}>
+          <Text style={styles.rowLabel}>{label}</Text>
+          {hint ? <Text style={styles.helperText}>{hint}</Text> : null}
+        </View>
+      </View>
+      <Icon name="chevron-forward" size={18} color={SETTINGS_TEXT_MUTED} />
+    </Pressable>
   );
 }
+
+/** One choice in a single-choice list, with a tick on the selected one. */
+function TickRow({ label, hint, selected, onPress, testID }: { label: string; hint?: string; selected: boolean; onPress: () => void; testID?: string }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={label} testID={testID}>
+      <View style={{ flexShrink: 1 }}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {hint ? <Text style={styles.helperText}>{hint}</Text> : null}
+      </View>
+      {selected ? <Icon name="checkmark" size={20} color={colors.accent} /> : <View style={{ width: 20 }} />}
+    </Pressable>
+  );
+}
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: SETTINGS_BG },

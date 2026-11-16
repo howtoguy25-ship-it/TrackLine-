@@ -1,0 +1,172 @@
+// What the voice says for an approach alert (settings/reportCatalog.ts items), in each language
+// the app speaks (services/navLanguage.ts). Short, said once per feature.
+import type { NavLanguage } from "@/services/navLanguage";
+import type { ReportItemId } from "@/settings/reportCatalog";
+
+type Lines = Partial<Record<ReportItemId, string>>;
+
+const EN: Lines = {
+  speedCamera: "Speed camera ahead",
+  redLightCamera: "Red light camera ahead",
+  redLightSpeedCamera: "Red light and speed camera ahead",
+  mobilePoliceCamera: "Mobile camera reported ahead",
+  mobilePhoneCamera: "Mobile phone camera ahead",
+  safeDistanceCamera: "Safe distance camera ahead",
+  seatBeltCamera: "Seat belt camera ahead",
+  railwayCrossing: "Railway crossing ahead",
+  trafficLights: "Traffic lights ahead",
+  tollBooth: "Toll ahead",
+  speedBump: "Speed bump ahead",
+  sharpCurve: "Sharp curve ahead",
+  raisedCrossing: "Raised crossing ahead",
+  pedestrianCrossing: "Pedestrian crossing ahead",
+  police: "Police reported ahead",
+  crash: "Crash ahead",
+  emergencyVehicles: "Emergency vehicle reported ahead",
+  roadwork: "Roadwork ahead",
+  closures: "Road closure ahead",
+  animals: "Animal on the road ahead",
+  carOnShoulder: "Car on the shoulder ahead",
+  otherHazards: "Hazard ahead",
+  badWeather: "Weather hazard ahead",
+  blockedLane: "Lane blocked ahead",
+};
+
+const ES: Lines = {
+  speedCamera: "Radar de velocidad más adelante",
+  redLightCamera: "Cámara de semáforo más adelante",
+  redLightSpeedCamera: "Cámara de semáforo y velocidad más adelante",
+  mobilePoliceCamera: "Radar móvil reportado más adelante",
+  mobilePhoneCamera: "Cámara de uso del móvil más adelante",
+  safeDistanceCamera: "Cámara de distancia de seguridad más adelante",
+  seatBeltCamera: "Cámara de cinturón de seguridad más adelante",
+  railwayCrossing: "Paso a nivel más adelante",
+  trafficLights: "Semáforo más adelante",
+  tollBooth: "Peaje más adelante",
+  speedBump: "Badén más adelante",
+  sharpCurve: "Curva peligrosa más adelante",
+  raisedCrossing: "Paso de peatones elevado más adelante",
+  pedestrianCrossing: "Paso de peatones más adelante",
+  police: "Policía reportada más adelante",
+  crash: "Accidente más adelante",
+  emergencyVehicles: "Vehículo de emergencia reportado más adelante",
+  roadwork: "Obras más adelante",
+  closures: "Carretera cortada más adelante",
+  animals: "Animal en la carretera más adelante",
+  carOnShoulder: "Coche en el arcén más adelante",
+  otherHazards: "Peligro más adelante",
+  badWeather: "Peligro por mal tiempo más adelante",
+  blockedLane: "Carril bloqueado más adelante",
+};
+
+const RU: Lines = {
+  speedCamera: "Впереди камера скорости",
+  redLightCamera: "Впереди камера на светофоре",
+  redLightSpeedCamera: "Впереди камера светофора и скорости",
+  mobilePoliceCamera: "Впереди сообщают о мобильной камере",
+  mobilePhoneCamera: "Впереди камера контроля телефона",
+  safeDistanceCamera: "Впереди камера контроля дистанции",
+  seatBeltCamera: "Впереди камера контроля ремня безопасности",
+  railwayCrossing: "Впереди железнодорожный переезд",
+  trafficLights: "Впереди светофор",
+  tollBooth: "Впереди платный участок",
+  speedBump: "Впереди лежачий полицейский",
+  sharpCurve: "Впереди опасный поворот",
+  raisedCrossing: "Впереди приподнятый пешеходный переход",
+  pedestrianCrossing: "Впереди пешеходный переход",
+  police: "Впереди сообщают о полиции",
+  crash: "Впереди авария",
+  emergencyVehicles: "Впереди сообщают о машине экстренной службы",
+  roadwork: "Впереди дорожные работы",
+  closures: "Впереди дорога перекрыта",
+  animals: "Впереди животное на дороге",
+  carOnShoulder: "Впереди машина на обочине",
+  otherHazards: "Впереди опасность",
+  badWeather: "Впереди опасность из-за погоды",
+  blockedLane: "Впереди полоса перекрыта",
+};
+
+const TR: Lines = {
+  speedCamera: "İleride hız kamerası var",
+  redLightCamera: "İleride kırmızı ışık kamerası var",
+  redLightSpeedCamera: "İleride kırmızı ışık ve hız kamerası var",
+  mobilePoliceCamera: "İleride mobil kamera bildirildi",
+  mobilePhoneCamera: "İleride telefon kullanımı kamerası var",
+  safeDistanceCamera: "İleride takip mesafesi kamerası var",
+  seatBeltCamera: "İleride emniyet kemeri kamerası var",
+  railwayCrossing: "İleride hemzemin geçit var",
+  trafficLights: "İleride trafik ışığı var",
+  tollBooth: "İleride gişe var",
+  speedBump: "İleride hız kesici var",
+  sharpCurve: "İleride keskin viraj var",
+  raisedCrossing: "İleride yükseltilmiş yaya geçidi var",
+  pedestrianCrossing: "İleride yaya geçidi var",
+  police: "İleride polis bildirildi",
+  crash: "İleride kaza var",
+  emergencyVehicles: "İleride acil durum aracı bildirildi",
+  roadwork: "İleride yol çalışması var",
+  closures: "İleride yol kapalı",
+  animals: "İleride yolda hayvan var",
+  carOnShoulder: "İleride emniyet şeridinde araç var",
+  otherHazards: "İleride tehlike var",
+  badWeather: "İleride hava kaynaklı tehlike var",
+  blockedLane: "İleride şerit kapalı",
+};
+
+const AR: Lines = {
+  speedCamera: "كاميرا سرعة أمامك",
+  redLightCamera: "كاميرا إشارة حمراء أمامك",
+  redLightSpeedCamera: "كاميرا إشارة وسرعة أمامك",
+  mobilePoliceCamera: "تم الإبلاغ عن كاميرا متنقلة أمامك",
+  mobilePhoneCamera: "كاميرا استخدام الهاتف أمامك",
+  safeDistanceCamera: "كاميرا مسافة الأمان أمامك",
+  seatBeltCamera: "كاميرا حزام الأمان أمامك",
+  railwayCrossing: "معبر سكة حديد أمامك",
+  trafficLights: "إشارة مرور أمامك",
+  tollBooth: "رسوم طريق أمامك",
+  speedBump: "مطب أمامك",
+  sharpCurve: "منعطف حاد أمامك",
+  raisedCrossing: "معبر مشاة مرتفع أمامك",
+  pedestrianCrossing: "معبر مشاة أمامك",
+  police: "تم الإبلاغ عن شرطة أمامك",
+  crash: "حادث أمامك",
+  emergencyVehicles: "تم الإبلاغ عن مركبة طوارئ أمامك",
+  roadwork: "أعمال طرق أمامك",
+  closures: "طريق مغلق أمامك",
+  animals: "حيوان على الطريق أمامك",
+  carOnShoulder: "سيارة على جانب الطريق أمامك",
+  otherHazards: "خطر أمامك",
+  badWeather: "خطر بسبب الطقس أمامك",
+  blockedLane: "مسار مغلق أمامك",
+};
+
+const LINES: Record<NavLanguage, Lines> = { en: EN, es: ES, ru: RU, tr: TR, ar: AR };
+
+export function featureLine(language: NavLanguage, item: ReportItemId): string | null {
+  return LINES[language]?.[item] ?? EN[item] ?? null;
+}
+
+const SPEED_LIMIT: Record<NavLanguage, (n: number) => string> = {
+  en: (n) => `Speed limit ${n}`,
+  es: (n) => `Límite de velocidad ${n}`,
+  ru: (n) => `Ограничение скорости ${n}`,
+  tr: (n) => `Hız sınırı ${n}`,
+  ar: (n) => `الحد الأقصى للسرعة ${n}`,
+};
+export function speedLimitLine(language: NavLanguage, limit: number): string {
+  return (SPEED_LIMIT[language] ?? SPEED_LIMIT.en)(limit);
+}
+
+const SLOWDOWN: Record<NavLanguage, string> = {
+  en: "Slowdown ahead",
+  es: "Tráfico lento más adelante",
+  ru: "Впереди затор",
+  tr: "İleride trafik yavaşlıyor",
+  ar: "ازدحام مفاجئ أمامك",
+};
+export function slowdownLine(language: NavLanguage): string {
+  return SLOWDOWN[language] ?? SLOWDOWN.en;
+}
+
+/** Items that have a spoken line (every alertable item with a data source). */
+export const SPOKEN_ITEMS = Object.keys(EN) as ReportItemId[];

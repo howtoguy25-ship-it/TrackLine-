@@ -10,8 +10,11 @@ import { env } from "@/config/env";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
+import type { OsmFeatureKind } from "@/services/osmTrafficData";
+import { REPORT_ITEM_BY_ID } from "@/settings/reportCatalog";
 
-export type OsmMarkerKind = "traffic_light" | "speed_camera";
+/** A tapped OpenStreetMap pin: a traffic light, a speed camera, or another Reports item. */
+export type OsmMarkerKind = "traffic_light" | "speed_camera" | OsmFeatureKind;
 
 interface Props {
   kind: OsmMarkerKind | null;
@@ -20,14 +23,15 @@ interface Props {
   onSheetChange?: (index: number) => void;
 }
 
-const LABELS: Record<OsmMarkerKind, string> = {
+const LABELS: Record<"traffic_light" | "speed_camera", string> = {
   traffic_light: "Traffic light",
   speed_camera: "Speed camera",
 };
+const labelFor = (kind: OsmMarkerKind) => (kind === "traffic_light" || kind === "speed_camera" ? LABELS[kind] : REPORT_ITEM_BY_ID[kind].title);
 
 // Same icons as the map pin/settings toggle (see osmMarkerStyle.ts) so this sheet matches
 // whichever marker was actually tapped.
-const ICON_NAMES: Record<OsmMarkerKind, string> = {
+const ICON_NAMES: Record<"traffic_light" | "speed_camera", string> = {
   traffic_light: TRAFFIC_LIGHT_MARKER.icon,
   speed_camera: SPEED_CAMERA_MARKER.icon,
 };
@@ -136,8 +140,8 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
           <>
             <View style={styles.header}>
               <View style={styles.titleRow}>
-                <MaterialCommunityIcons name={ICON_NAMES[kind] as any} size={20} color={colors.text} />
-                <Text style={styles.title}>{LABELS[kind]}</Text>
+                <MaterialCommunityIcons name={(kind === "traffic_light" || kind === "speed_camera" ? ICON_NAMES[kind] : REPORT_ITEM_BY_ID[kind].icon.glyph) as any} size={20} color={colors.text} />
+                <Text style={styles.title}>{labelFor(kind)}</Text>
               </View>
               <Button
                 variant="ghost"
