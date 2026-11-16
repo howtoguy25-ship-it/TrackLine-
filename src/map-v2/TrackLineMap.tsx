@@ -9,6 +9,8 @@ import {
   ROAD_SCALES,
   SATELLITE_LABEL_PALETTE,
   SHIELD_IMAGE,
+  SHIELD_PLATES,
+  SHIELD_PLATE_COLOURS,
   THEME_PALETTES,
   buildStyle,
   type ThemeKey,
@@ -75,7 +77,6 @@ interface Props {
   children?: React.ReactNode;
 }
 
-const SHIELD_GREEN = "#1F8A3B";
 
 /** The one Camera method this file uses (the package doesn't export its ref type). */
 interface CameraRef {
@@ -226,10 +227,13 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
         animationDuration={300}
       />
       <Images>
-        {/* The green highway-shield plate; the style stretches it around the route number. */}
-        <Image name={SHIELD_IMAGE} stretchX={[[6, 14]]} stretchY={[[6, 14]]}>
-          <View style={styles.shield} />
-        </Image>
+        {/* Highway-shield plates, one per colour; the style picks one from each road's own shield
+            type and stretches it around the route number. */}
+        {SHIELD_PLATES.map((plate) => (
+          <Image key={plate} name={`${SHIELD_IMAGE}-${plate}`} stretchX={[[6, 14]]} stretchY={[[6, 14]]}>
+            <View style={[styles.shield, { backgroundColor: SHIELD_PLATE_COLOURS[plate], borderColor: plate === "white" ? "#1A1A1A" : "#FFFFFF" }]} />
+          </Image>
+        ))}
       </Images>
       {raised && (
         <FillExtrusionLayer
@@ -271,5 +275,5 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
 
 const styles = StyleSheet.create({
   unavailable: { backgroundColor: "#F7F8F7" },
-  shield: { width: 20, height: 20, borderRadius: 5, backgroundColor: SHIELD_GREEN, borderWidth: 1.5, borderColor: "#FFFFFF" },
+  shield: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5 },
 });

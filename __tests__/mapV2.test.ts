@@ -10,6 +10,9 @@ import {
   LIGHT_PALETTE,
   ROAD_LINE_MIN_ZOOM,
   SATELLITE_LABEL_PALETTE,
+  SHIELD_PLATES,
+  SHIELD_PLATE_FOR,
+  STYLE_VERSION,
   THEME_PALETTES,
   buildStyle,
   roadWidthExpression,
@@ -109,10 +112,61 @@ describe("map style", () => {
     expect(ids.indexOf("road-motorway")).toBeGreaterThan(ids.indexOf("road-residential"));
   });
 
-  it("highway shields show the first route number in yellow on the green plate", () => {
+  // Evaluates the style's shield expressions for one road, the way Mapbox does.
+  const evalMatch = (expr: unknown, props: Record<string, string>): unknown => {
+    const e = expr as unknown[];
+    if (e[0] === "case") return evalMatch(e[1], props) ? evalMatch(e[2], props) : evalMatch(e[3], props);
+    if (e[0] === "!=") return evalMatch(e[1], props) !== e[2];
+    if (e[0] !== "match") return expr;
+    const value = props[(e[1] as unknown[])[1] as string];
+    for (let i = 2; i < e.length - 1; i += 2) if (e[i] === value) return evalMatch(e[i + 1], props);
+    return evalMatch(e[e.length - 1], props);
+  };
+
+  it("highway shields follow each country's own shield, from the tile data", () => {
     const shields = layer("road-shields");
-    expect(shields.layout!["icon-image"]).toBe("tl-shield");
-    expect(shields.paint!["text-color"]).toBe("#FFD400");
+    const plate = (props: Record<string, string>) => evalMatch(shields.layout!["icon-image"], props);
+    const text = (props: Record<string, string>) => evalMatch(shields.paint!["text-color"], props);
+    // Australia: national highway green with the data's yellow text; state routes blue.
+    expect(plate({ shield: "au-national-highway" })).toBe("tl-shield-green");
+    expect(text({ shield: "au-national-highway", shield_text_color: "yellow" })).toBe("#FFD400");
+    expect(plate({ shield: "au-state" })).toBe("tl-shield-blue");
+    // The generic plates Mapbox uses for alphanumeric routes (M5, A22) follow the data too.
+    expect(plate({ shield: "rectangle-green" })).toBe("tl-shield-green");
+    // US Interstate blue, US highway white with black text, UK motorway blue, NZ red.
+    expect(plate({ shield: "us-interstate" })).toBe("tl-shield-blue");
+    expect(plate({ shield: "us-highway" })).toBe("tl-shield-white");
+    expect(text({ shield: "us-highway" })).toBe("#1A1A1A");
+    expect(plate({ shield: "de-motorway" })).toBe("tl-shield-blue");
+    expect(plate({ shield: "nz-state" })).toBe("tl-shield-red");
+    // Unknown shield type: a neutral white plate, not another country's colours.
+    expect(plate({ shield: "zz-something-new" })).toBe("tl-shield-white");
+    expect(text({ shield: "zz-something-new" })).toBe("#1A1A1A");
+    // Every plate the style can ask for is one TrackLineMap draws.
+    for (const p of Object.values(SHIELD_PLATE_FOR)) expect(SHIELD_PLATES).toContain(p);
+  });
+
+  it("labels are in the local language and script, everywhere", () => {
+    for (const id of ["suburb-labels", "road-label-residential", "road-label-motorway", "poi-labels"]) {
+      expect(layer(id).layout!["text-field"]).toEqual(["coalesce", ["get", "name"], ["get", "name_en"]]);
+    }
+    // The fallback font covers Arabic, CJK and Cyrillic.
+    expect(layer("road-label-primary").layout!["text-font"]).toContain("Arial Unicode MS Regular");
+  });
+
+  it("no rule is tied to one place: no country, coordinate or region filters in any layer", () => {
+    for (const style of [light, buildStyle(DARK_PALETTE) as { layers: Layer[] }]) {
+      const text = JSON.stringify(style.layers);
+      expect(text).not.toMatch(/iso_3166|worldview|"within"|"distance"|\bAU\b|Sydney|NSW/);
+    }
+    expect((light as unknown as { metadata: Record<string, unknown> }).metadata["trackline:styleVersion"]).toBe(STYLE_VERSION);
+  });
+
+  it("Settings > About says which map engine, style version and commit are running", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { mapEngineLine } = require("../src/config/mapEngine");
+    expect(mapEngineLine(true, "edc9485b22352e1e")).toBe(`Map engine: Mapbox · style v${STYLE_VERSION} · commit edc9485`);
+    expect(mapEngineLine(false, undefined)).toBe(`Map engine: none (Mapbox isn't set up in this build) · style v${STYLE_VERSION} · commit unknown`);
   });
 
   it("satellite style draws imagery under the labels; every theme builds", () => {
