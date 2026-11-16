@@ -2192,9 +2192,11 @@ export function MapScreen() {
   const onStillHereRespond = useCallback((alert: AlertDoc, isStillHere: boolean) => {
     promptedAlertIdsRef.current.add(alert.id);
     setStillHerePrompt(null);
-    if (isStillHere) confirmAlert(alert.id);
-    else denyAlert(alert.id);
-  }, []);
+    if (!user) return;
+    // Once per user per alert (firestore.rules); a repeat is refused and ignored.
+    const vote = isStillHere ? confirmAlert(alert.id, user.uid) : denyAlert(alert.id, user.uid);
+    vote.catch((err) => console.warn("[map] alert vote failed", err));
+  }, [user]);
 
   // Turn-by-turn voice guidance (Phase 2): advance the active step as GPS crosses trigger radius.
   useEffect(() => {
@@ -4246,7 +4248,14 @@ export function MapScreen() {
     submittingAlertRef.current = true;
     setSubmittingAlert(true);
     try {
-      await reportAlert(type, location, user.uid, settings.alertExpiryMs, alertComment);
+      await reportAlert(
+        type,
+        location,
+        user.uid,
+        settings.alertExpiryMs,
+        alertComment,
+        settings.showNameOnReports ? user.displayName : null
+      );
       pendingAlertTypeRef.current = null;
       setPlacingAlert(false);
       setAlertPlacementLatLng(null);
@@ -4264,7 +4273,7 @@ export function MapScreen() {
       submittingAlertRef.current = false;
       setSubmittingAlert(false);
     }
-  }, [alertPlacementLatLng, user, settings.alertExpiryMs, alertComment]);
+  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment]);
 
   // "Set at my location" -- per explicit request, a one-tap shortcut beside Cancel/Set that
   // places AND immediately confirms the alert at the driver's own real live GPS position
@@ -4341,8 +4350,9 @@ export function MapScreen() {
   }, [user]);
 
   const onConfirmStillHere = useCallback(async (alert: AlertDoc) => {
-    await confirmAlert(alert.id);
-  }, []);
+    if (!user) return;
+    await confirmAlert(alert.id, user.uid);
+  }, [user]);
 
   const activeStep = route?.steps[activeStepIndex] ?? null;
   // Metres along the road to the coming manoeuvre (the end of the active step).

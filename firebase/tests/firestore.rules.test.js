@@ -5,7 +5,9 @@ const {
   assertSucceeds,
   assertFails,
 } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, getDocs, setDoc, deleteDoc, collection, addDoc, serverTimestamp } = require("firebase/firestore");
+const {
+  doc, getDoc, getDocs, setDoc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, writeBatch, increment, deleteField, Timestamp,
+} = require("firebase/firestore");
 
 // Real Firestore Security Rules tests for the Ghost mode/presence feature (Part 2/3), run
 // against the project's real firebase/firestore.rules file via the actual Firestore emulator --
@@ -337,5 +339,120 @@ describe("roadFeatureReports/{reportId} (driver school-zone / speed-limit report
     await assertSucceeds(getDoc(doc(b, "communityRoadFeatures/r1")));
     await assertFails(setDoc(doc(b, "communityRoadFeatures/r2"), { kind: "school_zone" }));
     await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "communityRoadFeatures/r1")));
+  });
+});
+
+describe("alerts/{alertId} (votes, thanks, byline -- once per user)", () => {
+  const ALERT = "alerts/a1";
+  const seedAlert = async (extra = {}) => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), ALERT), {
+        type: "police", lat: -33.9, lng: 151.05, geohash: "r3gx", region: "NSW", createdBy: "reporter",
+        createdAt: serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 3600e3),
+        confirmCount: 0, denyCount: 0, hiddenBy: {}, thanksCount: 0, ...extra,
+      });
+    });
+  };
+  const vote = (db, uid, kind) => {
+    const b = writeBatch(db);
+    b.set(doc(db, `${ALERT}/votes/${uid}`), { vote: kind, at: serverTimestamp() });
+    b.update(doc(db, ALERT), kind === "confirm" ? { confirmCount: increment(1) } : { denyCount: increment(1) });
+    return b.commit();
+  };
+  const thank = (db, uid) => {
+    const b = writeBatch(db);
+    b.set(doc(db, `${ALERT}/thanks/${uid}`), { at: serverTimestamp() });
+    b.update(doc(db, ALERT), { thanksCount: increment(1) });
+    return b.commit();
+  };
+  const newAlert = (uid, extra = {}) => ({
+    type: "hazard", lat: -33.9, lng: 151.05, geohash: "r3gx", region: "NSW", createdBy: uid,
+    createdAt: serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 3600e3),
+    confirmCount: 0, denyCount: 0, hiddenBy: {}, thanksCount: 0, ...extra,
+  });
+
+  test("a driver CAN vote 'still here' once, with their marker in the same batch", async () => {
+    await seedAlert();
+    await assertSucceeds(vote(testEnv.authenticatedContext("b").firestore(), "b", "confirm"));
+  });
+
+  test("the same driver CANNOT vote a second time (either way)", async () => {
+    await seedAlert();
+    const db = testEnv.authenticatedContext("b").firestore();
+    await assertSucceeds(vote(db, "b", "confirm"));
+    await assertFails(vote(db, "b", "confirm"));
+    await assertFails(vote(db, "b", "deny"));
+  });
+
+  test("a bare counter bump without a marker is refused (the old unlimited path is closed)", async () => {
+    await seedAlert();
+    const db = testEnv.authenticatedContext("b").firestore();
+    await assertFails(updateDoc(doc(db, ALERT), { confirmCount: increment(1) }));
+    await assertFails(updateDoc(doc(db, ALERT), { denyCount: increment(1) }));
+    await assertFails(updateDoc(doc(db, ALERT), { thanksCount: increment(1) }));
+  });
+
+  test("a marker can't be written for someone else, or without its counter", async () => {
+    await seedAlert();
+    const db = testEnv.authenticatedContext("b").firestore();
+    await assertFails(setDoc(doc(db, `${ALERT}/votes/c`), { vote: "confirm", at: serverTimestamp() }));
+    await assertFails(setDoc(doc(db, `${ALERT}/votes/b`), { vote: "confirm", at: serverTimestamp() }));
+  });
+
+  test("a counter can't jump by more than one", async () => {
+    await seedAlert();
+    const db = testEnv.authenticatedContext("b").firestore();
+    const b = writeBatch(db);
+    b.set(doc(db, `${ALERT}/thanks/b`), { at: serverTimestamp() });
+    b.update(doc(db, ALERT), { thanksCount: increment(5) });
+    await assertFails(b.commit());
+  });
+
+  test("thanks: once per user, and two users make two", async () => {
+    await seedAlert();
+    await assertSucceeds(thank(testEnv.authenticatedContext("b").firestore(), "b"));
+    await assertFails(thank(testEnv.authenticatedContext("b").firestore(), "b"));
+    await assertSucceeds(thank(testEnv.authenticatedContext("c").firestore(), "c"));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      expect((await getDoc(doc(ctx.firestore(), ALERT))).data().thanksCount).toBe(2);
+    });
+  });
+
+  test("a reporter CANNOT thank their own report", async () => {
+    await seedAlert();
+    await assertFails(thank(testEnv.authenticatedContext("reporter").firestore(), "reporter"));
+  });
+
+  test("thanks work on an older alert that has no thanksCount yet", async () => {
+    await seedAlert();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), ALERT), { thanksCount: deleteField() });
+    });
+    await assertSucceeds(thank(testEnv.authenticatedContext("b").firestore(), "b"));
+  });
+
+  test("only the owner can read their own vote / thanks marker", async () => {
+    await seedAlert();
+    await thank(testEnv.authenticatedContext("b").firestore(), "b");
+    await assertSucceeds(getDoc(doc(testEnv.authenticatedContext("b").firestore(), `${ALERT}/thanks/b`)));
+    await assertFails(getDoc(doc(testEnv.authenticatedContext("c").firestore(), `${ALERT}/thanks/b`)));
+  });
+
+  test("hide and undo-hide of your own entry both work; someone else's never", async () => {
+    await seedAlert({ hiddenBy: { c: 5 } });
+    const db = testEnv.authenticatedContext("b").firestore();
+    await assertSucceeds(updateDoc(doc(db, ALERT), { "hiddenBy.b": Date.now() }));
+    await assertSucceeds(updateDoc(doc(db, ALERT), { "hiddenBy.b": deleteField() }));
+    await assertFails(updateDoc(doc(db, ALERT), { "hiddenBy.c": deleteField() }));
+  });
+
+  test("create: thanks start at zero; a byline must be the reporter's own token name", async () => {
+    const named = testEnv.authenticatedContext("d", { name: "Sam" }).firestore();
+    await assertSucceeds(addDoc(collection(named, "alerts"), newAlert("d")));
+    await assertSucceeds(addDoc(collection(named, "alerts"), newAlert("d", { reporterName: "Sam" })));
+    await assertFails(addDoc(collection(named, "alerts"), newAlert("d", { reporterName: "Live Traffic NSW" })));
+    await assertFails(addDoc(collection(named, "alerts"), newAlert("d", { thanksCount: 40 })));
+    const unnamed = testEnv.authenticatedContext("e").firestore();
+    await assertFails(addDoc(collection(unnamed, "alerts"), newAlert("e", { reporterName: "Sam" })));
   });
 });

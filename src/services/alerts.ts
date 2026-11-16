@@ -3,6 +3,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -11,6 +12,7 @@ import {
   where,
   increment,
   addDoc,
+  writeBatch,
   type Unsubscribe,
 } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -57,6 +59,8 @@ function toAlertDoc(id: string, data: any): AlertDoc {
     expiresAt: data.expiresAt instanceof Timestamp ? data.expiresAt.toMillis() : data.expiresAt,
     confirmCount: data.confirmCount ?? 0,
     denyCount: data.denyCount ?? 0,
+    thanksCount: typeof data.thanksCount === "number" ? data.thanksCount : 0,
+    reporterName: typeof data.reporterName === "string" && data.reporterName ? data.reporterName : undefined,
     // Pre-migration docs could still have the old plain-array shape for a short window (short-
     // lived alerts, 45min-24h TTL, all pruned by the scheduled cleanup function well within a
     // day) -- treated as "nobody's hidden it yet" rather than crashing on the shape mismatch.
@@ -78,7 +82,10 @@ export async function reportAlert(
   // what path got it here. A comment that still contains blocked language after clamping is
   // dropped entirely (undefined) rather than silently saved -- this app has no server-side
   // moderation, so refusing to write it at all is the only real enforcement available.
-  comment?: string | null
+  comment?: string | null,
+  // The reporter's own signed-in name, only when they turned on "Show my name on reports";
+  // firestore.rules checks it equals their auth token's name. Null = "by anonymous".
+  reporterName?: string | null
 ): Promise<string> {
   const now = Date.now();
   const geohash = encodeGeohash(location.latitude, location.longitude, 9);
@@ -102,7 +109,11 @@ export async function reportAlert(
     confirmCount: 0,
     denyCount: 0,
     hiddenBy: {},
+    thanksCount: 0,
     ...(safeComment ? { comment: safeComment } : {}),
+    // Sent exactly as the auth token has it (the rules compare them); a name over 40 characters
+    // is left off rather than cut, so the report says "by anonymous".
+    ...(reporterName && reporterName.trim() && reporterName.length <= 40 ? { reporterName } : {}),
   });
 
   return ref.id;
@@ -196,16 +207,64 @@ export async function markInboxViewedNow(): Promise<void> {
   await AsyncStorage.setItem(INBOX_LAST_VIEWED_KEY, String(Date.now()));
 }
 
-export async function confirmAlert(alertId: string): Promise<void> {
-  await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
-    confirmCount: increment(1),
-  });
+export type AlertVote = "confirm" | "deny";
+
+/**
+ * One "Still here?" / "Not here" vote. The vote marker (alerts/{id}/votes/{uid}) and the counter
+ * go up in one batch; firestore.rules only accepts the counter with a marker that didn't exist
+ * before, so each user votes once per alert. A second vote is refused by the server and ignored
+ * here (returns false).
+ */
+export async function voteOnAlert(alertId: string, uid: string, vote: AlertVote): Promise<boolean> {
+  const batch = writeBatch(db);
+  batch.set(doc(db, ALERTS_COLLECTION, alertId, "votes", uid), { vote, at: serverTimestamp() });
+  batch.update(doc(db, ALERTS_COLLECTION, alertId), vote === "confirm" ? { confirmCount: increment(1) } : { denyCount: increment(1) });
+  try {
+    await batch.commit();
+    return true;
+  } catch (err) {
+    if (isPermissionDenied(err)) return false;
+    throw err;
+  }
+}
+
+export async function confirmAlert(alertId: string, uid: string): Promise<boolean> {
+  return voteOnAlert(alertId, uid, "confirm");
 }
 
 // "Not here" vote -- the other half of the automatic proximity "Still here? / Not here" prompt
-// (see MapScreen's AlertStillHereCard). Mirrors confirmAlert exactly, just the other counter.
-export async function denyAlert(alertId: string): Promise<void> {
-  await updateDoc(doc(db, ALERTS_COLLECTION, alertId), {
-    denyCount: increment(1),
-  });
+// (see MapScreen's AlertStillHereCard).
+export async function denyAlert(alertId: string, uid: string): Promise<boolean> {
+  return voteOnAlert(alertId, uid, "deny");
+}
+
+/**
+ * The alert card's thumbs-up: once per user, never on your own report (both enforced by
+ * firestore.rules -- the marker alerts/{id}/thanks/{uid} is create-only). False when the server
+ * refused it (already thanked, or own report).
+ */
+export async function thankAlert(alertId: string, uid: string): Promise<boolean> {
+  const batch = writeBatch(db);
+  batch.set(doc(db, ALERTS_COLLECTION, alertId, "thanks", uid), { at: serverTimestamp() });
+  batch.update(doc(db, ALERTS_COLLECTION, alertId), { thanksCount: increment(1) });
+  try {
+    await batch.commit();
+    return true;
+  } catch (err) {
+    if (isPermissionDenied(err)) return false;
+    throw err;
+  }
+}
+
+/** Whether this user already thanked this alert (their own marker doc is readable to them). */
+export async function hasThankedAlert(alertId: string, uid: string): Promise<boolean> {
+  try {
+    return (await getDoc(doc(db, ALERTS_COLLECTION, alertId, "thanks", uid))).exists();
+  } catch {
+    return false;
+  }
+}
+
+function isPermissionDenied(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "permission-denied";
 }

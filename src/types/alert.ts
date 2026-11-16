@@ -32,6 +32,12 @@ export interface AlertDoc {
   // the reporter didn't add one (the overwhelming majority of alerts, same as before this
   // existed) -- never an empty string.
   comment?: string;
+  // Thumbs-up count from the alert card -- once per user, never on your own report, enforced by
+  // firestore.rules (alerts/{id}/thanks/{uid}). 0 on alerts written before this existed.
+  thanksCount: number;
+  // The reporter's signed-in name, present only when they turned on "Show my name on reports"
+  // (the rules check it matches their auth token). Undefined = "by anonymous".
+  reporterName?: string;
 }
 
 // Speed cameras and traffic lights are community-reported like everything else here —

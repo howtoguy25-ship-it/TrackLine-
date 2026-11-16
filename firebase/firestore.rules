@@ -32,50 +32,93 @@ service cloud.firestore {
         && request.resource.data.lat is number
         && request.resource.data.lng is number
         && request.resource.data.geohash is string
-        && request.resource.data.region in ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
+        && request.resource.data.region in ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']
+        // Thanks start at zero (or are absent on older clients) -- never pre-loaded.
+        && (!('thanksCount' in request.resource.data) || request.resource.data.thanksCount == 0)
+        // The optional byline is the reporter's own signed-in name, never free text: nobody can
+        // post a report "by" someone else.
+        && (!('reporterName' in request.resource.data)
+          || (request.auth.token.name is string
+            && request.resource.data.reporterName == request.auth.token.name
+            && request.resource.data.reporterName.size() <= 40));
 
       // Creator can delete their own alert outright (global delete) -- only the creator, per
       // explicit request ("only the users who places them can delete for the rest").
       allow delete: if isOwner(resource.data.createdBy);
 
-      // Anyone signed in can update — but only to set their OWN key in hiddenBy (a real,
-      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly), or bump confirmCount or
-      // denyCount by exactly 1 (the automatic proximity "Still here? / Not here" prompt -- see
-      // MapScreen's AlertStillHereCard); every other field, including anyone else's hiddenBy
-      // entry, must stay untouched. This is what keeps "Hide" a per-user, non-destructive,
-      // self-only action -- "other users who hide them can only be hidden for themselves."
+      // Anyone signed in can update -- but only to set their OWN key in hiddenBy (a real,
+      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly), or add ONE vote: confirmCount or
+      // denyCount (the "Still here? / Not here" prompt) or thanksCount (the thumbs-up on the alert
+      // card), each by exactly 1. A vote only counts in the same batch that creates the voter's
+      // own marker doc (votes/{uid} or thanks/{uid}, below), and those are create-only, so each
+      // signed-in user votes once per alert and thanks once per alert -- enforced here, not just
+      // by the app. Every other field, including anyone else's hiddenBy entry, stays untouched.
       allow update: if isSignedIn()
-        && onlyHideOrVoteChanged()
-        && (hiddenByAddsSelfOnly() || confirmCountIncrementedByOne() || denyCountIncrementedByOne());
+        && (hiddenByAddsSelfOnly()
+          || (onlyChanged('confirmCount') && countUpByOne('confirmCount') && votedInThisWrite(alertId))
+          || (onlyChanged('denyCount') && countUpByOne('denyCount') && votedInThisWrite(alertId))
+          || (onlyChanged('thanksCount') && countUpByOne('thanksCount') && thankedInThisWrite(alertId)));
+
+      // One "still here / not here" vote per user per alert. Readable only by its owner (so the
+      // app knows it already voted); never changed or removed.
+      match /votes/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['vote', 'at'])
+          && request.resource.data.vote in ['confirm', 'deny']
+          && request.resource.data.at == request.time
+          && counterUpInThisWrite(alertId, request.resource.data.vote == 'confirm' ? 'confirmCount' : 'denyCount');
+        allow update, delete: if false;
+      }
+
+      // One thumbs-up per user per alert, never on their own report.
+      match /thanks/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time
+          && get(/databases/$(database)/documents/alerts/$(alertId)).data.createdBy != uid
+          && counterUpInThisWrite(alertId, 'thanksCount');
+        allow update, delete: if false;
+      }
     }
 
-    function onlyHideOrVoteChanged() {
-      // affectedKeys() already only contains keys whose value actually changed, so
-      // restricting it to these three fields guarantees every other field is untouched.
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenBy', 'confirmCount', 'denyCount']);
+    function onlyChanged(field) {
+      // affectedKeys() only contains keys whose value actually changed.
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field]);
+    }
+
+    function countUpByOne(field) {
+      return request.resource.data.get(field, 0) == resource.data.get(field, 0) + 1;
+    }
+
+    // The caller's marker doc doesn't exist before this write and does after it: the vote and
+    // the marker were written together, in one batch.
+    function votedInThisWrite(alertId) {
+      return !exists(/databases/$(database)/documents/alerts/$(alertId)/votes/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/alerts/$(alertId)/votes/$(request.auth.uid));
+    }
+
+    function thankedInThisWrite(alertId) {
+      return !exists(/databases/$(database)/documents/alerts/$(alertId)/thanks/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/alerts/$(alertId)/thanks/$(request.auth.uid));
+    }
+
+    // The marker only lands together with its counter going up by one.
+    function counterUpInThisWrite(alertId, field) {
+      return getAfter(/databases/$(database)/documents/alerts/$(alertId)).data.get(field, 0)
+        == get(/databases/$(database)/documents/alerts/$(alertId)).data.get(field, 0) + 1;
     }
 
     // hiddenBy is a map of uid -> the ms timestamp they hid it (see types/alert.ts) -- this only
     // ever allows a write that changes THE CALLER'S OWN key within that map (setting or
-    // refreshing their own hide), never anyone else's, and never touches confirmCount/denyCount
-    // in the same write.
+    // refreshing or removing their own hide), never anyone else's, and nothing else in the same write.
     function hiddenByAddsSelfOnly() {
-      return request.resource.data.hiddenBy.diff(resource.data.hiddenBy).affectedKeys().hasOnly([request.auth.uid])
-        && request.resource.data.hiddenBy[request.auth.uid] is number
-        && request.resource.data.confirmCount == resource.data.confirmCount
-        && request.resource.data.denyCount == resource.data.denyCount;
-    }
-
-    function confirmCountIncrementedByOne() {
-      return request.resource.data.confirmCount == resource.data.confirmCount + 1
-        && request.resource.data.denyCount == resource.data.denyCount
-        && request.resource.data.hiddenBy == resource.data.hiddenBy;
-    }
-
-    function denyCountIncrementedByOne() {
-      return request.resource.data.denyCount == resource.data.denyCount + 1
-        && request.resource.data.confirmCount == resource.data.confirmCount
-        && request.resource.data.hiddenBy == resource.data.hiddenBy;
+      return onlyChanged('hiddenBy')
+        && request.resource.data.hiddenBy.diff(resource.data.hiddenBy).affectedKeys().hasOnly([request.auth.uid])
+        // Set (a fresh timestamp) or removed (the Inbox's "Undo", unhideAlertForUser).
+        && (!(request.auth.uid in request.resource.data.hiddenBy)
+          || request.resource.data.hiddenBy[request.auth.uid] is number);
     }
 
     match /crashReports/{reportId} {
