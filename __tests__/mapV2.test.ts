@@ -163,7 +163,6 @@ describe("map style", () => {
   });
 
   it("Settings > About says which map engine, style version and commit are running", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { mapEngineLine } = require("../src/config/mapEngine");
     expect(mapEngineLine(true, "edc9485b22352e1e")).toBe(`Map engine: Mapbox · style v${STYLE_VERSION} · commit edc9485`);
     expect(mapEngineLine(false, undefined)).toBe(`Map engine: none (Mapbox isn't set up in this build) · style v${STYLE_VERSION} · commit unknown`);
