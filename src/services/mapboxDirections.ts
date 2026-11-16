@@ -9,6 +9,7 @@
 // Steps come out in the app's convention: each step's instruction, manoeuvre and lanes describe
 // the manoeuvre at the step's END -- which is how the card, the voice and the countdown read them.
 
+import { crossCheckSteps, logTurnMismatch } from "@/nav/turnGeometry";
 import type { LatLng } from "@/utils/polyline";
 import { decodePolyline } from "@/utils/polyline";
 import type { Route, RouteStep } from "@/services/directions";
@@ -242,7 +243,8 @@ export function parseMapboxRoute(route: any): Route {
   // Most of the world drives on the right; Mapbox says per step, this is only the fallback.
   const firstSide = (leg.steps ?? []).find((s: any) => s?.driving_side === "left" || s?.driving_side === "right")?.driving_side;
   const drivingSide: "left" | "right" = firstSide ?? "right";
-  const steps = toAppSteps(leg.steps ?? [], drivingSide);
+  // Left/right double-checked against the route geometry (nav/turnGeometry.ts).
+  const steps = crossCheckSteps(toAppSteps(leg.steps ?? [], drivingSide), logTurnMismatch);
   const polyline = decodePolyline(route?.geometry ?? "", 6);
   const duration: number = route?.duration ?? 0;
   const typical: number | undefined = typeof route?.duration_typical === "number" ? route.duration_typical : undefined;

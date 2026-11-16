@@ -62,6 +62,8 @@ export function laneAccessibilityLabel(lanes: Lane[]): string {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-end", justifyContent: "center", paddingTop: 8 },
+  // direction "ltr": the leftmost lane is always drawn on the left, even in an RTL language
+  // (React Native would otherwise reverse a row in Arabic). Arrows are never mirrored.
+  row: { flexDirection: "row", direction: "ltr", alignItems: "flex-end", justifyContent: "center", paddingTop: 8 },
   tile: { alignItems: "center", justifyContent: "center" },
 });

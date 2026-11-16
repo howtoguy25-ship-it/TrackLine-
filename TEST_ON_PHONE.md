@@ -316,6 +316,25 @@ Signed in as the owner, on TestFlight (sandbox purchases work for the owner only
 8. With your phone region set to New Zealand and location off: "Full check not available in
    your country yet".
 
+## 21. Map orientation and turn directions — NEEDS DEVICE TEST
+
+1. **Magnetic mount**: put the phone in a magnetic mount and drive. The map and arrow follow the
+   road; they never swing when you bump the phone or drive past metal. (The phone-direction cone
+   on the arrow is hidden while you're moving.)
+2. **Stop at lights** for a minute: the map doesn't turn at all while stopped, and carries on the
+   same way when you pull away.
+3. **Roundabout**: drive one (AU: clockwise, exits to the left). The arrow and the turn icons go
+   the right way round; the map follows the road through it without flipping.
+4. **U-turn**: do a legal U-turn. The map turns round only once you're actually driving back
+   (a few seconds), never from a GPS blip.
+5. **Tunnel / app switch**: after a tunnel, or coming back to the app, the map keeps its direction
+   until the next few fixes agree.
+6. **North-up**: on the home map tap the compass: the map turns north and **stays** north while
+   you drive. Tap again: back to heading-up.
+7. **Arabic**: Settings > voice language Arabic (and the phone in Arabic if you like). Lane arrows
+   keep their order (leftmost lane on the left), turn arrows point the right way, and the voice
+   says the correct side ("انعطف يميناً" for a right turn).
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

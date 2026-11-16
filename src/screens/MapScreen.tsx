@@ -1,5 +1,6 @@
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { useLatest } from "@/hooks/useLatest";
+import { compassAllowed, initialHeadingState, stepCompass, stepHeading, type HeadingState } from "@/nav/headingFilter";
 import { MapSurface } from "@/components/ui/Surface";
 import { showLaneStrip } from "@/nav/lanes";
 import {
@@ -33,7 +34,7 @@ import { MODE_NAVIGATES_AS, MODE_ORDER, asModeId, ferryBadge, ferryModeAvailable
 import { ModeRouteCache, fastestSeconds, fetchRoutesForMode, type ModeRoutes } from "@/travel/modeRouting";
 import type { SchoolCalendar } from "@/schoolZones/calendar";
 import { resolveSpeedLimit, routeLimitAt, signStyleFor, signUnitFor, signValue } from "@/speedLimits/resolveLimit";
-import { buildRouteGeometry, createMatchState, deadReckon, matchFix, type MatchResult } from "@/nav/routeMatcher";
+import { buildRouteGeometry, createMatchState, deadReckon, matchFix, routeBearingAt, type MatchResult } from "@/nav/routeMatcher";
 import { approachTick } from "@/nav/navPipeline";
 import { INITIAL_REROUTE_TRIGGER, rerouteTrigger } from "@/nav/rerouteTrigger";
 import { useAudioPlayer } from "expo-audio";
@@ -998,14 +999,17 @@ export function MapScreen() {
   // itself in the dependency list -- heading is recomputed on every fix anyway, and listing it
   // would only make this run twice per fix.
   const followHeadingRef = useRef(0);
+  // North-up (the compass button): stays exactly north-up while following until the compass is
+  // tapped again. It used to snap north for one animation, then the next GPS fix turned the map
+  // heading-up again.
+  const [northUp, setNorthUp] = useState(false);
+  const northUpRef = useLatest(northUp);
   useEffect(() => {
     // Not while a place page is up: the camera is showing the place, not the driver.
     if (!currentLatLng || route || !mapReady || userMovedMapRef.current || placePage) return;
-    mapRef.current?.animateCamera(
-      { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM },
-      { duration: 500 }
-    );
-    mapBearing.set(followHeadingRef.current);
+    const bearing = northUpRef.current ? 0 : followHeadingRef.current;
+    mapRef.current?.animateCamera({ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 });
+    mapBearing.set(bearing);
   }, [currentLatLng, route, mapReady, mapBearing, placePage]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
@@ -1087,6 +1091,59 @@ export function MapScreen() {
     mapRef.current?.animateCamera({ pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
   }, [mapReady, route]);
 
+  // ---- Where on the route the car is (nav/routeMatcher.ts) ----
+  // Progress along the route, matched by distance-along-route AND direction of travel, so a
+  // U-shaped car-park exit, a roundabout, a cloverleaf or a parallel road can't snap to the wrong
+  // part of the route; one bad fix can't jump it ahead; poor-accuracy fixes don't count as
+  // off-route; in a tunnel it carries on at the last speed for up to 30 s.
+  const navGeo = useMemo(() => (route ? buildRouteGeometry(route.steps, route.polyline) : null), [route]);
+  const matchStateRef = useRef(createMatchState());
+  const [navMatch, setNavMatch] = useState<MatchResult | null>(null);
+  const [matchedGeo, setMatchedGeo] = useState(navGeo);
+  if (matchedGeo !== navGeo) {
+    setMatchedGeo(navGeo);
+    setNavMatch(null);
+  }
+
+  // Live device compass heading -- deliberately separate from `heading` below, which is the
+  // direction of TRAVEL (GPS course/derived bearing) and is what the puck arrow + chase-cam
+  // stay locked to. This is which way the PHONE ITSELF is physically pointing right now
+  // (magnetometer), which can easily differ -- held at an angle, mounted sideways, spun around
+  // in a cupholder -- without that meaning the car actually turned. Rendered as a separate
+  // highlight cone on the puck (below) so the route-facing arrow never wobbles with the phone,
+  // while the cone gives a live, real "which way is my phone facing" signal on top of it.
+  const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
+  // The same reading with its accuracy and time, for the heading filter. expo-location's
+  // calibration level: 3 = under 20° on iOS, 2 = under 35°, 1 = under 50°.
+  const [compassReading, setCompassReading] = useState<{ heading: number; accuracyDeg: number | null; timeMs: number } | null>(null);
+  if (!route && deviceHeading !== null) setDeviceHeading(null);
+  useEffect(() => {
+    if (!route) return;
+    let subscription: Location.LocationSubscription | null = null;
+    let cancelled = false;
+    Location.watchHeadingAsync((headingData) => {
+      // trueHeading is -1 when the OS can't derive it yet (no location fix for magnetic
+      // declination) -- magHeading is still a real, live compass reading in that case, just
+      // relative to magnetic north instead of true north, close enough for a visual cone.
+      const value = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
+      if (!cancelled && value >= 0) {
+        setDeviceHeading(value);
+        setCompassReading({
+          heading: value,
+          accuracyDeg: headingData.accuracy === 3 ? 20 : headingData.accuracy === 2 ? 35 : headingData.accuracy === 1 ? 50 : null,
+          timeMs: Date.now(),
+        });
+      }
+    }).then((sub) => {
+      if (cancelled) sub.remove();
+      else subscription = sub;
+    });
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, [route]);
+
   // GPS "course" heading (location.coords.heading) is a real device/OS-reported value, but a
   // genuinely unreliable one -- iOS commonly reports it as -1 ("invalid") at low speed, right
   // after a stop, or for a few fixes after starting to move again, which is exactly when a
@@ -1099,26 +1156,52 @@ export function MapScreen() {
   // Kept as state, updated while rendering when a new fix arrives (React's "adjust state when an
   // input changes" pattern), so the heading used in this render is from THIS fix -- it used to
   // be computed in an effect after render and read from a ref, always one fix behind.
-  const [headingTrack, setHeadingTrack] = useState<{ at: LatLng | null; derived: number }>({ at: null, derived: 0 });
-  if (
-    currentLatLng &&
-    (headingTrack.at?.latitude !== currentLatLng.latitude || headingTrack.at?.longitude !== currentLatLng.longitude)
-  ) {
+  // The heading itself goes through nav/headingFilter.ts: GPS course only above 10 km/h, a blend
+  // at 3-10, frozen below 3 (no spinning at the lights), the compass only before the first
+  // movement or when walking (never a magnet-mounted phone while driving), the route's own road
+  // direction while navigating on the route, no 90°+ jumps without 3 agreeing fixes over 5 s /
+  // 30 m (a real U-turn), and smoothed the shortest way round.
+  const [headingTrack, setHeadingTrack] = useState<{ at: LatLng | null; timeMs: number | null; filter: HeadingState; compassAt: number | null }>(() => ({
+    at: null,
+    timeMs: null,
+    filter: initialHeadingState(),
+    compassAt: null,
+  }));
+  const fixTimeMs = location ? location.timestamp : null;
+  if (currentLatLng && fixTimeMs !== null && fixTimeMs !== headingTrack.timeMs) {
     const prev = headingTrack.at;
-    let derived = headingTrack.derived;
-    if (prev) {
-      const movedMeters = distanceKm(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude) * 1000;
-      // Skip tiny/noisy movement (GPS jitter while stationary or barely moving) -- a bearing from
-      // a couple of metres of noise would spin the arrow; hold the last real direction instead.
-      if (movedMeters >= 3) derived = bearingDegrees(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude);
-    }
-    setHeadingTrack({ at: currentLatLng, derived });
+    const movedMeters = prev ? distanceKm(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude) * 1000 : 0;
+    const c = location!.coords;
+    const speedKmh = c.speed != null && c.speed >= 0 ? c.speed * 3.6 : null;
+    const roadBearing = route && navGeo && navMatch?.onRoute ? routeBearingAt(navGeo, navMatch.along) : null;
+    const filter = stepHeading(headingTrack.filter, {
+      timeMs: fixTimeMs,
+      speedKmh,
+      gpsCourse: c.heading != null && c.heading >= 0 ? c.heading : null,
+      // Skip tiny movement (GPS jitter while stopped): a bearing from metres of noise would spin.
+      movementBearing: prev && movedMeters >= 3 ? bearingDegrees(prev.latitude, prev.longitude, currentLatLng.latitude, currentLatLng.longitude) : null,
+      movedMeters,
+      roadBearing,
+      walking: travelMode === "walking",
+    });
+    setHeadingTrack({ at: currentLatLng, timeMs: fixTimeMs, filter, compassAt: headingTrack.compassAt });
+  }
+  // A new compass reading only marks the compass trusted or not (accuracy, magnet jumps); it
+  // steers nothing unless the filter allows the compass (walking / not yet moved).
+  if (compassReading && compassReading.timeMs !== headingTrack.compassAt) {
+    setHeadingTrack({
+      ...headingTrack,
+      compassAt: compassReading.timeMs,
+      filter: stepCompass(headingTrack.filter, compassReading),
+    });
   }
 
-  const heading =
-    location?.coords.heading != null && location.coords.heading >= 0
-      ? location.coords.heading
-      : headingTrack.derived;
+  const heading = headingTrack.filter.shown ?? 0;
+  // The phone-direction cone on the arrow only while the compass is allowed to mean something.
+  const compassConeAllowed = compassAllowed(headingTrack.filter, {
+    speedKmh: location?.coords.speed != null && location.coords.speed >= 0 ? location.coords.speed * 3.6 : null,
+    walking: travelMode === "walking",
+  });
 
   // Real Waze/Google Maps nav convention -- the car sits low on screen (roughly the lower third)
   // with most of the view showing the road ahead, not dead-center. Google Maps SDK's own
@@ -1282,34 +1365,6 @@ export function MapScreen() {
     if (!currentLatLng) roadTrackerRef.current.reset();
   }, [currentLatLng]);
 
-  // Live device compass heading -- deliberately separate from `heading` above, which is the
-  // direction of TRAVEL (GPS course/derived bearing) and is what the puck arrow + chase-cam
-  // stay locked to. This is which way the PHONE ITSELF is physically pointing right now
-  // (magnetometer), which can easily differ -- held at an angle, mounted sideways, spun around
-  // in a cupholder -- without that meaning the car actually turned. Rendered as a separate
-  // highlight cone on the puck (below) so the route-facing arrow never wobbles with the phone,
-  // while the cone gives a live, real "which way is my phone facing" signal on top of it.
-  const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
-  if (!route && deviceHeading !== null) setDeviceHeading(null);
-  useEffect(() => {
-    if (!route) return;
-    let subscription: Location.LocationSubscription | null = null;
-    let cancelled = false;
-    Location.watchHeadingAsync((headingData) => {
-      // trueHeading is -1 when the OS can't derive it yet (no location fix for magnetic
-      // declination) -- magHeading is still a real, live compass reading in that case, just
-      // relative to magnetic north instead of true north, close enough for a visual cone.
-      const value = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
-      if (!cancelled && value >= 0) setDeviceHeading(value);
-    }).then((sub) => {
-      if (cancelled) sub.remove();
-      else subscription = sub;
-    });
-    return () => {
-      cancelled = true;
-      subscription?.remove();
-    };
-  }, [route]);
 
   // Set once shareEta actually starts a live share for the current trip; cleared on
   // exitNavigation. Kept as a ref (not state) since only the periodic-update interval and
@@ -1483,19 +1538,6 @@ export function MapScreen() {
     dispatchApproachRef.current = dispatchApproach;
   }, [dispatchApproach]);
 
-  // ---- Where on the route the car is (nav/routeMatcher.ts) ----
-  // Progress along the route, matched by distance-along-route AND direction of travel, so a
-  // U-shaped car-park exit, a roundabout, a cloverleaf or a parallel road can't snap to the wrong
-  // part of the route; one bad fix can't jump it ahead; poor-accuracy fixes don't count as
-  // off-route; in a tunnel it carries on at the last speed for up to 30 s.
-  const navGeo = useMemo(() => (route ? buildRouteGeometry(route.steps, route.polyline) : null), [route]);
-  const matchStateRef = useRef(createMatchState());
-  const [navMatch, setNavMatch] = useState<MatchResult | null>(null);
-  const [matchedGeo, setMatchedGeo] = useState(navGeo);
-  if (matchedGeo !== navGeo) {
-    setMatchedGeo(navGeo);
-    setNavMatch(null);
-  }
   useEffect(() => {
     matchStateRef.current = createMatchState();
   }, [navGeo]);
@@ -4990,13 +5032,13 @@ export function MapScreen() {
             coordinate: currentLatLng,
             heading,
             accuracyMeters: currentAccuracyMeters,
-            deviceHeading: route ? deviceHeading : null,
+            deviceHeading: route && compassConeAllowed ? deviceHeading : null,
             navigating: !!route,
             markerStyle: settings.mapMarkerStyle,
             ghost: settings.visibility === "ghost",
           }
         : null,
-    [currentLatLng, heading, currentAccuracyMeters, route, deviceHeading, settings.mapMarkerStyle, settings.visibility]
+    [currentLatLng, heading, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility]
   );
 
   // A tap on a named place drawn by the Mapbox map: find it with Google Places (same details,
@@ -5781,8 +5823,12 @@ export function MapScreen() {
           showCompass={settings.showCompass}
           bearing={mapBearing}
           onCompass={() => {
-            mapRef.current?.animateCamera({ heading: 0 }, { duration: 400 });
-            mapBearing.set(0);
+            // Toggle: north-up (held), or back to heading-up.
+            const next = !northUp;
+            setNorthUp(next);
+            const bearing = next ? 0 : followHeadingRef.current;
+            mapRef.current?.animateCamera({ heading: bearing }, { duration: 400 });
+            mapBearing.set(bearing);
           }}
           showAudioPlayer={settings.showAudioPlayer}
           onAudioPlayer={openAudioPlayer}

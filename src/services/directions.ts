@@ -1,3 +1,4 @@
+import { crossCheckSteps, logTurnMismatch } from "@/nav/turnGeometry";
 import { env } from "@/config/env";
 import { decodePolyline, type LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
@@ -259,7 +260,7 @@ export function manoeuvresAtStepEnds(steps: RouteStep[]): RouteStep[] {
 export function parseRoute(route: any): Route {
   const leg = route.legs[0];
 
-  const steps: RouteStep[] = manoeuvresAtStepEnds(leg.steps.map((step: any) => ({
+  const steps: RouteStep[] = crossCheckSteps(manoeuvresAtStepEnds(leg.steps.map((step: any) => ({
     instruction: stripHtml(step.html_instructions ?? ""),
     targetStreetName: extractBoldRoadName(step.html_instructions ?? ""),
     maneuver: step.maneuver,
@@ -270,7 +271,7 @@ export function parseRoute(route: any): Route {
     polyline: decodePolyline(step.polyline?.points ?? ""),
     // Google marks the crossing step itself with maneuver "ferry" / "ferry-train".
     ferry: step.maneuver === "ferry" || step.maneuver === "ferry-train" ? { name: null } : undefined,
-  })));
+  }))), logTurnMismatch);
 
   const durationSeconds: number = leg.duration?.value ?? 0;
   const durationInTrafficSeconds: number | undefined = leg.duration_in_traffic?.value;
@@ -518,7 +519,7 @@ function parseProtoDurationSeconds(duration: string | undefined): number {
  *  heading-aware reroute below -- getRouteOptions/getDirections above keep using the classic API
  *  they already work well with. */
 export function parseRoutesApiRoute(route: any, withTolls = false): Route {
-  const steps: RouteStep[] = manoeuvresAtStepEnds((route.legs ?? []).flatMap((leg: any) => leg.steps ?? []).map((step: any) => ({
+  const steps: RouteStep[] = crossCheckSteps(manoeuvresAtStepEnds((route.legs ?? []).flatMap((leg: any) => leg.steps ?? []).map((step: any) => ({
     instruction: step.navigationInstruction?.instructions ?? "",
     targetStreetName: roadFromInstruction(step.navigationInstruction?.instructions ?? "", directionsLanguage),
     maneuver: ROUTES_API_MANEUVER_MAP[step.navigationInstruction?.maneuver] ?? undefined,
@@ -534,7 +535,7 @@ export function parseRoutesApiRoute(route: any, withTolls = false): Route {
     },
     polyline: decodePolyline(step.polyline?.encodedPolyline ?? ""),
     ferry: step.navigationInstruction?.maneuver === "FERRY" || step.navigationInstruction?.maneuver === "FERRY_TRAIN" ? { name: null } : undefined,
-  })));
+  }))), logTurnMismatch);
 
   // Same encoded-polyline format as the classic API (both are Google's own standard polyline
   // algorithm) -- decodePolyline works unchanged for either source.

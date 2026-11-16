@@ -189,3 +189,46 @@ export function confirmationText(kind: ManoeuvreKind | undefined): string {
       return "Turn complete ✓";
   }
 }
+
+// ---- Turn direction cross-check ---------------------------------------------------------------
+// Left/right always comes from the route provider's manoeuvre (never from the screen or camera
+// angle). As a second check, the actual turn angle between the road coming in and the road going
+// out is measured from the route geometry; when the geometry clearly turns the other way (more
+// than 45°), the geometry wins and the mismatch is logged. Roundabouts and U-turns are left to
+// the provider (their direction comes from the driving side, and a U-turn's angle is ±180).
+
+const SWAP_SIDE: Partial<Record<NonNullable<ManeuverType>, ManeuverType>> = {
+  "turn-left": "turn-right",
+  "turn-right": "turn-left",
+  "turn-slight-left": "turn-slight-right",
+  "turn-slight-right": "turn-slight-left",
+  "turn-sharp-left": "turn-sharp-right",
+  "turn-sharp-right": "turn-sharp-left",
+  "fork-left": "fork-right",
+  "fork-right": "fork-left",
+  "ramp-left": "ramp-right",
+  "ramp-right": "ramp-left",
+};
+
+/** Which side a manoeuvre turns to, for the ones that have a side to check. */
+export function maneuverSide(m: ManeuverType): "left" | "right" | null {
+  if (!m || !SWAP_SIDE[m]) return null;
+  return m.endsWith("left") ? "left" : "right";
+}
+
+/** The minimum geometric turn (degrees) that can overrule the provider. */
+export const TURN_CHECK_MIN_DEG = 45;
+
+/**
+ * -> the manoeuvre to show, and whether the geometry overruled the provider.
+ * turnDeg: signed turn from incoming to outgoing road, + = right (clockwise), from turnAngleDeg.
+ */
+export function crossCheckTurn(maneuver: ManeuverType, turnDeg: number | null): { maneuver: ManeuverType; corrected: boolean } {
+  const side = maneuverSide(maneuver);
+  if (!side || turnDeg === null || !Number.isFinite(turnDeg) || Math.abs(turnDeg) <= TURN_CHECK_MIN_DEG) {
+    return { maneuver, corrected: false };
+  }
+  const geometrySide = turnDeg > 0 ? "right" : "left";
+  if (geometrySide === side) return { maneuver, corrected: false };
+  return { maneuver: SWAP_SIDE[maneuver as NonNullable<ManeuverType>] ?? maneuver, corrected: true };
+}
