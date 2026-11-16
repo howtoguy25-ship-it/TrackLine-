@@ -821,3 +821,45 @@ web-fetch tool).
 NSW 2026 calendar: from the official data above. 2027 terms appear in the TfNSW data when it is
 regenerated (weekly); if a region's calendar is missing for today, a zone follows its posted
 hours on weekdays and is marked "calendar unknown" here -- never silently treated as a holiday.
+
+### Coverage by country (what the app actually does today)
+
+| Country / region | Zones source | Hours source | Calendar source | Status |
+|---|---|---|---|---|
+| AU-NSW | TfNSW Speed Zones (School Zones data), 3,301 zones, weekly | Per zone (official) | Terms: TfNSW zone data (`OP_CAL`); public holidays: NSW Guide to Public Holidays | **Live** (official) |
+| AU-QLD | OSM `maxspeed:conditional` where mapped; drivers' reports | The OSM tag / the report | none yet | Partial (no official zone data; sign points only, not used) |
+| AU-VIC, SA, WA, TAS, ACT, NT | OSM `maxspeed:conditional` where mapped; drivers' reports | The OSM tag / the report | none yet | OSM / community only |
+| Everywhere else | OSM `maxspeed:conditional` where mapped; drivers' reports | The OSM tag / the report | none | OSM / community only |
+
+Without a region calendar, an OSM condition using `SH` / `PH` is "unknown" and never shown as
+active; a report's hours apply on weekdays and say "calendar unknown".
+
+### Which limit the sign shows (`src/speedLimits/resolveLimit.ts`)
+
+1. An active school zone: official > OSM conditional > drivers' reports (live only).
+2. An official speed-zone dataset for the road (none wired yet -- TfNSW publishes NSW speed
+   zones in the same dataset; next step).
+3. Mapbox `maxspeed` for the route segment the car is matched to (heading-aware matcher).
+4. The OSM posted `maxspeed` of the road the car is on.
+5. Nothing: the sign is hidden. OSM road-type defaults are guesses and are never shown.
+
+Sign: red ring (everywhere but the US/Canada) or white rectangle (US, CA and US territories); the
+unit is the user's Settings choice. School zones switch on/off at the exact minute (a wall-clock
+minute tick), with "School zone, 40" spoken once on entering one in force.
+
+### Drivers' reports (`firebase/functions/roadReportsCore.js`)
+
+Tap the speed sign (or long-press the speed dial when there is no sign): "Missing school zone here"
+(speed + hours, prefilled only from a verified rule row), "No school zone here" / "hours are
+wrong" (while in a zone), "Wrong speed limit". Reports are `pending`; other drivers nearby see
+them with "Confirm" (one per account, never your own -- enforced in `firestore.rules`, tested on
+the emulator). At 3 confirmations from other drivers (`confirmRoadReport`), or the owner setting
+`status: "approved"` in the console, a missing-zone report is copied, without the reporter's id,
+to `communityRoadFeatures` (`syncRoadReport`) and used -- only on that road, within 75 m of the
+report, in that direction either way, at the lowest priority. Wrong-zone and wrong-limit reports
+are review-only: they never change the sign by themselves. **Needs a deploy** of the two new
+functions and the rules (not done -- "Don't deploy").
+
+Not done yet: drawing driver-reported zones on the map (they only change the sign); voice
+call-out wording in other voice-pack languages (English only); official zone data for any
+region other than NSW.

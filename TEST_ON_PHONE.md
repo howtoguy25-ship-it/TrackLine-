@@ -223,6 +223,22 @@ Needs the Mapbox token in the build. Do these as a passenger, or note what you s
 - [ ] Lane strip and zoom feel smooth (no stutter) on an iPhone 11 or older; battery drain over a 30-min drive with the screen off is reasonable.
 - [ ] Outside Australia (or in a right-hand-traffic country on a trip): an exit or motorway split zooms in the same way; a U-turn lane arrow swings left there (right in the UK, Japan, Australia...); roundabout arrows go the local way round.
 
+## 14. School zones and speed limits — NEEDS DEVICE TEST
+
+Real data only: NSW official zones (Transport for NSW). Do these as a passenger.
+- [ ] Before a first test, the school-zone data must be on the server: the `refreshSchoolZones` function runs every Monday 3:17 am Sydney time after deploy (or run it once from the Firebase console).
+- [ ] School day (e.g. Tue 17 Nov 2026), 8:00–9:30 am or 2:30–4:00 pm: drive into a NSW school zone. The sign changes to 40 with a school badge and "until 9:30 am" (or "until 4:00 pm"); you hear "School zone, 40" once; the zone on the map is bright amber with a school icon.
+- [ ] Same zone outside the hours, at a weekend, on a public holiday or in the school holidays: no badge, no call-out, the road's normal limit on the sign; the zone on the map is faded.
+- [ ] Parked in a zone at 7:59 am on a school day: at 8:00 exactly the sign switches to 40 (and at 9:30 back).
+- [ ] A parallel road or a cross street next to a zone: no school-zone sign.
+- [ ] Settings › Alerts & community › Road features › School zones: "Show on map" off hides the amber zones; "Alert while driving" off stops the call-out (the sign still shows the school-zone limit).
+- [ ] Settings › Navigation & voice › Speed › "Alert at threshold": set 1 km/h; at 42 in a 40 zone the chime sounds. Set 5; it doesn't until 45.
+- [ ] Where there's no real limit for a road, there is no sign at all (not a guess).
+- [ ] iPhone set to a US region: the sign is a white rectangle; with Settings distance in miles it shows mph.
+- [ ] Tap the speed sign: "Speed limit and school zones" opens. Report "Wrong speed limit" → "Thanks…". From a second account at the same spot, the report shows with "Confirm"; the first account can't confirm its own.
+- [ ] Turn on airplane mode after driving an area once: zones still work there (cached), for up to 30 days.
+- [ ] Settings › About › Data sources lists where the map, limits and school zones come from.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

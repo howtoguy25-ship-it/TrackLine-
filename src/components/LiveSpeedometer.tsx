@@ -2,7 +2,7 @@ import type { SignStyle } from "@/speedLimits/resolveLimit";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { shadow } from "@/theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
-import { StyleSheet, Animated } from "react-native";
+import { StyleSheet, Animated, Pressable } from "react-native";
 import { Text } from "@/components/AppText";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
@@ -14,7 +14,7 @@ import { SpeedLimitSign } from "@/components/SpeedLimitSign";
 // Persisted (not just a this-session flag) since "the first time it ever triggers" means
 // exactly that, not "the first time per app launch."
 const EXPLAINER_SEEN_KEY = "@trackline/speedChimeExplainerSeen";
-const EXPLAINER_TEXT = "Speed reminder: you're 3+ km/h over the limit. Toggle off in Settings.";
+const explainerText = (threshold: number) => `Speed reminder: you're ${threshold}+ km/h over the limit. Toggle off in Settings.`;
 const EXPLAINER_VISIBLE_MS = 5000;
 
 interface Props {
@@ -38,6 +38,8 @@ interface Props {
   // real measured height whenever that bar is also on screen. undefined keeps the original
   // fixed offset (the Home, not-navigating view, where no such bar exists).
   bottom?: number;
+  /** Tap the sign (or long-press the dial when there's no sign): report / confirm a limit or zone. */
+  onPressSign?: () => void;
 }
 
 const AMBER_OVER_KMH = 1;
@@ -61,6 +63,7 @@ export function LiveSpeedometer({
   visible,
   chimeEnabled,
   bottom,
+  onPressSign,
 }: Props) {
   const overBy = speedLimitKmh != null ? speedKmh - speedLimitKmh : 0;
   const shownSpeed = unit === "mph" ? Math.round(speedKmh / 1.609344) : Math.round(speedKmh);
@@ -136,10 +139,11 @@ export function LiveSpeedometer({
 
   return (
     <Animated.View
-      pointerEvents="none"
+      pointerEvents={onPressSign && visible ? "box-none" : "none"}
       style={[styles.wrap, { opacity }, bottom != null && { bottom }]}
       accessibilityLabel={`Current speed ${shownSpeed} ${unit === "mph" ? "miles" : "kilometers"} per hour`}
     >
+      <Pressable onLongPress={onPressSign} disabled={!onPressSign} accessibilityHint={onPressSign ? "Long press to report a speed limit or school zone" : undefined}>
       <Animated.View
         style={[
           styles.dial,
@@ -151,10 +155,15 @@ export function LiveSpeedometer({
         <Text style={[styles.dialValue, (isAmber || isRed) && styles.dialValueDark]}>{shownSpeed}</Text>
         <Text style={[styles.dialUnit, (isAmber || isRed) && styles.dialValueDark]}>{unit}</Text>
       </Animated.View>
-      {speedLimitKmh != null && <SpeedLimitSign kmh={speedLimitKmh} unit={unit} signStyle={signStyle} schoolZone={schoolZone} />}
+      </Pressable>
+      {speedLimitKmh != null && (
+        <Pressable onPress={onPressSign} disabled={!onPressSign} accessibilityRole={onPressSign ? "button" : undefined} accessibilityHint={onPressSign ? "Report a wrong limit or a school zone" : undefined} hitSlop={8}>
+          <SpeedLimitSign kmh={speedLimitKmh} unit={unit} signStyle={signStyle} schoolZone={schoolZone} />
+        </Pressable>
+      )}
       {explainerVisible && (
         <Animated.View style={styles.explainerBubble}>
-          <Text style={styles.explainerText}>{EXPLAINER_TEXT}</Text>
+          <Text style={styles.explainerText}>{explainerText(thresholdKmh)}</Text>
         </Animated.View>
       )}
     </Animated.View>

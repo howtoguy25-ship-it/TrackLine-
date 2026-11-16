@@ -284,3 +284,58 @@ describe("users/{uid} (regression)", () => {
     await assertFails(getDoc(doc(other, "users/driver-b")));
   });
 });
+
+describe("roadFeatureReports/{reportId} (driver school-zone / speed-limit reports)", () => {
+  const report = (by, extra = {}) => ({
+    kind: "school_zone_missing",
+    reportedBy: by,
+    lat: -33.9,
+    lng: 151.15,
+    tile: "-340_1511",
+    heading: 10,
+    speed: 40,
+    unit: "km/h",
+    windows: ["08:00-09:30"],
+    status: "pending",
+    confirmCount: 0,
+    ...extra,
+  });
+
+  test("a driver can file a pending report as themselves -- not spoofed, not pre-approved", async () => {
+    const a = testEnv.authenticatedContext("driver-a").firestore();
+    await assertSucceeds(addDoc(collection(a, "roadFeatureReports"), report("driver-a")));
+    await assertFails(addDoc(collection(a, "roadFeatureReports"), report("driver-b")));
+    await assertFails(addDoc(collection(a, "roadFeatureReports"), report("driver-a", { status: "live" })));
+    await assertFails(addDoc(collection(a, "roadFeatureReports"), report("driver-a", { confirmCount: 3 })));
+    await assertFails(addDoc(collection(a, "roadFeatureReports"), report("driver-a", { kind: "made_up" })));
+    const anon = testEnv.unauthenticatedContext().firestore();
+    await assertFails(addDoc(collection(anon, "roadFeatureReports"), report("x")));
+  });
+
+  test("other drivers can confirm once each; never the reporter; nobody but the owner edits status", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "roadFeatureReports/r1"), report("driver-a"));
+    });
+    const a = testEnv.authenticatedContext("driver-a").firestore();
+    const b = testEnv.authenticatedContext("driver-b").firestore();
+    await assertSucceeds(getDoc(doc(b, "roadFeatureReports/r1")));
+    await assertFails(setDoc(doc(a, "roadFeatureReports/r1/confirmations/driver-a"), { at: 1 }));
+    await assertSucceeds(setDoc(doc(b, "roadFeatureReports/r1/confirmations/driver-b"), { at: 1 }));
+    // Again (an update): refused. Someone else's id: refused.
+    await assertFails(setDoc(doc(b, "roadFeatureReports/r1/confirmations/driver-b"), { at: 2 }));
+    await assertFails(setDoc(doc(b, "roadFeatureReports/r1/confirmations/driver-c"), { at: 1 }));
+    await assertFails(setDoc(doc(b, "roadFeatureReports/r1"), report("driver-a", { status: "live" })));
+    const owner = testEnv.authenticatedContext("owner", { email: OWNER_EMAIL }).firestore();
+    await assertSucceeds(setDoc(doc(owner, "roadFeatureReports/r1"), report("driver-a", { status: "approved" })));
+  });
+
+  test("communityRoadFeatures: readable by signed-in drivers, written only by the server", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "communityRoadFeatures/r1"), { kind: "school_zone", tile: "-340_1511" });
+    });
+    const b = testEnv.authenticatedContext("driver-b").firestore();
+    await assertSucceeds(getDoc(doc(b, "communityRoadFeatures/r1")));
+    await assertFails(setDoc(doc(b, "communityRoadFeatures/r2"), { kind: "school_zone" }));
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "communityRoadFeatures/r1")));
+  });
+});

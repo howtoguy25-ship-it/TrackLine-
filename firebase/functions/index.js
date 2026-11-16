@@ -1,5 +1,5 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret, defineString } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
@@ -18,6 +18,7 @@ const {
 const personaCore = require("./personaSpeechCore");
 const trafficCore = require("./trafficNswCore");
 const schoolZonesCore = require("./schoolZonesCore");
+const roadReportsCore = require("./roadReportsCore");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -1142,4 +1143,33 @@ async function refreshNswSchoolZones() {
 exports.refreshSchoolZones = onSchedule({ schedule: "every monday 03:17", timeZone: "Australia/Sydney", timeoutSeconds: 540, memory: "1GiB" }, async () => {
   const result = await refreshNswSchoolZones();
   console.log("[schoolZones] NSW refreshed", result);
+});
+
+// ---- Driver reports: missing / wrong school zones and wrong speed limits (roadReportsCore.js) ----
+// A confirmation from another driver: recount, and go live at 3. Admin approval/rejection is an
+// update to the report itself (Firebase console), handled by syncRoadReport below.
+exports.confirmRoadReport = onDocumentCreated("roadFeatureReports/{reportId}/confirmations/{uid}", async (event) => {
+  const db = getFirestore();
+  const reportRef = db.doc(`roadFeatureReports/${event.params.reportId}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(reportRef);
+    if (!snap.exists) return;
+    const report = snap.data();
+    const confirmations = await tx.get(reportRef.collection("confirmations"));
+    const uids = confirmations.docs.map((d) => d.id);
+    const status = roadReportsCore.nextStatus(report, uids);
+    const confirmCount = roadReportsCore.countConfirmations(report.reportedBy, uids);
+    tx.update(reportRef, { confirmCount, status, ...(status !== report.status ? { statusChangedAt: FieldValue.serverTimestamp() } : {}) });
+  });
+});
+
+// Keep the public communityRoadFeatures record in step with the report's status: written when a
+// missing-zone report is live/approved, removed when it's rejected or deleted.
+exports.syncRoadReport = onDocumentWritten("roadFeatureReports/{reportId}", async (event) => {
+  const id = event.params.reportId;
+  const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+  const feature = after ? roadReportsCore.toCommunityFeature(id, after) : null;
+  const ref = getFirestore().doc(`communityRoadFeatures/${id}`);
+  if (feature) await ref.set({ ...feature, updatedAt: FieldValue.serverTimestamp() });
+  else await ref.delete().catch(() => {});
 });

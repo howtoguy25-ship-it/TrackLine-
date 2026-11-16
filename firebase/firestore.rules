@@ -227,6 +227,37 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Driver reports about school zones and speed limits (firebase/functions/roadReportsCore.js).
+    // Filed "pending" by the reporter; other signed-in drivers can see pending ones near them to
+    // confirm (one confirmation per account, never their own). Only the confirmRoadReport
+    // function and the project owner change a report's status.
+    match /roadFeatureReports/{reportId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.confirmCount == 0
+        && request.resource.data.kind in ["school_zone_missing", "school_zone_wrong", "speed_limit_wrong"]
+        && request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+        && request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
+        && request.resource.data.tile is string && request.resource.data.tile.size() <= 20;
+      allow update, delete: if isAdmin();
+
+      match /confirmations/{uid} {
+        allow read: if isAdmin();
+        allow create: if isSignedIn()
+          && uid == request.auth.uid
+          && get(/databases/$(database)/documents/roadFeatureReports/$(reportId)).data.reportedBy != request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // Live / approved driver-reported school zones, written only by syncRoadReport. No reporter id.
+    match /communityRoadFeatures/{featureId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /userReports/{reportId} {
       allow read: if isAdmin();
       allow create: if isSignedIn()

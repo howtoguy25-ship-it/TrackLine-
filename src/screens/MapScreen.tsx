@@ -24,6 +24,9 @@ import { zoneStatus } from "@/schoolZones/zoneStatus";
 import { parseMaxspeedConditional } from "@/schoolZones/openingHours";
 import { deviceRegion, regionAt } from "@/schoolZones/regions";
 import type { ZoneShape } from "@/schoolZones/zoneMatch";
+import { communityZoneAt, type CommunityFeature } from "@/schoolZones/communityZones";
+import { communityFeaturesAround } from "@/services/roadFeatureReports";
+import { RoadReportSheet } from "@/components/RoadReportSheet";
 import type { SchoolCalendar } from "@/schoolZones/calendar";
 import { resolveSpeedLimit, routeLimitAt, signStyleFor, signUnitFor, signValue } from "@/speedLimits/resolveLimit";
 import { buildRouteGeometry, createMatchState, deadReckon, matchFix, type MatchResult } from "@/nav/routeMatcher";
@@ -1521,6 +1524,7 @@ export function MapScreen() {
   // on every fix and again at the exact minute a zone switches on or off.
   const [schoolShapes, setSchoolShapes] = useState<ZoneShape[]>([]);
   const [schoolCalendars, setSchoolCalendars] = useState<Record<string, SchoolCalendar | null>>({});
+  const [communityZones, setCommunityZones] = useState<CommunityFeature[]>([]);
   const schoolTileRef = useRef<string | null>(null);
   const schoolLoadSeqRef = useRef(0);
   useEffect(() => {
@@ -1533,10 +1537,14 @@ export function MapScreen() {
     zonesAround(currentLatLng.latitude, currentLatLng.longitude)
       .then(async (shapes) => {
         const regions = [...new Set([...shapes.map((sz) => sz.zone.region), ...(here.region ? [here.region] : [])])];
-        const cals = Object.fromEntries(await Promise.all(regions.map(async (r) => [r, await calendarFor(r).catch(() => null)] as const)));
+        const [cals, community] = await Promise.all([
+          Promise.all(regions.map(async (r) => [r, await calendarFor(r).catch(() => null)] as const)).then(Object.fromEntries),
+          communityFeaturesAround(currentLatLng.latitude, currentLatLng.longitude),
+        ]);
         if (seq !== schoolLoadSeqRef.current) return;
         setSchoolShapes(shapes);
         setSchoolCalendars(cals);
+        setCommunityZones(community);
       })
       .catch(() => {
         // Retried on the next fix.
@@ -1550,7 +1558,7 @@ export function MapScreen() {
   // minutes), so a zone -- the one you're in, and every one drawn on the map -- switches on or off
   // at the exact minute, even when parked.
   const [schoolNowMs, setSchoolNowMs] = useState(() => Date.now());
-  const hasSchoolShapes = schoolShapes.length > 0;
+  const hasSchoolShapes = schoolShapes.length > 0 || communityZones.length > 0;
   useEffect(() => {
     if (!hasSchoolShapes) return;
     let timer: ReturnType<typeof setTimeout>;
@@ -1608,13 +1616,27 @@ export function MapScreen() {
     return null;
   })();
 
+  // Lowest-priority zone source: a driver-reported zone that has gone live (3 confirmations or
+  // owner approval), on the road it was reported on, judged on the same calendar.
+  const communitySchoolZone = (() => {
+    if (!currentLatLng || communityZones.length === 0) return null;
+    const here = regionAt(currentLatLng.latitude, currentLatLng.longitude);
+    const zone = communityZoneAt(currentLatLng, moving ? heading : null, communityZones, here);
+    if (!zone) return null;
+    const st = zoneStatus(zone, here.region ? schoolCalendars[here.region] ?? null : null, schoolNowMs);
+    return st.active ? { zone, status: st } : null;
+  })();
+
+  const [roadReportOpen, setRoadReportOpen] = useState(false);
   const resolvedLimit = resolveSpeedLimit({
     // The sign always shows the limit in force; "Alert while driving" only controls the call-out.
     schoolZone: schoolZoneNow?.status.active
         ? { active: true, kmh: schoolZoneNow.status.limitKmh, display: schoolZoneNow.shape.zone.limit, untilLabel: schoolZoneNow.status.untilLabel, name: schoolZoneNow.shape.zone.name }
         : osmSchoolZone
           ? { active: true, kmh: osmSchoolZone.kmh, display: osmSchoolZone.display, untilLabel: osmSchoolZone.untilLabel }
-          : null,
+          : communitySchoolZone
+            ? { active: true, kmh: communitySchoolZone.status.limitKmh, display: communitySchoolZone.zone.limit, untilLabel: communitySchoolZone.status.untilLabel, name: communitySchoolZone.zone.name }
+            : null,
     route: route && navMatch ? routeLimitAt(route.polyline, route.maxSpeedsKmh, navMatch.along) : null,
     osm: speedLimitKmh != null ? { kmh: speedLimitKmh, estimated: speedLimitEstimated } : null,
   });
@@ -4887,6 +4909,7 @@ export function MapScreen() {
           signStyle={signStyle}
           schoolZone={resolvedLimit?.schoolZone ?? null}
           thresholdKmh={settings.speedingThresholdKmh}
+          onPressSign={() => setRoadReportOpen(true)}
           visible={speedometerVisible}
           chimeEnabled={settings.speedWarningChimeEnabled}
           // Real, confirmed bug this fixes: this dial used a fixed bottom:24 regardless of
@@ -4907,6 +4930,17 @@ export function MapScreen() {
           }
         />
       )}
+      <RoadReportSheet
+        visible={roadReportOpen}
+        onClose={() => setRoadReportOpen(false)}
+        uid={user?.uid ?? null}
+        position={currentLatLng}
+        heading={moving ? heading : null}
+        region={currentLatLng ? regionAt(currentLatLng.latitude, currentLatLng.longitude).region : null}
+        unit={signUnit}
+        shownKmh={resolvedLimit?.kmh ?? null}
+        schoolZoneId={schoolZoneNow?.shape.zone.id ?? null}
+      />
 
       {/* Real, confirmed request -- explains what the live traffic layer's own yellow/red
           actually mean, right when it turns on (see showsTrafficLayer/trafficLegendVisible
