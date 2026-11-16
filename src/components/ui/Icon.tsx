@@ -128,6 +128,8 @@ import CirclePlayIcon from "lucide-react-native/icons/circle-play";
 import DownloadIcon from "lucide-react-native/icons/download";
 import BatteryWarningIcon from "lucide-react-native/icons/battery-warning";
 import BatteryFullIcon from "lucide-react-native/icons/battery-full";
+import CoffeeIcon from "lucide-react-native/icons/coffee";
+import ShoppingBagIcon from "lucide-react-native/icons/shopping-bag";
 import ThumbsUpIcon from "lucide-react-native/icons/thumbs-up";
 
 // The app's one icon set: Lucide's line icons (ISC licence), drawn at a 1.75 stroke and 24pt
@@ -145,6 +147,7 @@ export const ICON_SIZE = 24;
 const ICONS = {
   "battery-heart-variant": BatteryFullIcon,
   "battery-alert": BatteryWarningIcon,
+  "coffee": CoffeeIcon,
   "download": DownloadIcon,
   "play-circle": CirclePlayIcon,
   "pause-circle": CirclePauseIcon,
@@ -258,6 +261,7 @@ const ICONS = {
   "send": SendIcon,
   "settings": SettingsIcon,
   "share": Share2Icon,
+  "shopping-bag": ShoppingBagIcon,
   "square": SquareIcon,
   "star": StarIcon,
   "stop": SquareIcon,

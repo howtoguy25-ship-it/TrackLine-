@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Satellite Streets",
   "metadata": {
-    "trackline:styleVersion": 4
+    "trackline:styleVersion": 5
   },
   "sources": {
     "composite": {
@@ -1550,12 +1550,79 @@
       "source-layer": "poi_label",
       "minzoom": 15.5,
       "filter": [
-        "<=",
+        "all",
         [
-          "get",
-          "filterrank"
+          "<=",
+          [
+            "get",
+            "filterrank"
+          ],
+          2
         ],
-        2
+        [
+          "!",
+          [
+            "all",
+            [
+              "match",
+              [
+                "get",
+                "maki"
+              ],
+              [
+                "alcohol-shop",
+                "bakery",
+                "cafe",
+                "charging-station",
+                "clothing-store",
+                "convenience",
+                "fast-food",
+                "fuel",
+                "furniture",
+                "grocery",
+                "hardware",
+                "hospital",
+                "ice-cream",
+                "jewelry-store",
+                "mobile-phone",
+                "parking",
+                "parking-garage",
+                "pharmacy",
+                "restaurant",
+                "restaurant-noodle",
+                "restaurant-pizza",
+                "restaurant-seafood",
+                "shoe",
+                "shop"
+              ],
+              true,
+              false
+            ],
+            [
+              "any",
+              [
+                "==",
+                [
+                  "get",
+                  "maki"
+                ],
+                "hospital"
+              ],
+              [
+                "has",
+                "brand"
+              ]
+            ],
+            [
+              "<=",
+              [
+                "get",
+                "filterrank"
+              ],
+              2
+            ]
+          ]
+        ]
       ],
       "layout": {
         "text-field": [
@@ -1581,6 +1648,338 @@
         "text-color": "#ECECEC",
         "text-halo-color": "#1F2125",
         "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "poi-badges-early",
+      "type": "symbol",
+      "source": "composite",
+      "source-layer": "poi_label",
+      "minzoom": 13,
+      "filter": [
+        "all",
+        [
+          "match",
+          [
+            "get",
+            "maki"
+          ],
+          [
+            "charging-station",
+            "fuel",
+            "hospital"
+          ],
+          true,
+          false
+        ],
+        [
+          "any",
+          [
+            "==",
+            [
+              "get",
+              "maki"
+            ],
+            "hospital"
+          ],
+          [
+            "has",
+            "brand"
+          ]
+        ],
+        [
+          "<=",
+          [
+            "get",
+            "filterrank"
+          ],
+          2
+        ]
+      ],
+      "layout": {
+        "icon-image": [
+          "coalesce",
+          [
+            "image",
+            [
+              "concat",
+              "logo:",
+              [
+                "coalesce",
+                [
+                  "get",
+                  "brand"
+                ],
+                ""
+              ]
+            ]
+          ],
+          [
+            "image",
+            [
+              "match",
+              [
+                "get",
+                "maki"
+              ],
+              [
+                "charging-station",
+                "fuel"
+              ],
+              "badge:fuel",
+              [
+                "hospital"
+              ],
+              "badge:hospital",
+              [
+                "alcohol-shop",
+                "convenience",
+                "grocery"
+              ],
+              "badge:cart",
+              [
+                "bakery",
+                "cafe",
+                "ice-cream"
+              ],
+              "badge:cup",
+              [
+                "fast-food",
+                "restaurant",
+                "restaurant-noodle",
+                "restaurant-pizza",
+                "restaurant-seafood"
+              ],
+              "badge:fork",
+              [
+                "clothing-store",
+                "furniture",
+                "hardware",
+                "jewelry-store",
+                "mobile-phone",
+                "pharmacy",
+                "shoe",
+                "shop"
+              ],
+              "badge:bag",
+              [
+                "parking",
+                "parking-garage"
+              ],
+              "badge:parking",
+              "badge:bag"
+            ]
+          ]
+        ],
+        "icon-anchor": "bottom",
+        "icon-padding": 28,
+        "symbol-sort-key": [
+          "get",
+          "filterrank"
+        ],
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name"
+          ],
+          [
+            "get",
+            "name_en"
+          ]
+        ],
+        "text-font": [
+          "DIN Pro Medium",
+          "Arial Unicode MS Regular"
+        ],
+        "text-size": 12,
+        "text-max-width": 9,
+        "text-anchor": "left",
+        "text-offset": [
+          1.3,
+          -1.5
+        ],
+        "text-optional": true
+      },
+      "paint": {
+        "text-color": "#FFFFFF",
+        "text-halo-color": "#1F2125",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "poi-badges",
+      "type": "symbol",
+      "source": "composite",
+      "source-layer": "poi_label",
+      "minzoom": 15,
+      "filter": [
+        "all",
+        [
+          "match",
+          [
+            "get",
+            "maki"
+          ],
+          [
+            "alcohol-shop",
+            "bakery",
+            "cafe",
+            "clothing-store",
+            "convenience",
+            "fast-food",
+            "furniture",
+            "grocery",
+            "hardware",
+            "ice-cream",
+            "jewelry-store",
+            "mobile-phone",
+            "parking",
+            "parking-garage",
+            "pharmacy",
+            "restaurant",
+            "restaurant-noodle",
+            "restaurant-pizza",
+            "restaurant-seafood",
+            "shoe",
+            "shop"
+          ],
+          true,
+          false
+        ],
+        [
+          "any",
+          [
+            "==",
+            [
+              "get",
+              "maki"
+            ],
+            "hospital"
+          ],
+          [
+            "has",
+            "brand"
+          ]
+        ],
+        [
+          "<=",
+          [
+            "get",
+            "filterrank"
+          ],
+          2
+        ]
+      ],
+      "layout": {
+        "icon-image": [
+          "coalesce",
+          [
+            "image",
+            [
+              "concat",
+              "logo:",
+              [
+                "coalesce",
+                [
+                  "get",
+                  "brand"
+                ],
+                ""
+              ]
+            ]
+          ],
+          [
+            "image",
+            [
+              "match",
+              [
+                "get",
+                "maki"
+              ],
+              [
+                "charging-station",
+                "fuel"
+              ],
+              "badge:fuel",
+              [
+                "hospital"
+              ],
+              "badge:hospital",
+              [
+                "alcohol-shop",
+                "convenience",
+                "grocery"
+              ],
+              "badge:cart",
+              [
+                "bakery",
+                "cafe",
+                "ice-cream"
+              ],
+              "badge:cup",
+              [
+                "fast-food",
+                "restaurant",
+                "restaurant-noodle",
+                "restaurant-pizza",
+                "restaurant-seafood"
+              ],
+              "badge:fork",
+              [
+                "clothing-store",
+                "furniture",
+                "hardware",
+                "jewelry-store",
+                "mobile-phone",
+                "pharmacy",
+                "shoe",
+                "shop"
+              ],
+              "badge:bag",
+              [
+                "parking",
+                "parking-garage"
+              ],
+              "badge:parking",
+              "badge:bag"
+            ]
+          ]
+        ],
+        "icon-anchor": "bottom",
+        "icon-padding": 28,
+        "symbol-sort-key": [
+          "get",
+          "filterrank"
+        ],
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name"
+          ],
+          [
+            "get",
+            "name_en"
+          ]
+        ],
+        "text-font": [
+          "DIN Pro Medium",
+          "Arial Unicode MS Regular"
+        ],
+        "text-size": 12,
+        "text-max-width": 9,
+        "text-anchor": "left",
+        "text-offset": [
+          1.3,
+          -1.5
+        ],
+        "text-optional": true
+      },
+      "paint": {
+        "text-color": "#FFFFFF",
+        "text-halo-color": "#1F2125",
+        "text-halo-width": 1.4
       }
     }
   ]

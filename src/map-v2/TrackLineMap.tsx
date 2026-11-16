@@ -1,5 +1,6 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useLatest } from "@/hooks/useLatest";
+import { BADGE_LAYER_IDS } from "@/map/poiBadges";
 import { StyleSheet, View } from "react-native";
 import type { CameraStop, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { loadMapbox } from "@/map-v2/mapbox";
@@ -200,7 +201,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
       const hit = await mapRef.current.queryRenderedFeaturesAtPoint(
         [feature.properties.screenPointX, feature.properties.screenPointY],
         [],
-        ["poi-labels"]
+        ["poi-labels", ...BADGE_LAYER_IDS]
       );
       const poi = hit?.features?.[0];
       const name = poi?.properties?.name_en ?? poi?.properties?.name;

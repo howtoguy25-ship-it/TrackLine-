@@ -12,6 +12,7 @@ import { UserPuck, BLANK_ICON } from "@/map-v2/layers/UserPuck";
 import { PresenceLayerV2, presenceIconName } from "@/map-v2/layers/PresenceLayerV2";
 import { splitRouteAt, turnArrowAt, type LatLng } from "@/map-v2/geo";
 import { iconsUsed, type MapPin } from "@/map-v2/pins";
+import { BADGE_CATEGORIES, badgeIconName } from "@/map/poiBadges";
 import type { PresenceDoc } from "@/services/presence";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
@@ -81,6 +82,8 @@ interface Props {
 
 const FIXED_ICONS = [
   BLANK_ICON,
+  // The brand & popular-place badges the base style draws (map/poiBadges.ts).
+  ...BADGE_CATEGORIES.map(badgeIconName),
   "person-dot",
   "heading-cone",
   "flag",

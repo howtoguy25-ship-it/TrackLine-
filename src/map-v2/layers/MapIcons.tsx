@@ -15,6 +15,7 @@ import { colors } from "@/theme/tokens";
 import { LIVE_TRAFFIC_BADGE } from "@/theme/colors";
 import { Icon, isIconName } from "@/components/ui/Icon";
 import { Text } from "@/components/AppText";
+import { BADGE_COLOURS, type BadgeCategory } from "@/map/poiBadges";
 
 // Every icon the Mapbox map draws, each one an ordinary React view rendered ONCE into a map
 // image (Mapbox's Images/Image), then reused by any number of pins through the SymbolLayer.
@@ -153,6 +154,22 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
         <Tracky mood={look.mood ?? "chill"} size={32} animated={false} reactOnTap={false} />
       );
     }
+    case "badge": {
+      // Brand & popular places (map/poiBadges.ts): a rounded square with a pointer and our own
+      // category glyph -- never a brand's logo (those only for signed partners, "logo:<brand>").
+      const category = rest[0] as BadgeCategory;
+      const fill = BADGE_COLOURS[category];
+      if (!fill) return null;
+      const glyph = BADGE_GLYPH[category];
+      return (
+        <View style={styles.column}>
+          <View style={[styles.square, { backgroundColor: fill }]}>
+            {glyph.icon ? <Icon name={glyph.icon} size={15} color="#FFFFFF" /> : <Text style={styles.squareLetter}>{glyph.letter}</Text>}
+          </View>
+          <View style={[styles.pointer, { borderTopColor: fill }]} />
+        </View>
+      );
+    }
     default:
       if (CLUSTER_COLORS[kind]) return <Badge color={CLUSTER_COLORS[kind]} size={30} />;
       return null;
@@ -185,8 +202,20 @@ export function MapIcons({ names, extras }: { names: readonly string[]; extras?:
   );
 }
 
+const BADGE_GLYPH: Record<BadgeCategory, { icon?: "gas-station" | "cart" | "coffee" | "restaurant" | "shopping-bag"; letter?: string }> = {
+  fuel: { icon: "gas-station" },
+  hospital: { letter: "H" },
+  cart: { icon: "cart" },
+  cup: { icon: "coffee" },
+  fork: { icon: "restaurant" },
+  bag: { icon: "shopping-bag" },
+  parking: { letter: "P" },
+};
+
 const styles = StyleSheet.create({
   column: { alignItems: "center" },
+  square: { width: 26, height: 26, borderRadius: 7, borderWidth: 2, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  squareLetter: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   blank: { width: 1, height: 1, opacity: 0 },
   badge: { borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
   pointer: {

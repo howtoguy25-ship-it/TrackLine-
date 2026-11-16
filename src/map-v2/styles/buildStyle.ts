@@ -7,6 +7,7 @@
 // and a test checks they're up to date. The other colour themes in Settings are built at runtime
 // with the same function. No React Native imports -- unit-tested directly.
 
+import { BADGE_LAYER_IDS, BADGE_MIN_ZOOM, BADGE_PADDING_PX, EARLY_MIN_ZOOM, badgeFilter, badgeIconExpression, isBadgeFeature } from "../../map/poiBadges";
 export type RoadClass = "motorway" | "trunk" | "primary" | "secondary" | "tertiary" | "residential" | "service";
 
 /** Mapbox Streets v8 `road` layer `class` values that make up each of our road classes. */
@@ -69,7 +70,7 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 4;
+export const STYLE_VERSION = 5;
 
 /** Australian suburb names with postcodes (ABS data) are drawn from this zoom up to 16. */
 export const AU_SUBURB_MIN_ZOOM = 11;
@@ -534,7 +535,8 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     source: "composite",
     "source-layer": "poi_label",
     minzoom: 15.5,
-    filter: ["<=", ["get", "filterrank"], 2],
+    // Places that get a brand badge (below) aren't labelled twice.
+    filter: ["all", ["<=", ["get", "filterrank"], 2], ["!", isBadgeFeature()]],
     layout: {
       "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
       "text-font": LABEL_FONT,
@@ -544,6 +546,34 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     },
     paint: { "text-color": dim(p.streetLabel, 0.25), "text-halo-color": p.labelHalo, "text-halo-width": 1.2 },
   });
+
+  // Brand & popular places (map/poiBadges.ts): fuel and hospitals from z13, the rest from z15.
+  // Drawn after the plain labels so they win placement; most prominent first.
+  for (const early of [true, false]) {
+    layers.push({
+      id: early ? BADGE_LAYER_IDS[0] : BADGE_LAYER_IDS[1],
+      type: "symbol",
+      source: "composite",
+      "source-layer": "poi_label",
+      minzoom: early ? EARLY_MIN_ZOOM : BADGE_MIN_ZOOM,
+      filter: badgeFilter(early),
+      layout: {
+        "icon-image": badgeIconExpression(),
+        "icon-anchor": "bottom",
+        "icon-padding": BADGE_PADDING_PX,
+        "symbol-sort-key": ["get", "filterrank"],
+        "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
+        "text-font": LABEL_FONT,
+        "text-size": 12,
+        "text-max-width": 9,
+        "text-anchor": "left",
+        "text-offset": [1.3, -1.5],
+        // The badge stays even where its name would collide.
+        "text-optional": true,
+      },
+      paint: { "text-color": p.streetLabel, "text-halo-color": p.labelHalo, "text-halo-width": 1.4 },
+    });
+  }
 
   const sources: Json = {
     composite: { type: "vector", url: "mapbox://mapbox.mapbox-streets-v8" },
