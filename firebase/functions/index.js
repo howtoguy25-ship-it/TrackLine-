@@ -1176,3 +1176,80 @@ exports.syncRoadReport = onDocumentWritten("roadFeatureReports/{reportId}", asyn
   if (feature) await ref.set({ ...feature, updatedAt: FieldValue.serverTimestamp() });
   else await ref.delete().catch(() => {});
 });
+
+// ---------------------------------------------------------------------------------------------
+// Vehicle full check (one paid product, "full_check"). All logic is in vehicleCheck/ -- these
+// are the three callables the app uses. Keys only as Firebase secrets; the deploy workflow
+// creates "unset" placeholders, and while any provider is a stub or unkeyed the check is not
+// sold (getVehicleCheckInfo.available = false and the app hides it in production).
+const vehicleCheckCore = require("./vehicleCheck/core");
+const vehicleCheckProviders = require("./vehicleCheck/providers");
+const vehicleCheckConfig = require("./vehicleCheck/config");
+const { firestoreStore: vehicleCheckStore } = require("./vehicleCheck/store");
+const { verifyPurchase: verifyVehiclePurchase } = require("./vehicleCheck/receipts");
+const CARJAM_API_KEY = defineSecret("CARJAM_API_KEY");
+const PPSR_BUSINESSAPI_KEY = defineSecret("PPSR_BUSINESSAPI_KEY");
+
+async function vehicleCheckDeps() {
+  const db = getFirestore();
+  const snap = await db.doc("config/vehicleCheck").get().catch(() => null);
+  return {
+    store: vehicleCheckStore(db, FieldValue),
+    configOverride: snap && snap.exists ? snap.data() : null,
+    keys: { CARJAM_API_KEY: CARJAM_API_KEY.value(), PPSR_BUSINESSAPI_KEY: PPSR_BUSINESSAPI_KEY.value() },
+    fetchImpl: fetch,
+    verifyPurchase: verifyVehiclePurchase,
+    sleep,
+  };
+}
+
+// Whether it's on sale, the price label, and how many free re-checks this user has.
+exports.getVehicleCheckInfo = onCall({ secrets: [CARJAM_API_KEY, PPSR_BUSINESSAPI_KEY] }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const deps = await vehicleCheckDeps();
+  const config = vehicleCheckConfig.mergeConfig(deps.configOverride);
+  const { available, missing } = vehicleCheckProviders.availability(config, deps.keys);
+  return {
+    available,
+    // Only the owner sees what's missing.
+    missing: isAdminRequest(request) ? missing : undefined,
+    productId: config.productId,
+    priceAud: config.priceAud,
+    countries: ["AU"],
+    credits: await deps.store.getCredits(request.auth.uid),
+  };
+});
+
+exports.runVehicleCheck = onCall(
+  { secrets: [CARJAM_API_KEY, PPSR_BUSINESSAPI_KEY], timeoutSeconds: 180, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+    const deps = await vehicleCheckDeps();
+    const config = vehicleCheckConfig.mergeConfig(deps.configOverride);
+    if (!vehicleCheckProviders.availability(config, deps.keys).available) {
+      return { outcome: "not_available", message: "The full check isn't available yet." };
+    }
+    const data = request.data || {};
+    return vehicleCheckCore.runFullCheck(
+      {
+        uid: request.auth.uid,
+        isAdmin: isAdminRequest(request),
+        input: { country: data.country, plate: data.plate, state: data.state, vin: data.vin },
+        payment: data.useCredit ? { type: "credit" } : { type: "purchase", platform: data.platform, token: data.purchaseToken },
+        requestId: data.requestId,
+      },
+      deps
+    );
+  }
+);
+
+exports.retryVehicleCheckSection = onCall(
+  { secrets: [CARJAM_API_KEY, PPSR_BUSINESSAPI_KEY], timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+    const deps = await vehicleCheckDeps();
+    const data = request.data || {};
+    if (!vehicleCheckCore.REPORT_ID_RE.test(String(data.reportId || ""))) return { outcome: "invalid", reason: "bad_report_id" };
+    return vehicleCheckCore.retrySection({ uid: request.auth.uid, reportId: data.reportId, section: String(data.section || "") }, deps);
+  }
+);

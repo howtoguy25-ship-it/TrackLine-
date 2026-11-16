@@ -161,6 +161,32 @@ service cloud.firestore {
       allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
       allow write: if isSignedIn() && request.auth.uid == uid;
+
+      // Vehicle full check reports. Written only by the runVehicleCheck function (Admin SDK);
+      // the owner can read them (the app watches one fill in, and lists "My checks") but never
+      // write one, so a report can't be forged or edited on the device.
+      match /vehicleChecks/{reportId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+
+    // Free re-checks owed to a user (a check that couldn't load). Server-written; owner-readable.
+    match /vehicleCheckCredits/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Purchases, the 24 h result cache and per-check provider costs: server only.
+    match /vehicleCheckPurchases/{key} {
+      allow read, write: if false;
+    }
+    match /vehicleCheckCache/{key} {
+      allow read, write: if false;
+    }
+    match /providerUsage/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Real, explicit request (Ghost mode + visibility control, Part 3) -- "Position written to

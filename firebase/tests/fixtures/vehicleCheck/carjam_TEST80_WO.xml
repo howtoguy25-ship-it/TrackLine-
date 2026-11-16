@@ -1,0 +1,17 @@
+<message>
+  <vehicles __array="true">
+    <vin>WAUZZZ8X4GB00TEST</vin>
+    <chassis/>
+    <registration>
+      <plate>TEST80</plate>
+      <state>VIC</state>
+    </registration>
+    <written_off __array="true">
+      <damage_codes>F14N</damage_codes>
+      <incident_code>Statutory Write-off</incident_code>
+      <incident_recorded_date>2021-03-02</incident_recorded_date>
+      <jurisdiction>VIC</jurisdiction>
+      <type_code>Storm, Flood, Other Write-off</type_code>
+    </written_off>
+  </vehicles>
+</message>

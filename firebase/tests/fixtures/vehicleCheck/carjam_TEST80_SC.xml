@@ -1,0 +1,16 @@
+<message>
+  <vehicles __array="true">
+    <vin>WAUZZZ8X4GB00TEST</vin>
+    <chassis/>
+    <registration>
+      <plate>TEST80</plate>
+      <state>VIC</state>
+    </registration>
+    <stolen __array="true">
+      <type>Plate</type>
+      <jurisdiction>VIC</jurisdiction>
+      <reported_date>2021-02-21</reported_date>
+      <summary>POL JUR-N REF-00789042100033645052</summary>
+    </stolen>
+  </vehicles>
+</message>

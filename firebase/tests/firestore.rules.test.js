@@ -456,3 +456,46 @@ describe("alerts/{alertId} (votes, thanks, byline -- once per user)", () => {
     await assertFails(addDoc(collection(unnamed, "alerts"), newAlert("e", { reporterName: "Sam" })));
   });
 });
+
+describe("vehicle full check (reports, credits, purchases, cache, provider costs)", () => {
+  const seed = async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "users/u1/vehicleChecks/r1"), { status: "complete", sections: {} });
+      await setDoc(doc(db, "vehicleCheckCredits/u1"), { count: 1 });
+      await setDoc(doc(db, "vehicleCheckPurchases/ios_1"), { uid: "u1", reportId: "r1" });
+      await setDoc(doc(db, "vehicleCheckCache/abc"), { at: 1, sections: {} });
+      await setDoc(doc(db, "providerUsage/x"), { uid: "u1", costs: [] });
+    });
+  };
+
+  test("the owner can read their reports and credit count, but never write them", async () => {
+    await seed();
+    const db = testEnv.authenticatedContext("u1").firestore();
+    await assertSucceeds(getDoc(doc(db, "users/u1/vehicleChecks/r1")));
+    await assertSucceeds(getDocs(collection(db, "users/u1/vehicleChecks")));
+    await assertSucceeds(getDoc(doc(db, "vehicleCheckCredits/u1")));
+    await assertFails(setDoc(doc(db, "users/u1/vehicleChecks/r2"), { status: "complete", sections: {} }));
+    await assertFails(updateDoc(doc(db, "users/u1/vehicleChecks/r1"), { status: "complete" }));
+    await assertFails(setDoc(doc(db, "vehicleCheckCredits/u1"), { count: 99 }));
+  });
+
+  test("nobody else can read them", async () => {
+    await seed();
+    const db = testEnv.authenticatedContext("u2").firestore();
+    await assertFails(getDoc(doc(db, "users/u1/vehicleChecks/r1")));
+    await assertFails(getDoc(doc(db, "vehicleCheckCredits/u1")));
+  });
+
+  test("purchases and the cache are server-only; provider costs are admin-read only", async () => {
+    await seed();
+    const db = testEnv.authenticatedContext("u1").firestore();
+    await assertFails(getDoc(doc(db, "vehicleCheckPurchases/ios_1")));
+    await assertFails(setDoc(doc(db, "vehicleCheckPurchases/ios_2"), { uid: "u1" }));
+    await assertFails(getDoc(doc(db, "vehicleCheckCache/abc")));
+    await assertFails(getDoc(doc(db, "providerUsage/x")));
+    const admin = testEnv.authenticatedContext("owner", { email: OWNER_EMAIL }).firestore();
+    await assertSucceeds(getDoc(doc(admin, "providerUsage/x")));
+    await assertFails(setDoc(doc(admin, "providerUsage/y"), {}));
+  });
+});

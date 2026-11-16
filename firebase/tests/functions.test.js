@@ -454,3 +454,21 @@ describe("confirmRoadReport / syncRoadReport", () => {
     expect(gone).toBe(true);
   }, 40000);
 });
+
+describe("vehicle full check callables", () => {
+  test("with placeholder keys and stub odometer adapters it is not on sale, and won't run", async () => {
+    await signInAnonymously(auth);
+    const info = (await httpsCallable(functions, "getVehicleCheckInfo")({})).data;
+    expect(info).toMatchObject({ available: false, productId: "full_check", priceAud: 19.99, countries: ["AU"], credits: 0 });
+    // The reasons are shown to the owner only.
+    expect(info.missing ?? null).toBeNull();
+    const run = (await httpsCallable(functions, "runVehicleCheck")({ country: "AU", plate: "TEST00", state: "VIC", platform: "ios", purchaseToken: "x".repeat(20) })).data;
+    expect(run).toEqual({ outcome: "not_available", message: "The full check isn't available yet." });
+  });
+
+  test("retrying a section needs a real report id", async () => {
+    await signInAnonymously(auth);
+    const r = (await httpsCallable(functions, "retryVehicleCheckSection")({ reportId: "../x", section: "ppsr" })).data;
+    expect(r).toEqual({ outcome: "invalid", reason: "bad_report_id" });
+  });
+});
