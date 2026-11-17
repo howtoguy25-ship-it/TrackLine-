@@ -55,7 +55,7 @@ jobs:
           npm ci --prefix firebase/tests
       - name: Placeholder secrets for the Functions emulator (not real keys)
         run: |
-          printf 'MAPBOX_SERVER_TOKEN=emulator-placeholder\nELEVENLABS_API_KEY=emulator-placeholder\nTFNSW_API_KEY=emulator-placeholder\nCARJAM_API_KEY=emulator-placeholder\nAUCN_API_KEY=emulator-placeholder\nMOTORWEB_API_KEY=emulator-placeholder\nEQUIFAX_API_KEY=emulator-placeholder\nPPSR_API_KEY=emulator-placeholder\nPPSR_BUSINESSAPI_KEY=emulator-placeholder\nGOOGLE_PLACES_SERVER_KEY=emulator-placeholder\nANTHROPIC_API_KEY=emulator-placeholder\nTWILIO_ACCOUNT_SID=emulator-placeholder\nTWILIO_AUTH_TOKEN=emulator-placeholder\nTWILIO_FROM_NUMBER=emulator-placeholder\nSENTRY_AUTH_TOKEN=emulator-placeholder\n' > firebase/functions/.secret.local
+          printf 'MAPBOX_SERVER_TOKEN=emulator-placeholder\nELEVENLABS_API_KEY=emulator-placeholder\nTFNSW_API_KEY=emulator-placeholder\nCARJAM_API_KEY=emulator-placeholder\nAUCN_API_KEY=emulator-placeholder\nMOTORWEB_API_KEY=emulator-placeholder\nEQUIFAX_API_KEY=emulator-placeholder\nPPSR_API_KEY=emulator-placeholder\nPPSR_BUSINESSAPI_KEY=emulator-placeholder\nGOOGLE_PLACES_SERVER_KEY=emulator-placeholder\nANTHROPIC_API_KEY=emulator-placeholder\nTWILIO_ACCOUNT_SID=emulator-placeholder\nTWILIO_AUTH_TOKEN=emulator-placeholder\nTWILIO_FROM_NUMBER=emulator-placeholder\nSENTRY_AUTH_TOKEN=emulator-placeholder\nFUELCHECK_API_KEY=emulator-placeholder\nFUELCHECK_API_SECRET=emulator-placeholder\n' > firebase/functions/.secret.local
       # The functions' non-secret parameters (defineString), set to the defaults in index.js.
       # Without them the emulator stops to ask for each value and the job hangs.
       - name: Function parameters for the emulator (the code's own defaults)
@@ -129,6 +129,8 @@ jobs:
       #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER optional: SMS codes for
       #                        account recovery (without them SMS codes are queued, not sent)
       #   SENTRY_AUTH_TOKEN    optional: crash-free sessions % on the dashboard
+      #   FUELCHECK_API_KEY / FUELCHECK_API_SECRET optional: live NSW petrol prices
+      #                        (api.nsw.gov.au "Fuel API" key and secret)
       #
       # Firebase refuses to deploy a function whose secret doesn't exist at all. So for the
       # OPTIONAL keys, a placeholder value ("unset") is created if nothing is there yet -- the
@@ -158,6 +160,8 @@ jobs:
           KEY_TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           KEY_TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
           KEY_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          KEY_FUELCHECK_API_KEY: ${{ secrets.FUELCHECK_API_KEY }}
+          KEY_FUELCHECK_API_SECRET: ${{ secrets.FUELCHECK_API_SECRET }}
         run: |
           set -u
           secret_exists() {
@@ -168,7 +172,7 @@ jobs:
             npx firebase-tools@latest functions:secrets:set "$1" --data-file - \
               --project "$PROJECT_ID" --force >/dev/null
           }
-          for NAME in MAPBOX_SERVER_TOKEN ELEVENLABS_API_KEY TFNSW_API_KEY CARJAM_API_KEY AUCN_API_KEY MOTORWEB_API_KEY EQUIFAX_API_KEY PPSR_API_KEY PPSR_BUSINESSAPI_KEY GOOGLE_PLACES_SERVER_KEY ANTHROPIC_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_FROM_NUMBER SENTRY_AUTH_TOKEN; do
+          for NAME in MAPBOX_SERVER_TOKEN ELEVENLABS_API_KEY TFNSW_API_KEY CARJAM_API_KEY AUCN_API_KEY MOTORWEB_API_KEY EQUIFAX_API_KEY PPSR_API_KEY PPSR_BUSINESSAPI_KEY GOOGLE_PLACES_SERVER_KEY ANTHROPIC_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_FROM_NUMBER SENTRY_AUTH_TOKEN FUELCHECK_API_KEY FUELCHECK_API_SECRET; do
             VAR="KEY_$NAME"
             VALUE="${!VAR:-}"
             if [ "$UPDATE_KEYS" = "true" ] && [ -n "$VALUE" ]; then

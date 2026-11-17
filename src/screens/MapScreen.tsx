@@ -120,6 +120,7 @@ import { RestaurantsSheet } from "@/screens/RestaurantsSheet";
 import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
 import { ParkingSheet } from "@/screens/ParkingSheet";
+import { NearbyPlacesSheet, type NearbyPin } from "@/components/places/NearbyPlacesSheet";
 import { WhereToSheet, WHERE_TO_SNAP_FRACTIONS, type WhereToSheetRef } from "@/screens/WhereToSheet";
 import { PlacePage, PLACE_PAGE_SHEET_FRACTION } from "@/screens/PlacePage";
 import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
@@ -382,6 +383,9 @@ export function MapScreen() {
   const hotelsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const fuelStationsSheetRef = useRef<SimpleBottomSheetRef>(null);
   const parkingSheetRef = useRef<SimpleBottomSheetRef>(null);
+  // The OpenStreetMap parking list with its free / covered / accessible / EV filters, opened
+  // from the Google parking list's "More filters".
+  const parkingFiltersSheetRef = useRef<SimpleBottomSheetRef>(null);
   const whereToSheetRef = useRef<WhereToSheetRef>(null);
   const directionsSheetRef = useRef<BottomSheet>(null);
   const navOptionsSheetRef = useRef<BottomSheet>(null);
@@ -648,6 +652,12 @@ export function MapScreen() {
   const [hotelsSheetOpen, setHotelsSheetOpen] = useState(false);
   const [fuelStationsSheetOpen, setFuelStationsSheetOpen] = useState(false);
   const [parkingSheetOpen, setParkingSheetOpen] = useState(false);
+  const [parkingFiltersOpen, setParkingFiltersOpen] = useState(false);
+  // Pins for the open nearby list (food / hotels / parking; petrol uses fuelStationPins).
+  const [nearbyPins, setNearbyPins] = useState<{ food: NearbyPin[]; hotel: NearbyPin[]; parking: NearbyPin[] }>({ food: [], hotel: [], parking: [] });
+  const setFoodPins = useCallback((pins: NearbyPin[]) => setNearbyPins((p) => ({ ...p, food: pins })), []);
+  const setHotelPins = useCallback((pins: NearbyPin[]) => setNearbyPins((p) => ({ ...p, hotel: pins })), []);
+  const setParkingPins = useCallback((pins: NearbyPin[]) => setNearbyPins((p) => ({ ...p, parking: pins })), []);
   // Real, explicit request -- petrol stations visible ON THE MAP, not just in FuelStationsSheet's
   // own list. Reported up by that sheet (see its own FuelStationPin comment) as ready-to-render
   // pins, own onPress included -- MapScreen just renders whatever it's given (see the Marker
@@ -2894,13 +2904,10 @@ export function MapScreen() {
     }),
     []
   );
-  const openPlaceCategories = useMemo<ViewportPinCategory[]>(() => {
-    const cats: ViewportPinCategory[] = [];
-    if (fuelStationsSheetOpen) cats.push("fuel");
-    if (restaurantsSheetOpen) cats.push("restaurant");
-    if (hotelsSheetOpen) cats.push("hotel");
-    return cats;
-  }, [fuelStationsSheetOpen, restaurantsSheetOpen, hotelsSheetOpen]);
+  // The petrol / food / hotel lists now come from Google Places with their own pins (the open
+  // list's results, with price or brand under each). The OpenStreetMap viewport layer that used
+  // to fill the map around them is no longer asked for, so the map doesn't show two sources.
+  const openPlaceCategories = useMemo<ViewportPinCategory[]>(() => [], []);
 
   // Real, explicit request -- tapping a category chip (Fuel/Food/Hotels) should zoom the map out
   // to actually show the real nearby results it just fetched, Waze/Google-style, rather than
@@ -3257,7 +3264,22 @@ export function MapScreen() {
     hotelsSheetRef.current?.close();
     fuelStationsSheetRef.current?.close();
     parkingSheetRef.current?.close();
+    parkingFiltersSheetRef.current?.close();
   }, []);
+
+  // A new set of nearby results: zoom out smoothly to show them all (with you), Waze-style. Not
+  // while driving a route, where the camera keeps following the car.
+  const openListPins = fuelStationsSheetOpen ? fuelStationPins : restaurantsSheetOpen ? nearbyPins.food : hotelsSheetOpen ? nearbyPins.hotel : parkingSheetOpen ? nearbyPins.parking : null;
+  const openListKey = openListPins && openListPins.length ? openListPins.map((p) => p.id).join("|") : "";
+  const lastFitKeyRef = useRef("");
+  useEffect(() => {
+    if (!openListKey || route || openListKey === lastFitKeyRef.current || !openListPins) return;
+    lastFitKeyRef.current = openListKey;
+    const coords = openListPins.map((p) => ({ latitude: p.lat, longitude: p.lng }));
+    if (currentLatLng) coords.push(currentLatLng);
+    mapRef.current?.fitToCoordinates(coords, { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the result ids only
+  }, [openListKey, route]);
 
   // Real, shared category-chip handlers -- used by both MapToolsSheet's own rows (the "..."
   // menu) and the new Phase 2 "Where to?" sheet's Fuel/Food/Parking category chips, so there's
@@ -5166,14 +5188,25 @@ export function MapScreen() {
         }
       }
     };
-    if (fuelStationsSheetOpen) {
-      for (const pin of fuelStationPins) {
-        add({ id: `fuel:${pin.id}`, coordinate: { latitude: pin.lat, longitude: pin.lng }, icon: "fuel", priority: 11 }, { kind: "fuelPin", pin });
+    // The open nearby list's results: category badge, with the price or brand under it.
+    const listPins = (icon: string, list: NearbyPin[]) => {
+      for (const pin of list) {
+        add({ id: `${icon}:${pin.id}`, coordinate: { latitude: pin.lat, longitude: pin.lng }, icon, caption: pin.label, priority: 11 }, { kind: "fuelPin", pin });
       }
+    };
+    if (fuelStationsSheetOpen) {
+      listPins("fuel", fuelStationPins);
       venueLayer("fuel", fuelViewportClusters);
     }
-    if (restaurantsSheetOpen) venueLayer("restaurant", restaurantViewportClusters);
-    if (hotelsSheetOpen) venueLayer("hotel", hotelViewportClusters);
+    if (restaurantsSheetOpen) {
+      listPins("restaurant", nearbyPins.food);
+      venueLayer("restaurant", restaurantViewportClusters);
+    }
+    if (hotelsSheetOpen) {
+      listPins("hotel", nearbyPins.hotel);
+      venueLayer("hotel", hotelViewportClusters);
+    }
+    if (parkingSheetOpen) listPins("parking", nearbyPins.parking);
     {
       for (const incident of visibleIncidents(settings, nearbyTrafficIncidents)) {
         const st = incidentStyle(incident);
@@ -5216,6 +5249,8 @@ export function MapScreen() {
     speedCameraClusters,
     fuelStationsSheetOpen,
     fuelStationPins,
+    nearbyPins,
+    parkingSheetOpen,
     fuelViewportClusters,
     restaurantsSheetOpen,
     restaurantViewportClusters,
@@ -6376,6 +6411,7 @@ export function MapScreen() {
             location={currentLatLng}
             onViewDetails={onViewVenueDetails}
             onSheetChange={(index) => setRestaurantsSheetOpen(index >= 0)}
+            onPinsChange={setFoodPins}
           />
           <HotelsSheet
             ref={hotelsSheetRef}
@@ -6386,6 +6422,7 @@ export function MapScreen() {
             }}
             onViewDetails={onViewVenueDetails}
             onSheetChange={(index) => setHotelsSheetOpen(index >= 0)}
+            onPinsChange={setHotelPins}
           />
           <FuelStationsSheet
             ref={fuelStationsSheetRef}
@@ -6394,14 +6431,29 @@ export function MapScreen() {
             onSheetChange={(index) => setFuelStationsSheetOpen(index >= 0)}
             onStationsChange={setFuelStationPins}
           />
-          <ParkingSheet
+          <NearbyPlacesSheet
             ref={parkingSheetRef}
+            category="parking"
+            location={parkingCenter ?? currentLatLng}
+            onViewDetails={onViewVenueDetails}
+            onPinsChange={setParkingPins}
+            onMoreFilters={() => {
+              parkingSheetRef.current?.close();
+              parkingFiltersSheetRef.current?.snapToIndex(0);
+            }}
+            onSheetChange={(index) => {
+              setParkingSheetOpen(index >= 0);
+              // Closed (and the filter list not open): back to "around the driver" for next time.
+              if (index < 0 && !parkingFiltersOpen) setParkingCenter(null);
+            }}
+          />
+          <ParkingSheet
+            ref={parkingFiltersSheetRef}
             location={parkingCenter ?? currentLatLng}
             onViewDetails={onViewVenueDetails}
             onSheetChange={(index) => {
-              setParkingSheetOpen(index >= 0);
-              // Closed: back to "around the driver" for next time.
-              if (index < 0) setParkingCenter(null);
+              setParkingFiltersOpen(index >= 0);
+              if (index < 0 && !parkingSheetOpen) setParkingCenter(null);
             }}
           />
         </>

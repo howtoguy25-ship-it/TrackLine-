@@ -25,6 +25,7 @@ const poiPopularity = require("./poiPopularity");
 const crashRecords = require("./crashRecords");
 const tfnswTrip = require("./tfnswTrip");
 const plannedDrivesCore = require("./plannedDrivesCore");
+const fuelCheckCore = require("./fuelCheckCore");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -1270,6 +1271,35 @@ exports.refreshNswTrafficNow = onCall({ secrets: [TFNSW_API_KEY] }, async (reque
   return refreshNswTrafficSnapshot();
 });
 
+
+// ---- NSW FuelCheck live prices (petrol stations sheet) ----
+// The app asks for prices near a point for one fuel type; the keys stay here. Signed-in users
+// only, and answers are cached for 5 minutes per rounded area + fuel type to stay well inside
+// the API's limits. "unset" placeholder keys answer { configured: false } so the app can say
+// prices aren't available rather than showing nothing.
+const FUELCHECK_API_KEY = defineSecret("FUELCHECK_API_KEY");
+const FUELCHECK_API_SECRET = defineSecret("FUELCHECK_API_SECRET");
+const fuelPriceCache = new Map();
+
+exports.fuelPricesNearby = onCall({ secrets: [FUELCHECK_API_KEY, FUELCHECK_API_SECRET], timeoutSeconds: 20 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const key = FUELCHECK_API_KEY.value();
+  const secret = FUELCHECK_API_SECRET.value();
+  if (!fuelCheckCore.isConfigured(key, secret)) return { configured: false, stations: [] };
+  const req = fuelCheckCore.parseRequest(request.data);
+  if (req.error) return { configured: true, stations: [], error: req.error };
+  const cacheKey = `${req.lat.toFixed(2)},${req.lng.toFixed(2)},${req.radiusKm},${req.fuelType}`;
+  const hit = fuelPriceCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return { configured: true, stations: hit.stations };
+  try {
+    const stations = await fuelCheckCore.fetchNearbyPrices({ key, secret, request: req, fetchImpl: fetch, nowMs: Date.now(), uuid: require("crypto").randomUUID() });
+    fuelPriceCache.set(cacheKey, { at: Date.now(), stations });
+    return { configured: true, stations };
+  } catch (err) {
+    console.warn("fuelPricesNearby: lookup failed", err && err.message);
+    return { configured: true, stations: [], error: err && err.message ? err.message : "FuelCheck didn't answer" };
+  }
+});
 
 // ---- Planned drives (Plan a drive) ----
 // Every 5 minutes: drives due within 30 minutes that haven't had their reminder get one traffic

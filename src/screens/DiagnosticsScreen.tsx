@@ -85,6 +85,7 @@ export function DiagnosticsScreen() {
     ["Places key present", /^AIza[0-9A-Za-z_-]{35}$/.test(env.googlePlacesApiKey ?? "") ? `Yes (…${env.googlePlacesApiKey.slice(-4)})` : "No — Places key missing or not a Google key", /^AIza[0-9A-Za-z_-]{35}$/.test(env.googlePlacesApiKey ?? "")],
     serviceRow("Last Places request", diag.services.places),
     serviceRow("Last Routes request", diag.services.routes),
+    serviceRow("Last petrol prices request", diag.services.fuel),
     ["Google key present", env.googleDirectionsApiKey && env.googlePlacesApiKey ? "Yes" : "No", !!(env.googleDirectionsApiKey && env.googlePlacesApiKey)],
     [
       "Firebase connected",
