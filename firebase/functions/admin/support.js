@@ -114,7 +114,7 @@ function supportOps({ anthropicKey, makeClient }) {
           if (!STATUSES.includes(ctx.data.status)) throw new BadInput("Status is new, waiting or solved.");
           patch.status = ctx.data.status;
         }
-        if (ctx.data.assignee !== undefined) patch.assignee = ctx.data.assignee ? String(ctx.data.assignee).slice(0, 128) : null;
+        if (ctx.data.assignee !== undefined) patch.assignee = ctx.data.assignee === "me" ? ctx.actor.uid : ctx.data.assignee ? String(ctx.data.assignee).slice(0, 128) : null;
         const before = { status: snap.data().status, assignee: snap.data().assignee || null };
         await ref.update(patch);
         await ctx.audit({ action: "support.update", target: id, before, after: { status: patch.status ?? before.status, assignee: patch.assignee !== undefined ? patch.assignee : before.assignee }, reason: ctx.data.reason || "ticket update" });

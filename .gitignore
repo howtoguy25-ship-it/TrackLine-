@@ -35,3 +35,9 @@ functions/lib/
 firebase/functions/.secret.local
 firebase/tests/node_modules/
 .cache-abs/
+
+# Owner dashboard (Next.js) build output
+admin/.next/
+admin/out/
+admin/next-env.d.ts
+admin/.env.local

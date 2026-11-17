@@ -1,0 +1,66 @@
+name: Deploy owner dashboard (admin site)
+
+# Manual only. Builds /admin (Next.js static export) and deploys it to its own Firebase Hosting
+# site (default "<project>-admin"), separate from the public website. The dashboard holds no
+# secrets: every read and action goes through the role-checked Cloud Functions, which must be
+# deployed first (firebase-deploy.yml). ADMIN.md has the one-time setup.
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "Hosting site ID (blank = <project id>-admin)"
+        type: string
+        default: ""
+
+jobs:
+  test-build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm ci --prefix admin
+      - name: Typecheck + tests
+        run: |
+          npm --prefix admin run typecheck
+          npm --prefix admin test
+      - name: Write service account key to a temp file
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Resolve project and site
+        id: ids
+        run: |
+          PROJECT_ID=$(node -e "console.log(require('$RUNNER_TEMP/sa.json').project_id)")
+          SITE="${{ inputs.site }}"
+          [ -z "$SITE" ] && SITE="${PROJECT_ID}-admin"
+          echo "project=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "site=$SITE" >> "$GITHUB_OUTPUT"
+      - name: Build (public web config only)
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ steps.ids.outputs.project }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.ADMIN_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.ADMIN_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.ADMIN_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_KEY: ${{ secrets.ADMIN_RECAPTCHA_ENTERPRISE_KEY }}
+        run: npm --prefix admin run build
+      - name: Create the hosting site if it doesn't exist yet
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npx -y firebase-tools@14 hosting:sites:get "${{ steps.ids.outputs.site }}" --project "${{ steps.ids.outputs.project }}" >/dev/null 2>&1 \
+            || npx -y firebase-tools@14 hosting:sites:create "${{ steps.ids.outputs.site }}" --project "${{ steps.ids.outputs.project }}" --non-interactive
+      - name: Deploy
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          sed "s/__SITE__/${{ steps.ids.outputs.site }}/" admin/firebase.hosting.template.json > firebase.admin.json
+          npx -y firebase-tools@14 deploy --config firebase.admin.json --only hosting --project "${{ steps.ids.outputs.project }}" --non-interactive
+          echo "Dashboard: https://${{ steps.ids.outputs.site }}.web.app (connect admin.<your domain> in Firebase console > Hosting)"
+      - name: Clean up
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json" firebase.admin.json

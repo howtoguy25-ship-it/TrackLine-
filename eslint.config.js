@@ -5,7 +5,7 @@ const expoConfig = require("eslint-config-expo/flat");
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ["dist/*"],
+    ignores: ["dist/*", "admin/**"],
   },
   {
     // This rule only reports "React Compiler would skip optimising this component". The React
