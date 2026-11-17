@@ -89,6 +89,7 @@ import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/Destina
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
+import { SeeWhatsAheadBanner } from "@/components/SeeWhatsAheadBanner";
 import { MapToolsSheet } from "@/screens/MapToolsSheet";
 import { SoundSheet } from "@/screens/SoundSheet";
 import { VisibilitySheet } from "@/screens/VisibilitySheet";
@@ -219,6 +220,7 @@ import {
 import { openMusicApp } from "@/services/musicApp";
 import { subscribeNswTraffic } from "@/services/trafficNsw";
 import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/services/trafficNswModel";
+import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
@@ -496,6 +498,9 @@ export function MapScreen() {
   useEffect(() => {
     if (pendingDestination) lastDestinationPlaceRef.current = pendingDestination;
   }, [pendingDestination]);
+  // The same place as state, for the ETA sheet's "To" line (a ref can't be read while drawing).
+  const [navDestinationPlace, setNavDestinationPlace] = useState<PlaceDetails | null>(null);
+  if (pendingDestination && pendingDestination !== navDestinationPlace) setNavDestinationPlace(pendingDestination);
   const shareArrivalsRef = useLatest(settings.shareArrivals);
   // The place page (UI pass 2, section 4): a search result being looked at before any route is
   // fetched. The map is centred on it in the top 40%, under the page's own sheet.
@@ -4998,6 +5003,45 @@ export function MapScreen() {
     navOptionsSheetRef.current?.close();
     shareEta();
   }, [shareEta]);
+  // "See what's ahead": shown for the first 12 s of each new drive (not after a reroute).
+  const [hadRoute, setHadRoute] = useState(false);
+  const [aheadBannerOn, setAheadBannerOn] = useState(false);
+  if (!!route !== hadRoute) {
+    setHadRoute(!!route);
+    setAheadBannerOn(!!route);
+  }
+  useEffect(() => {
+    if (!aheadBannerOn) return;
+    const t = setTimeout(() => setAheadBannerOn(false), 12_000);
+    return () => clearTimeout(t);
+  }, [aheadBannerOn]);
+  // The ETA sheet's "On your route" list: reports and live incidents within reach of the road
+  // still ahead. Only worked out while the sheet is open.
+  const etaSheetEvents = useMemo(() => {
+    if ((!navOptionsSheetOpen && !aheadBannerOn) || remainingPolyline.length < 2) return [];
+    const points: RoutePoint[] = [
+      ...nearbyAlerts.map((a) => ({ id: `a-${a.id}`, kind: "report" as const, label: ALERT_LABELS[a.type] ?? "Report", lat: a.lat, lng: a.lng })),
+      ...trafficIncidents.map((i) => ({ id: `i-${i.id}`, kind: "incident" as const, label: i.category || i.headline, lat: i.lat, lng: i.lng })),
+    ];
+    return eventsAlongRoute(remainingPolyline, points);
+  }, [navOptionsSheetOpen, aheadBannerOn, remainingPolyline, nearbyAlerts, trafficIncidents]);
+  // Only name the place if it's still where this trip ends (a later dropped-pin trip has none).
+  const etaSheetPlace =
+    navDestinationPlace &&
+    destinationLatLng &&
+    distanceKm(navDestinationPlace.location.latitude, navDestinationPlace.location.longitude, destinationLatLng.latitude, destinationLatLng.longitude) < 0.2
+      ? navDestinationPlace
+      : null;
+  // Google's predicted drive time from here if you left now or at the next quarter hours.
+  const loadLeaveTimes = useCallback(() => {
+    if (!currentLatLng || !destinationLatLng) return Promise.reject(new Error("no current location"));
+    const origin = currentLatLng;
+    const dest = destinationLatLng;
+    const waypoint = stopLocation ?? undefined;
+    return predictLeaveTimes(departureSlots(Date.now()), (t) =>
+      getDirections(origin, dest, { useTraffic: t === "now" ? true : t, waypoint }).then((r) => r.durationInTrafficSeconds ?? r.durationSeconds)
+    );
+  }, [currentLatLng, destinationLatLng, stopLocation]);
   const onNavOptionsEndNavigation = useCallback(() => {
     navOptionsSheetRef.current?.close();
     exitNavigation();
@@ -5789,6 +5833,17 @@ export function MapScreen() {
         />
       )}
 
+      {route && aheadBannerOn && !navOptionsSheetOpen && !addingStopDuringNav && !manoeuvreChip && (
+        <SeeWhatsAheadBanner
+          top={insets.top + instructionCardHeight + 8}
+          count={etaSheetEvents.length}
+          onPress={() => {
+            setAheadBannerOn(false);
+            navOptionsSheetRef.current?.expand();
+          }}
+        />
+      )}
+
       {/* Mapbox's junction picture for a complex interchange, until the manoeuvre point. */}
       {route && activeStep?.guidanceViewUrl && metersToManoeuvre !== null && metersToManoeuvre <= 1000 && !addingStopDuringNav && (
         <JunctionViewCard url={activeStep.guidanceViewUrl} token={usableMapboxToken()} top={insets.top + instructionCardHeight + 8} />
@@ -6354,8 +6409,17 @@ export function MapScreen() {
       />
       <NavOptionsSheet
         ref={navOptionsSheetRef}
+        arrivalClockText={arrivalClockText}
+        etaText={formatDurationText(remainingDurationSeconds)}
+        distanceText={formatDistance(remainingDistanceMeters, settings.distanceUnit)}
+        distanceUnit={settings.distanceUnit}
+        destinationName={etaSheetPlace?.name ?? null}
+        destinationAddress={etaSheetPlace?.address ?? null}
+        viaText={route?.summary}
+        events={etaSheetEvents}
+        loadLeaveTimes={loadLeaveTimes}
         onReportAlert={onNavOptionsReportAlert}
-        onShareEta={onNavOptionsShareEta}
+        onShareDrive={onNavOptionsShareEta}
         onOpenDetection={onNavOptionsOpenDetection}
         onOpenMapTools={() => {
           navOptionsSheetRef.current?.close();
