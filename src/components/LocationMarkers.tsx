@@ -1,6 +1,6 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Ellipse, Path } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { shadow } from "@/theme/tokens";
@@ -36,6 +36,9 @@ export const LIVE_MARKER_TEAL = "#14B8A6";
  */
 export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMarkerStyleKey }) {
   const iconSpec = markerStyle !== "default" ? MAP_MARKER_STYLE_ICONS[markerStyle] : null;
+  // The default is TrackLine's own 3D navigation arrow (no badge); a chosen vehicle keeps its
+  // round badge.
+  if (!iconSpec) return <NavArrow3D />;
   // Real, explicit request for a "more realistic, polished, professional" badge -- a single flat
   // fill colour read as a cheap placeholder. A real two-stop gradient (a lighter tint of the
   // vehicle's own colour at the top, its true colour at the bottom) plus a genuine glossy
@@ -63,6 +66,31 @@ export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMark
           </Svg>
         )}
       </LinearGradient>
+    </View>
+  );
+}
+
+// The 3D arrow's two faces: the left catches the light, the right is the darker bevel, split
+// along the arrow's spine so it reads as a raised shape lying on the road.
+const ARROW_OUTLINE = "M22 3 L38 38 L22 30 L6 38 Z";
+const ARROW_LEFT_FACE = "M22 3 L22 30 L6 38 Z";
+const ARROW_RIGHT_FACE = "M22 3 L38 38 L22 30 Z";
+
+/**
+ * The driver's position: a teal arrow with a darker bevel and a thin white outline, ~44pt, with a
+ * soft shadow under it. Drawn nose-up; the map turns it to the heading and lays it flat with the
+ * map's tilt.
+ */
+export function NavArrow3D({ size = 44 }: { size?: number }) {
+  return (
+    <View style={{ width: size, height: size }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Svg width={size} height={size} viewBox="0 0 44 44">
+        {/* Soft shadow on the road, a little behind and below the arrow. */}
+        <Ellipse cx="22" cy="36" rx="14" ry="4.5" fill="rgba(0,0,0,0.22)" />
+        <Path d={ARROW_LEFT_FACE} fill={shadeColor(LIVE_MARKER_TEAL, 0.18)} />
+        <Path d={ARROW_RIGHT_FACE} fill={shadeColor(LIVE_MARKER_TEAL, -0.28)} />
+        <Path d={ARROW_OUTLINE} fill="none" stroke="#FFFFFF" strokeWidth={1.75} strokeLinejoin="round" />
+      </Svg>
     </View>
   );
 }

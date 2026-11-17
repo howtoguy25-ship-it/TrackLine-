@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { loadMapbox } from "@/map-v2/mapbox";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
-import { CarNavArrow, PersonLocationDot } from "@/components/LocationMarkers";
+import { CarNavArrow } from "@/components/LocationMarkers";
 import { CheckeredFlagPin, StartDot } from "@/components/RouteSelection";
 import { Tracky } from "@/components/trackys/Tracky";
 import type { TrackyMoodKey } from "@/components/trackys/moods";
@@ -172,10 +172,6 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
       return <CarNavArrow markerStyle={(rest[0] as MapMarkerStyleKey) ?? "default"} />;
     case "blank":
       return <View style={styles.blank} />;
-    case "person-dot":
-      return <PersonLocationDot />;
-    case "heading-cone":
-      return <View style={styles.cone} />;
     case "ghost-badge":
       return <Tracky mood="spooky" size={28} animated={false} reactOnTap={false} translucent />;
     case "tracky": {
@@ -290,14 +286,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   placePinDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#FFFFFF" },
-  cone: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 26,
-    borderRightWidth: 26,
-    borderTopWidth: 46,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderTopColor: "rgba(20, 184, 166, 0.28)",
-  },
 });
