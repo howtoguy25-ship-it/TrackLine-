@@ -6,6 +6,20 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Waze match + Pass 3 — 2026-11-17
+
+| Section | Status | Evidence |
+|---|---|---|
+| Requests: 10 s budget, 1 retry, real errors; Diagnostics shows Places key + last Places/Routes status | DONE | `__tests__/netFetch.test.ts`, `__tests__/diagnostics.test.tsx` |
+| ETA sheet (replaces Trip options): To/Via, events on route, best time to leave (Google departure_time, 15-min slots, red slower / yellow faster), Show more, Share/Report/Dashcam/Map display, Stop / Go now | DONE + NEEDS DEVICE TEST | `__tests__/travel/etaSheet.test.tsx` |
+| See what's ahead banner (first 12 s of a drive, only when something is on the route) | DONE + NEEDS DEVICE TEST | same file |
+| Route preview: dark top card; Edit drive / Go now from Plan a drive | DONE + NEEDS DEVICE TEST | `__tests__/presses/routePreview.test.tsx` |
+| Plan a drive: Arrive on time art, calendar, grouped drives, live drive time, edit/share/delete, 15-min predicted slots, Best time, on-phone leave alerts, server re-check 30 min before + push | App DONE + NEEDS DEVICE TEST; server `refreshPlannedDrives` BLOCKED until deployed (uses GOOGLE_PLACES_SERVER_KEY with the Routes API enabled) | `__tests__/travel/planADrive.test.tsx`, `firebase/tests/plannedDrivesCore.test.js` |
+| Sign in / Create account (inline errors, show password, strength hint, name, terms + privacy) | DONE + NEEDS DEVICE TEST. `web/public/terms.html` is a plain draft: please review | `__tests__/auth/signIn.test.tsx` |
+| Text: no "--" on screen, one time format ("10:27 pm" / 24-hour by region) | DONE | `__tests__/wording/noDoubleDash.test.ts` |
+| Screenshots (/docs/waze-match, /docs/settings-screens) | NOT DONE: needs a simulator; can't be produced in this container | -- |
+| Pass 3 §2-9 (places lists + FuelCheck, 3D arrow, map look, voice recording, reports tile grid + Still there?, inbox details) | NEXT | -- |
+
 ## Honest status — 2026-11-16 (read this first)
 
 DONE = wired into a real screen AND has a passing test. Nothing here has been run on a phone by
