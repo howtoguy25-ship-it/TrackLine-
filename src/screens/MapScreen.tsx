@@ -1,3 +1,6 @@
+import { useFeature } from "@/remote/useAppConfig";
+import { remoteGated } from "@/remote/appConfig";
+import { recordTripEnd } from "@/guest/savePrompt";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { useLatest } from "@/hooks/useLatest";
 import { compassAllowed, initialHeadingState, stepCompass, stepHeading, type HeadingState } from "@/nav/headingFilter";
@@ -326,8 +329,19 @@ type PinTarget =
 export function MapScreen() {
   const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
   const { user } = useAuth();
-  const { settings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier, navLanguage } =
+  const { settings: rawSettings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier, navLanguage } =
     useSettings();
+  // Owner dashboard > App control can switch a feature off for everyone (or a % / country).
+  const trackysOn = useFeature("trackys");
+  const schoolZonesOn = useFeature("schoolZones");
+  const liveTrafficOn = useFeature("liveTraffic");
+  const laneGuidanceOn = useFeature("laneGuidance");
+  const brandBadgesOn = useFeature("brandBadges");
+  const travelModesOn = useFeature("travelModes");
+  const settings = useMemo(
+    () => remoteGated(rawSettings, { trackys: trackysOn, schoolZones: schoolZonesOn, liveTraffic: liveTrafficOn }),
+    [rawSettings, trackysOn, schoolZonesOn, liveTrafficOn]
+  );
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const navRoute = useRoute<RouteProp<RootStackParamList, "Map">>();
   const insets = useSafeAreaInsets();
@@ -2343,6 +2357,7 @@ export function MapScreen() {
     if (arrived) {
       dispatchApproachRef.current({ type: "arrived", steps: route.steps });
       announcePhrase({ kind: "arrived" });
+      recordTripEnd().catch(() => {});
       // Settings > Privacy > Share arrivals (opt-in): an anonymous +1 for a named place.
       const place = lastDestinationPlaceRef.current;
       if (shareArrivalsRef.current && place && place.name) {
@@ -2701,7 +2716,9 @@ export function MapScreen() {
 
   /** Routes for the chosen mode; remembers it as the last mode used. */
   const requestRoutes = useCallback(
-    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, mode: ModeId, avoidOverride?: RouteAvoidPrefs) => {
+    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, requestedMode: ModeId, avoidOverride?: RouteAvoidPrefs) => {
+      // Owner dashboard can switch the extra travel modes off: then it's Drive only.
+      const mode: ModeId = travelModesOn ? requestedMode : ("drive" as ModeId);
       setSelectedMode(mode);
       if (settings.lastTravelMode !== mode) updateSettings({ lastTravelMode: mode });
       const avoid = avoidOverride ?? settings.routeAvoid;
@@ -2761,7 +2778,7 @@ export function MapScreen() {
         if (trip === routeTripRef.current) setLoadingRouteOptions(false);
       }
     },
-    [fetchRouteOptions, fitRoutesOnScreen, settings.routeAvoid, settings.lastTravelMode, updateSettings, modeCache, routeChoices]
+    [fetchRouteOptions, fitRoutesOnScreen, settings.routeAvoid, settings.lastTravelMode, updateSettings, modeCache, routeChoices, travelModesOn]
   );
 
   // The icon row's times: the selected mode first, the others when the mode sheet opens.
@@ -4665,7 +4682,7 @@ export function MapScreen() {
   );
   // The lane strip: only for a manoeuvre with real lane data, from 1 km out.
   const laneStripLanes =
-    activeStep?.lanes && metersToManoeuvre !== null && showLaneStrip(activeStep.lanes, metersToManoeuvre) ? activeStep.lanes : null;
+    laneGuidanceOn && activeStep?.lanes && metersToManoeuvre !== null && showLaneStrip(activeStep.lanes, metersToManoeuvre) ? activeStep.lanes : null;
   // The road shown on the trip bar and the live street chip. While navigating it's read off the
   // route itself -- the street the previous step turned onto -- which is exact and costs no
   // lookup; the looked-up name fills in on the first step or where the route names no street.
@@ -5352,6 +5369,7 @@ export function MapScreen() {
         <TrackLineMap
           ref={mapRef}
           driver={currentLatLng}
+          badges={brandBadgesOn}
           theme={settings.mapTheme}
           labelLanguage={settings.mapLabels}
           roadThickness={settings.roadThickness}
@@ -6547,7 +6565,7 @@ export function MapScreen() {
             const original = savedPlaces.custom.find((p) => p.placeId === sp.placeId);
             if (original && newLabel) {
               addCustomPlace(original, newLabel).then((next) => {
-                if (user && !user.isAnonymous) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
+                if (user) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
               });
             }
           }}
@@ -6556,7 +6574,7 @@ export function MapScreen() {
             setSelectedSaved(null);
             const done = sp.kind === "parking" ? clearParkingSpot().then(() => null) : sp.kind === "custom" ? removeCustomPlace(sp.placeId) : removeHomeOrWork(sp.kind);
             done.then((next) => {
-              if (next && user && !user.isAnonymous) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
+              if (next && user) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
             });
           }}
         />

@@ -1,3 +1,4 @@
+import { GUEST_WARNING } from "@/guest/savePrompt";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Chip } from "@/components/ui/Button";
 import { TEST_DRIVE_LABELS, requestTestDrive, type TestDriveKind } from "@/dev/testDrives";
@@ -636,16 +637,21 @@ export function SettingsScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.helperText}>
-              Not signed in -- everything still works. Sign in to make your reports and settings
-              recoverable if you get a new phone.
+            <Text style={styles.helperText} testID="guest-warning">
+              {`You're using TrackLine as a guest. ${GUEST_WARNING}`}
             </Text>
             <Button
               variant="primary"
-              label="Sign in"
+              label="Save your TrackLine (create an account)"
               onPress={() => navigation.navigate("SignIn")}
               fullWidth
+              testID="save-trackline"
             />
+            <Text style={styles.helperText}>
+              Your saved places, Tracky, settings and history are already backed up to this guest
+              account; creating an account keeps all of it. Purchases can also be restored from the
+              App Store or Google Play with Restore purchases below.
+            </Text>
           </>
         )}
       </Section>
@@ -715,6 +721,19 @@ export function SettingsScreen() {
         <Text style={styles.helperText}>
           {"When you arrive at a named place, add an anonymous +1 to how popular it is, so popular places get a badge on the map. Only a count per place is kept -- never who, or when you went. Off unless you turn it on."}
         </Text>
+      </Section>
+
+      <Section title="Notifications" visible={shouldShow("Notifications")}>
+        <Text style={styles.helperText}>Messages from TrackLine (push, Inbox and banners). Account and security messages always come.</Text>
+        {([
+          ["notifyFun", "Fun announcements"],
+          ["notifyNews", "News & updates"],
+          ["notifyTraffic", "Traffic advisories"],
+        ] as const).map(([key, label]) => (
+          <Row key={key} label={label}>
+            <Switch value={settings[key]} onValueChange={(value) => updateSettings({ [key]: value })} trackColor={{ true: colors.accent, false: SETTINGS_BORDER }} testID={`notify-${key}`} />
+          </Row>
+        ))}
       </Section>
 
       <Section title="Live alerts" visible={shouldShow("Live alerts")}>

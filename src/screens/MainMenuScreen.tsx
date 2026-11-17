@@ -1,3 +1,4 @@
+import { useFeature } from "@/remote/useAppConfig";
 import { useLocation } from "@/context/LocationContext";
 import { Button, Chip } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -40,6 +41,7 @@ export function MainMenuScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user } = useAuth();
   const { settings } = useSettings();
+  const vehicleCheckOn = useFeature("vehicleCheck");
   const isSignedIn = !!user && !user.isAnonymous;
   const isGhostMode = settings.visibility === "ghost";
   const appearance = useTrackyAppearance(isGhostMode);
@@ -219,7 +221,7 @@ export function MainMenuScreen() {
           label="Dashcam (AI vehicle detection)"
           onPress={() => navigation.navigate("VehicleDetection")}
         />
-        {showVehicleCheck && (
+        {showVehicleCheck && vehicleCheckOn && (
           <MenuRow icon="car-search" label="Vehicle check" onPress={() => navigation.navigate("VehicleCheck", undefined)} />
         )}
         <MenuRow

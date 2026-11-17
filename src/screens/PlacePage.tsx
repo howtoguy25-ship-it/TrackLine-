@@ -116,7 +116,7 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
   const hoursToday = useMemo(() => todaysHours(info?.weekdayText, new Date()), [info?.weekdayText]);
 
   const sync = (next: SavedPlaces) => {
-    if (user && !user.isAnonymous) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
+    if (user) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
   };
   const toggleSave = async () => {
     sync(isSaved ? await removeCustomPlace(place.placeId) : await addCustomPlace(place));

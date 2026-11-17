@@ -94,7 +94,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       // Fire-and-forget, never awaited -- a toggle in Settings should never wait on a network
       // round-trip, and a failed push here just means the next real change (or next sign-in's
       // own pull) catches it up rather than losing it outright.
-      if (user && !user.isAnonymous) {
+      if (user) {
         pushSettingsToProfile(user.uid, next).catch((err) =>
           console.warn("[settings] Firestore sync failed", err)
         );
@@ -112,7 +112,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   // device's setting change to appear mid-session on this one, only to be picked up next time
   // this device itself signs in.
   useEffect(() => {
-    if (!loaded || !user || user.isAnonymous) return;
+    if (!loaded || !user) return;
     if (pulledForUid.current === user.uid) return;
     pulledForUid.current = user.uid;
     pullSettingsFromProfile(user.uid)

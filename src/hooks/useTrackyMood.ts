@@ -50,7 +50,7 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
     let cancelled = false;
     (async () => {
       const local = await getLocalMoodState();
-      if (user && !user.isAnonymous) {
+      if (user) {
         const remote = await pullMoodFromProfile(user.uid).catch(() => null);
         if (remote && !cancelled) {
           setState(remote);
@@ -105,7 +105,7 @@ export function useTrackyMood(isGhostMode = false): UseTrackyMoodResult {
   const persist = useCallback(
     (next: TrackyMoodState) => {
       setLocalMoodState(next).catch(() => {});
-      if (user && !user.isAnonymous) pushMoodToProfile(user.uid, next).catch(() => {});
+      if (user) pushMoodToProfile(user.uid, next).catch(() => {});
     },
     [user]
   );

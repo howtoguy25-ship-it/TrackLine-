@@ -171,6 +171,12 @@ export interface AppSettings {
   showTrafficFlow: boolean;
   /** Settings > Privacy: add an anonymous +1 to a place's popularity when you arrive there. Off by default. */
   shareArrivals: boolean;
+  /** Settings > Notifications: which kinds of messages from TrackLine this phone gets (push,
+   *  inbox, banners). Account & security messages always come. Synced to deviceSessions so the
+   *  server never sends a switched-off kind. */
+  notifyFun: boolean;
+  notifyNews: boolean;
+  notifyTraffic: boolean;
 }
 
 export type VisibilityMode = "everyone" | "friendsOnly" | "ghost";
@@ -223,6 +229,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showSoundButton: true,
   showTrafficFlow: true,
   shareArrivals: false,
+  notifyFun: true,
+  notifyNews: true,
+  notifyTraffic: true,
 };
 
 const STORAGE_KEY = "@trackline/settings";

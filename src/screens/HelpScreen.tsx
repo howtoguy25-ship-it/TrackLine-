@@ -5,6 +5,8 @@ import { View, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- main menu's Help row). Honest, real
@@ -36,7 +38,7 @@ const FAQ: { question: string; answer: string }[] = [
 
 export function HelpScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
@@ -58,6 +60,9 @@ export function HelpScreen() {
             <Text style={styles.answer}>{item.answer}</Text>
           </View>
         ))}
+
+        <Button variant="primary" label="Contact support in the app" onPress={() => navigation.navigate("SupportRequests")} fullWidth testID="help-contact-support" />
+        <Button variant="secondary" label="Can't sign in?" onPress={() => navigation.navigate("AccountRecovery", {})} fullWidth testID="help-cant-sign-in" />
 
         <Pressable
           onPress={() => Linking.openURL("mailto:support@tracklinemaps.com")}

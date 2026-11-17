@@ -1,6 +1,10 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Platform } from "react-native";
+import * as Application from "expo-application";
+import * as Device from "expo-device";
 import { db } from "@/services/firebase";
+import { deviceRegion } from "@/schoolZones/regions";
+import { recordDevice } from "@/services/targeting";
 
 // Real install/activity tracking for the Owner Dashboard -- one doc per device, written by
 // EVERY session (the app's default anonymous one included, see firebase.ts's ensureSignedIn),
@@ -21,16 +25,31 @@ let lastHeartbeatAt = 0;
 export async function ensureDeviceSession(uid: string, isAnonymous: boolean): Promise<void> {
   const ref = doc(db, COLLECTION, uid);
   const snap = await getDoc(ref);
+  const appVersion = Application.nativeApplicationVersion ?? null;
+  let language: string | null = null;
+  try {
+    language = (Intl.DateTimeFormat().resolvedOptions().locale || "").split("-")[0] || null;
+  } catch {
+    language = null;
+  }
+  // A guest who just created an account (same uid, linkWithCredential): counted on the
+  // dashboard as a guest -> account conversion.
+  const justLinked = snap.exists() && snap.data().isAnonymous === true && !isAnonymous;
   await setDoc(
     ref,
     {
       platform: Platform.OS,
       isAnonymous,
+      appVersion,
+      language,
+      country: deviceRegion(),
       lastActiveAt: serverTimestamp(),
       ...(snap.exists() ? {} : { firstOpenAt: serverTimestamp() }),
+      ...(justLinked ? { linkedAt: serverTimestamp() } : {}),
     },
     { merge: true }
   );
+  recordDevice(uid, { model: Device.modelName ?? null, os: Device.osName ? `${Device.osName} ${Device.osVersion ?? ""}`.trim() : null, appVersion, platform: Platform.OS }).catch(() => {});
   lastHeartbeatAt = Date.now();
 }
 

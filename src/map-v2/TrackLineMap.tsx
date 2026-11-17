@@ -89,6 +89,8 @@ interface Props {
   onMapReady?: () => void;
   /** The driver's position, for the badges' "nearby" boost. */
   driver?: LatLng | null;
+  /** Brand / popular-place badges (owner dashboard can switch them off). Default on. */
+  badges?: boolean;
   children?: React.ReactNode;
 }
 
@@ -204,7 +206,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   const rankBadgesNow = async (zoom: number) => {
     const seq = ++rankSeq.current;
     const map = mapRef.current;
-    if (!map || zoom < 13) {
+    if (!map || zoom < 13 || props.badges === false) {
       setRankedBadges(rankedBadgeCollection([]));
       return;
     }

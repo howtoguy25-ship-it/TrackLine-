@@ -13,6 +13,7 @@
     "logs": "firebase functions:log"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.9.0",
     "@apple/app-store-server-library": "^1.6.0",
     "fast-xml-parser": "^4.5.7",
     "fflate": "^0.8.2",
