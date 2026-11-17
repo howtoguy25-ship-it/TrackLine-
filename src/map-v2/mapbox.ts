@@ -1,5 +1,6 @@
 import { NativeModules } from "react-native";
 import { env } from "@/config/env";
+import { mapboxTokenState, usableMapboxToken, TOKEN_STATE_TEXT } from "@/config/mapboxToken";
 
 // Loads @rnmapbox/maps only when it can actually work. Its JS module throws at import time if
 // the native SDK isn't in the build (the native SDK is only linked when
@@ -22,14 +23,15 @@ export function isMapboxNativeLinked(): boolean {
 /** The Mapbox module, ready to use (token set), or null if this build can't run it. */
 export function loadMapbox(): MapboxModule | null {
   if (loaded !== undefined) return loaded;
-  if (!env.mapboxPublicToken || !isMapboxNativeLinked()) {
+  const token = usableMapboxToken();
+  if (!token || !isMapboxNativeLinked()) {
     loaded = null;
     return loaded;
   }
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod: MapboxModule = require("@rnmapbox/maps");
-    mod.default.setAccessToken(env.mapboxPublicToken);
+    mod.default.setAccessToken(token);
     // No Mapbox usage telemetry from drivers' phones.
     mod.default.setTelemetryEnabled?.(false);
     loaded = mod;
@@ -42,4 +44,13 @@ export function loadMapbox(): MapboxModule | null {
 /** Whether the Mapbox map can be shown in this build. */
 export function isMapboxUsable(): boolean {
   return loadMapbox() !== null;
+}
+
+/** Why the map can't be shown, in the driver's words (null = it can). */
+export function mapboxUnavailableReason(): string | null {
+  const state = mapboxTokenState(env.mapboxPublicToken);
+  if (state !== "ok") return TOKEN_STATE_TEXT[state];
+  if (!isMapboxNativeLinked()) return "Map engine isn't included in this build";
+  if (loadMapbox() === null) return "Map engine failed to start";
+  return null;
 }

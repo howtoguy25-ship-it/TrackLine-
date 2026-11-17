@@ -1,12 +1,13 @@
-import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useLatest } from "@/hooks/useLatest";
 import { BADGE_CANDIDATE_LAYER_ID, RANKED_BADGE_LAYER_ID, withRankedBadges } from "@/map/poiBadges";
 import { candidateFromFeature, rankBadges, rankedBadgeCollection, type BadgeCandidate } from "@/map/poiRanking";
 import { cachedPopularity, loadPopularity } from "@/services/poiPopularity";
-import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import type { CameraStop, MapView as MapboxMapView } from "@rnmapbox/maps";
-import { loadMapbox } from "@/map-v2/mapbox";
-import { TRAFFIC } from "@/theme/colors";
+import { loadMapbox, mapboxUnavailableReason } from "@/map-v2/mapbox";
+import { recordMapStyle } from "@/diagnostics/diagnostics";
+import { INK, RED_SOFT, RED_TEXT, TRAFFIC, WHITE } from "@/theme/colors";
 import { GestureTracker } from "@/map-v2/gestures";
 import {
   BUILDING_EXTRUSION_MIN_PITCH,
@@ -131,6 +132,26 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   const gestures = useRef(new GestureTracker());
   const [raised, setRaised] = useState(false);
   const paddingRef = useLatest(props.padding);
+  // Why the map isn't drawing, shown over it instead of a blank grey screen.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const unavailable = Mapbox ? null : mapboxUnavailableReason() ?? "Map engine failed to start";
+  useEffect(() => {
+    if (unavailable) {
+      recordMapStyle(false, unavailable);
+      console.warn(`[map] not shown: ${unavailable}`);
+    }
+  }, [unavailable]);
+  const onMapLoadingError = useCallback((payload?: { error?: string; type?: string }) => {
+    const text = mapLoadErrorText(payload);
+    if (!text) return;
+    console.warn(`[map] loading error (${payload?.type ?? "unknown"}): ${payload?.error ?? ""}`);
+    recordMapStyle(false, `${text}${payload?.error ? ` -- ${payload.error.slice(0, 120)}` : ""}`);
+    setLoadError(text);
+  }, []);
+  const onStyleLoaded = useCallback(() => {
+    recordMapStyle(true);
+    setLoadError(null);
+  }, []);
 
   const styleJSON = useMemo(
     () => styleFor(props.theme, props.roadThickness, props.satellite, props.dimmed, props.labelLanguage ?? "local"),
@@ -266,7 +287,12 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
     }
   };
 
-  if (!Mapbox) return <View style={[StyleSheet.absoluteFill, styles.unavailable]} />;
+  if (!Mapbox)
+    return (
+      <View style={[StyleSheet.absoluteFill, styles.unavailable]} testID="map-unavailable">
+        <MapErrorBanner text={unavailable ?? "Map engine failed to start"} />
+      </View>
+    );
   const { MapView, Camera, Images, Image, FillExtrusionLayer, VectorSource, LineLayer, CameraGestureObserver, ShapeSource, SymbolLayer } = Mapbox;
   const labelPalette = props.satellite ? SATELLITE_LABEL_PALETTE : (THEME_PALETTES[props.theme] ?? SATELLITE_LABEL_PALETTE);
 
@@ -287,6 +313,8 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
       onCameraChanged={remember as never}
       onPress={onPress as never}
       onDidFinishLoadingMap={props.onMapReady}
+      onDidFinishLoadingStyle={onStyleLoaded}
+      onMapLoadingError={onMapLoadingError as never}
     >
       <CameraGestureObserver onCameraChanged={onUserCameraChanged as never} />
       <Camera
@@ -297,7 +325,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
           centerCoordinate: [props.initialCenter.longitude, props.initialCenter.latitude],
           zoomLevel: Math.max(0, props.initialZoom - 1),
         }}
-        padding={mapboxPadding()}
+        padding={{ paddingTop: props.padding.top, paddingRight: props.padding.right, paddingBottom: props.padding.bottom, paddingLeft: props.padding.left }}
         animationDuration={300}
       />
       {/* Australian suburb names with postcodes (official ABS data), zoom 11-15. */}
@@ -376,11 +404,43 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
         </VectorSource>
       )}
       {props.children}
+      {loadError ? <MapErrorBanner text={loadError} /> : null}
     </MapView>
   );
 });
 
+/**
+ * Which Mapbox loading errors mean the map can't draw, and in what words. A 401 anywhere (style,
+ * sprite, tiles) is the key; style/sprite/source failures mean nothing will draw. A single tile
+ * that fails for another reason (a blip) isn't worth a banner.
+ */
+export function mapLoadErrorText(payload?: { error?: string; type?: string }): string | null {
+  const err = payload?.error ?? "";
+  if (/\b401\b|unauthori[sz]ed|invalid token|access token/i.test(err)) return "Map service rejected the key";
+  if (/\b403\b|forbidden/i.test(err)) return "Map service rejected the key (it isn't allowed for this app)";
+  if (/offline|not connected|network connection|internet/i.test(err)) return "No internet -- the map can't load";
+  if (payload?.type === "tile") return null;
+  return `Map couldn't load${payload?.type ? ` (${payload.type})` : ""}`;
+}
+
+export function MapErrorBanner({ text }: { text: string }) {
+  return (
+    <View pointerEvents="none" style={styles.bannerWrap}>
+      <View style={styles.banner} accessibilityRole="alert" testID="map-error-banner">
+        <Text style={styles.bannerTitle}>{"Map can't load"}</Text>
+        <Text style={styles.bannerText}>{text}</Text>
+        <Text style={styles.bannerHint}>Routes still work. Settings › About › Diagnostics shows the details.</Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   unavailable: { backgroundColor: "#F7F8F7" },
+  bannerWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", padding: 24 },
+  banner: { backgroundColor: WHITE, borderRadius: 16, borderWidth: 2, borderColor: RED_SOFT, padding: 16, maxWidth: 340, gap: 4 },
+  bannerTitle: { color: RED_TEXT, fontSize: 17, fontWeight: "700" },
+  bannerText: { color: INK, fontSize: 15, fontWeight: "600" },
+  bannerHint: { color: INK, fontSize: 13 },
   shield: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5 },
 });

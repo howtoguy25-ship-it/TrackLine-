@@ -1770,6 +1770,22 @@ export function SettingsScreen() {
         >
           <Text style={styles.licensesLinkText}>Licences &amp; attributions</Text>
         </Pressable>
+        <Pressable
+          onPress={() => navigation.navigate("Diagnostics")}
+          style={({ pressed }) => [styles.licensesLink, pressed && { opacity: pressedOpacity }]}
+          testID="open-diagnostics"
+        >
+          <Text style={styles.licensesLinkText}>Diagnostics</Text>
+        </Pressable>
+        {__DEV__ ? (
+          <Pressable
+            onPress={() => navigation.navigate("SmokeTest")}
+            style={({ pressed }) => [styles.licensesLink, pressed && { opacity: pressedOpacity }]}
+            testID="open-smoke-test"
+          >
+            <Text style={styles.licensesLinkText}>Smoke test (development build)</Text>
+          </Pressable>
+        ) : null}
         <View style={styles.dataSources} testID="data-sources">
           <Text style={styles.aboutMeta}>Data sources</Text>
           {DATA_SOURCES.map((d) => (

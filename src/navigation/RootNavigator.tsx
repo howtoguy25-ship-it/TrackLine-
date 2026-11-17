@@ -29,6 +29,8 @@ import { AccountRecoveryScreen } from "@/screens/AccountRecoveryScreen";
 import { PhoneSignInScreen } from "@/screens/PhoneSignInScreen";
 import { SupportRequestsScreen } from "@/screens/SupportRequestsScreen";
 import { LicensesScreen } from "@/screens/LicensesScreen";
+import { DiagnosticsScreen } from "@/screens/DiagnosticsScreen";
+import { SmokeTestScreen } from "@/screens/SmokeTestScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
 import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
 import type { PlaceDetails } from "@/services/places";
@@ -85,6 +87,8 @@ export type RootStackParamList = {
   // Real, explicit request (Copyright/trademark safety audit, Part 4) -- Settings > About's own
   // "Licences & attributions" row. See LicensesScreen.tsx.
   Licenses: undefined;
+  Diagnostics: undefined;
+  SmokeTest: undefined;
   // Real Tracky mood grid ("View profile" from the main menu header). See TrackyProfileScreen.tsx.
   TrackyProfile: undefined;
   // ADD-ON Part A -- the "Make your Tracky" customiser, reached from TrackyProfile. See
@@ -218,6 +222,9 @@ export function RootNavigator() {
         <Stack.Screen name="SupportRequests" component={SupportRequestsScreen} options={{ headerShown: true, title: "Contact support" }} />
         <Stack.Screen name="PhoneSignIn" component={PhoneSignInScreen} options={{ headerShown: true, title: "Phone number" }} />
         <Stack.Screen name="Licenses" component={LicensesScreen} />
+        <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} options={{ headerShown: true, title: "Diagnostics" }} />
+        {/* Development builds only (a JS bundle served by Metro: __DEV__). */}
+        {__DEV__ ? <Stack.Screen name="SmokeTest" component={SmokeTestScreen} options={{ headerShown: true, title: "Smoke test" }} /> : null}
         <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} />
         <Stack.Screen name="TrackyCustomizer" component={TrackyCustomizerScreen} />
         <Stack.Screen

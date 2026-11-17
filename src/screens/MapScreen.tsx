@@ -58,12 +58,14 @@ import {
   Linking,
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
-import { TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
+import { MapErrorBanner, TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
 import { AlertCard } from "@/components/AlertCard";
 import { MapSpotlight } from "@/components/MapSpotlight";
 import { cardForOfficial, cardForReport, distanceLine, roadAndSuburb, spotlightCentre, type AlertCardModel } from "@/map/alertCard";
 import { MapboxLayers } from "@/map-v2/MapboxLayers";
-import { isMapboxUsable } from "@/map-v2/mapbox";
+import { isMapboxUsable, mapboxUnavailableReason } from "@/map-v2/mapbox";
+import { usableMapboxToken } from "@/config/mapboxToken";
+import { routeErrorText } from "@/services/routingErrors";
 import type { CameraLike, Region } from "@/map-v2/geo";
 import type { MapPin } from "@/map-v2/pins";
 import { startSimulatedDrive, stopSimulatedDrive } from "@/dev/simulateDrive";
@@ -153,7 +155,6 @@ import {
   getModeRouteOptions,
   getHeadingAwareReroute,
   detailedRoutePolyline,
-  DirectionsApiError,
   TRAVEL_MODE_LABELS,
   type Route,
   type TravelMode,
@@ -2678,13 +2679,7 @@ export function MapScreen() {
         // Same underlying cause as the destination search billing check below -- the
         // Directions API call hits the exact same Google Cloud project/key, so it fails the
         // same way whenever billing isn't enabled there.
-        setRouteOptionsError(
-          err instanceof DirectionsApiError
-            ? /billing/i.test(err.message)
-              ? "Routing unavailable -- billing isn't enabled on this app's Google Cloud project"
-              : `Couldn't find a route (${err.status})`
-            : "Couldn't find a route -- check your connection"
-        );
+        setRouteOptionsError(routeErrorText(err));
       } finally {
         setLoadingRouteOptions(false);
       }
@@ -2704,7 +2699,7 @@ export function MapScreen() {
     () =>
       new ModeRouteCache((mode, req) =>
         fetchRoutesForMode(mode, req, {
-          mapboxToken: env.mapboxPublicToken,
+          mapboxToken: usableMapboxToken(),
           googleKey: env.googleDirectionsApiKey,
           transit: (o, d) => getModeRouteOptions(o, d, "transit").catch(() => []),
           fallback: (mode, o, d) =>
@@ -3924,7 +3919,7 @@ export function MapScreen() {
       } catch (err) {
         console.warn("[map] quick-start route fetch failed", err);
         Sentry.logger.error("map: quick-start route fetch failed", { error: String(err) });
-        setBannerMessage("Couldn't start navigation -- check your connection and try again.");
+        setBannerMessage(`Couldn't start navigation: ${routeErrorText(err)}`);
         setBannerVisible(true);
       }
     },
@@ -5362,8 +5357,8 @@ export function MapScreen() {
       // Maps cost, not worth it after all. Android was never affected either way (already
       // Google, still needed there for the custom Map3DView native module).
       !mapboxUsable ? (
-        <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder, styles.mapUnavailable]}>
-          <Text style={styles.mapUnavailableText}>The map can&apos;t load in this build (Mapbox isn&apos;t set up).</Text>
+        <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder]} testID="map-unavailable">
+          <MapErrorBanner text={mapboxUnavailableReason() ?? "Map engine failed to start"} />
         </View>
       ) : (
         <TrackLineMap
@@ -5847,7 +5842,7 @@ export function MapScreen() {
 
       {/* Mapbox's junction picture for a complex interchange, until the manoeuvre point. */}
       {route && activeStep?.guidanceViewUrl && metersToManoeuvre !== null && metersToManoeuvre <= 1000 && !addingStopDuringNav && (
-        <JunctionViewCard url={activeStep.guidanceViewUrl} token={env.mapboxPublicToken} top={insets.top + instructionCardHeight + 8} />
+        <JunctionViewCard url={activeStep.guidanceViewUrl} token={usableMapboxToken()} top={insets.top + instructionCardHeight + 8} />
       )}
 
       {/* "Exit taken ✓" after a confirmed manoeuvre, "Rerouting…" after a missed one. */}
@@ -6666,8 +6661,6 @@ export function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  mapUnavailable: { alignItems: "center", justifyContent: "center", padding: 24 },
-  mapUnavailableText: { fontSize: 15, color: colors.textMuted, textAlign: "center" },
   simulateDriveSpot: { position: "absolute", left: spacing.lg },
   container: { flex: 1, backgroundColor: colors.surfaceMuted },
   mapArea: { flex: 1 },

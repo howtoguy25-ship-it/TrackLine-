@@ -1,13 +1,15 @@
 // Routes for each travel mode, from the provider that actually has them, with a short cache so
 // switching modes back and forth doesn't refetch (2 minutes -- traffic and timetables move).
 //
-//   Drive      Mapbox driving-traffic (the app's existing Google route choices still feed the
-//              drive picker; this is the same Mapbox data navigation uses)
+//   Drive      Google route choices -- the SAME source and result as the route preview card
+//              ("19 min via M5"), so the two can never disagree. The navigated route is then
+//              matched on Mapbox (navRouting.ts) when Mapbox works, else the Google route is driven.
+//              Mapbox driving-traffic only when this build has no Google fallback wired.
 //   Motorbike  Google Routes API travelMode TWO_WHEELER. Google only supports it in some
 //              countries; anywhere it doesn't answer, the driving route is shown with
 //              "Motorbike routes use car roads here" -- never presented as a motorbike route.
-//   Bike       Mapbox cycling
-//   Walk       Mapbox walking
+//   Bike       Mapbox cycling  (Google bicycling if Mapbox refuses: bad key, server error, timeout)
+//   Walk       Mapbox walking  (Google walking, same rule)
 //   Transit    Google transit (getModeRouteOptions)
 //   Ferry      not fetched: the real drive/transit options that include a ferry (modes.ts)
 
@@ -17,6 +19,9 @@ import { ROUTES_API_URL, parseRoutesApiRoute } from "@/services/directions";
 import { fetchMapboxRoutes, type MapboxProfile } from "@/services/mapboxDirections";
 import type { RouteAvoidPrefs } from "@/map/routeChoices";
 import type { ModeId } from "@/travel/modes";
+import { mapboxTokenState } from "@/config/mapboxToken";
+import { recordDirections } from "@/diagnostics/diagnostics";
+import { ROUTING_ERROR_TEXT, RoutingError, shouldFallBack } from "@/services/routingErrors";
 
 export const MODE_CACHE_MS = 2 * 60 * 1000;
 export const MOTORBIKE_FALLBACK_NOTE = "Motorbike routes use car roads here";
@@ -89,15 +94,37 @@ async function motorbikeRoutes(req: ModeRequest, deps: ModeDeps): Promise<Route[
   }
 }
 
-async function mapboxFor(mode: ModeId, req: ModeRequest, deps: ModeDeps): Promise<Route[]> {
-  if (!deps.mapboxToken && deps.fallback && (mode === "drive" || mode === "bike" || mode === "walk")) {
-    return deps.fallback(mode, req.origin, req.destination);
-  }
-  return fetchMapboxRoutes({ ...req, profile: PROFILE[mode] }, deps.mapboxToken, { fetchImpl: deps.fetchImpl, timeoutMs: 8000 });
+async function googleFor(mode: "drive" | "bike" | "walk", req: ModeRequest, deps: ModeDeps): Promise<Route[]> {
+  const routes = await deps.fallback!(mode, req.origin, req.destination);
+  recordDirections(mode, { provider: "google", status: 200, ok: routes.length > 0, message: routes.length ? `${routes.length} route${routes.length === 1 ? "" : "s"}` : "No route found" });
+  return routes;
 }
 
-/** Routes for one mode. Never throws: a failure becomes `unavailable` with the reason. */
+async function mapboxFor(mode: ModeId, req: ModeRequest, deps: ModeDeps): Promise<Route[]> {
+  const viaGoogle = deps.fallback && (mode === "drive" || mode === "bike" || mode === "walk") ? (mode as "drive" | "bike" | "walk") : null;
+  // Drive: always the Google choices the preview card shows (one source, one answer).
+  if (viaGoogle === "drive") return googleFor("drive", req, deps);
+  if (viaGoogle && mapboxTokenState(deps.mapboxToken) !== "ok") return googleFor(viaGoogle, req, deps);
+  try {
+    return await fetchMapboxRoutes({ ...req, profile: PROFILE[mode] }, deps.mapboxToken, { fetchImpl: deps.fetchImpl, timeoutMs: 8000, diagnosticsKey: mode });
+  } catch (err) {
+    // Mapbox refused (key, server, timeout): Google still knows the roads.
+    if (viaGoogle && shouldFallBack(err)) return googleFor(viaGoogle, req, deps);
+    throw err;
+  }
+}
+
+function reasonFor(mode: ModeId, err: unknown): string {
+  if (err instanceof RoutingError) return err.kind === "no_route" ? (NO_ROUTE[mode] ?? ROUTING_ERROR_TEXT.no_route) : err.userText;
+  if (err instanceof TypeError && /network/i.test(err.message)) return ROUTING_ERROR_TEXT.offline;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/NoRoute|NoSegment/.test(msg)) return NO_ROUTE[mode] ?? ROUTING_ERROR_TEXT.no_route;
+  return `Couldn't get routes: ${msg.slice(0, 80)}`;
+}
+
+/** Routes for one mode. Never throws: a failure becomes `unavailable` with the real reason. */
 export async function fetchRoutesForMode(mode: ModeId, req: ModeRequest, deps: ModeDeps): Promise<ModeRoutes> {
+  const canRoute = mapboxTokenState(deps.mapboxToken) === "ok" || !!deps.fallback;
   try {
     if (mode === "ferry") return { routes: [], note: null, unavailable: "Shown from the drive and transit options" };
     if (mode === "transit") {
@@ -107,19 +134,16 @@ export async function fetchRoutesForMode(mode: ModeId, req: ModeRequest, deps: M
     if (mode === "motorbike") {
       const bike = await motorbikeRoutes(req, deps);
       if (bike) return { routes: bike, note: null, unavailable: null };
-      if (!deps.mapboxToken && !deps.fallback) return { routes: [], note: null, unavailable: "Routing isn't set up in this build" };
+      if (!canRoute) return { routes: [], note: null, unavailable: ROUTING_ERROR_TEXT.key_missing };
       const car = await mapboxFor("drive", req, deps);
       return { routes: car, note: car.length ? MOTORBIKE_FALLBACK_NOTE : null, unavailable: car.length ? null : NO_ROUTE.motorbike! };
     }
-    if (!deps.mapboxToken && !deps.fallback) return { routes: [], note: null, unavailable: "Routing isn't set up in this build" };
+    if (!canRoute) return { routes: [], note: null, unavailable: ROUTING_ERROR_TEXT.key_missing };
     const routes = await mapboxFor(mode, req, deps);
     return { routes, note: null, unavailable: routes.length ? null : NO_ROUTE[mode]! };
   } catch (err) {
-    // Mapbox answers "NoRoute"/"NoSegment" when there's genuinely no way for this mode -- that's
-    // not a connection problem.
-    const msg = err instanceof Error ? err.message : "";
-    if (/NoRoute|NoSegment/.test(msg)) return { routes: [], note: null, unavailable: NO_ROUTE[mode] ?? "No route for this mode" };
-    return { routes: [], note: null, unavailable: "Couldn't get routes -- check your connection" };
+    console.warn(`[routes] ${mode} failed:`, err instanceof Error ? err.message : err);
+    return { routes: [], note: null, unavailable: reasonFor(mode, err) };
   }
 }
 
@@ -151,7 +175,7 @@ export class ModeRouteCache {
     this.entries.set(k, { at: this.now(), value });
     // A failed fetch isn't kept: the next ask tries again.
     value.then((v) => {
-      if (v.unavailable === "Couldn't get routes -- check your connection") this.entries.delete(k);
+      if (v.unavailable && !v.unavailable.startsWith("No ") && v.unavailable !== "Shown from the drive and transit options") this.entries.delete(k);
     });
     return value;
   }

@@ -996,3 +996,21 @@ Re-check when React Navigation or Expo publish a release with the patched depend
 Cloud Functions: upgraded to `firebase-admin` 14.5.1 + `firebase-functions` 7.4.0 (Node 22
 runtime), `fast-xml-parser` 5, `google-auth-library` 11: `npm audit --omit=dev` = 0.
 Dashboard: 0 (postcss / grpc-js pinned by `overrides`).
+
+## Map blank in TestFlight -- root cause (2026-11-17)
+
+- Build 202's embedded `extra.mapboxPublicToken` was the literal text "***** (This is a sensitive env
+  variable. To access it, run command with --include-sensitive flag. Learn more.)" -- the EAS
+  variable `MAPBOX_PUBLIC_TOKEN`'s stored value (production and preview), confirmed with
+  `eas env:list --include-sensitive` classified without printing. Visibility (Sensitive) was fine.
+  The native Mapbox SDK was in the build (RNMAPBOX_MAPS_DOWNLOAD_TOKEN worked).
+- The app treated any non-empty string as a token, so Mapbox got the text, refused it (401):
+  blank map; Bike/Walk/Drive via Mapbox failed and the error said "check your connection".
+  Transit worked (Google). The preview card's "19 min via M5" was Google; the mode row's Drive
+  was Mapbox -- two sources.
+- Fix: `src/config/mapboxToken.ts` accepts only `pk.<b64>.<b64>`; `routingErrors.ts` maps the
+  real HTTP status to "Map service key missing / rejected the key / No route found / No internet";
+  Drive in the mode row = the same Google choices as the preview card; Bike/Walk fall back to
+  Google when Mapbox refuses; the map shows a card with the reason (`MapErrorBanner`);
+  Settings › About › Diagnostics; app.config.js warns in the EAS log on a bad token.
+- Still needed: the real `pk.` token in EAS (BLOCKED.md #23).

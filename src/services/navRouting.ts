@@ -2,14 +2,14 @@
 // These helpers fetch it for a new drive and for reroutes; when Mapbox can't answer (no token,
 // no signal, an error) the callers keep the Google route they already have.
 
-import { env } from "@/config/env";
+import { usableMapboxToken } from "@/config/mapboxToken";
 import type { LatLng } from "@/utils/polyline";
 import type { Route } from "@/services/directions";
 import { sharedPathFraction, type RouteAvoidPrefs } from "@/map/routeChoices";
 import { REROUTE_TIMEOUT_MS, closestRoute, fetchMapboxRoutes } from "@/services/mapboxDirections";
 
 export function mapboxRoutingAvailable(): boolean {
-  return !!env.mapboxPublicToken;
+  return !!usableMapboxToken();
 }
 
 function hasUturn(route: Route): boolean {
@@ -37,7 +37,7 @@ export async function mapboxRouteForChoice(
   heading: number | null
 ): Promise<Route | null> {
   if (!mapboxRoutingAvailable()) return null;
-  const routes = await fetchMapboxRoutes({ origin, destination, avoid, heading }, env.mapboxPublicToken, { timeoutMs: 8000 });
+  const routes = await fetchMapboxRoutes({ origin, destination, avoid, heading }, usableMapboxToken(), { timeoutMs: 8000, diagnosticsKey: "navigation" });
   return closestRoute(routes, picked.polyline, (a, b) => sharedPathFraction(a, b));
 }
 
@@ -49,8 +49,9 @@ export async function mapboxReroute(
   avoid: RouteAvoidPrefs,
   signal: AbortSignal
 ): Promise<Route> {
-  const routes = await fetchMapboxRoutes({ origin, destination, heading, avoid }, env.mapboxPublicToken, {
+  const routes = await fetchMapboxRoutes({ origin, destination, heading, avoid }, usableMapboxToken(), {
     signal,
+    diagnosticsKey: "reroute",
     timeoutMs: REROUTE_TIMEOUT_MS,
   });
   const chosen = pickReroute(routes);

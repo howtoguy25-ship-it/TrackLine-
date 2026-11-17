@@ -25,6 +25,19 @@ function gitShortHash() {
 }
 const BUILD_STAMP = { commit: gitShortHash(), builtAt: new Date().toISOString() };
 
+// Build 202 shipped "***** (This is a sensitive env variable...)" as its Mapbox token: the EAS
+// variable's VALUE had been set to the text `eas env:list` prints for a hidden value. Say so
+// loudly in the build log (the app itself then shows "Map service key missing" and routes with
+// Google -- see src/config/mapboxToken.ts, which applies the same rule).
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN;
+if (process.env.EAS_BUILD && !/^pk\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test((MAPBOX_TOKEN || "").trim())) {
+  console.warn(
+    "\n*** MAPBOX_PUBLIC_TOKEN is " +
+      (!MAPBOX_TOKEN ? "not set" : /\*|include-sensitive/.test(MAPBOX_TOKEN) ? "placeholder text, not a token" : "not a pk. public token") +
+      " -- the map will not load in this build. Set it to your Mapbox public token (pk.…) in EAS. ***\n"
+  );
+}
+
 module.exports = {
   expo: {
     name: "TrackLine",
@@ -375,7 +388,7 @@ module.exports = {
       // usable right now" check this backs, and NOTES.md for the full story.
       // Read at runtime by the Mapbox map (src/map-v2/mapbox.ts). EXPO_PUBLIC_MAPBOX_TOKEN first;
       // MAPBOX_PUBLIC_TOKEN is the name already stored in EAS.
-      mapboxPublicToken: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN,
+      mapboxPublicToken: MAPBOX_TOKEN,
       buildStamp: BUILD_STAMP,
       // Tracky auto-mood's real "Rain at location" trigger -- genuinely optional, same
       // treatment as every other key here. src/services/trackyMood.ts's own rain check returns
