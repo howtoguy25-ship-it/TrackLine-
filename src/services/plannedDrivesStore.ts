@@ -1,7 +1,7 @@
 // Saved planned drives: users/{uid}/plannedDrives. The server (refreshPlannedDrives) re-checks
 // each one's traffic 30 minutes before it's due and sends the reminder push, so drives live in
 // Firestore rather than only on the phone.
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import type { PlannedDrive } from "@/travel/plannedDrives";
 
@@ -22,4 +22,14 @@ export async function savePlannedDrive(uid: string, drive: Omit<PlannedDrive, "i
 
 export async function deletePlannedDrive(uid: string, id: string): Promise<void> {
   await deleteDoc(doc(db, "users", uid, "plannedDrives", id));
+}
+
+// "Tell me when to leave": stored on users/{uid} so the server's re-check push respects it too.
+export async function getLeaveReminders(uid: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? snap.data()?.plannedDriveReminders !== false : true;
+}
+
+export async function setLeaveReminders(uid: string, on: boolean): Promise<void> {
+  await setDoc(doc(db, "users", uid), { plannedDriveReminders: on }, { merge: true });
 }

@@ -1299,6 +1299,9 @@ exports.refreshPlannedDrives = onSchedule(
       await docSnap.ref.update(update);
       const uid = docSnap.ref.parent.parent ? docSnap.ref.parent.parent.id : null;
       if (!uid) continue;
+      // "Tell me when to leave" off: times are still refreshed, but no push.
+      const profile = await db.doc(`users/${uid}`).get();
+      if (profile.exists && profile.data()?.plannedDriveReminders === false) continue;
       const device = await db.doc(`deviceSessions/${uid}`).get();
       const token = device.exists ? device.data()?.expoPushToken : null;
       if (typeof token !== "string" || !token.startsWith("ExponentPushToken")) continue;

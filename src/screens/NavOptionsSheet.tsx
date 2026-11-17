@@ -23,6 +23,11 @@ interface Props {
   events: RouteEvent[];
   /** Asked once each time the sheet opens: predicted drive times for leaving now and later. */
   loadLeaveTimes: () => Promise<LeavePrediction[]>;
+  /** "Show more": the full Plan a drive time list for this destination. */
+  onShowMoreTimes: () => void;
+  /** Header buttons: navigation settings, and the other routes. */
+  onOpenSettings: () => void;
+  onRoutes: () => void;
   onShareDrive: () => void;
   onReportAlert: () => void;
   onOpenDetection: () => void;
@@ -52,6 +57,9 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     viaText,
     events,
     loadLeaveTimes,
+    onShowMoreTimes,
+    onOpenSettings,
+    onRoutes,
     onShareDrive,
     onReportAlert,
     onOpenDetection,
@@ -92,6 +100,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     >
       <BottomSheetScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
+          <Button variant="secondary" icon="settings" onPress={onOpenSettings} accessibilityLabel="Navigation settings" testID="eta-sheet-settings" />
           <View style={styles.headerText} accessible accessibilityLabel={`Arrive at ${arrivalClockText}. ${etaText}, ${distanceText} to go`}>
             <Text style={styles.arrival} testID="eta-sheet-arrival">
               {arrivalClockText}
@@ -100,7 +109,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
               {etaText} • {distanceText}
             </Text>
           </View>
-          <Button variant="ghost" icon="close" iconColor={colors.textMuted} onPress={onClose} accessibilityLabel="Close" />
+          <Button variant="secondary" icon="swap-vertical" onPress={onRoutes} accessibilityLabel="Other routes" testID="eta-sheet-routes" />
         </View>
 
         <View style={styles.card}>
@@ -130,8 +139,9 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         <Text style={styles.sectionLabel}>On your route</Text>
         <RouteEventsBar events={events} unit={distanceUnit} />
 
-        <Text style={styles.sectionLabel}>Best time to leave</Text>
+        <Text style={styles.sectionLabel}>Find the best time to leave</Text>
         <LeaveTimesChart state={leave} onRetry={fetchLeaveTimes} />
+        <Button variant="ghost" label="Show more" inline onPress={onShowMoreTimes} accessibilityLabel="Show more leave times in Plan a drive" testID="eta-sheet-more" />
 
         <View style={styles.card}>
           <OptionRow icon="share-outline" label="Share drive" onPress={onShareDrive} testID="eta-sheet-share" />
@@ -241,13 +251,13 @@ function LeaveTimesChart({ state, onRetry }: { state: LeaveState; onRetry: () =>
               testID={isBest ? "eta-sheet-leave-best" : undefined}
             >
               <Text style={styles.chartValue}>{Math.round(p.durationSeconds / 60)}</Text>
-              <View style={[styles.bar, { height: h, backgroundColor: isBest ? colors.good : colors.routePurple }]} />
-              <Text style={[styles.chartLabel, isBest && styles.chartLabelBest]}>{label}</Text>
+              <View style={[styles.bar, { height: h, backgroundColor: p.durationSeconds > (min + max) / 2 ? colors.chartSlow : colors.chartFast }]} />
+              <Text style={[styles.chartLabel, isBest && styles.chartLabelBest]}>{isBest ? `${label} ✓` : label}</Text>
             </View>
           );
         })}
       </View>
-      <Text style={styles.quiet}>Minutes of driving if you leave then. Predictions from Google traffic data.</Text>
+      <Text style={styles.quiet}>Minutes of driving if you leave then: red slower, yellow faster. Predictions from Google traffic data.</Text>
     </View>
   );
 }
@@ -289,8 +299,8 @@ const styles = StyleSheet.create({
   sheetBackground: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },
   handleIndicator: { backgroundColor: colors.surfaceMuted, width: 40 },
   container: { paddingHorizontal: spacing.lg, gap: spacing.sm },
-  header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  headerText: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  headerText: { flex: 1, alignItems: "center" },
   arrival: { fontSize: 30, fontWeight: "800", color: colors.text },
   etaLine: { fontSize: 15, color: colors.textMuted, marginTop: 2 },
   card: { backgroundColor: colors.surfaceMuted, borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },

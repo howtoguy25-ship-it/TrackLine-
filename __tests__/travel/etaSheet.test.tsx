@@ -92,6 +92,9 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof NavOptionsSh
       { departMs: new Date(2026, 10, 17, 9, 15).getTime(), durationSeconds: 1300 },
       { departMs: new Date(2026, 10, 17, 9, 30).getTime(), durationSeconds: null },
     ]),
+    onShowMoreTimes: jest.fn(),
+    onOpenSettings: jest.fn(),
+    onRoutes: jest.fn(),
     onShareDrive: jest.fn(),
     onReportAlert: jest.fn(),
     onOpenDetection: jest.fn(),
@@ -145,6 +148,9 @@ describe("ETA sheet", () => {
     const { el, props } = renderSheet();
     await render(el);
     const pairs: [string, jest.Mock][] = [
+      ["eta-sheet-settings", props.onOpenSettings as jest.Mock],
+      ["eta-sheet-routes", props.onRoutes as jest.Mock],
+      ["eta-sheet-more", props.onShowMoreTimes as jest.Mock],
       ["eta-sheet-share", props.onShareDrive as jest.Mock],
       ["eta-sheet-report", props.onReportAlert as jest.Mock],
       ["eta-sheet-dashcam", props.onOpenDetection as jest.Mock],

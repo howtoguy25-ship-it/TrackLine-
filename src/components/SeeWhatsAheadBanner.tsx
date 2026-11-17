@@ -5,7 +5,8 @@ import { Chip } from "@/components/ui/Button";
 // Shown under the top bar for the first few seconds of a drive: how many reports and live
 // incidents are on the route, and a tap opens the ETA sheet's list of them.
 export function SeeWhatsAheadBanner({ top, count, onPress }: { top: number; count: number; onPress: () => void }) {
-  const detail = count === 0 ? "nothing reported" : `${count} ${count === 1 ? "report" : "reports"} on your route`;
+  // Only shown when something is on the route (MapScreen hides it otherwise).
+  const detail = `${count} ${count === 1 ? "report" : "reports"} on your route`;
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { top }]}>
       <Chip
