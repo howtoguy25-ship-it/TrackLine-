@@ -1,11 +1,12 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { placesErrorText } from "@/services/routingErrors";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, Image, ActivityIndicator, Linking, FlatList, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { PlacesApiError, priceLevelText, type NearbyPlace, type PlaceDetails } from "@/services/places";
+import { priceLevelText, type NearbyPlace, type PlaceDetails } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText, isOsmPlaceId } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
@@ -94,11 +95,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
         setFetchedFor(key);
       })
       .catch((err) => {
-        setErrorText(
-          err instanceof PlacesApiError
-            ? `Couldn't load nearby hotels (${err.status})`
-            : "Couldn't load nearby hotels -- check your connection"
-        );
+        setErrorText(placesErrorText("nearby hotels", err));
       })
       .finally(() => setLoading(false));
   }, [location, fetchedFor, sheetIndex, retryTick]);

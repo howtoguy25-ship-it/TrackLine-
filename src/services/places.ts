@@ -1,4 +1,5 @@
 import { env } from "@/config/env";
+import { netFetch } from "@/services/netFetch";
 import type { LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
 
@@ -63,7 +64,7 @@ export async function searchPlaces(
     params.set("origin", `${biasLocation.latitude},${biasLocation.longitude}`);
   }
 
-  const res = await fetch(
+  const res = await netFetch("places", 
     `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`
   );
   const json = await res.json();
@@ -195,7 +196,7 @@ export async function findNearestTransitStation(location: LatLng): Promise<Place
     key: env.googlePlacesApiKey,
   });
 
-  const res = await fetch(
+  const res = await netFetch("places", 
     `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${params.toString()}`
   );
   const json = await res.json();
@@ -249,7 +250,7 @@ export async function getPlaceInfo(placeId: string): Promise<PlaceInfo> {
       "place_id,name,formatted_address,geometry,rating,user_ratings_total,opening_hours,formatted_phone_number,website,reviews,photos,price_level,types",
   });
 
-  const res = await fetch(
+  const res = await netFetch("places", 
     `https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`
   );
   const json = await res.json();
@@ -302,7 +303,7 @@ export async function reverseGeocode(location: LatLng): Promise<string | null> {
     key: env.googlePlacesApiKey,
   });
 
-  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+  const res = await netFetch("places", `https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
   const json = await res.json();
 
   if (json.status === "ZERO_RESULTS") return null;
@@ -361,7 +362,7 @@ export async function getStreetViewUrl(location: LatLng): Promise<string | null>
     key: env.googlePlacesApiKey,
   });
   try {
-    const res = await fetch(`https://maps.googleapis.com/maps/api/streetview/metadata?${params.toString()}`);
+    const res = await netFetch("places", `https://maps.googleapis.com/maps/api/streetview/metadata?${params.toString()}`);
     const json = await res.json();
     if (json.status !== "OK") return null;
     return `https://maps.googleapis.com/maps/api/streetview?size=640x360&location=${location.latitude},${location.longitude}&key=${env.googlePlacesApiKey}`;
@@ -413,7 +414,7 @@ export async function getPlaceDetails(placeId: string, sessionToken?: string): P
   // Ends the autocomplete session this result came from (see searchPlaces).
   if (sessionToken) params.set("sessiontoken", sessionToken);
 
-  const res = await fetch(
+  const res = await netFetch("places", 
     `https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`
   );
   const json = await res.json();

@@ -1,4 +1,5 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { placesErrorText } from "@/services/routingErrors";
 import { Button, Chip } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import {
@@ -15,7 +16,7 @@ import {
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { PlacesApiError, type NearbyPlace } from "@/services/places";
+import { type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
@@ -118,11 +119,7 @@ export const ParkingSheet = forwardRef<SimpleBottomSheetRef, Props>(function Par
         setFetchedFor(key);
       })
       .catch((err) => {
-        setErrorText(
-          err instanceof PlacesApiError
-            ? `Couldn't load nearby parking (${err.status})`
-            : "Couldn't load nearby parking -- check your connection"
-        );
+        setErrorText(placesErrorText("nearby parking", err));
       })
       .finally(() => setLoading(false));
   }, [location, fetchedFor, sheetIndex, retryTick]);

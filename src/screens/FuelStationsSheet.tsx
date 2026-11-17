@@ -1,4 +1,5 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { placesErrorText } from "@/services/routingErrors";
 import { useLatest } from "@/hooks/useLatest";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -6,7 +7,7 @@ import { View, Pressable, StyleSheet, ActivityIndicator, FlatList, Keyboard } fr
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { PlacesApiError, type NearbyPlace } from "@/services/places";
+import { type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
@@ -111,11 +112,7 @@ export const FuelStationsSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
         setFetchedFor(key);
       })
       .catch((err) => {
-        setErrorText(
-          err instanceof PlacesApiError
-            ? `Couldn't load nearby petrol stations (${err.status})`
-            : "Couldn't load nearby petrol stations -- check your connection"
-        );
+        setErrorText(placesErrorText("nearby petrol stations", err));
       })
       .finally(() => setLoading(false));
   }, [location, fetchedFor, sheetIndex, retryTick]);

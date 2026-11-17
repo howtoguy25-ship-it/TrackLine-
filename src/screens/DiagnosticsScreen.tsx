@@ -4,7 +4,7 @@ import { SettingsActionRow, SettingsPage, SettingsRow, SettingsSection } from "@
 import { env } from "@/config/env";
 import { getBuildStamp } from "@/config/getBuildStamp";
 import { TOKEN_STATE_TEXT, mapboxTokenState, mapboxTokenTail } from "@/config/mapboxToken";
-import { getDiagnostics, subscribeDiagnostics, type DirectionsRecord } from "@/diagnostics/diagnostics";
+import { getDiagnostics, subscribeDiagnostics, type DirectionsRecord, type ServiceRecord } from "@/diagnostics/diagnostics";
 import { isMapboxNativeLinked } from "@/map-v2/mapbox";
 import { auth, db } from "@/services/firebase";
 
@@ -25,6 +25,11 @@ export function directionsLine(rec: DirectionsRecord | undefined): string {
   const who = rec.provider === "mapbox" ? "Mapbox" : "Google";
   const status = rec.status != null ? `HTTP ${rec.status}` : "no answer";
   return `${rec.ok ? "OK" : "Failed"} · ${who} · ${status} · ${rec.message}`;
+}
+
+function serviceRow(label: string, rec: ServiceRecord | undefined): [string, string, boolean | null] {
+  if (!rec) return [label, "Not asked yet this session", null];
+  return [label, `${rec.ok ? "OK" : "Failed"} · ${rec.host} · ${rec.status != null ? `HTTP ${rec.status}` : "no answer"} · ${rec.message}`, rec.ok];
 }
 
 type FirebaseCheck = { state: "checking" } | { state: "ok"; uid: string | null } | { state: "failed"; reason: string };
@@ -77,6 +82,9 @@ export function DiagnosticsScreen() {
       const rec = diag.directions[key];
       return [`Directions: ${label}`, directionsLine(rec), rec ? rec.ok : null];
     }),
+    ["Places key present", /^AIza[0-9A-Za-z_-]{35}$/.test(env.googlePlacesApiKey ?? "") ? `Yes (…${env.googlePlacesApiKey.slice(-4)})` : "No — Places key missing or not a Google key", /^AIza[0-9A-Za-z_-]{35}$/.test(env.googlePlacesApiKey ?? "")],
+    serviceRow("Last Places request", diag.services.places),
+    serviceRow("Last Routes request", diag.services.routes),
     ["Google key present", env.googleDirectionsApiKey && env.googlePlacesApiKey ? "Yes" : "No", !!(env.googleDirectionsApiKey && env.googlePlacesApiKey)],
     [
       "Firebase connected",

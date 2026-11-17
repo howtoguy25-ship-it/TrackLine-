@@ -1,11 +1,12 @@
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { placesErrorText } from "@/services/routingErrors";
 import { Button, Chip } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, Image, ActivityIndicator, FlatList, Keyboard } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SimpleBottomSheet, type SimpleBottomSheetRef } from "@/components/SimpleBottomSheet";
-import { PlacesApiError, priceLevelText, type NearbyPlace } from "@/services/places";
+import { priceLevelText, type NearbyPlace } from "@/services/places";
 import { searchNearbyOsmPlaces, searchOsmPlacesByText } from "@/services/osmPlaces";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
@@ -153,11 +154,7 @@ export const RestaurantsSheet = forwardRef<SimpleBottomSheetRef, Props>(function
         setFetchedFor(key);
       })
       .catch((err) => {
-        setErrorText(
-          err instanceof PlacesApiError
-            ? `Couldn't load nearby restaurants (${err.status})`
-            : "Couldn't load nearby restaurants -- check your connection"
-        );
+        setErrorText(placesErrorText("nearby restaurants", err));
       })
       .finally(() => setLoading(false));
   }, [location, fetchedFor, sheetIndex, retryTick, scope]);

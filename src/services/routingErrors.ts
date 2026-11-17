@@ -95,3 +95,21 @@ export function routeErrorText(err: unknown): string {
   if (err instanceof TypeError && /network/i.test(err.message)) return ROUTING_ERROR_TEXT.offline;
   return `Couldn't find a route${err instanceof Error && err.message ? ` (${err.message.slice(0, 60)})` : ""}`;
 }
+
+/** "Couldn't load nearby restaurants: <the real reason>" for the place lists and search. */
+export function placesErrorText(subject: string, err: unknown): string {
+  const e = err as { name?: string; status?: unknown; message?: string } | null;
+  let reason: string;
+  if (e?.name === "RequestTimeoutError") reason = "the places service didn't answer";
+  else if (err instanceof TypeError && /network/i.test(err.message)) reason = ROUTING_ERROR_TEXT.offline.toLowerCase();
+  else if (e?.name === "PlacesApiError") {
+    const status = String(e.status ?? "");
+    const msg = String(e.message ?? "");
+    if (/billing/i.test(msg)) reason = "billing isn't enabled on the Google Cloud project";
+    else if (status === "REQUEST_DENIED" || status === "403" || status === "PERMISSION_DENIED") reason = "the places service rejected the key";
+    else if (status === "OVER_QUERY_LIMIT" || status === "429" || status === "RESOURCE_EXHAUSTED") reason = "the places service is busy";
+    else if (status === "ZERO_RESULTS") reason = "nothing found nearby";
+    else reason = `error ${status}`;
+  } else reason = err instanceof Error && err.message ? err.message.slice(0, 60) : "something went wrong";
+  return `Couldn't load ${subject}: ${reason}. Tap to try again.`;
+}

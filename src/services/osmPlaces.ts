@@ -1,4 +1,5 @@
 import type { LatLng } from "@/utils/polyline";
+import { netFetch } from "@/services/netFetch";
 import { withTimeout } from "@/utils/withTimeout";
 import { haversineMeters, type NearbyPlace, type PlaceInfo } from "@/services/places";
 
@@ -103,7 +104,7 @@ async function raceOverpassMirrors(query: string): Promise<OverpassResponse> {
   const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   const requestFrom = async (endpoint: string): Promise<OverpassResponse> => {
-    const response = await fetch(endpoint, {
+    const response = await netFetch("osm", endpoint, {
       method: "POST",
       body,
       // Real, confirmed requirement -- verified directly against overpass-api.de before

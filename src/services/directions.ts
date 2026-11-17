@@ -1,4 +1,5 @@
 import { crossCheckSteps, logTurnMismatch } from "@/nav/turnGeometry";
+import { netFetch } from "@/services/netFetch";
 import { env } from "@/config/env";
 import { decodePolyline, type LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
@@ -365,7 +366,7 @@ export async function getDirections(
   options: DirectionsOptions = {}
 ): Promise<Route> {
   const url = buildDirectionsUrl(origin, destination, "driving", options);
-  const res = await fetch(url);
+  const res = await netFetch("routes", url);
   const json = await res.json();
 
   if (json.status !== "OK" || !json.routes?.length) {
@@ -401,7 +402,7 @@ async function getFastestRouteCandidates(
     useTraffic: true,
     alternatives: true,
   });
-  const res = await fetch(url);
+  const res = await netFetch("routes", url);
   const json = await res.json();
 
   if (json.status !== "OK" || !json.routes?.length) {
@@ -482,7 +483,7 @@ async function getTollPrice(origin: LatLng, destination: LatLng, waypoint?: LatL
       extraComputations: ["TOLLS"],
       routeModifiers: { tollPasses: ["AU_LINKT"] },
     };
-    const res = await fetch(ROUTES_API_URL, {
+    const res = await netFetch("routes", ROUTES_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -678,7 +679,7 @@ export async function getHeadingAwareReroute(
       : {}),
   };
 
-  const res = await fetch(ROUTES_API_URL, {
+  const res = await netFetch("routes", ROUTES_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -758,7 +759,7 @@ export async function getRouteChoices(
 
   let res: Response;
   try {
-    res = await fetch(ROUTES_API_URL, {
+    res = await netFetch("routes", ROUTES_API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -797,7 +798,7 @@ async function getClassicRouteChoices(
     useTraffic: true,
     alternatives: !options.waypoint,
   });
-  const res = await fetch(url);
+  const res = await netFetch("routes", url);
   const json = await res.json();
   if (json.status !== "OK" || !json.routes?.length) {
     throw new DirectionsApiError(json.status ?? "UNKNOWN_ERROR", json.error_message);
@@ -924,7 +925,7 @@ export async function getDirectionsForMode(
   waypoint?: LatLng
 ): Promise<Route> {
   const url = buildDirectionsUrl(origin, destination, mode, { waypoint });
-  const res = await fetch(url);
+  const res = await netFetch("routes", url);
   const json = await res.json();
 
   if (json.status !== "OK" || !json.routes?.length) {
@@ -955,7 +956,7 @@ export async function getModeRouteOptions(
   waypoint?: LatLng
 ): Promise<Route[]> {
   const url = buildDirectionsUrl(origin, destination, mode, { waypoint, alternatives: true });
-  const res = await fetch(url);
+  const res = await netFetch("routes", url);
   const json = await res.json();
 
   if (json.status !== "OK" || !json.routes?.length) {
