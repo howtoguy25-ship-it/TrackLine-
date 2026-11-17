@@ -4,7 +4,10 @@
 
 Item 1 (alert settings) DONE (branch `alert-settings`, merged). Item 2 (report card remainder) DONE in
 code (branch `report-card`, merged); the server half is BLOCKED on the Firebase deploy like the rest of the
-server. **Next step: item 3** — brand/POI badge popularity ranking (Places rating count + business status +
+server. Also done (branch `cleanup-live-alerts`, merged): ferry tests un-skipped on real recordings, lint 0 warnings,
+CarPlay/Android Auto scoped (NOTES.md), every alert type live (FINAL_STATUS.md). **Next step: item 3** — finish
+branch `poi-ranking` (pure ranking + server popularity done and tested; still to do: draw the ranked badges on the map
+from the tiles' POI features instead of the native style layers) — brand/POI badge popularity ranking (Places rating count + business status +
 anonymous opted-in arrivals; max ~12 per screen, collision-free; z13/z15; 300 m nearby boost; ranking tests
 + per-screen cap render test), on a new branch `poi-ranking`. Then items 4-6 and the final checks.
 

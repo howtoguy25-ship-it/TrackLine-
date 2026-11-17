@@ -11,10 +11,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { FloatingButton } from "@/components/ui/Button";
 import { CompassNeedle, ReportIcon } from "@/components/icons/MapControlIcons";
-import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity } from "@/map/homeMapLogic";
+import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity, streetPillMaxWidth } from "@/map/homeMapLogic";
 import { colors, scaleFor } from "@/theme/tokens";
 import { StreetPill } from "@/components/StreetPill";
-import { streetPillMaxWidth } from "@/map/homeMapLogic";
 
 // Every floating button on the idle home map, in one place:
 //

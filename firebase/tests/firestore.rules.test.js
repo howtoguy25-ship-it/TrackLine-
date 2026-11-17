@@ -453,6 +453,19 @@ describe("alerts/{alertId} (votes, thanks, byline -- once per user)", () => {
     await assertFails(setDoc(doc(named, "alerts/x1"), newAlert("d")));
   });
 
+  test("crash history is readable by drivers, written only by the server; the moderation log is admin-only", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "crashRecords/ltn_1"), { lat: 1, lng: 2, geohash: "r3gx2ab" });
+      await setDoc(doc(ctx.firestore(), "moderationLog/m1"), { alertId: "a" });
+    });
+    const d = testEnv.authenticatedContext("d").firestore();
+    await assertSucceeds(getDoc(doc(d, "crashRecords/ltn_1")));
+    await assertFails(setDoc(doc(d, "crashRecords/x"), { lat: 1 }));
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "crashRecords/ltn_1")));
+    await assertFails(getDoc(doc(d, "moderationLog/m1")));
+    await assertSucceeds(getDoc(doc(testEnv.authenticatedContext("owner", { email: "howtoguy25@gmail.com" }).firestore(), "moderationLog/m1")));
+  });
+
   test("pending reports and reporter limits are server only (owner may read their own limits)", async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "pendingReports/p1"), { uid: "d", type: "police" });

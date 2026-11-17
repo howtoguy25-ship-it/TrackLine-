@@ -5,12 +5,13 @@ import type { AppSettings } from "@/services/settings";
 import type { AlertDoc } from "@/types/alert";
 import type { TrafficIncident } from "@/services/trafficNswModel";
 import { OSM_FEATURE_KINDS, type OsmTrafficData } from "@/services/osmTrafficData";
-import { COMMUNITY_ITEM, alertsWhileDriving, liveTrafficItem } from "@/settings/reportCatalog";
+import { alertsWhileDriving, itemOfAlert, liveTrafficItem } from "@/settings/reportCatalog";
+import { mergedOsmPoints, mergedReports } from "@/map/reportPins";
 import type { ApproachFeature } from "@/alerts/approachAlerts";
 
 export interface FeatureSources {
   osm: OsmTrafficData | null;
-  alerts: readonly (Pick<AlertDoc, "id" | "type" | "lat" | "lng" | "createdBy"> & { needsConfirmation?: boolean })[];
+  alerts: readonly (Pick<AlertDoc, "id" | "type" | "lat" | "lng" | "createdBy"> & { needsConfirmation?: boolean; item?: string; confirmCount?: number; permanent?: boolean })[];
   incidents: readonly Pick<TrafficIncident, "id" | "kind" | "category" | "headline" | "lat" | "lng">[];
   /** The driver's own reports never alert them. */
   ownUid?: string | null;
@@ -30,14 +31,15 @@ export function collectApproachFeatures(settings: Settings, src: FeatureSources)
     }
     for (const kind of OSM_FEATURE_KINDS) {
       if (!alertsWhileDriving(settings, kind)) continue;
-      for (const p of osm.features[kind] ?? []) out.push({ key: `osm:${kind}:${p.id}`, item: kind, lat: p.lat, lng: p.lng });
+      for (const p of mergedOsmPoints(kind, osm.features[kind] ?? [], src.alerts)) out.push({ key: `osm:${kind}:${p.id}`, item: kind, lat: p.lat, lng: p.lng });
     }
   }
-  for (const a of src.alerts) {
+  // One alert per real thing: the same merge the map uses.
+  for (const a of mergedReports(src.alerts, { incidents: src.incidents, osm })) {
     if (src.ownUid && a.createdBy === src.ownUid) continue;
     // A low-trust reporter's report isn't announced until another driver confirms it.
     if (a.needsConfirmation) continue;
-    const item = COMMUNITY_ITEM[a.type];
+    const item = itemOfAlert(a);
     if (!item || !alertsWhileDriving(settings, item)) continue;
     out.push({ key: `alert:${a.id}`, item, lat: a.lat, lng: a.lng });
   }

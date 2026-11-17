@@ -1,6 +1,6 @@
 // Firestore side of reports/core.js. FieldValue/Timestamp are passed in so the tests can use
 // their own firebase-admin copy (see vehicleCheck/store.js for why).
-const { alertFromPending, applyVote, clampTrust, newReporterState } = require("./core");
+const { alertFromPending, applyVote, clampTrust, newReporterState, moderate } = require("./core");
 
 const STATE = "reporterState";
 const PENDING = "pendingReports";
@@ -27,7 +27,7 @@ function firestoreReportStore(db, { FieldValue, Timestamp }) {
       return snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((a) => a.type === type)
-        .map((a) => ({ id: a.id, type: a.type, lat: a.lat, lng: a.lng, createdBy: a.createdBy, expiresAtMs: ms(a.expiresAt) }));
+        .map((a) => ({ id: a.id, type: a.type, item: a.item, lat: a.lat, lng: a.lng, createdBy: a.createdBy, expiresAtMs: ms(a.expiresAt) }));
     },
     async createPending(p) {
       const ref = await db.collection(PENDING).add({ ...p, publishAt: ts(p.publishAtMs) });
@@ -76,11 +76,11 @@ function firestoreReportStore(db, { FieldValue, Timestamp }) {
         if (d.createdBy === voterUid) return "own";
         const stateRef = db.collection(STATE).doc(d.createdBy);
         const stateSnap = await tx.get(stateRef);
-        const alert = { type: d.type, createdAtMs: ms(d.createdAt), expiresAtMs: ms(d.expiresAt), notThere: d.notThere || 0 };
+        const alert = { type: d.type, item: d.item, permanent: !!d.permanent, confirmCount: d.confirmCount || 0, createdAtMs: ms(d.createdAt), expiresAtMs: ms(d.expiresAt), notThere: d.notThere || 0 };
         const r = applyVote(alert, vote, nowMs);
         if (r.action === "delete") tx.delete(alertRef);
         else if (r.action === "update") {
-          const { expiresAtMs, lastConfirmedAtMs, ...plain } = r.patch;
+          const { expiresAtMs, lastConfirmedAtMs, approvedAtMs: _a, ...plain } = r.patch;
           tx.update(alertRef, {
             ...plain,
             ...(expiresAtMs ? { expiresAt: ts(expiresAtMs) } : {}),
@@ -89,6 +89,31 @@ function firestoreReportStore(db, { FieldValue, Timestamp }) {
         }
         const state = stateSnap.exists ? stateSnap.data() : newReporterState();
         tx.set(stateRef, { ...state, trust: clampTrust((state.trust ?? 50) + r.trustDelta) });
+        return r.action;
+      });
+    },
+    /** Fixed cameras / road features still waiting for confirmations (the admin queue). */
+    async moderationQueue(limit = 100) {
+      const snap = await db.collection(ALERTS).where("awaitingApproval", "==", true).limit(limit).get();
+      return snap.docs
+        .map((d) => {
+          const a = d.data();
+          return { id: d.id, type: a.type, item: a.item, lat: a.lat, lng: a.lng, comment: a.comment || null, confirmCount: a.confirmCount || 0, denyCount: a.denyCount || 0, createdAtMs: ms(a.createdAt) };
+        })
+        .sort((a, b) => a.createdAtMs - b.createdAtMs);
+    },
+    async moderate(alertId, approve, adminUid, nowMs) {
+      const ref = db.collection(ALERTS).doc(alertId);
+      return db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return "gone";
+        const d = snap.data();
+        const r = moderate({ type: d.type, item: d.item }, approve, nowMs);
+        if (r.action === "delete") tx.delete(ref);
+        else if (r.action === "update") {
+          tx.update(ref, { permanent: true, awaitingApproval: false, expiresAt: ts(r.patch.expiresAtMs), approvedAt: ts(nowMs), approvedBy: adminUid });
+        }
+        tx.set(db.collection("moderationLog").doc(), { alertId, item: d.item || null, approve: !!approve, by: adminUid, at: ts(nowMs) });
         return r.action;
       });
     },

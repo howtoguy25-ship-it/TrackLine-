@@ -5,7 +5,28 @@
 const POLICY = require("./policy.json");
 
 const MIN = 60_000;
+const YEAR = 365 * 24 * 60 * MIN;
 const TYPES = Object.keys(POLICY.types);
+
+/**
+ * The rules for one report: its base type's, with the item's own overrides. Fixed cameras and
+ * road features wait (pendingLifetimeMinutes) for confirmations or an admin, then stay.
+ */
+function itemPolicy(type, item) {
+  const base = POLICY.types[type];
+  if (!base) return null;
+  const it = item ? POLICY.items[item] : null;
+  if (it && it.fixed) {
+    const f = POLICY.fixed;
+    return { ...base, lifetimeMinutes: f.pendingLifetimeMinutes, askAfterMinutes: f.askAfterMinutes, extendMinutes: 0, maxLifeMinutes: f.pendingLifetimeMinutes, fixed: true };
+  }
+  const { type: _t, fixed: _f, needsComment: _n, ...overrides } = it || {};
+  return { ...base, ...overrides, fixed: false };
+}
+
+/** A report's item, for alerts written before items existed: the base type's own item. */
+const DEFAULT_ITEM = { police: "police", crash: "crash", hazard: "otherHazards", camera: "mobilePoliceCamera", traffic_light: "trafficLights", emergency_vehicle: "emergencyVehicles" };
+const itemOf = (a) => a.item || DEFAULT_ITEM[a.type];
 const REGIONS = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"];
 
 class ReportError extends Error {
@@ -50,6 +71,8 @@ function decide({ uid, input, state, nearby, nowMs }) {
   const reject = (code, message, extra = {}) => ({ decision: { action: "reject", code, message, ...extra }, state: s });
 
   if (!TYPES.includes(input.type)) return reject("bad-type", "Unknown report type.");
+  if (input.item && (!POLICY.items[input.item] || POLICY.items[input.item].type !== input.type)) return reject("bad-type", "Unknown report type.");
+  if (input.item && POLICY.items[input.item].needsComment && !input.comment) return reject("needs-comment", "Add a few words for a map chat.");
   if (!isCoord(input.at) || !isCoord(input.from)) return reject("bad-position", "A report needs your position and where the thing is.");
   if (metres(input.at, input.from) > POLICY.maxDistanceFromDriverM) {
     return reject("too-far", `You can only report within ${POLICY.maxDistanceFromDriverM / 1000} km of where you are.`);
@@ -69,8 +92,9 @@ function decide({ uid, input, state, nearby, nowMs }) {
   if (s.log.length >= POLICY.maxPerDay) return reject("daily-limit", `Up to ${POLICY.maxPerDay} reports a day.`);
 
   // Duplicate: the same type, still up, close by.
+  const want = input.item || DEFAULT_ITEM[input.type];
   const dup = (nearby || [])
-    .filter((a) => a.type === input.type && a.expiresAtMs > nowMs && metres(a, input.at) <= POLICY.duplicateRadiusM)
+    .filter((a) => a.type === input.type && itemOf(a) === want && a.expiresAtMs > nowMs && metres(a, input.at) <= POLICY.duplicateRadiusM)
     .sort((a, b) => metres(a, input.at) - metres(b, input.at))[0];
   if (dup) {
     if (dup.createdBy === uid) return reject("duplicate", "You've already reported this.");
@@ -98,10 +122,15 @@ function decideUndo({ state, pending, uid, nowMs }) {
 
 /** The alert as published, from a pending report. */
 function alertFromPending(p) {
-  const t = POLICY.types[p.type];
-  const lifetime = (p.customTtlMs && p.customTtlMs > 0 ? Math.min(p.customTtlMs, t.maxLifeMinutes * MIN) : t.lifetimeMinutes * MIN);
+  const t = itemPolicy(p.type, p.item);
+  // A driver's own "Alert lifetime" applies to temporary reports, never to a fixed feature's wait.
+  const lifetime = !t.fixed && p.customTtlMs && p.customTtlMs > 0 ? Math.min(p.customTtlMs, t.maxLifeMinutes * MIN) : t.lifetimeMinutes * MIN;
   return {
     type: p.type,
+    item: p.item || DEFAULT_ITEM[p.type],
+    // Fixed features wait for 3 confirmations or an admin (moderation queue), then stay.
+    awaitingApproval: t.fixed,
+    permanent: false,
     lat: p.lat,
     lng: p.lng,
     geohash: p.geohash,
@@ -129,9 +158,18 @@ function alertFromPending(p) {
  * Returns { action: "update", patch } | { action: "delete" }, and the reporter's trust change.
  */
 function applyVote(alert, vote, nowMs) {
-  const t = POLICY.types[alert.type];
+  const t = itemPolicy(alert.type, alert.item);
   if (!t) return { action: "none", trustDelta: 0 };
   if (vote === "confirm") {
+    if (t.fixed) {
+      // A fixed camera / road feature: kept for good once enough drivers have confirmed it.
+      if (alert.permanent) return { action: "update", patch: { lastConfirmedAtMs: nowMs, needsConfirmation: false, notThere: 0 }, trustDelta: POLICY.trust.confirmed };
+      const confirms = alert.confirmCount || 0;
+      if (confirms >= POLICY.fixed.permanentAfterConfirms) {
+        return { action: "update", patch: { ...permanentPatch(alert, nowMs), lastConfirmedAtMs: nowMs, needsConfirmation: false, notThere: 0 }, trustDelta: POLICY.trust.confirmed };
+      }
+      return { action: "update", patch: { lastConfirmedAtMs: nowMs, needsConfirmation: false, notThere: 0 }, trustDelta: POLICY.trust.confirmed };
+    }
     const cap = alert.createdAtMs + t.maxLifeMinutes * MIN;
     const expiresAtMs = Math.min(cap, Math.max(alert.expiresAtMs, nowMs + t.extendMinutes * MIN));
     return { action: "update", patch: { expiresAtMs, lastConfirmedAtMs: nowMs, needsConfirmation: false, notThere: 0 }, trustDelta: POLICY.trust.confirmed };
@@ -139,6 +177,18 @@ function applyVote(alert, vote, nowMs) {
   const notThere = (alert.notThere || 0) + 1;
   if (notThere >= POLICY.removeAfterNotThere) return { action: "delete", trustDelta: POLICY.trust.removed };
   return { action: "update", patch: { notThere }, trustDelta: POLICY.trust.notThere };
+}
+
+function permanentPatch(alert, nowMs) {
+  return { permanent: true, awaitingApproval: false, expiresAtMs: nowMs + POLICY.fixed.permanentYears * YEAR };
+}
+
+/** Admin decision on a fixed feature in the moderation queue. */
+function moderate(alert, approve, nowMs) {
+  const t = itemPolicy(alert.type, alert.item);
+  if (!t || !t.fixed) return { action: "none" };
+  if (!approve) return { action: "delete" };
+  return { action: "update", patch: { ...permanentPatch(alert, nowMs), approvedAtMs: nowMs } };
 }
 
 const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
@@ -181,7 +231,8 @@ function validateInput(data) {
     from: { lat: num(d.from && d.from.lat), lng: num(d.from && d.from.lng) },
     region: d.region,
     geohash: "",
-    comment: typeof d.comment === "string" ? d.comment.trim().split(/\s+/).slice(0, 7).join(" ").slice(0, 80) : undefined,
+    comment: typeof d.comment === "string" && d.comment.trim() ? d.comment.trim().split(/\s+/).slice(0, 7).join(" ").slice(0, 80) : undefined,
+    item: typeof d.item === "string" && d.item ? d.item : null,
     customTtlMs: typeof d.customTtlMs === "number" && d.customTtlMs > 0 ? d.customTtlMs : null,
   };
   if (!REGIONS.includes(input.region)) throw new ReportError("bad-region", "Reports are for Australia for now.");
@@ -213,6 +264,7 @@ async function submit(store, { uid, data, reporterName, nowMs }) {
   const pending = {
     uid,
     type: input.type,
+    item: input.item || DEFAULT_ITEM[input.type],
     lat: input.at.lat,
     lng: input.at.lng,
     geohash: input.geohash,
@@ -239,4 +291,4 @@ async function undo(store, { uid, pendingId, nowMs }) {
   return { undone: true };
 }
 
-module.exports = { POLICY, ReportError, metres, encodeGeohash, decide, decideUndo, alertFromPending, applyVote, clampTrust, newReporterState, submit, undo, validateInput };
+module.exports = { POLICY, ReportError, metres, encodeGeohash, itemPolicy, itemOf, moderate, DEFAULT_ITEM, decide, decideUndo, alertFromPending, applyVote, clampTrust, newReporterState, submit, undo, validateInput };

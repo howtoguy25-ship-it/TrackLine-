@@ -22,7 +22,7 @@ export function bundledModelIO(
       const modelJson = (await new File(
         modelJsonAsset.localUri ?? modelJsonAsset.uri
       ).json()) as {
-        modelTopology: {};
+        modelTopology: object;
         weightsManifest: tf.io.WeightsManifestConfig;
       };
 

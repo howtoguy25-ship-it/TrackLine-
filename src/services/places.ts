@@ -2,10 +2,6 @@ import { env } from "@/config/env";
 import type { LatLng } from "@/utils/polyline";
 import { Sentry } from "@/services/sentry";
 
-// Real, confirmed bug fix -- see withTimeout.ts's own comment. 12s is generous enough for a
-// real, slow-but-working connection to still complete normally, short enough that a genuinely
-// hung request turns into a clear, retryable error well before it reads as the app being frozen.
-const NEARBY_SEARCH_TIMEOUT_MS = 12000;
 
 export interface PlacePrediction {
   placeId: string;

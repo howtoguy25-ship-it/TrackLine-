@@ -17,6 +17,12 @@ export interface AlertDoc {
   createdAt: number; // ms epoch
   /** Posted by a low-trust reporter: shown, but not announced until someone confirms it. */
   needsConfirmation?: boolean;
+  /** The Settings > Reports item (e.g. "stopSignCamera"); absent on older reports. */
+  item?: string;
+  /** A fixed camera / road feature confirmed by 3 drivers or approved by an admin. */
+  permanent?: boolean;
+  /** A fixed feature still waiting for those confirmations. */
+  awaitingApproval?: boolean;
   /** When someone last said "Still here" (the server sets it). */
   lastConfirmedAt?: number;
   expiresAt: number; // ms epoch

@@ -1,7 +1,7 @@
 // Sydney Harbour: Circular Quay -> Manly must offer Ferry (the Manly ferry); Bankstown ->
-// Parramatta must not. REAL Google transit responses, recorded by
-// scripts/record-transit-ferry.mjs -- which needs a Google key, not available where these tests
-// were written. Until the recordings exist this suite is SKIPPED (shown as skipped, not passed).
+// Parramatta must not. REAL Google transit responses, recorded 2026-11-16 by
+// scripts/record-transit-ferry.mjs with the app's Directions key (fixtures/travel/*-transit.json,
+// key stripped). If the recordings are ever deleted the suite shows as skipped, never as passed.
 // The Putney -> Mortlake car-ferry test (modes.test.ts) runs on real OSRM data already.
 import fs from "fs";
 import path from "path";

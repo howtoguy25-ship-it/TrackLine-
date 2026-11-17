@@ -24,6 +24,7 @@ import { Sentry } from "@/services/sentry";
 // The ".bin" extension (registered as an assetExt in metro.config.js) is what makes this
 // resolve as an asset; expo-file-system's File.json() parses it as JSON regardless of its
 // actual file extension once downloaded, so the renamed file's content is unchanged.
+/* eslint-disable @typescript-eslint/no-require-imports -- binary model files: Metro only bundles them as assets through require() */
 const bundledCocoSsdModelJson = require("../../assets/models/ssdlite_mobilenet_v2/model.json.bin");
 const bundledCocoSsdWeights = [
   require("../../assets/models/ssdlite_mobilenet_v2/group1-shard1of5.bin"),
@@ -32,6 +33,7 @@ const bundledCocoSsdWeights = [
   require("../../assets/models/ssdlite_mobilenet_v2/group1-shard4of5.bin"),
   require("../../assets/models/ssdlite_mobilenet_v2/group1-shard5of5.bin"),
 ];
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 // COCO-SSD fetches its own base model (several MB, model.json + weight shards) from
 // Google's CDN on every single load by default -- there's no persistent cache without this,

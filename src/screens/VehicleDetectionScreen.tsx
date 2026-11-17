@@ -1250,7 +1250,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
     } finally {
       sideCapturingRef.current = false;
     }
-  }, []);
+  }, [plateRecognizerConfiguredRef]);
 
   useEffect(() => {
     if (status !== "running") return;

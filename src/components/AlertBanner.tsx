@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useLatest } from "@/hooks/useLatest";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Animated, StyleSheet } from "react-native";
@@ -15,6 +16,7 @@ interface Props {
 export function AlertBanner({ visible, message, onDismiss }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useState(() => new Animated.Value(-120))[0];
+  const onDismissRef = useLatest(onDismiss);
 
   useEffect(() => {
     Animated.spring(translateY, {
@@ -24,10 +26,10 @@ export function AlertBanner({ visible, message, onDismiss }: Props) {
     }).start();
 
     if (visible) {
-      const timer = setTimeout(onDismiss, 6000);
+      const timer = setTimeout(() => onDismissRef.current(), 6000);
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+  }, [visible, translateY, onDismissRef]);
 
   return (
     <Animated.View

@@ -379,6 +379,26 @@ Server parts need the Firebase deploy first (DEPLOY.md).
 6. **Tracky bubble**: tap another driver's Tracky: a small bubble (their name only if they show
    it, mood, "2 min ago"), Wave, More (the full card with Block / Report).
 
+## 24. Every alert type live (no "Coming soon") — NEEDS DEVICE TEST
+
+1. Settings › Map information & overlays › Reports: open every row. None says "Coming soon";
+   every switch can be turned on and off; each shows "Sources: …" (e.g. "Sources: OSM · driver
+   reports").
+2. Tap the Report button: categories Police, Crash, Traffic, Camera, Hazard, Road feature,
+   Emergency vehicle, Map chat, I need help, Speed limit / school zone. Camera opens 12 cameras,
+   Road feature 12 features, each with its own icon.
+3. Report a **Stop sign camera**: place the pin, Set, the Undo bar says "Stop sign camera
+   reported". After 3 s a camera pin with the stop badge appears. Tap it: the card says "Stop sign
+   camera" and "Source: TrackLine drivers · waiting for confirmation".
+4. On two more phones, drive past and answer "Still here": after the third, the card says
+   "confirmed, stays on the map". (Or, as the owner: Settings › … › Reports › Moderation queue ›
+   Approve.)
+5. Map chat: choose it, type up to 7 words, Set. Without words: "Add a few words for your map chat."
+6. Lane ending: navigate a road where a lane drops (e.g. a 3-to-2 lane merge on a main road): a
+   lane-ending pin on the route, and "Lane ends ahead" as you approach (with its switch on).
+7. Crash history: near a spot with two or more recorded crashes (needs the Firebase deploy and a
+   few days of Live Traffic NSW data), "Crash-prone area ahead" once as you approach.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

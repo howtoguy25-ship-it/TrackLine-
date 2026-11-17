@@ -7,7 +7,6 @@ import {
   REPORT_ITEMS,
   REPORT_ITEM_BY_ID,
   alertsWhileDriving,
-  isComingSoon,
   isShown,
   prefPatch,
   type ReportItemId,
@@ -75,7 +74,7 @@ function alertFires(settings: AppSettings, src: FeatureSources): ReportItemId | 
 const withPatch = (s: AppSettings, id: ReportItemId, which: "show" | "alert", v: boolean): AppSettings => ({ ...s, ...prefPatch(s, id, which, v) });
 
 // Items whose pins/alerts come from map data (the rest use their own paths, tested below).
-const MAP_DATA_ITEMS = REPORT_ITEMS.filter((i) => !isComingSoon(i.id) && (OSM_FEATURE_KINDS as readonly string[]).concat(["trafficLights", "speedCamera"], Object.keys(COMMUNITY_TYPE), Object.keys(LTN)).includes(i.id));
+const MAP_DATA_ITEMS = REPORT_ITEMS.filter((i) => (OSM_FEATURE_KINDS as readonly string[]).concat(["trafficLights", "speedCamera"], Object.keys(COMMUNITY_TYPE), Object.keys(LTN)).includes(i.id));
 
 describe("Show on map", () => {
   const showable = MAP_DATA_ITEMS.filter((i) => i.show);
@@ -119,19 +118,13 @@ describe("Alert while driving", () => {
   });
 });
 
-describe("Coming soon in your area", () => {
-  const soon = REPORT_ITEMS.filter((i) => isComingSoon(i.id));
-  it.each(soon.map((i) => [i.id]))("%s has no source: never shown, never alerts, even if switched on", (id) => {
-    const item = id as ReportItemId;
-    let s = withPatch(DEFAULT_SETTINGS, item, "show", true);
-    s = withPatch(s, item, "alert", true);
-    expect(isShown(s, item)).toBe(false);
-    expect(alertsWhileDriving(s, item)).toBe(false);
-  });
-  it("lists exactly the items with no data anywhere", () => {
-    expect(soon.map((i) => i.id).sort()).toEqual(
-      ["busLaneCamera", "carpoolLaneCamera", "crashHistory", "laneEnding", "mapChats", "narrowBridge", "noiseCamera", "shoulderEnding", "stopSignCamera", "trackyNeedsHelp", "transitLaneCamera"].sort()
-    );
+describe("Every item is live", () => {
+  it("every item has at least one real source, and its switches work", () => {
+    for (const item of REPORT_ITEMS) {
+      expect([item.id, item.sources.length > 0]).toEqual([item.id, true]);
+      if (item.show) expect([item.id, isShown(withPatch(DEFAULT_SETTINGS, item.id, "show", true), item.id)]).toEqual([item.id, true]);
+      if (item.alert) expect([item.id, alertsWhileDriving(withPatch(DEFAULT_SETTINGS, item.id, "alert", true), item.id)]).toEqual([item.id, true]);
+    }
   });
 });
 
@@ -156,7 +149,6 @@ describe("Survives a restart", () => {
     await AsyncStorage.clear();
     let s: AppSettings = DEFAULT_SETTINGS;
     for (const item of REPORT_ITEMS) {
-      if (isComingSoon(item.id)) continue;
       if (item.show) s = withPatch(s, item.id, "show", !isShown(DEFAULT_SETTINGS, item.id));
       if (item.alert) s = withPatch(s, item.id, "alert", !alertsWhileDriving(DEFAULT_SETTINGS, item.id));
     }
@@ -164,7 +156,6 @@ describe("Survives a restart", () => {
     await saveSettings(s);
     const back = await loadSettings();
     for (const item of REPORT_ITEMS) {
-      if (isComingSoon(item.id)) continue;
       if (item.show) expect([item.id, isShown(back, item.id)]).toEqual([item.id, !isShown(DEFAULT_SETTINGS, item.id)]);
       if (item.alert) expect([item.id, alertsWhileDriving(back, item.id)]).toEqual([item.id, !alertsWhileDriving(DEFAULT_SETTINGS, item.id)]);
     }

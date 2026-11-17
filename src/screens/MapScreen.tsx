@@ -8,7 +8,6 @@ import {
   CHIP_MS,
   INITIAL_APPROACH,
   approachCenter,
-  distanceToLineMeters,
   kindOfStep,
   manoeuvreHighlight,
   reduceApproach,
@@ -106,7 +105,7 @@ import { AlertBanner } from "@/components/AlertBanner";
 import { NearbyAlertToast, type NearbyAlertNotification } from "@/components/NearbyAlertToast";
 import { BannerAdBar, BANNER_HEIGHT, shouldShowBanner } from "@/components/BannerAdBar";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
-import { AlertReportSheet } from "@/screens/AlertReportSheet";
+import { AlertReportSheet, itemLabel } from "@/screens/AlertReportSheet";
 import { AlertDetailSheet } from "@/screens/AlertDetailSheet";
 import { PlaceInfoSheet } from "@/screens/PlaceInfoSheet";
 import { OsmMarkerSheet, type OsmMarkerKind } from "@/screens/OsmMarkerSheet";
@@ -121,9 +120,11 @@ import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import { showLimitSign, thresholdKmhFor } from "@/settings/speedometer";
-import { COMMUNITY_ITEM, REPORT_ITEM_BY_ID, alertsWhileDriving, isShown, osmFetchWanted, routeItemFor, type ReportItemId } from "@/settings/reportCatalog";
-import { osmFeaturePins, showsSpeedCameraPins, showsTrafficLightPins, visibleCommunityAlerts, visibleIncidents } from "@/map/reportPins";
+import { REPORT_ITEM_BY_ID, itemOfAlert, alertsWhileDriving, isShown, osmFetchWanted, routeItemFor, type ReportItemId } from "@/settings/reportCatalog";
+import { osmFeaturePins, reportPinIcon, showsSpeedCameraPins, showsTrafficLightPins, visibleCommunityAlerts, visibleIncidents } from "@/map/reportPins";
 import { collectApproachFeatures } from "@/alerts/collectFeatures";
+import { crashHistorySpots, laneEndingFeatures, trackySlowdownAhead } from "@/alerts/derivedFeatures";
+import { fetchCrashRecordsNear, type CrashRecord } from "@/services/crashRecords";
 import { nextApproachAlert, type ApproachMemory } from "@/alerts/approachAlerts";
 import { INITIAL_LIMIT_CHANGE, stepLimitChange, type LimitChangeState } from "@/alerts/speedLimitChange";
 import { ReportItemIcon } from "@/components/settings/ReportItemIcon";
@@ -186,23 +187,21 @@ import {
 import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds } from "@/services/osmPlaces";
 import {
   distanceKm,
+  encodeGeohash,
   bearingDegrees,
-  routeDeviationInfo,
-  headingDiffDeg,
   pointAheadOnPolylineMeters,
   offsetLatLngByHeading,
   distanceToPolylineMeters,
 } from "@/utils/geo";
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
-import { parseDriveLink } from "@/services/driveLink";
+import { buildDriveLink, parseDriveLink } from "@/services/driveLink";
 import { useSharedValue } from "react-native-reanimated";
 import { HomeMapControls } from "@/components/HomeMapControls";
 import {
   HOME_FOLLOW_ZOOM,
   RoadLookupTracker,
   alertPinSize,
-  arrowScreenY,
   countReportsAround,
   homeMapPadding,
   homeArrowTargetY,
@@ -249,12 +248,12 @@ import { ALERT_LABELS, type AlertDoc, type AlertType } from "@/types/alert";
 import { UNDO_MS } from "@/types/alertPolicy";
 import { stillThereCandidate } from "@/alerts/stillThere";
 import { ReportUndoBar } from "@/components/ReportUndoBar";
+import { baseTypeOf, needsComment } from "@/settings/reportGrid";
 import { TrackyBubble } from "@/components/TrackyBubble";
 import { SavedPlacePopup, type SavedPinPlace } from "@/components/SavedPlacePopup";
 import { savedPinIcon, savedPinPlaces } from "@/map/savedPins";
 import { getSavedPlaces, pushSavedPlacesToProfile, removeCustomPlace, removeHomeOrWork, addCustomPlace, subscribeSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { clearParkingSpot, getParkingSpot, setParkingSpot, subscribeParkingSpot, type ParkingSpot } from "@/services/parkingSpot";
-import { buildDriveLink } from "@/services/driveLink";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -429,7 +428,7 @@ export function MapScreen() {
       mode: navVoiceRef.current.mode,
       language: navVoiceRef.current.language,
     }).catch(() => {});
-  }, []);
+  }, [voiceIdentifierRef, voiceVolumeRef]);
   // True only while a fresh route is actively being fetched after drifting off the current one
   // -- drives the small "Rerouting..." banner below.
   const [rerouting, setRerouting] = useState(false);
@@ -1018,7 +1017,7 @@ export function MapScreen() {
     const bearing = northUpRef.current ? 0 : followHeadingRef.current;
     mapRef.current?.animateCamera({ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 });
     mapBearing.set(bearing);
-  }, [currentLatLng, route, mapReady, mapBearing, placePage]);
+  }, [currentLatLng, route, mapReady, mapBearing, placePage, northUpRef]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
   // that only appears once the driver has actually panned away, mirroring Waze's own behaviour.
@@ -1242,7 +1241,6 @@ export function MapScreen() {
   // logo clear of it) and the arrow sits at 62% of the screen -- see homeMapPadding.
   // The arrow sits directly above the street pill, which rides the sheet's peek edge.
   const homePadding = homeMapPadding(mapAreaHeight, whereToHeights.peek, windowHeight, homeArrowTargetY(mapAreaHeight, whereToHeights.peek, scaleFor(windowWidth)));
-  const homeArrowY = arrowScreenY(mapAreaHeight, homePadding);
   const mapPadding = isNavChaseView
     ? { top: windowHeight * 0.34, right: 0, bottom: 0, left: 0 }
     : placePage
@@ -2199,18 +2197,19 @@ export function MapScreen() {
   // disabled alerts altogether -- "if toggled off user who is active doesn't receive no alerts".
   const alertsOn = !!user && settings.alertsEnabled;
   if (!alertsOn && nearbyAlerts.length > 0) setNearbyAlerts([]);
+  const alertsUid = user?.uid ?? null;
   useEffect(() => {
-    if (!user || !settings.alertsEnabled) return;
-    return subscribeVisibleAlerts(settings.visibleRegions, user.uid, setNearbyAlerts);
-  }, [user?.uid, settings.alertsEnabled, settings.visibleRegions]);
+    if (!alertsUid || !settings.alertsEnabled) return;
+    return subscribeVisibleAlerts(settings.visibleRegions, alertsUid, setNearbyAlerts);
+  }, [alertsUid, settings.alertsEnabled, settings.visibleRegions]);
 
   // Per-type visibility filter, applied on top of the radius subscription above -- lets a
   // driver e.g. only care about police + hazards without changing what's actually fetched.
   const visibleAlerts = useMemo(
-    () => visibleCommunityAlerts(settings, nearbyAlerts),
+    () => visibleCommunityAlerts(settings, nearbyAlerts, { incidents: settings.showLiveTraffic ? trafficIncidents : [], osm: osmData }),
     // Settings > Reports per-item "Show on map" (the older per-type list is its default).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [nearbyAlerts, settings.reportPrefs, settings.visibleAlertTypes, settings.showTrafficLights]
+    [nearbyAlerts, settings.reportPrefs, settings.visibleAlertTypes, settings.showTrafficLights, settings.showLiveTraffic, trafficIncidents, osmData]
   );
 
   // Real, explicit audit fix -- the top-left Menu button's own unread badge (MenuButton.tsx)
@@ -2257,7 +2256,7 @@ export function MapScreen() {
       if (seen.has(alert.id)) continue;
       freshlySeen.add(alert.id);
       if (alert.createdBy === user?.uid) continue;
-      if (!alertsWhileDriving(reportSettingsRef.current, COMMUNITY_ITEM[alert.type])) continue;
+      if (!alertsWhileDriving(reportSettingsRef.current, itemOfAlert(alert))) continue;
       if (alert.needsConfirmation) continue;
       const distanceM = distanceKm(currentLatLng.latitude, currentLatLng.longitude, alert.lat, alert.lng) * 1000;
       if (distanceM > NEARBY_ALERT_TOAST_RADIUS_METERS) continue;
@@ -2273,7 +2272,7 @@ export function MapScreen() {
       const nearest = newToasts.reduce((a, b) => (b.distanceM < a.distanceM ? b : a));
       announcePhrase({ kind: "report", alertType: nearest.type });
     }
-  }, [visibleAlerts, currentLatLng, user?.uid, announcePhrase]);
+  }, [visibleAlerts, currentLatLng, user?.uid, announcePhrase, reportSettingsRef]);
   const dismissAlertToast = useCallback(() => setAlertToastQueue((q) => q.slice(1)), []);
 
   // Automatic proximity "Still here? / Not here" prompt -- picks at most one eligible alert per
@@ -2309,7 +2308,11 @@ export function MapScreen() {
   }, [user]);
 
   // Turn-by-turn voice guidance (Phase 2): advance the active step as GPS crosses trigger radius.
+  // Runs on each matched fix (navMatch); the position is read from a ref so a raw fix that
+  // arrives before its match doesn't run it twice.
+  const guidanceLatLngRef = useLatest(currentLatLng);
   useEffect(() => {
+    const currentLatLng = guidanceLatLngRef.current;
     if (!route || !currentLatLng) return;
     // "Spoken directions" (the Sound sheet) decides how much is said: only "Normal" gets the
     // advance warnings ("in 1 kilometre, ..."), and shouldSpeakStep trims the rest.
@@ -2346,6 +2349,9 @@ export function MapScreen() {
     settings.distanceUnit,
     navLanguage,
     announcePhrase,
+    guidanceLatLngRef,
+    voiceIdentifierRef,
+    voiceVolumeRef,
   ]);
 
   // A character voice is synthesized by the server one sentence at a time, which takes a moment
@@ -2364,27 +2370,6 @@ export function MapScreen() {
   // exit/street and it didn't reroute"). This instead measures live distance from the *route
   // line itself* (not just the next step's endpoint), which catches a genuinely wrong-direction
   // miss that forward-only step advancement can never detect.
-  // Tightened from 60 to 35 -- real, explicit spec value.
-  const OFF_ROUTE_METERS = 35;
-  // Requires the drift to still be true a couple of GPS ticks later, not just one, before
-  // reacting -- a single noisy/bad fix (a tunnel, tall buildings) briefly reading "off route"
-  // shouldn't kick off a real reroute on its own.
-  const OFF_ROUTE_CONFIRM_TICKS = 2;
-  // Real, explicit spec values -- a sustained heading mismatch (not just distance) is its own
-  // independent off-route signal, catching e.g. driving the wrong way down a road that briefly
-  // runs close/parallel to the correct one, which distance-from-polyline alone wouldn't yet flag.
-  const HEADING_DIVERGE_DEG = 60;
-  const HEADING_DIVERGE_MIN_SPEED_KMH = 10;
-  const HEADING_DIVERGE_HOLD_MS = 4000;
-  // A third, independent signal: the upcoming maneuver point (the CURRENT step's own end
-  // location -- see navigationGuidance.ts's own evaluateGuidance, which advances activeStepIndex
-  // once the driver reaches it) is now behind the driver by more than this, meaning it was
-  // driven straight past without turning.
-  const MISSED_TURN_METERS = 25;
-  // Once a reroute fires, this is the minimum gap before another one can -- otherwise a fresh
-  // reroute that's *itself* briefly still off the eventual snapped route (GPS drift right after
-  // a fetch) could immediately trigger a second one, and so on back-to-back.
-  const REROUTE_COOLDOWN_MS = 15000;
   // Real, explicit spec value -- an alternate only replaces the primary reroute result (and
   // shows the "Faster route found" banner) if it's genuinely at least this much quicker, not
   // just noise between two very similar real options.
@@ -2558,7 +2543,7 @@ export function MapScreen() {
       const currentUser = userRef.current;
       if (autoShareDetectionsRef.current && latLng && currentUser) {
         try {
-          await submitReport("emergency_vehicle", latLng, latLng, currentUser.uid, { customTtlMs: alertExpiryMsRef.current });
+          await submitReport("emergency_vehicle", latLng, latLng, currentUser.uid, { customTtlMs: alertExpiryMsRef.current, item: "emergencyVehicles" });
         } catch (err) {
           console.warn("[siren] auto-share detection failed", err);
         }
@@ -2569,7 +2554,7 @@ export function MapScreen() {
       unsubscribe();
       sirenDetection.stop();
     };
-  }, []);
+  }, [alertExpiryMsRef, autoShareDetectionsRef, currentLatLngRef, userRef]);
 
   // Sensitivity is the one siren setting that genuinely should apply immediately without a
   // full restart -- kept as its own small effect, separate from the mount-once one above.
@@ -2959,7 +2944,7 @@ export function MapScreen() {
       ne: { latitude: currentLatLng.latitude + delta / 2, longitude: currentLatLng.longitude + delta / 2 },
     };
     fetchViewportPlaces(bounds, toFetch, toFetch);
-  }, [currentLatLng, openPlaceCategories]);
+  }, [currentLatLng, openPlaceCategories, fetchViewportPlaces]);
 
   const onRegionChangeComplete = useCallback(
     (region: Region, details?: { isGesture?: boolean }) => {
@@ -3070,6 +3055,7 @@ export function MapScreen() {
       }, 1200);
     },
     [
+      OSM_LAYER_MAX_DELTA,
       placingAlert,
       pickingOrigin,
       originPickerView,
@@ -3077,7 +3063,6 @@ export function MapScreen() {
       destinationPickerView,
       osmWantAny,
       osmFetchOptions,
-      settings.osmLayerRadiusKm,
       followTilt,
       openPlaceCategories,
       fetchViewportPlaces,
@@ -3206,7 +3191,10 @@ export function MapScreen() {
   // which is a fresh reference every fetch) so this doesn't re-fire on an unrelated re-render,
   // and guarded with a cancelled flag so a slow request for a place the driver already closed
   // can't overwrite the pill with a stale answer for a place no longer on screen.
+  const placeInfoRef = useLatest(placeInfo);
+  const placeInfoId = placeInfo?.placeId ?? null;
   useEffect(() => {
+    const placeInfo = placeInfoRef.current;
     if (!placeInfo || !routeOriginLatLng) return;
     let cancelled = false;
     const placeId = placeInfo.placeId;
@@ -3222,12 +3210,13 @@ export function MapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [placeInfo?.placeId, routeOriginLatLng]);
+  }, [placeInfoId, routeOriginLatLng, placeInfoRef]);
 
   // Real Street View lookup, same cancellation-guarded pattern as the ETA effect above, kept as
   // its own independent request so a slow/failed Street View lookup never blocks or delays the
   // ETA pill or the rest of the place card.
   useEffect(() => {
+    const placeInfo = placeInfoRef.current;
     if (!placeInfo) return;
     let cancelled = false;
     const placeId = placeInfo.placeId;
@@ -3241,7 +3230,7 @@ export function MapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [placeInfo?.placeId]);
+  }, [placeInfoId, placeInfoRef]);
 
   // Real, confirmed bug this fixes: picking a destination (typing one in, or "find nearest
   // station") never closed the Restaurants/Hotels/Fuel sheets -- if any of those had been
@@ -3441,7 +3430,7 @@ export function MapScreen() {
     } finally {
       setFindingNearestStation(false);
     }
-  }, [routeOriginLatLng, fetchRouteOptions, closeAllPlaceSheets]);
+  }, [routeOriginLatLng, requestRoutes, closeAllPlaceSheets]);
 
   const onStopSelected = useCallback(
     (place: PlaceDetails) => {
@@ -3615,7 +3604,7 @@ export function MapScreen() {
       }
     }, TRAFFIC_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [route, destinationLatLng, announcePhrase]);
+  }, [route, destinationLatLng, announcePhrase, currentLatLngRef, reportSettingsRef]);
 
   // Clears any stale suggestion the moment the underlying route is replaced for any other
   // reason (a real reroute, an add-stop confirm, exiting navigation) -- a suggestion computed
@@ -3673,7 +3662,7 @@ export function MapScreen() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [route, destinationLatLng, travelMode, settings.routeAvoid]);
+  }, [route, destinationLatLng, travelMode, settings.routeAvoid, currentLatLngRef]);
 
   // "Displays for 10 seconds" per explicit request -- an unattended banner auto-dismisses
   // itself (same cooldown as a manual No/X) instead of sitting over the map indefinitely.
@@ -4274,6 +4263,8 @@ export function MapScreen() {
   // in sync with the map's own region center (see onRegionChangeComplete below) while
   // placingAlert is true; the pin view itself never moves, the map moves under it.
   const pendingAlertTypeRef = useRef<AlertType | null>(null);
+  // Which Settings > Reports item is being placed (the report grid's choice).
+  const pendingReportItemRef = useRef<ReportItemId | null>(null);
 
   // Real, confirmed complaint: an alert set while driving was landing exactly on the reporter's
   // own live GPS fix -- which, by the time the type-picker tap and the sheet-close animation
@@ -4320,10 +4311,12 @@ export function MapScreen() {
     navigation.navigate("VehicleDetection", { isNavigating: !!route });
   }, [navigation, route]);
 
-  const onAlertTypeSelected = useCallback(
-    (type: AlertType) => {
-      if (!currentLatLng) return;
+  const onReportItemSelected = useCallback(
+    (item: ReportItemId) => {
+      const type = baseTypeOf(item);
+      if (!currentLatLng || !type) return;
       pendingAlertTypeRef.current = type;
+      pendingReportItemRef.current = item;
       reportSheetRef.current?.close();
       setAlertPlacementLatLng(initialAlertPlacement(currentLatLng));
       setPlacingAlert(true);
@@ -4354,7 +4347,7 @@ export function MapScreen() {
   // call site passes onPress={confirmAlertPlacement} directly, which would otherwise hand the
   // GestureResponderEvent to this parameter instead.
   // The 3 s Undo after sending a report (held on the server until then).
-  const [pendingReport, setPendingReport] = useState<{ result: ReportResult; type: AlertType; untilMs: number } | null>(null);
+  const [pendingReport, setPendingReport] = useState<{ result: ReportResult; type: AlertType; label?: string; untilMs: number } | null>(null);
   const confirmAlertPlacement = useCallback(async (overrideLocation?: LatLng) => {
     if (submittingAlertRef.current) return;
     // Real enforcement, not just a disabled-looking button -- blocks the actual Firestore write
@@ -4363,7 +4356,14 @@ export function MapScreen() {
     // check alone).
     if (containsBlockedLanguage(alertComment)) return;
     const type = pendingAlertTypeRef.current;
+    const item = pendingReportItemRef.current;
     const location = overrideLocation ?? alertPlacementLatLng;
+    // A map chat is its message: it needs a few words.
+    if (item && needsComment(item) && !alertComment.trim()) {
+      setBannerMessage("Add a few words for your map chat.");
+      setBannerVisible(true);
+      return;
+    }
     // Previously bailed here with zero feedback -- tapping Set just silently did nothing (no
     // banner, no error, placement bar stayed exactly as-is), which is indistinguishable from the
     // write itself failing. !user specifically means the anonymous/real sign-in Firebase sets up
@@ -4387,14 +4387,16 @@ export function MapScreen() {
         customTtlMs: settings.alertExpiryMs,
         comment: alertComment,
         reporterName: settings.showNameOnReports ? user.displayName : null,
+        item,
       });
       if (result.kind === "merged") {
-        setBannerMessage(`${ALERT_LABELS[type]} was already reported here -- you've confirmed it.`);
+        setBannerMessage(`${item ? itemLabel(item) : ALERT_LABELS[type]} was already reported here -- you've confirmed it.`);
         setBannerVisible(true);
       } else {
-        setPendingReport({ result, type, untilMs: result.kind === "pending" ? result.publishAtMs : Date.now() + UNDO_MS });
+        setPendingReport({ result, type, label: item ? itemLabel(item) : undefined, untilMs: result.kind === "pending" ? result.publishAtMs : Date.now() + UNDO_MS });
       }
       pendingAlertTypeRef.current = null;
+      pendingReportItemRef.current = null;
       setPlacingAlert(false);
       setAlertPlacementLatLng(null);
       setAlertComment("");
@@ -4448,6 +4450,7 @@ export function MapScreen() {
 
   const cancelAlertPlacement = useCallback(() => {
     pendingAlertTypeRef.current = null;
+    pendingReportItemRef.current = null;
     setPlacingAlert(false);
     setAlertPlacementLatLng(null);
     setAlertComment("");
@@ -4547,7 +4550,7 @@ export function MapScreen() {
       if (routeActiveRef.current || !saved.camera) return;
       mapRef.current?.animateCamera(saved.camera, { duration: ALERT_CARD_CAMERA_MS });
     },
-    []
+    [detailSheetOpenRef]
   );
 
   const onMarkerPress = useCallback(
@@ -4663,18 +4666,20 @@ export function MapScreen() {
   // trimmed to the closest point to the live GPS fix (not just whole completed steps) -- a
   // shorter polyline is also real, measurable less work for the native map to redraw on every
   // pan/zoom frame, which is part of what reads as drag lag on a long route.
+  const navLat = currentLatLng?.latitude ?? null;
+  const navLng = currentLatLng?.longitude ?? null;
   const remainingPolyline = useMemo(() => {
     if (!route) return [];
     const stepsAhead = route.steps.slice(activeStepIndex);
     if (stepsAhead.length === 0) return [];
     const [currentStep, ...restSteps] = stepsAhead;
     let currentStepPolyline = currentStep.polyline;
-    if (currentLatLng && currentStepPolyline.length > 1) {
+    if (navLat != null && navLng != null && currentStepPolyline.length > 1) {
       let nearestIdx = 0;
       let nearestDist = Infinity;
       for (let i = 0; i < currentStepPolyline.length; i++) {
         const pt = currentStepPolyline[i];
-        const d = distanceKm(currentLatLng.latitude, currentLatLng.longitude, pt.latitude, pt.longitude);
+        const d = distanceKm(navLat, navLng, pt.latitude, pt.longitude);
         if (d < nearestDist) {
           nearestDist = d;
           nearestIdx = i;
@@ -4683,7 +4688,7 @@ export function MapScreen() {
       currentStepPolyline = currentStepPolyline.slice(nearestIdx);
     }
     return [...currentStepPolyline, ...restSteps.flatMap((s) => s.polyline)];
-  }, [route, activeStepIndex, currentLatLng?.latitude, currentLatLng?.longitude]);
+  }, [route, activeStepIndex, navLat, navLng]);
   // How reports are drawn at the current zoom: grouped into counts when zoomed out, otherwise
   // one pin each, with reports on the active route a step larger.
   const mapZoom = zoomFromLatitudeDelta(osmZoomDelta);
@@ -4752,13 +4757,53 @@ export function MapScreen() {
   // Every real feature whose item alerts (OSM cameras/crossings, driver reports, Live Traffic NSW
   // incidents), checked each fix: the nearest one coming up gets a short chip and one spoken
   // line, once (alerts/approachAlerts.ts). Driving only -- not walking, cycling or transit.
+  // Crash history around the driver (server crashRecords), re-read when they move cell.
+  const crashCell = currentLatLng && user && alertsWhileDriving(settings, "crashHistory") ? encodeGeohash(currentLatLng.latitude, currentLatLng.longitude, 5) : null;
+  const [crashRecordsNear, setCrashRecordsNear] = useState<{ cell: string; records: CrashRecord[] } | null>(null);
+  const crashLatLngRef = useLatest(currentLatLng);
+  useEffect(() => {
+    const at = crashLatLngRef.current;
+    if (!crashCell || !at) return;
+    let cancelled = false;
+    fetchCrashRecordsNear(at.latitude, at.longitude)
+      .then((records) => {
+        if (!cancelled) setCrashRecordsNear({ cell: crashCell, records });
+      })
+      .catch((err) => console.warn("[map] crash history fetch failed", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [crashCell, crashLatLngRef]);
+  const crashSpots = useMemo(() => (crashRecordsNear && crashRecordsNear.cell === crashCell ? crashHistorySpots(crashRecordsNear.records) : []), [crashRecordsNear, crashCell]);
+
   const approachFeatures = useMemo(
-    () => collectApproachFeatures(settings, { osm: osmData, alerts: nearbyAlerts, incidents: settings.showLiveTraffic ? nearbyTrafficIncidents : [], ownUid: user?.uid }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [osmData, nearbyAlerts, nearbyTrafficIncidents, user?.uid, settings.reportPrefs, settings.showLiveTraffic, settings.visibleAlertTypes]
+    () => [
+      ...collectApproachFeatures(settings, { osm: osmData, alerts: nearbyAlerts, incidents: settings.showLiveTraffic ? nearbyTrafficIncidents : [], ownUid: user?.uid }),
+      // Derived: crash-history spots, and lane endings from the route's own lane counts.
+      ...(alertsWhileDriving(settings, "crashHistory") ? crashSpots : []),
+      ...(route && alertsWhileDriving(settings, "laneEnding") ? laneEndingFeatures(route.steps) : []),
+    ],
+    [osmData, nearbyAlerts, nearbyTrafficIncidents, user?.uid, settings, crashSpots, route]
   );
+
   const approachMemoryRef = useRef<ApproachMemory>({});
   const [approachChip, setApproachChip] = useState<{ item: ReportItemId; distanceM: number } | null>(null);
+  // Sudden slowdown from TrackLine drivers crawling just ahead on the route (rising edge only).
+  const trackySlowRef = useRef(false);
+  useEffect(() => {
+    if (!route || !navMatch?.onRoute || !alertsWhileDriving(settings, "suddenSlowdown")) {
+      trackySlowRef.current = false;
+      return;
+    }
+    const at = trackySlowdownAhead(presenceList, { polyline: route.polyline, alongM: navMatch.along }, location?.timestamp ?? 0);
+    if (at && !trackySlowRef.current) {
+      setApproachChip({ item: "suddenSlowdown", distanceM: Math.round(haversineMeters(currentLatLng ?? at, at)) });
+      announcePhrase({ kind: "slowdown" });
+    }
+    trackySlowRef.current = !!at;
+    // Each matched fix and each presence update re-checks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navMatch, presenceList]);
   useEffect(() => {
     if (!approachChip) return;
     const t = setTimeout(() => setApproachChip(null), 6000);
@@ -4943,7 +4988,7 @@ export function MapScreen() {
       });
     }, 12000);
     return () => clearInterval(interval);
-  }, [route, heading, arrivalClockText, remainingDurationSeconds]);
+  }, [route, heading, arrivalClockText, remainingDurationSeconds, currentLatLngRef]);
 
   // ---- What the Mapbox map draws (map-v2/MapboxLayers.tsx) ----
   // Every icon pin with what tapping it does, keyed by the pin's id.
@@ -4965,7 +5010,7 @@ export function MapScreen() {
         {
           id: `alert:${alert.id}`,
           coordinate: { latitude: alert.lat, longitude: alert.lng },
-          icon: `alert:${alert.type}`,
+          icon: reportPinIcon(alert),
           size: size / 30,
           anchor: "bottom",
           priority: selectedAlert?.id === alert.id ? 31 : 30,
@@ -5006,7 +5051,13 @@ export function MapScreen() {
       }
     }
     // The other OpenStreetMap items switched on in Settings > Reports (crossings, other cameras ...).
-    for (const p of osmFeaturePins(settings, osmData)) {
+    // Lane endings on the route (route data), when shown.
+    if (route && isShown(settings, "laneEnding")) {
+      for (const f of laneEndingFeatures(route.steps)) {
+        add({ id: `feature:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon: "feature:laneEnding", priority: 7 });
+      }
+    }
+    for (const p of osmFeaturePins(settings, osmData, nearbyAlerts)) {
       add({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, icon: p.icon, priority: 7 }, {
         kind: "osm",
         osm: p.kind,
@@ -5071,13 +5122,10 @@ export function MapScreen() {
   }, [
     alertPins,
     selectedAlert?.id,
-    settings.showTrafficLights,
-    settings.showSpeedCameras,
-    settings.reportPrefs,
-    settings.visibleAlertTypes,
-    settings.showLiveTraffic,
-    settings.showLiveCameras,
+    // Settings > Reports switches, live traffic and camera layers all decide which pins show.
+    settings,
     osmData,
+    nearbyAlerts,
     trafficLightClusters,
     speedCameraClusters,
     fuelStationsSheetOpen,
@@ -6191,7 +6239,11 @@ export function MapScreen() {
 
       <AlertReportSheet
         ref={reportSheetRef}
-        onTypeSelected={onAlertTypeSelected}
+        onItemSelected={onReportItemSelected}
+        onRoadReport={() => {
+          reportSheetRef.current?.close();
+          setRoadReportOpen(true);
+        }}
         onClose={() => reportSheetRef.current?.close()}
         onSheetChange={(index) => setReportSheetOpen(index >= 0)}
       />
@@ -6508,6 +6560,7 @@ export function MapScreen() {
       {pendingReport && (
         <ReportUndoBar
           type={pendingReport.type}
+          label={pendingReport.label}
           untilMs={pendingReport.untilMs}
           onUndo={onUndoReport}
           onDone={clearPendingReport}
