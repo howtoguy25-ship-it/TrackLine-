@@ -42,7 +42,7 @@ export function useTrackyAppearance(isGhostMode = false): UseTrackyAppearanceRes
     let cancelled = false;
     (async () => {
       const local = await getLocalAppearanceState();
-      if (user && !user.isAnonymous) {
+      if (user) {
         const remote = await pullAppearanceFromProfile(user.uid).catch(() => null);
         if (remote && !cancelled) {
           setState(remote);
@@ -66,7 +66,7 @@ export function useTrackyAppearance(isGhostMode = false): UseTrackyAppearanceRes
   const persist = useCallback(
     (next: TrackyAppearanceState) => {
       setLocalAppearanceState(next).catch(() => {});
-      if (user && !user.isAnonymous) pushAppearanceToProfile(user.uid, next).catch(() => {});
+      if (user) pushAppearanceToProfile(user.uid, next).catch(() => {});
     },
     [user]
   );

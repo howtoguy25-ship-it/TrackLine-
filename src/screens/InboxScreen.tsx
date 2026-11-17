@@ -16,6 +16,7 @@ import type { AlertDoc, AlertType } from "@/types/alert";
 import { ALERT_LABELS, ALERT_ICONS, ALERT_COLORS, ALERT_PIN } from "@/types/alert";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { Tracky } from "@/components/trackys/Tracky";
+import { InboxMessagesList } from "@/components/InboxMessagesList";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- main menu's Inbox row). A live feed of
 // every real community alert currently visible to this driver (same subscribeVisibleAlerts
@@ -111,6 +112,7 @@ export function InboxScreen() {
         data={displayedAlerts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl }]}
+        ListHeaderComponent={<InboxMessagesList />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Tracky mood="sleepy" size={56} animated={false} reactOnTap={false} />

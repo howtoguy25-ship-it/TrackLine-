@@ -125,6 +125,10 @@ jobs:
       #   PPSR_API_KEY         optional: vehicle full check -- PPSR (B2G)
       #   PPSR_BUSINESSAPI_KEY optional: vehicle full check -- PPSR via BusinessAPI (already integrated)
       #   GOOGLE_PLACES_SERVER_KEY optional: popularity ranking for brand badges (Places API, New)
+      #   ANTHROPIC_API_KEY    optional: the support dashboard's AI assistant (ticket summaries)
+      #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER optional: SMS codes for
+      #                        account recovery (without them SMS codes are queued, not sent)
+      #   SENTRY_AUTH_TOKEN    optional: crash-free sessions % on the dashboard
       #
       # Firebase refuses to deploy a function whose secret doesn't exist at all. So for the
       # OPTIONAL keys, a placeholder value ("unset") is created if nothing is there yet -- the
@@ -149,6 +153,11 @@ jobs:
           KEY_PPSR_API_KEY: ${{ secrets.PPSR_API_KEY }}
           KEY_PPSR_BUSINESSAPI_KEY: ${{ secrets.PPSR_BUSINESSAPI_KEY }}
           KEY_GOOGLE_PLACES_SERVER_KEY: ${{ secrets.GOOGLE_PLACES_SERVER_KEY }}
+          KEY_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KEY_TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          KEY_TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          KEY_TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          KEY_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
           set -u
           secret_exists() {
@@ -159,7 +168,7 @@ jobs:
             npx firebase-tools@latest functions:secrets:set "$1" --data-file - \
               --project "$PROJECT_ID" --force >/dev/null
           }
-          for NAME in MAPBOX_SERVER_TOKEN ELEVENLABS_API_KEY TFNSW_API_KEY CARJAM_API_KEY AUCN_API_KEY MOTORWEB_API_KEY EQUIFAX_API_KEY PPSR_API_KEY PPSR_BUSINESSAPI_KEY GOOGLE_PLACES_SERVER_KEY; do
+          for NAME in MAPBOX_SERVER_TOKEN ELEVENLABS_API_KEY TFNSW_API_KEY CARJAM_API_KEY AUCN_API_KEY MOTORWEB_API_KEY EQUIFAX_API_KEY PPSR_API_KEY PPSR_BUSINESSAPI_KEY GOOGLE_PLACES_SERVER_KEY ANTHROPIC_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_FROM_NUMBER SENTRY_AUTH_TOKEN; do
             VAR="KEY_$NAME"
             VALUE="${!VAR:-}"
             if [ "$UPDATE_KEYS" = "true" ] && [ -n "$VALUE" ]; then

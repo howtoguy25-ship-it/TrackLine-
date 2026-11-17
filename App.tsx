@@ -11,6 +11,9 @@ import { LocationProvider } from "@/context/LocationContext";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { AppOpenAdManager } from "@/components/AppOpenAdManager";
+import { AppGates } from "@/components/AppGates";
+import { BackgroundSync } from "@/components/BackgroundSync";
+import { LegalGate } from "@/components/LegalGate";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { installCrashReporter } from "@/services/crashReporter";
 import { initSentry, Sentry } from "@/services/sentry";
@@ -130,6 +133,9 @@ function App() {
               )}
               <TouchDebugRoot>
                 <RootNavigator />
+                <AppGates />
+                <BackgroundSync />
+                <LegalGate />
               </TouchDebugRoot>
             </LocationProvider>
           </SettingsProvider>

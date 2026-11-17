@@ -315,6 +315,15 @@ export function SignInScreen() {
         size="large" fullWidth loading={busy}
       />
 
+      {mode !== "signup" && (
+        <Pressable onPress={() => navigation.navigate("AccountRecovery", { mode: "forgot" })} hitSlop={8} testID="forgot-password">
+          <Text style={styles.switchModeText}>Forgot password?</Text>
+        </Pressable>
+      )}
+      <Pressable onPress={() => navigation.navigate("AccountRecovery", {})} hitSlop={8} testID="cant-sign-in">
+        <Text style={styles.switchModeText}>Can&apos;t sign in?</Text>
+      </Pressable>
+
       <Pressable
         onPress={() => {
           setError(null);

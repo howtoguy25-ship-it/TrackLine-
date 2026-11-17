@@ -65,7 +65,11 @@ async function persist(next: SavedPlaces): Promise<SavedPlaces> {
 export async function setHomeOrWork(slot: SavedPlaceSlot, place: PlaceDetails): Promise<SavedPlaces> {
   const current = await getSavedPlaces();
   const next: SavedPlaces = { ...current, [slot]: place };
-  return persist(next);
+  const saved = await persist(next);
+  // Guests: a good moment to offer "Save your TrackLine" (guest/savePrompt.ts).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  (require("@/guest/savePrompt") as typeof import("@/guest/savePrompt")).maybePromptToSave("savedHomeWork").catch(() => {});
+  return saved;
 }
 
 export async function removeHomeOrWork(slot: SavedPlaceSlot): Promise<SavedPlaces> {

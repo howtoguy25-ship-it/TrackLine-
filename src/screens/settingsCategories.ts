@@ -34,7 +34,7 @@ export const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   // Reports (every camera, road feature and report type), the speedometer, and the map's buttons.
   mapInfo: ["Reports", "Speedometer", "Map shortcuts"],
   navigationVoice: ["Voice guidance", "Public transit"],
-  alertsCommunity: ["Live alerts", "Alert icons"],
+  alertsCommunity: ["Notifications", "Live alerts", "Alert icons"],
   vehicleAI: ["AI Vehicle Detection", "Vehicle REV Checks", "EV Radar (siren detection)"],
   developer: ["Touch debugger (dev only)", "GPS replay (dev only)"],
 };

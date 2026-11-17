@@ -1,3 +1,4 @@
+import { useFeature } from "@/remote/useAppConfig";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -93,7 +94,10 @@ export function VoicePickerScreen() {
 
   // Whether the server can actually produce the character voices (its ElevenLabs key is set).
   // Starts false, so they show locked until the server has said otherwise.
-  const [personasAvailable, setPersonasAvailable] = useState(false);
+  const [personasReady, setPersonasAvailable] = useState(false);
+  // Owner dashboard > App control can switch the character voices off.
+  const characterVoicesOn = useFeature("characterVoices");
+  const personasAvailable = personasReady && characterVoicesOn;
   const [recordedVoice, setRecordedVoice] = useState<{ name: string; recordedCount: number } | null>(null);
 
   useEffect(() => {

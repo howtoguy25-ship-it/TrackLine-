@@ -1,3 +1,4 @@
+import { useFeature } from "@/remote/useAppConfig";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Button, Chip } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -190,7 +191,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
   // merged onto whatever's already stored locally rather than overwriting it.
   const pulledForUid = useRef<string | null>(null);
   useEffect(() => {
-    if (!user || user.isAnonymous || pulledForUid.current === user.uid) return;
+    if (!user || pulledForUid.current === user.uid) return;
     pulledForUid.current = user.uid;
     pullSavedPlacesFromProfile(user.uid).then((remote) => {
       if (remote) setSaved(remote);
@@ -200,7 +201,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
   const persistSaved = useCallback(
     (next: SavedPlaces) => {
       setSaved(next);
-      if (user && !user.isAnonymous) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
+      if (user) pushSavedPlacesToProfile(user.uid, next).catch(() => {});
     },
     [user]
   );
@@ -394,6 +395,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
   // heard goes through onChangeText -- exactly the path typed text takes -- so the results list
   // fills in as the driver speaks, and they finish by tapping a result, same as typing.
   const [listening, setListening] = useState(false);
+  const voiceSearchOn = useFeature("voiceSearch");
   const voiceSessionRef = useRef<VoiceSearchSession | null>(null);
   const showMicNote = useCallback((text: string) => {
     if (micNoteTimerRef.current) clearTimeout(micNoteTimerRef.current);
@@ -606,13 +608,15 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
         >
           <Icon name="search" size={24} color={colors.textMuted} />
           <Text style={styles.fieldPlaceholder}>Where to?</Text>
-          <Button
-            variant="ghost"
-            icon="mic"
-            iconColor={colors.text}
-            onPress={onPressMic}
-            accessibilityLabel="Search by voice"
-          />
+          {voiceSearchOn && (
+            <Button
+              variant="ghost"
+              icon="mic"
+              iconColor={colors.text}
+              onPress={onPressMic}
+              accessibilityLabel="Search by voice"
+            />
+          )}
         </Pressable>
 
         {/* Home, Work, the driver's own saved places, then + New -- scrolling sideways once

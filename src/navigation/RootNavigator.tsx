@@ -1,7 +1,7 @@
 import { RUBIK } from "@/theme/typography";
 import { colors } from "@/theme/tokens";
-import React, { useRef } from "react";
-import { NavigationContainer, type NavigationContainerRef } from "@react-navigation/native";
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MapScreen } from "@/screens/MapScreen";
 import { SettingsScreen, SETTINGS_CATEGORY_LABELS, type SettingsCategory } from "@/screens/SettingsScreen";
@@ -24,6 +24,9 @@ import { RecordVoiceScreen } from "@/screens/RecordVoiceScreen";
 import { navigationIntegration } from "@/services/sentry";
 import { PlanADriveScreen } from "@/screens/PlanADriveScreen";
 import { HelpScreen } from "@/screens/HelpScreen";
+import { navigationRef } from "@/navigation/deepLinks";
+import { AccountRecoveryScreen } from "@/screens/AccountRecoveryScreen";
+import { SupportRequestsScreen } from "@/screens/SupportRequestsScreen";
 import { LicensesScreen } from "@/screens/LicensesScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
 import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
@@ -72,6 +75,10 @@ export type RootStackParamList = {
   PlanADrive: { initialDestination?: PlaceDetails } | undefined;
   // Real FAQ + contact row, Phase 4's own main-menu Help row. See HelpScreen.tsx.
   Help: undefined;
+  // Sign in > Forgot password / Can't sign in? (src/account/recovery.ts).
+  AccountRecovery: { mode?: "forgot" | "cancel" } | undefined;
+  // Help > Contact support: in-app requests to the support inbox.
+  SupportRequests: undefined;
   // Real, explicit request (Copyright/trademark safety audit, Part 4) -- Settings > About's own
   // "Licences & attributions" row. See LicensesScreen.tsx.
   Licenses: undefined;
@@ -150,7 +157,7 @@ function VehicleDetectionRoute({
 }
 
 export function RootNavigator() {
-  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+  // Shared with deepLinks.ts so a message button can open a screen.
 
   return (
     <NavigationContainer
@@ -204,6 +211,8 @@ export function RootNavigator() {
         <Stack.Screen name="Inbox" component={InboxScreen} />
         <Stack.Screen name="PlanADrive" component={PlanADriveScreen} />
         <Stack.Screen name="Help" component={HelpScreen} />
+        <Stack.Screen name="AccountRecovery" component={AccountRecoveryScreen} options={{ headerShown: true, title: "Account help" }} />
+        <Stack.Screen name="SupportRequests" component={SupportRequestsScreen} options={{ headerShown: true, title: "Contact support" }} />
         <Stack.Screen name="Licenses" component={LicensesScreen} />
         <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} />
         <Stack.Screen name="TrackyCustomizer" component={TrackyCustomizerScreen} />

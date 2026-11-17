@@ -1,3 +1,4 @@
+import { maybePromptToSave } from "@/guest/savePrompt";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRoute, type RouteProp } from "@react-navigation/native";
@@ -154,6 +155,7 @@ export function VehicleCheckScreen() {
           // Only now is the purchase used up: the report (or the free re-check) exists.
           await finish({ purchase, isConsumable: true });
           await AsyncStorage.removeItem(PENDING_KEY);
+          maybePromptToSave("purchase").catch(() => {});
         }
       } catch {
         // Not finished: the purchase stays with the store and is re-sent next time.
