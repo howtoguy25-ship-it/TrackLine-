@@ -24,6 +24,7 @@ const { firestoreReportStore } = require("./reports/store");
 const poiPopularity = require("./poiPopularity");
 const crashRecords = require("./crashRecords");
 const tfnswTrip = require("./tfnswTrip");
+const plannedDrivesCore = require("./plannedDrivesCore");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -1269,6 +1270,50 @@ exports.refreshNswTrafficNow = onCall({ secrets: [TFNSW_API_KEY] }, async (reque
   return refreshNswTrafficSnapshot();
 });
 
+
+// ---- Planned drives (Plan a drive) ----
+// Every 5 minutes: drives due within 30 minutes that haven't had their reminder get one traffic
+// re-check (Google Routes API, the same server key as badge popularity) and one push with the
+// up-to-date leave time. If the re-check fails, the reminder still goes, with the planned times
+// and saying traffic couldn't be refreshed.
+exports.refreshPlannedDrives = onSchedule(
+  { schedule: "every 5 minutes", secrets: [GOOGLE_PLACES_SERVER_KEY], timeoutSeconds: 120 },
+  async () => {
+    const db = getFirestore();
+    const now = Date.now();
+    const snap = await db
+      .collectionGroup("plannedDrives")
+      .where("reminded", "==", false)
+      .where("leaveAtMs", "<=", now + plannedDrivesCore.RECHECK_LEAD_MS)
+      .limit(200)
+      .get();
+    for (const docSnap of snap.docs) {
+      const drive = docSnap.data();
+      if (!plannedDrivesCore.isDue(drive, now)) {
+        // Too late to be useful: mark it so it isn't picked up again.
+        await docSnap.ref.update({ reminded: true });
+        continue;
+      }
+      const predict = plannedDrivesCore.routesPredictor(GOOGLE_PLACES_SERVER_KEY.value(), fetch, now, drive);
+      const { message, update } = await plannedDrivesCore.handleDrive(drive, now, predict);
+      await docSnap.ref.update(update);
+      const uid = docSnap.ref.parent.parent ? docSnap.ref.parent.parent.id : null;
+      if (!uid) continue;
+      const device = await db.doc(`deviceSessions/${uid}`).get();
+      const token = device.exists ? device.data()?.expoPushToken : null;
+      if (typeof token !== "string" || !token.startsWith("ExponentPushToken")) continue;
+      try {
+        await fetch(EXPO_PUSH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify([{ to: token, title: message.title, body: message.body, sound: "default", data: { kind: "plannedDrive", driveId: docSnap.id } }]),
+        });
+      } catch (err) {
+        console.error("refreshPlannedDrives: push failed", err && err.message);
+      }
+    }
+  }
+);
 
 // ---- School zones (official data) ----
 // Every Monday: Transport for NSW's School Zones data (CC BY 4.0, regenerated weekly) ->

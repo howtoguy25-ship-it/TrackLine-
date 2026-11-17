@@ -228,6 +228,20 @@ service cloud.firestore {
         allow read: if isSignedIn() && request.auth.uid == uid;
         allow write: if false;
       }
+
+      // Planned drives (Plan a drive). The owner creates, reads and deletes them; the server
+      // re-checks traffic before each one and writes leaveAtMs / recheckedAt / reminded.
+      match /plannedDrives/{driveId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['from', 'to', 'mode', 'targetMs', 'leaveAtMs', 'durationSeconds', 'createdAt', 'recheckedAt', 'reminded', 'tz'])
+          && request.resource.data.mode in ['arrive', 'leave']
+          && request.resource.data.targetMs is number
+          && request.resource.data.leaveAtMs is number
+          && request.resource.data.durationSeconds is number
+          && request.resource.data.reminded == false;
+        allow update: if false;
+      }
     }
 
     // Free re-checks owed to a user (a check that couldn't load). Server-written; owner-readable.

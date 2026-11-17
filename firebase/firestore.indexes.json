@@ -69,6 +69,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "plannedDrives",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "reminded",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "leaveAtMs",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
