@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { routeErrorText } from "@/services/routingErrors";
 import { Button, Chip } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { View, Pressable, StyleSheet, FlatList, ActivityIndicator, Keyboard } from "react-native";
@@ -17,7 +18,7 @@ import {
 } from "@/services/places";
 import { getSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { getSearchHistory } from "@/services/searchHistory";
-import { getDirections, DirectionsApiError } from "@/services/directions";
+import { getDirections } from "@/services/directions";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import { useLatest } from "@/hooks/useLatest";
 
@@ -121,10 +122,7 @@ export function PlanADriveScreen() {
         setEtaResult({
           key: etaKey,
           eta: null,
-          error:
-            err instanceof DirectionsApiError || err instanceof PlacesApiError
-              ? "Couldn't get a route to this destination"
-              : "Couldn't get a route -- check your connection",
+          error: err instanceof PlacesApiError ? "Couldn't find that destination" : routeErrorText(err),
         });
       });
     return () => {

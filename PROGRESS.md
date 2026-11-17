@@ -4,11 +4,7 @@
 
 Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account recovery + guest data,
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
-FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** the one TestFlight build + Android preview build from the final
-commit (`npx -y eas-cli@latest build --platform ios --profile production --auto-submit
---non-interactive --no-wait` and `--platform android --profile preview`). Then it's on the owner:
-BLOCKED.md (deploy first) and TEST_ON_PHONE.md. No App Store review submission until the owner
-says the phone tests pass.
+FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
 ## Honest status — 2026-11-16 (read this first)
 

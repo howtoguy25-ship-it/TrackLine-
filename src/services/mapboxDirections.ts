@@ -17,6 +17,9 @@ import type { RouteAvoidPrefs, SpeedInterval } from "@/map/routeChoices";
 import { parseBannerLanes, parseIntersectionLanes, type Lane } from "@/nav/lanes";
 import { laneEndingsInStep } from "@/nav/laneEndings";
 import { maneuverTypeFor, manoeuvreKindFor, sideOf } from "@/nav/manoeuvre";
+import { mapboxTokenState } from "@/config/mapboxToken";
+import { recordDirections } from "@/diagnostics/diagnostics";
+import { RoutingError, classifyFetchFailure, classifyMapboxAnswer } from "@/services/routingErrors";
 
 const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
 
@@ -284,17 +287,43 @@ export const REROUTE_TIMEOUT_MS = 2500;
 export async function fetchMapboxRoutes(
   req: MapboxRequest,
   token: string,
-  options: { signal?: AbortSignal; timeoutMs?: number; fetchImpl?: typeof fetch } = {}
+  options: { signal?: AbortSignal; timeoutMs?: number; fetchImpl?: typeof fetch; diagnosticsKey?: string } = {}
 ): Promise<Route[]> {
-  if (!token) throw new Error("Mapbox directions: no access token");
+  const key = options.diagnosticsKey ?? (req.profile ?? "driving-traffic");
+  const fail = (err: RoutingError): never => {
+    recordDirections(key, { provider: "mapbox", status: err.status, ok: false, message: err.userText });
+    console.warn(`[mapbox] directions ${key}: ${err.message}`);
+    throw err;
+  };
+  if (mapboxTokenState(token) !== "ok") fail(new RoutingError("key_missing", null, `token ${mapboxTokenState(token)}`));
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, options.timeoutMs ?? 8000);
   const onOuterAbort = () => controller.abort();
   options.signal?.addEventListener("abort", onOuterAbort);
   try {
-    const res = await (options.fetchImpl ?? fetch)(directionsUrl(req, token), { signal: controller.signal });
-    const json = await res.json();
-    return parseMapboxResponse(json);
+    let res: Response;
+    try {
+      res = await (options.fetchImpl ?? fetch)(directionsUrl(req, token), { signal: controller.signal });
+    } catch (err) {
+      // The caller cancelled (a newer reroute): not a failure worth recording.
+      if (options.signal?.aborted && !timedOut) throw err;
+      return fail(new RoutingError(classifyFetchFailure(err, timedOut, null), null));
+    }
+    let json: { code?: string; message?: string; routes?: unknown[] } | null = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    const kind = classifyMapboxAnswer(res.status, json);
+    if (kind) return fail(new RoutingError(kind, res.status, json?.message ?? json?.code));
+    const routes = parseMapboxResponse(json);
+    recordDirections(key, { provider: "mapbox", status: res.status, ok: true, message: `${routes.length} route${routes.length === 1 ? "" : "s"}` });
+    return routes;
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", onOuterAbort);

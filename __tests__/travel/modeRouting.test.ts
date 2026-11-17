@@ -7,6 +7,9 @@ import bikeJson from "../fixtures/travel/circular-quay-opera-house-bike.json";
 import footJson from "../fixtures/travel/circular-quay-opera-house-foot.json";
 import carJson from "../fixtures/travel/bankstown-parramatta.json";
 import { directionsUrl } from "@/services/mapboxDirections";
+import { mapboxTokenState, mapboxTokenTail } from "@/config/mapboxToken";
+import { getDiagnostics, resetDiagnostics } from "@/diagnostics/diagnostics";
+import { routeErrorText } from "@/services/routingErrors";
 import {
   MODE_CACHE_MS,
   MOTORBIKE_FALLBACK_NOTE,
@@ -20,7 +23,9 @@ import {
 
 const quay = { latitude: -33.861, longitude: 151.2108 };
 const opera = { latitude: -33.8568, longitude: 151.2153 };
-const json = (body: unknown, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(body), text: () => Promise.resolve("") } as Response);
+const json = (body: unknown, ok = true, status = ok ? 200 : 400) => Promise.resolve({ ok, status, json: () => Promise.resolve(body), text: () => Promise.resolve("") } as Response);
+// A real Mapbox public token has this shape: "pk." + two base64url parts.
+const PK = "pk.eyJ1IjoidGVzdCJ9.abcDEF123";
 
 function stub(map: (url: string, init?: RequestInit) => Promise<Response>) {
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -32,7 +37,7 @@ function stub(map: (url: string, init?: RequestInit) => Promise<Response>) {
 }
 
 const deps = (fetchImpl: typeof fetch, extra: Partial<{ googleKey: string; mapboxToken: string }> = {}) => ({
-  mapboxToken: "test-token",
+  mapboxToken: PK,
   googleKey: "",
   transit: async () => [],
   fetchImpl,
@@ -92,9 +97,9 @@ describe("unavailable modes say why; nothing invented", () => {
     expect(r).toEqual({ routes: [], note: null, unavailable: "No walking route between these places" });
     expect(fastestSeconds(r)).toBeNull();
   });
-  it("offline -> 'check your connection', and no transit -> its own reason", async () => {
-    const { fetchImpl } = stub(() => Promise.reject(new Error("offline")));
-    expect((await fetchRoutesForMode("bike", { origin: quay, destination: opera }, deps(fetchImpl))).unavailable).toBe("Couldn't get routes -- check your connection");
+  it("offline -> 'No internet' (only when the request really couldn't go out), and no transit -> its own reason", async () => {
+    const { fetchImpl } = stub(() => Promise.reject(new TypeError("Network request failed")));
+    expect((await fetchRoutesForMode("bike", { origin: quay, destination: opera }, deps(fetchImpl))).unavailable).toBe("No internet");
     expect((await fetchRoutesForMode("transit", { origin: quay, destination: opera }, deps(fetchImpl))).unavailable).toBe("No public transport for this trip right now");
   });
 });
@@ -136,5 +141,71 @@ describe("cache: 2 minutes per mode and trip", () => {
     await cache.get("bike", req);
     expect(n).toBe(3);
     expect(ModeRouteCache.key("bike", { ...req, avoid: { ferries: true } })).not.toBe(ModeRouteCache.key("bike", req));
+  });
+});
+
+describe("the TestFlight bug: placeholder text instead of a Mapbox token", () => {
+  const PLACEHOLDER = "***** (This is a sensitive env variable. To access it, run command with --include-sensitive flag. Learn more.)";
+
+  it("the token check sees placeholder / secret / junk for what they are", () => {
+    expect(mapboxTokenState(PLACEHOLDER)).toBe("placeholder");
+    expect(mapboxTokenState("")).toBe("missing");
+    expect(mapboxTokenState("sk.eyJ1IjoidGVzdCJ9.abc")).toBe("secret");
+    expect(mapboxTokenState("test-token")).toBe("malformed");
+    expect(mapboxTokenState(PK)).toBe("ok");
+    expect(mapboxTokenTail(PLACEHOLDER)).toBeNull();
+    expect(mapboxTokenTail(PK)).toBe("F123");
+  });
+
+  it("no request is sent with a bad token; the reason is 'Map service key missing'", async () => {
+    const { calls, fetchImpl } = stub(() => json(footJson));
+    const r = await fetchRoutesForMode("walk", { origin: quay, destination: opera }, deps(fetchImpl, { mapboxToken: PLACEHOLDER }));
+    expect(calls).toHaveLength(0);
+    expect(r.unavailable).toBe("Map service key missing");
+  });
+
+  it("401 from Mapbox -> 'Map service rejected the key', recorded with its status for Diagnostics", async () => {
+    resetDiagnostics();
+    const { fetchImpl } = stub(() => json({ message: "Not Authorized - Invalid Token" }, false, 401));
+    const r = await fetchRoutesForMode("bike", { origin: quay, destination: opera }, deps(fetchImpl));
+    expect(r.unavailable).toBe("Map service rejected the key");
+    expect(getDiagnostics().directions.bike).toMatchObject({ provider: "mapbox", status: 401, ok: false, message: "Map service rejected the key" });
+  });
+
+  it("403 -> restricted key; 422 -> bad request; 200 NoRoute -> no route (not a connection problem)", async () => {
+    const at = async (status: number, body: unknown) => (await fetchRoutesForMode("walk", { origin: quay, destination: opera }, deps(stub(() => json(body, status < 300, status)).fetchImpl))).unavailable;
+    expect(await at(403, { message: "Forbidden" })).toBe("Map service rejected the key (it isn't allowed for this app)");
+    expect(await at(422, { code: "InvalidInput" })).toBe("Map service couldn't read this trip");
+    expect(await at(200, { code: "NoRoute", routes: [] })).toBe("No walking route between these places");
+  });
+
+  it("bike/walk: when Mapbox refuses the key, Google answers instead", async () => {
+    const { fetchImpl } = stub(() => json({ message: "Not Authorized" }, false, 401));
+    const google = await fetchRoutesForMode("walk", { origin: quay, destination: opera }, deps(stub(() => json(footJson)).fetchImpl));
+    const r = await fetchRoutesForMode("bike", { origin: quay, destination: opera }, { ...deps(fetchImpl), fallback: async () => google.routes });
+    expect(r.unavailable).toBeNull();
+    expect(r.routes).toBe(google.routes);
+  });
+
+  it("Drive in the mode row is the SAME Google result as the route preview card; Mapbox isn't asked", async () => {
+    const { calls, fetchImpl } = stub(() => json(carJson));
+    const previewCard = (await fetchRoutesForMode("walk", { origin: quay, destination: opera }, deps(stub(() => json(carJson)).fetchImpl))).routes;
+    const asked: string[] = [];
+    const r = await fetchRoutesForMode("drive", { origin: quay, destination: opera }, {
+      ...deps(fetchImpl),
+      fallback: async (mode) => (asked.push(mode), previewCard),
+    });
+    expect(asked).toEqual(["drive"]);
+    expect(calls).toHaveLength(0);
+    expect(r.routes).toBe(previewCard);
+  });
+
+  it("route error text for Google failures says the real reason", () => {
+    const g = (status: string, message = "") => Object.assign(new Error(message), { name: "DirectionsApiError", status });
+    expect(routeErrorText(g("REQUEST_DENIED"))).toBe("Map service rejected the key");
+    expect(routeErrorText(g("ZERO_RESULTS"))).toBe("No route found");
+    expect(routeErrorText(g("NETWORK_ERROR", "Network request failed"))).toBe("No internet");
+    expect(routeErrorText(g("REQUEST_DENIED", "This API project is not authorized ... billing"))).toMatch(/billing/);
+    expect(routeErrorText(new TypeError("Network request failed"))).toBe("No internet");
   });
 });
