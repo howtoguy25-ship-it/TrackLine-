@@ -409,6 +409,16 @@ Server parts need the Firebase deploy first (DEPLOY.md).
    at the same spot; a place Google lists as closed has no badge.
 5. Settings › Privacy › Share arrivals: off by default; turn on, navigate to a named place, arrive.
 
+## 26. Transit timeline, ferry details, getting off — NEEDS DEVICE TEST
+
+1. Plan Circular Quay → Manly, mode Transit (or Ferry). Tap **Trip details**: walk, then the Manly
+   ferry from Circular Quay to Manly Wharf with times; "Pay with an Opal card…"; Ferry block with
+   departures, ~20 min crossing, "Cars: no", **Tickets and timetable** opens transportnsw.info.
+2. After the deploy with `TFNSW_API_KEY`: the ride says "Live · on time" or "Live · N min late".
+3. Ride a bus or train with navigation on: near your stop, "Get off at the next stop: …" and one
+   buzz.
+4. Walk mode: the map turns with the phone. Bike mode: no camera / police alerts.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the
