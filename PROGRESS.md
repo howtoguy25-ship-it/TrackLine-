@@ -2,14 +2,13 @@
 
 ## 100% completion run — where it's up to
 
-Item 1 (alert settings) DONE (branch `alert-settings`, merged). Item 2 (report card remainder) DONE in
-code (branch `report-card`, merged); the server half is BLOCKED on the Firebase deploy like the rest of the
-server. Also done (branch `cleanup-live-alerts`, merged): ferry tests un-skipped on real recordings, lint 0 warnings,
-CarPlay/Android Auto scoped (NOTES.md), every alert type live (FINAL_STATUS.md). Item 3 (badge ranking) DONE (branch `poi-ranking`, merged). Item 4 (travel modes 4-6) DONE (branch `travel-modes-2`, merged).
-**Next step: item 5** — admin dashboard (Next.js /admin) + account recovery + guest data protection, branch `admin`. Then item 5 (admin dashboard + recovery + guests), item 6 (FINAL_STATUS/BLOCKED), final checks
-— brand/POI badge popularity ranking (Places rating count + business status +
-anonymous opted-in arrivals; max ~12 per screen, collision-free; z13/z15; 300 m nearby boost; ranking tests
-+ per-screen cap render test), on a new branch `poi-ranking`. Then items 4-6 and the final checks.
+Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account recovery + guest data,
+branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
+FINAL_STATUS.md. **Next step:** the one TestFlight build + Android preview build from the final
+commit (`npx -y eas-cli@latest build --platform ios --profile production --auto-submit
+--non-interactive --no-wait` and `--platform android --profile preview`). Then it's on the owner:
+BLOCKED.md (deploy first) and TEST_ON_PHONE.md. No App Store review submission until the owner
+says the phone tests pass.
 
 ## Honest status — 2026-11-16 (read this first)
 

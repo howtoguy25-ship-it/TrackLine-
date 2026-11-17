@@ -419,6 +419,33 @@ Server parts need the Firebase deploy first (DEPLOY.md).
    buzz.
 4. Walk mode: the map turns with the phone. Bike mode: no camera / police alerts.
 
+## 27. Account recovery, guests, messages, remote switches — NEEDS DEVICE TEST
+
+Most of this needs the server deployed (BLOCKED.md #1); SMS needs Twilio (#5).
+
+1. **Guest warning.** Fresh install, don't sign in. Settings > Account: says you're a guest and
+   "If you delete the app or change phones, your saved places and settings will be lost unless
+   you create an account." with a *Save your TrackLine* button.
+2. **Save prompt.** Still a guest, save a Home address: a "Save your TrackLine" card appears
+   once. *Not now* closes it. (It won't come back for 3 days.)
+3. **Linking keeps data.** Tap *Save your TrackLine*, create an email account. Home is still
+   saved, your Tracky look and settings unchanged. Delete and reinstall, sign in: Home is back.
+4. **Forgot password (email).** Sign out. Sign in > *Forgot password?* > your email > *Send*.
+   The message says "If an account exists…". Email arrives; set a new password; sign in.
+   Try an address with no account: same message, no email.
+5. **Can't sign in (assisted).** Sign in > *Can't sign in?* > *I can't use my email or phone* >
+   answer the questions > enter a new email > enter the code from it > "Thanks…". The ticket
+   shows in the dashboard's Support with a risk score.
+6. **Help request.** Menu > Help > *Contact support in the app* > send. Reply from the
+   dashboard: the reply shows in the request and as an Inbox message.
+7. **Messages.** From the dashboard send a *banner* to yourself (Single user ID = your uid from
+   Users): it shows on the home map; X dismisses it. Turn off Settings > Notifications >
+   *Traffic advisories*, send a Traffic message: it does not arrive.
+8. **Remote switches.** Dashboard > App control: untick *vehicleCheck* > Publish. Within seconds
+   the menu's Vehicle check row disappears; tick it again and it comes back. Set Maintenance to
+   *Banner* with a message: the banner shows. Set *Force update below* above your version: the
+   app shows the Update screen (set it back after).
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

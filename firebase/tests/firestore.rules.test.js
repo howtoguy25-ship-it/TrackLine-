@@ -1,3 +1,5 @@
+// Cloud Function triggers running in the same emulator can hold Firestore locks for a few seconds.
+jest.setTimeout(30_000);
 const fs = require("fs");
 const path = require("path");
 const {
@@ -32,7 +34,17 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await testEnv.clearFirestore();
+  // Function triggers from the suite before can still be writing for a moment; the emulator
+  // then answers clearFirestore with "Transaction lock timeout". Retry the setup, not the test.
+  for (let i = 0; ; i++) {
+    try {
+      await testEnv.clearFirestore();
+      return;
+    } catch (err) {
+      if (i >= 3 || !/lock timeout|ABORTED/i.test(String(err && err.message))) throw err;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
 });
 
 const OWNER_EMAIL = "howtoguy25@gmail.com";

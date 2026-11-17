@@ -1,7 +1,61 @@
 # Final status
 
-One row per requirement is filled in by item 6 of the completion run (see PROGRESS.md). Sections
-below are kept up to date as each item lands.
+One row per requirement. DONE = in code with a passing test. Nothing has been run on a phone by
+me; "needs deploy" means the Cloud Functions / rules have never been deployed (BLOCKED.md #1).
+Everything that needs a key, a console setting or a decision from you is in BLOCKED.md.
+
+## Final checks (2026-11-17, branch claude/go-session-0d5bup, real output)
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | exit 0, no errors |
+| `npx expo lint` | exit 0, 0 problems |
+| `npx jest --ci` | Test Suites: 45 passed, 45 total · Tests: 851 passed, 851 total |
+| `scripts/test-*.ts` | all pass |
+| Emulator suite (`firebase emulators:exec … npm --prefix firebase/tests test`) | Test Suites: 11 passed, 11 total · Tests: 266 passed, 266 total (two consecutive runs) |
+| `npx expo-doctor` | 19/21. Open (known, NOTES.md): `expo-camera` is a peer of `@tensorflow/tfjs-react-native`; React Native Directory has no entry for the local native modules. The 6 Expo patch mismatches were updated. |
+| `npx expo export --platform ios --platform android` | exit 0; iOS and Android Hermes bundles (14 MB each) |
+| Dashboard (`/admin`) | `tsc` 0 errors · vitest 2/2 · `next build` 14 static pages · sign-in renders in Chromium with no page errors |
+| `npm audit --omit=dev` (app) | 7 left (3 moderate, 4 high), all in the react-navigation 6 / expo fingerprint chains; npm's only "fix" is a major downgrade. Unchanged from REVIEW.md. |
+| `npm audit --omit=dev` (functions) | critical + high fixed (`npm audit fix`); 12 moderate left, all needing firebase-admin 14 / firebase-functions 7 (major upgrade, not done) |
+| `npm audit --omit=dev` (dashboard) | 0 vulnerabilities (postcss and @grpc/grpc-js pinned by `overrides`) |
+| `license-checker --production` | app: MIT 621, Apache-2.0 85, ISC 43, BSD 44, others permissive; "UNKNOWN" = this repo's own local modules; FSL-1.1-MIT = Sentry's build-time CLI only; node-forge dual BSD/GPL (BSD chosen). Dashboard: libvips (LGPL) only on the build machine via Next.js, nothing shipped. |
+
+## Owner dashboard, account recovery, guest data (item 5, 2026-11-17)
+
+Server: `firebase/functions/admin/`. Emulator tests: `firebase/tests/admin.test.js` (53: every
+role, every flow). App: `__tests__/admin/appSide.test.tsx` (26). Dashboard: `admin/` (typecheck,
+`admin/tests/`, static build, Chromium smoke test of sign-in). Nothing here works until the
+server is deployed (BLOCKED.md #1).
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| Next.js App Router + TS + Tailwind in /admin, own Hosting site | DONE (not deployed) | `admin/`, `.github/workflows/admin-deploy.yml`, CI job `admin-dashboard` | ADMIN.md setup steps 4-5; connect admin.<domain> |
+| Email sign-in + required TOTP 2FA | DONE in code; needs Identity Platform TOTP turned on | `admin/components/AuthGate.tsx` (enrol + sign-in); server refuses calls with no second factor (`roles.test` "authorize") | ADMIN.md step 2 |
+| App Check | DONE in code, off until you register a key | `admin/lib/firebase.ts`, `ENFORCE_APP_CHECK` in `admin/staff.js` | ADMIN.md step 6 |
+| 30-min idle timeout | DONE | `admin/lib/session.ts`, `admin/tests/lib.test.ts`; server also refuses sessions older than 12 h | -- |
+| Roles via custom claims; only owner grants | DONE | `roles.js` matrix test per role; emulator "only the owner grants roles" | -- |
+| Every privileged action via Cloud Functions with server role check | DONE | `staff.js` (`makeStaffSection`); emulator "each role can / can't do user actions" | -- |
+| Append-only audit log (who/what/target/before/after/IP/time), CSV, can't edit/delete | DONE | `audit.js` hash chain + CSV tests; emulator: clients can't read/write `auditLog`, `verifyAudit` intact | -- |
+| Never see/set passwords; masked fields; reveal is logged | DONE | `mask.js` tests; emulator "reveal is logged; profile is masked" | -- |
+| Overview cards, 7/30/90 charts, usage by area (no individuals), alerts panel | DONE (crash-free % needs Sentry token) | `insights.js`, `usageCells` k≥5 test, emulator overview test | Optional `SENTRY_AUTH_TOKEN` |
+| Users: search + filters, profile, devices, trust, reports, purchases, tickets, audit history | DONE | `users.js`, emulator profile/search tests | -- |
+| User actions (reset email/SMS, sign out all, disable, report bans, reset trust, remove report, credit/refund note, merge, export, delete with 7-day undo, in-app message) | DONE (SMS needs Twilio) | emulator tests per action + audit entries | Optional Twilio keys |
+| Messages: composer, 4 channels, audience filters, live estimate, schedule/cancel, templates, results, respects Notification settings | DONE (push only after deploy, real devices) | `messages.js` tests; emulator "messages respect each user's Notification settings" | -- |
+| App control: feature flags (global/country/%), min version soft/forced, maintenance, tunables with history + rollback, What's New | DONE | `appConfig.js` validation tests; emulator rollback; app `remote/appConfig.ts` tests | Device test (TEST_ON_PHONE §27) |
+| Moderation: reports queue (flagged first, votes, approve/remove/edit type/ban), map edits, photos/map chats/names with profanity flag, spam view | DONE | `moderation.js` tests + emulator | -- |
+| Support inbox: status, assign, canned replies, internal notes, history | DONE | emulator "help ticket from a guest" | -- |
+| AI assistant (summary, reply, risk, duplicates; never acts) | DONE in code; needs key | `support.js` (Claude, structured output, no tools) + fake-client test | Add `ANTHROPIC_API_KEY` |
+| Recovery A: email link / SMS code (10 min, 5 tries, 15-min cooldown), sign out others, "password changed" notice, no account fishing | DONE (email link works on deploy; SMS + notice emails need Twilio / Trigger Email) | emulator recovery tests (same reply, expiry, lockout, reset, notice) | Twilio + Trigger Email extension |
+| Recovery B: identify → code → new password; no access → chat + verified new contact → ticket with risk score → review → 24 h change + notice to old contact + cancel; 3/day per account and device | DONE | emulator "assisted recovery…", "applies after 24 h"; app screen tests | -- |
+| Guests: anonymous auth, data stored server-side, linking keeps data, warnings, Save prompts (Home/Work, purchase, 3rd trip, Settings), Restore purchases | DONE | emulator "guest -> account linking keeps the same uid and every saved thing"; `savePrompt` tests | Device test (§27) |
+| Dashboard guest vs linked counts + conversion | DONE | Overview cards (`linkedAt`, `isAnonymous`) | -- |
+| Money: sales, refunds/credits, provider cost per check, profit/day | DONE (Apple/Google fees not subtracted) | `insights.js` money + `costsByProvider` tests | -- |
+| API spend for Mapbox / TfNSW / AdMob | NOT DONE: no billing API connected; listed as "not tracked" on the page | `insights.js` | See each provider's console |
+| System health: feeds, function errors, app versions, owner-only rerun jobs | DONE (latency: Cloud console link) | emulator "only the owner runs jobs" | -- |
+| Privacy & legal: requests queue (30-day overdue), versioned Privacy/Terms with re-accept, business name + ABN | DONE | `governance.js`, `LegalGate` test | -- |
+| Firestore rules for every new collection | DONE | `firebase/firestore.rules`; emulator rules tests | Deploy rules |
+| ADMIN.md | DONE | `ADMIN.md` | -- |
 
 ## Every alert type live (2026-11-16)
 
@@ -41,6 +95,21 @@ below are kept up to date as each item lands.
 | Ferry details (wharves, departures, crossing, cars, booking link) + Avoid › Ferries | DONE | `tripDetails.test.tsx` "ferry details", trip-details sheet render test | -- |
 | Unavailable modes greyed with a reason | DONE | `__tests__/travel/modeRouting.test.ts` | -- |
 | Circular Quay → Manly / Bankstown → Parramatta tests | DONE (real recordings) | `ferryTransit.test.ts`, `tripDetails.test.tsx` | -- |
+
+## Earlier work (summary; detail in PROGRESS.md and TEST_ON_PHONE.md)
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| Waze-style redesign (home, Where to?, voices, menu, Plan a drive, Inbox, settings groups) | DONE + NEEDS DEVICE TEST | `__tests__/presses/*`, `scripts/test-ui-logic.ts` | TEST_ON_PHONE §9 |
+| Mapbox map, shields, labels, postcodes, street pill | DONE + NEEDS DEVICE TEST | `mapV2.test.ts`, `auSuburbs.test.ts`, `streetPill.test.tsx` | §11 |
+| Lane guidance, exit zoom, robust progress matching, orientation | DONE + NEEDS DEVICE TEST | `__tests__/nav/*` | §13 |
+| School zones + speed limits | DONE; server needs deploy | `__tests__/schoolZones/*`, emulator road-report tests | Deploy, run refreshSchoolZones |
+| Live Traffic NSW | DONE; server needs deploy + key | `trafficNswCore.test.js` | `TFNSW_API_KEY`, deploy |
+| Trackys, Ghost mode, presence | DONE; presence needs deploy | `functions.test.js`, rules tests | Deploy; §18 two-account check |
+| Alert settings (item 1) | DONE | `__tests__/reports/*`, `ALERT_SETTINGS.md` | §22 |
+| Report card (item 2): Tracky bubble, saved-place popup, 3 s undo, anti-spam, Still there | DONE; server needs deploy | `reportCard/client.test.tsx`, `reports.test.js` | Deploy; §23 |
+| Vehicle full check | CODE DONE; BLOCKED for sale | `vehicleCheck.test.js`, `vehicleCheck.test.tsx` | PROVIDERS.md steps 1-4 |
+| Worldwide map previews | BLOCKED (no Mapbox token here) | `docs/map-previews/README.md` | -- |
 
 ## Future items (not built)
 
