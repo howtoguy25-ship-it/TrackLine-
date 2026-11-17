@@ -23,6 +23,7 @@ const reportsCore = require("./reports/core");
 const { firestoreReportStore } = require("./reports/store");
 const poiPopularity = require("./poiPopularity");
 const crashRecords = require("./crashRecords");
+const tfnswTrip = require("./tfnswTrip");
 const nswPublicHolidays = require("./data/nswPublicHolidays.json");
 
 initializeApp();
@@ -1225,6 +1226,31 @@ async function refreshNswTrafficSnapshot() {
   }
   return { configured: true, count: snapshot.incidents.length, failedKinds: snapshot.failedKinds };
 }
+
+// Live/late for the transit rides the app shows (functions/tfnswTrip.js). Each ride is looked up
+// with its own origin/destination stop and departure time; results are only ever TfNSW's.
+exports.transitRealtime = onCall({ secrets: [TFNSW_API_KEY], timeoutSeconds: 30 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const apiKey = TFNSW_API_KEY.value();
+  if (!personaCore.secretIsSet(apiKey)) return { configured: false, realtime: [] };
+  const rides = tfnswTrip.cleanRides(request.data && request.data.rides);
+  const realtime = await Promise.all(
+    rides.map(async (r) => {
+      if (![r.from.lat, r.from.lng, r.to.lat, r.to.lng, r.departureTimeMs].every(Number.isFinite)) return null;
+      try {
+        const res = await fetch(tfnswTrip.tripUrl({ from: r.from, to: r.to, departMs: r.departureTimeMs - 5 * 60_000 }), {
+          headers: { Authorization: `apikey ${apiKey}`, Accept: "application/json" },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) return null;
+        return tfnswTrip.matchRealtime(tfnswTrip.parseLegs(await res.json()), [r])[0];
+      } catch {
+        return null;
+      }
+    })
+  );
+  return { configured: true, realtime };
+});
 
 exports.refreshNswTraffic = onSchedule(
   { schedule: "every 5 minutes", secrets: [TFNSW_API_KEY], timeoutSeconds: 60 },

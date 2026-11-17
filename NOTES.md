@@ -904,6 +904,27 @@ first, others lazily, 2-minute cache, greyed "—" with a reason), 4 transit tim
 fare + Opal note, 5 per-mode navigation (bike/walk warnings, "Get off in 2 stops" + vibration),
 6 ferry details (wharves, departures, crossing time, cars, booking link, price).
 
+Steps 4-6 (done, branch `travel-modes-2`):
+- **4 Transit timeline** (Route sheet › Trip details): walks and rides in order from Google's own
+  steps -- line badge in the line's colour, from/to stops, times, number of stops. Live/late from
+  Transport for NSW's Trip Planner (realtime on) through the `transitRealtime` callable with the
+  server's `TFNSW_API_KEY`; matched by line + planned departure within 3 min. No key, or no match:
+  "Timetable" -- never an invented delay. Fare: Google's fare when it gives one (it gives none for
+  the recorded Sydney trips), otherwise the Opal / contactless note -- no made-up price.
+- **5 Per-mode navigation**: Drive / Motorbike full guidance + alerts; Bike, Walk and Transit get
+  no camera or report approach alerts (they only run when driving); Walk is compass-up (the
+  heading filter lets the compass steer when walking); Transit shows "Get off at the next stop:
+  Manly Wharf" with one vibration near the arrival stop (600 m or 2 min before its arrival time)
+  and "Get off in N stops" when TfNSW's stop sequence is available. Not built (no data): stairs
+  warnings on walks -- Mapbox walking steps carry no stairs flag.
+- **6 Ferry details**: wharves, every departure across the trip's options, crossing time from the
+  provider's times, cars yes (vehicle ferry on a drive) / no (passenger ferry), the operator's own
+  link (Google's agency URL, https only) for tickets and timetables. Avoid › Ferries was already
+  sent to Google and Mapbox. No ferry price is shown (no source gives one).
+- Unavailable modes greyed with a reason: done in step 3 (`modeRouting.test.ts`).
+- Tests: `__tests__/travel/tripDetails.test.tsx` (real recorded Circular Quay -> Manly and
+  Bankstown -> Parramatta), `firebase/tests/tfnswTrip.test.js`.
+
 ## Vehicle full check -- BLOCKED until keys (2026-11-16)
 
 - **BLOCKED: no provider keys in Firebase secrets.** `CARJAM_API_KEY` (details, rego, stolen,

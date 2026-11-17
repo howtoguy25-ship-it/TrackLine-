@@ -146,11 +146,24 @@ export interface TransitLeg {
   departureText?: string; // Google's own localized departure time, e.g. "10:42 am"
   arrivalText?: string;
   numStops?: number;
+  /** Google's departure/arrival times (epoch ms), for crossing time and live matching. */
+  departureTimeMs?: number;
+  arrivalTimeMs?: number;
+  lineTextColor?: string;
+  /** The operator's own link (Google's line.agencies[0].url) -- the booking / info page. */
+  agencyUrl?: string;
 }
+
+/** One piece of a transit trip, in order: a walk, or a ride (index into legs). */
+export type TransitSegment = { kind: "walk"; durationSeconds: number; distanceMeters: number; instruction: string } | { kind: "ride"; leg: number };
 
 export interface TransitSummary {
   legs: TransitLeg[]; // in trip order; walking segments between them are omitted
   transfers: number; // legs.length - 1
+  /** Walks and rides in order (the timeline). */
+  segments?: TransitSegment[];
+  /** Google's fare for the whole trip, when it gives one (often not in Australia). */
+  fare?: { text: string; currency: string; value: number };
 }
 
 export interface DirectionsOptions {
@@ -191,6 +204,11 @@ function extractBoldRoadName(html: string): string | undefined {
   return text.length > 0 ? text : undefined;
 }
 
+function withFare(summary: TransitSummary | undefined, fare: any): TransitSummary | undefined {
+  if (!summary || !fare || typeof fare.value !== "number") return summary;
+  return { ...summary, fare: { text: String(fare.text ?? ""), currency: String(fare.currency ?? ""), value: fare.value } };
+}
+
 function parseTransitSummary(leg: any): TransitSummary | undefined {
   const legs: TransitLeg[] = leg.steps
     .filter((step: any) => step.travel_mode === "TRANSIT" && step.transit_details)
@@ -216,11 +234,23 @@ function parseTransitSummary(leg: any): TransitSummary | undefined {
         departureText: td.departure_time?.text,
         arrivalText: td.arrival_time?.text,
         numStops: td.num_stops,
+        departureTimeMs: typeof td.departure_time?.value === "number" ? td.departure_time.value * 1000 : undefined,
+        arrivalTimeMs: typeof td.arrival_time?.value === "number" ? td.arrival_time.value * 1000 : undefined,
+        lineTextColor: line.text_color,
+        agencyUrl: typeof line.agencies?.[0]?.url === "string" ? line.agencies[0].url : undefined,
       };
     });
 
   if (legs.length === 0) return undefined;
-  return { legs, transfers: legs.length - 1 };
+  const segments: TransitSegment[] = [];
+  let ride = 0;
+  for (const step of leg.steps ?? []) {
+    if (step.travel_mode === "TRANSIT" && step.transit_details) segments.push({ kind: "ride", leg: ride++ });
+    else if (step.travel_mode === "WALKING") {
+      segments.push({ kind: "walk", durationSeconds: step.duration?.value ?? 0, distanceMeters: step.distance?.value ?? 0, instruction: stripHtml(step.html_instructions ?? "") });
+    }
+  }
+  return { legs, transfers: legs.length - 1, segments };
 }
 
 
@@ -292,7 +322,7 @@ export function parseRoute(route: any): Route {
     hasTrafficDelay:
       durationInTrafficSeconds != null &&
       durationInTrafficSeconds > durationSeconds + Math.max(60, durationSeconds * 0.1),
-    transitSummary: parseTransitSummary(leg),
+    transitSummary: withFare(parseTransitSummary(leg), route?.fare),
   };
 }
 

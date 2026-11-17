@@ -29,6 +29,19 @@ below are kept up to date as each item lands.
 | Nearby boost within 300 m | DONE | `poiRanking.test.tsx` "within 300 m" | -- |
 | Closed places get no badge | DONE | `poiRanking.test.tsx` "closed places" | -- |
 
+## Travel modes steps 4-6 (item 4, 2026-11-17)
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| Transit timeline (walks, rides, stops, times) | DONE | `__tests__/travel/tripDetails.test.tsx` on real recorded Google transit | -- |
+| Live / late (TfNSW Trip Planner + realtime) | DONE (needs `TFNSW_API_KEY` + deploy) | `firebase/tests/tfnswTrip.test.js`; app says "Timetable" until then | Add TFNSW key (DEPLOY.md), deploy |
+| Fares / Opal note | DONE (Google's fare when given; Opal note otherwise) | `tripDetails.test.tsx` "fare" | -- |
+| Drive / Motorbike full; Bike no cameras; Walk compass-up; Transit "Get off in 2 stops" + vibration | DONE | `tripDetails.test.tsx` "per-mode navigation" | Device test (TEST_ON_PHONE §26) |
+| Walk stairs warning | NOT DONE: no stairs data in Mapbox walking steps | NOTES.md | -- |
+| Ferry details (wharves, departures, crossing, cars, booking link) + Avoid › Ferries | DONE | `tripDetails.test.tsx` "ferry details", trip-details sheet render test | -- |
+| Unavailable modes greyed with a reason | DONE | `__tests__/travel/modeRouting.test.ts` | -- |
+| Circular Quay → Manly / Bankstown → Parramatta tests | DONE (real recordings) | `ferryTransit.test.ts`, `tripDetails.test.tsx` | -- |
+
 ## Future items (not built)
 
 | Item | Status | Scope | What you must do |

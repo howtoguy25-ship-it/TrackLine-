@@ -380,6 +380,8 @@ interface SheetProps {
   onCountdownDone: () => void;
   onAddStop?: () => void;
   hasStop: boolean;
+  /** Transit / ferry: open the trip's timeline and ferry details. */
+  onDetails?: () => void;
   /** Height of the collapsed sheet (from the bottom of the screen), for fitting the routes. */
   onCollapsedHeightChange?: (height: number) => void;
 }
@@ -397,6 +399,7 @@ export function RouteSelectionSheet({
   onCountdownDone,
   onAddStop,
   hasStop,
+  onDetails,
   onCollapsedHeightChange,
 }: SheetProps) {
   const insets = useSafeAreaInsets();
@@ -541,6 +544,9 @@ export function RouteSelectionSheet({
         onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
         style={[styles.footer, { gap: 12 * k, paddingHorizontal: 16 * k, paddingTop: 10 * k, paddingBottom: insets.bottom + 12 * k }]}
       >
+        {onDetails && (
+          <Button variant="secondary" size="large" label="Trip details" onPress={onDetails} disabled={!hasRoutes} style={styles.footerButton} testID="trip-details" />
+        )}
         {onLeaveLater && (
           <Button variant="secondary" size="large" label="Leave later" onPress={onLeaveLater} disabled={!hasRoutes} style={styles.footerButton} />
         )}

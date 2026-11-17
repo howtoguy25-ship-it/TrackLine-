@@ -29,7 +29,8 @@ import { communityZoneAt, type CommunityFeature } from "@/schoolZones/communityZ
 import { communityFeaturesAround } from "@/services/roadFeatureReports";
 import { RoadReportSheet } from "@/components/RoadReportSheet";
 import { speedZoomFor } from "@/map/speedZoom";
-import { MODE_NAVIGATES_AS, MODE_ORDER, asModeId, ferryBadge, ferryModeAvailable, ferryOptions, type ModeId } from "@/travel/modes";
+import { MODE_NAVIGATES_AS, MODE_ORDER, asModeId, ferryBadge, ferryModeAvailable, ferryOptions, routeHasFerry, type ModeId } from "@/travel/modes";
+import * as Haptics from "expo-haptics";
 import { ModeRouteCache, fastestSeconds, fetchRoutesForMode, type ModeRoutes } from "@/travel/modeRouting";
 import type { SchoolCalendar } from "@/schoolZones/calendar";
 import { resolveSpeedLimit, routeLimitAt, signStyleFor, signUnitFor, signValue } from "@/speedLimits/resolveLimit";
@@ -250,6 +251,10 @@ import { ALERT_LABELS, type AlertDoc, type AlertType } from "@/types/alert";
 import { UNDO_MS } from "@/types/alertPolicy";
 import { stillThereCandidate } from "@/alerts/stillThere";
 import { ReportUndoBar } from "@/components/ReportUndoBar";
+import { TripDetailsSheet } from "@/components/TripDetailsSheet";
+import { fetchTransitRealtime } from "@/services/transitRealtime";
+import { rideStatus } from "@/travel/rideProgress";
+import type { Realtime } from "@/travel/transitTimeline";
 import { baseTypeOf, needsComment } from "@/settings/reportGrid";
 import { TrackyBubble } from "@/components/TrackyBubble";
 import { SavedPlacePopup, type SavedPinPlace } from "@/components/SavedPlacePopup";
@@ -3970,6 +3975,17 @@ export function MapScreen() {
       }),
     [selectionRoutes, selectionTags, travelMode, settings.distanceUnit]
   );
+  // Trip details (transit timeline, fare / Opal, ferry details) with live/late from TfNSW.
+  const [tripDetails, setTripDetails] = useState<{ open: boolean; realtime: (Realtime | null)[]; note: string | null }>({ open: false, realtime: [], note: null });
+  const openTripDetails = useCallback(() => {
+    const r = selectionRoutes[selectionIndex];
+    setTripDetails({ open: true, realtime: [], note: null });
+    if (!r?.transitSummary) return;
+    fetchTransitRealtime(r).then(({ configured, realtime }) =>
+      setTripDetails((t) => ({ ...t, realtime, note: configured ? null : "Times are the timetable: live times need the Transport for NSW key on the server." }))
+    );
+  }, [selectionRoutes, selectionIndex]);
+
   // The lines drawn: the first few routes plus the selected one, each with its index in the list.
   const drawnSelection = useMemo(() => {
     const indices = selectionRoutes.map((_, i) => i).filter((i) => i < MAX_DRAWN_ROUTES || i === selectionIndex);
@@ -4803,6 +4819,24 @@ export function MapScreen() {
 
   const approachMemoryRef = useRef<ApproachMemory>({});
   const [approachChip, setApproachChip] = useState<{ item: ReportItemId; distanceM: number } | null>(null);
+  // Transit navigation: "Get off at the next stop" (with a buzz) / "Get off in 2 stops".
+  const rideNowMs = location?.timestamp ?? 0;
+  const ride = useMemo(() => {
+    if (!route || travelMode !== "transit" || !currentLatLng || !route.transitSummary) return null;
+    // The ride you're on: the first one not yet finished, once you're away from where it starts.
+    const leg = route.transitSummary.legs.find((l) => (l.arrivalTimeMs ?? Infinity) > rideNowMs - 60_000 && haversineMeters(currentLatLng, l.arrivalLocation) > 60);
+    if (!leg || haversineMeters(currentLatLng, leg.departureLocation) < 150 || (currentSpeedKmh ?? 0) < 8) return null;
+    const status = rideStatus({ arrivalStop: leg.arrivalStop, arrivalLocation: leg.arrivalLocation, arrivalTimeMs: leg.arrivalTimeMs }, currentLatLng, rideNowMs, false);
+    return { key: `${leg.lineName}:${leg.arrivalStop}`, text: status.text, buzz: status.vibrate };
+  }, [route, travelMode, currentLatLng, rideNowMs, currentSpeedKmh]);
+  const rideText = ride?.text ?? null;
+  const rideBuzzedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ride?.buzz || rideBuzzedRef.current === ride.key) return;
+    rideBuzzedRef.current = ride.key;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+  }, [ride]);
+
   // Sudden slowdown from TrackLine drivers crawling just ahead on the route (rising edge only).
   const trackySlowRef = useRef(false);
   useEffect(() => {
@@ -5648,10 +5682,20 @@ export function MapScreen() {
               countdownRunning={autoGoRunning && travelMode === "driving" && !reduceMotion}
               onCountdownDone={goNowFromRouteSelection}
               onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
+              onDetails={selectionRoutes[selectionIndex] && (travelMode === "transit" || routeHasFerry(selectionRoutes[selectionIndex])) ? openTripDetails : undefined}
               hasStop={!!stopLocation}
               onCollapsedHeightChange={setRouteSheetHeight}
             />
           </MapSurface>
+          <TripDetailsSheet
+            visible={tripDetails.open}
+            route={selectionRoutes[selectionIndex] ?? null}
+            alternatives={selectionRoutes}
+            realtime={tripDetails.realtime}
+            realtimeNote={tripDetails.note}
+            inNsw={!!routeOriginLatLng && classifyAuRegion(routeOriginLatLng.latitude, routeOriginLatLng.longitude) === "NSW"}
+            onClose={() => setTripDetails((t) => ({ ...t, open: false }))}
+          />
           <MapSurface>
             <AvoidSheet
               visible={avoidSheetOpen}
@@ -5919,6 +5963,12 @@ export function MapScreen() {
       {/* Real, explicit request -- surfaces a genuinely faster real alternative the reroute's
           own alternates search found (see the off-route effect above). Auto-dismisses itself;
           never blocks anything underneath. */}
+      {rideText && (
+        <View style={[styles.reroutingBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]} accessibilityRole="alert" accessibilityLabel={rideText} testID="ride-chip">
+          <Icon name="bus" size={16} color="#FFFFFF" />
+          <Text style={styles.reroutingBadgeText}>{rideText}</Text>
+        </View>
+      )}
       {approachChip && (
         <Pressable
           style={[styles.reroutingBadge, { top: insets.top + spacing.md + (route ? instructionCardHeight + spacing.md : 0) + (fasterRouteBanner || rerouting ? 48 : 0) }]}
