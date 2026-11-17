@@ -980,3 +980,19 @@ Waze has both. Scope so it can be planned; nothing in the app uses this yet.
 **Effort**: about 4–6 weeks of engineering after the entitlement arrives (CarPlay first, Android
 Auto ~2 weeks more), plus device testing in real cars. Prerequisite: the Firebase deploy (reports,
 presence) so the car screens show the same live data.
+
+## Dependency advisories left as-is (checked 2026-11-17)
+
+`npm audit --omit=dev` (app): 7 advisories (3 moderate, 4 high) in two chains. Neither has a fix
+that isn't a downgrade or a breaking swap, and neither is reachable with attacker input:
+
+| Advisory | Chain | Why there's no fix today | Why it's safe in TrackLine |
+|---|---|---|---|
+| `decode-uri-component` ≤0.5.0 (DoS on malformed `%` input), `query-string` ≤9.4.1 (high) | `@react-navigation/native` 6 → `@react-navigation/core` → `query-string` 7 → `decode-uri-component` 0.2.2 | The patched versions (`decode-uri-component` 0.5.1, `query-string` 10) are ESM-only; `query-string` 7 `require()`s it, so an `overrides` pin breaks navigation. npm's suggested "fix" is a React Navigation major, and even `@react-navigation/core` ≤7.22.0 is in the vulnerable range. | `query-string` is only used by React Navigation's URL linking (`getStateFromPath`). TrackLine doesn't configure `linking` on its NavigationContainer; message deep links go through our own allow-list (`src/navigation/deepLinks.ts`), so no outside string ever reaches it. |
+| `minimatch` 7.0.0–11.0.0 (ReDoS via glob patterns), and `@expo/fingerprint` / `expo` that pull it in (moderate) | `expo` → `@expo/fingerprint` → `minimatch` | npm's only "fix" is downgrading `expo` to 52 (an older SDK). | `@expo/fingerprint` runs on the build machine to hash project files; it never ships in the app bundle, and the glob patterns are our own config, not user input. |
+
+Re-check when React Navigation or Expo publish a release with the patched dependency.
+
+Cloud Functions: upgraded to `firebase-admin` 14.5.1 + `firebase-functions` 7.4.0 (Node 22
+runtime), `fast-xml-parser` 5, `google-auth-library` 11: `npm audit --omit=dev` = 0.
+Dashboard: 0 (postcss / grpc-js pinned by `overrides`).
