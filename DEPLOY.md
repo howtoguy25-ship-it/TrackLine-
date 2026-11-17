@@ -111,9 +111,21 @@ Add a key later and re-run with **Copy API keys** ticked -- no app update needed
   functions and rules together (the default). Until then the app writes reports itself (no
   anti-spam, Undo deletes the report instead) -- see `firebase/functions/reports/`.
 - School zones then refresh by themselves every Monday at 3:17 am Sydney time.
-- **Not deployed by this workflow**: Hosting (the website, including `privacy.html` that the app's
-  Privacy policy link opens) and Firestore TTL policies. Hosting needs adding before App Store
-  review if the privacy page isn't already live -- check the link in Settings › About opens.
+- **Not deployed by this workflow**: Hosting (the website) and Firestore TTL policies. The website
+  has its own workflow -- see "Web app" below.
+
+### Web app (same release as iOS and Android)
+
+The website is the browser version of the app (web/), plus `privacy.html` and `phone-verify.html`
+(the phone-code page the iOS/Android app opens). Ship it with every iOS/Android build:
+
+1. Add these GitHub secrets once (Firebase console > Project settings > Your apps > Web app; the
+   Maps key is your browser-restricted Google Maps key): `WEB_FIREBASE_API_KEY`,
+   `WEB_FIREBASE_AUTH_DOMAIN`, `WEB_FIREBASE_APP_ID`, `WEB_FIREBASE_STORAGE_BUCKET`,
+   `WEB_FIREBASE_MESSAGING_SENDER_ID`, `WEB_GOOGLE_MAPS_API_KEY`. These are public web config, not
+   server keys.
+2. Actions > **Deploy web app (main website)** > Run workflow. It typechecks, builds and deploys
+   Hosting only. Every push also builds web in the Tests workflow (job `web-app`).
 
 ### Optional: Firestore cleanup policies (needs a computer with gcloud)
 

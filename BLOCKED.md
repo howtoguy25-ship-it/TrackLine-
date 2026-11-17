@@ -24,6 +24,6 @@ repo: GitHub secrets → "Deploy Firebase" workflow with *Copy API keys* ticked 
 | 17 | CarPlay / Android Auto | Apple CarPlay Navigation entitlement | Request it for `com.trackline.navigate` (NOTES.md) | -- |
 | 19 | Phone number sign-in / phone password reset (app + web) | Phone provider off; website not deployed with the new page | Firebase console > Authentication > Sign-in method > Phone > Enable; then deploy the website (`deploy.ps1`, it serves `phone-verify.html`) | App: Sign in > Continue with phone number → SMS arrives → code signs you in |
 | 20 | Android Google sign-in | Web OAuth client ID | EAS env `GOOGLE_WEB_CLIENT_ID` (Firebase console > Authentication > Google > Web SDK configuration) | Android: Continue with Google works |
-| 21 | Web app account features live | Website not redeployed | `deploy.ps1` (hosting) after the Firebase deploy | Open the site > logo > Account > "Account, help & inbox" |
+| 21 | Web app account features live | Website not redeployed | Actions > "Deploy web app (main website)" after the Firebase deploy (DEPLOY.md > Web app) | Open the site > logo > Account > "Account, help & inbox" |
 | 22 | Custom-token sign-in after phone/SMS recovery | IAM role | Grant the functions' service account "Service Account Token Creator" | After a phone reset the app stays signed in (otherwise it asks you to sign in again) |
 | 18 | App Store review | Your phone tests | You confirm TEST_ON_PHONE passes; then submit from App Store Connect | -- |

@@ -124,12 +124,12 @@ function AccountTab({ user, guest, onSignInGoogle, onSignInApple, onSignInPhone,
         disabled={busy || !email || password.length < (mode === "signup" ? 8 : 1)}
         onClick={() => run(async () => void (mode === "signup" ? await emailSignUp(email, password) : await emailSignIn(email, password)))}
       >
-        {mode === "signup" ? "Create account (keeps everything)" : "Sign in"}
+        {mode === "signup" ? "Create account" : "Sign in"}
       </button>
       <button className="ac-link" onClick={() => setMode(mode === "signup" ? "signin" : "signup")}>{mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}</button>
       {mode === "signin" && (
         <button className="ac-link" disabled={!email} onClick={() => run(async () => void (await recoverByEmail(email).catch(() => sendPasswordResetEmail(auth, email.trim()))))}>
-          Forgot password? (we&apos;ll email a reset link)
+          Forgot password?
         </button>
       )}
     </div>

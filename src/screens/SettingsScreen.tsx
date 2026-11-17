@@ -642,7 +642,7 @@ export function SettingsScreen() {
             </Text>
             <Button
               variant="primary"
-              label="Save your TrackLine (create an account)"
+              label="Create account"
               onPress={() => navigation.navigate("SignIn")}
               fullWidth
               testID="save-trackline"

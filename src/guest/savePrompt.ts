@@ -73,4 +73,4 @@ export async function recordTripEnd(nowMs = Date.now()): Promise<void> {
 }
 
 export const GUEST_WARNING =
-  "If you delete the app or change phones, your saved places and settings will be lost unless you create an account.";
+  "Create an account to keep your saved places and settings if you delete the app or change phones.";

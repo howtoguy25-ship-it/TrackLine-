@@ -65,7 +65,7 @@ function serve() {
       await page.getByRole("button", { name: "New here? Create an account" }).click();
       await page.fill("#ac-email", `web${Date.now()}@test.trackline`);
       await page.fill("#ac-password", "web-pass-12345");
-      await page.getByRole("button", { name: "Create account (keeps everything)" }).click();
+      await page.getByRole("button", { name: "Create account", exact: true }).click();
       await page.getByText("Signed in as").waitFor({ timeout: 20000 });
       const u = await app.auth().getUser(uid);
       if (!u.email) throw new Error("guest was not upgraded in place");

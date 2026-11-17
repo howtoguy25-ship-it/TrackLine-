@@ -70,3 +70,20 @@ jobs:
           npm --prefix admin run typecheck
           npm --prefix admin test
           npm --prefix admin run build
+
+  web-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --prefix web
+      - name: Typecheck + production build
+        env:
+          VITE_FIREBASE_PROJECT_ID: demo-build
+          VITE_FIREBASE_API_KEY: build-placeholder
+        run: |
+          npm --prefix web run build
+          test -f web/dist/phone-verify.html

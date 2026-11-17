@@ -425,10 +425,10 @@ Most of this needs the server deployed (BLOCKED.md #1); SMS needs Twilio (#5).
 
 1. **Guest warning.** Fresh install, don't sign in. Settings > Account: says you're a guest and
    "If you delete the app or change phones, your saved places and settings will be lost unless
-   you create an account." with a *Save your TrackLine* button.
-2. **Save prompt.** Still a guest, save a Home address: a "Save your TrackLine" card appears
+   you create an account." with a *Create account* button.
+2. **Save prompt.** Still a guest, save a Home address: a "Create your account" card appears
    once. *Not now* closes it. (It won't come back for 3 days.)
-3. **Linking keeps data.** Tap *Save your TrackLine*, create an email account. Home is still
+3. **Linking keeps data.** Tap *Create account*, create an email account. Home is still
    saved, your Tracky look and settings unchanged. Delete and reinstall, sign in: Home is back.
 4. **Forgot password (email).** Sign out. Sign in > *Forgot password?* > your email > *Send*.
    The message says "If an account exists…". Email arrives; set a new password; sign in.

@@ -228,7 +228,7 @@ describe("guests: Save your TrackLine", () => {
     mockCurrentUser.current = { uid: "guest1", isAnonymous: true };
   });
   it("the warning says exactly what's at risk", () => {
-    expect(GUEST_WARNING).toBe("If you delete the app or change phones, your saved places and settings will be lost unless you create an account.");
+    expect(GUEST_WARNING).toBe("Create an account to keep your saved places and settings if you delete the app or change phones.");
   });
 });
 

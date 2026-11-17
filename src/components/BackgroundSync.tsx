@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useLocation } from "@/context/LocationContext";
 import { syncApproxLocation, syncPrefs } from "@/services/targeting";
-import { GUEST_WARNING, dismissSavePrompt, onSavePrompt, type SaveMoment } from "@/guest/savePrompt";
+import { dismissSavePrompt, onSavePrompt, type SaveMoment } from "@/guest/savePrompt";
 import { navigationRef } from "@/navigation/deepLinks";
 
 // Keeps this install's deviceSessions doc current for the dashboard's message targeting (the
@@ -46,11 +46,11 @@ export function BackgroundSync() {
     <Modal visible={!!moment} transparent animationType="fade" onRequestClose={() => setMoment(null)}>
       <View style={styles.back}>
         <View style={styles.card} testID="save-trackline-prompt">
-          <Text style={styles.title}>Save your TrackLine</Text>
-          <Text style={styles.text}>{moment ? `${MOMENT_TEXT[moment]} ` : ""}{GUEST_WARNING} Creating an account keeps everything you have now.</Text>
+          <Text style={styles.title}>Create your account</Text>
+          <Text style={styles.text}>{moment ? `${MOMENT_TEXT[moment]} ` : ""}Your saved places and settings will be kept.</Text>
           <Button
             variant="primary"
-            label="Create an account"
+            label="Create account"
             fullWidth
             onPress={() => {
               setMoment(null);
