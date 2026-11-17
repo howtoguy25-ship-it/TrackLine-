@@ -60,7 +60,8 @@ describe("one icon set", () => {
       "src/map-v2/layers/MapIcons.tsx",
       "src/screens/OsmMarkerSheet.tsx",
       "src/screens/InboxScreen.tsx",
-      "src/screens/SettingsScreen.tsx",
+      // Settings > Map display: "Your map marker" previews draw the same vehicle badge as the map.
+      "src/components/settings/SettingsPreviews.tsx",
       // Settings > Reports: each item's icon is the same glyph as its map pin (MapIcons "feature:").
       "src/components/settings/ReportItemIcon.tsx",
     ].map((p) => p.split("/").join(path.sep))

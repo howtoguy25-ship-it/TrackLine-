@@ -111,6 +111,26 @@ export function useSettingsHeader(title: string) {
   }, [navigation, title, c]);
 }
 
+/** For settings sub-screens that keep their own layout and the native title (the voice
+ * screens): the same page colour, back button colour and status bar as every settings page. */
+export function useSettingsNativeHeader() {
+  const navigation = useNavigation();
+  const c = useSettingsColours();
+  const scheme = useSettingsScheme();
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: true,
+      headerStyle: { backgroundColor: c.page },
+      headerTitleStyle: { fontFamily: RUBIK.semiBold, color: c.text },
+      headerShadowVisible: false,
+      headerTintColor: c.tick,
+      contentStyle: { backgroundColor: c.page },
+      statusBarStyle: scheme === "dark" ? "light" : "dark",
+    } as object);
+  }, [navigation, c, scheme]);
+  return { colours: c, scheme };
+}
+
 // ---- Section ------------------------------------------------------------------------------------
 
 /** A section: grey header above, a rounded card of rows, an optional grey note below. */

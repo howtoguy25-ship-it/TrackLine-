@@ -2,7 +2,10 @@ import { useFeature } from "@/remote/useAppConfig";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { View, Pressable, StyleSheet, SectionList, ActivityIndicator, Modal } from "react-native";
+import { StyleSheet, SectionList, ActivityIndicator, Modal } from "react-native";
+import { View, Pressable } from "@/components/ui/Surface";
+import { SurfaceScheme } from "@/components/ui/surfaceScheme";
+import { useSettingsNativeHeader } from "@/components/settings/SettingsKit";
 import { Text, TextInput } from "@/components/AppText";
 import * as Speech from "expo-speech";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -80,6 +83,7 @@ function rowKey(row: Row): string {
 export function VoicePickerScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const headerTheme = useSettingsNativeHeader();
   const { voiceIdentifier, setVoiceIdentifier, voiceVolume } = useSettings();
 
   const [query, setQuery] = useState("");
@@ -286,82 +290,84 @@ export function VoicePickerScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <View style={styles.searchRow}>
-        <Icon name="search" size={16} color={colors.textMuted} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search voices…"
-          placeholderTextColor={colors.textFaint}
-          style={styles.searchInput}
-          autoCorrect={false}
-        />
-        {query.length > 0 && (
-          <Button
-            variant="ghost"
-            icon="close-circle"
-            iconColor={colors.textFaint}
-            onPress={() => setQuery("")}
-            accessibilityLabel="Clear search"
+    <SurfaceScheme value={headerTheme.scheme}>
+        <View style={[styles.container, { paddingBottom: insets.bottom, backgroundColor: headerTheme.colours.page }]}>
+        <View style={styles.searchRow}>
+          <Icon name="search" size={16} color={colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search voices…"
+            placeholderTextColor={colors.textFaint}
+            style={styles.searchInput}
+            autoCorrect={false}
+          />
+          {query.length > 0 && (
+            <Button
+              variant="ghost"
+              icon="close-circle"
+              iconColor={colors.textFaint}
+              onPress={() => setQuery("")}
+              accessibilityLabel="Clear search"
+            />
+          )}
+        </View>
+
+        {!loaded ? (
+          <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
+        ) : (
+          <SectionList keyboardShouldPersistTaps="handled"
+            sections={sections}
+            keyExtractor={rowKey}
+            contentContainerStyle={{ paddingBottom: spacing.xxl }}
+            renderSectionHeader={({ section }) => (
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeader}>{section.title}</Text>
+                {section.title === "My recorded voices" && (
+                  <Pressable onPress={() => navigation.navigate("RecordVoice")} hitSlop={8}>
+                    <Text style={styles.sectionHeaderAction}>Record your own</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+            renderSectionFooter={({ section }) =>
+              section.title === "My recorded voices" && section.data.length === 0 ? (
+                <Text style={styles.emptySectionText}>
+                  No recorded voice yet. Tap &quot;Record your own&quot; above and record as many of the
+                  turn-by-turn phrases as you like. Your phone&apos;s voice fills in any you skip.
+                </Text>
+              ) : null
+            }
+            renderItem={({ item }) => renderRow(item)}
           />
         )}
-      </View>
 
-      {!loaded ? (
-        <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
-      ) : (
-        <SectionList keyboardShouldPersistTaps="handled"
-          sections={sections}
-          keyExtractor={rowKey}
-          contentContainerStyle={{ paddingBottom: spacing.xxl }}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionHeader}>{section.title}</Text>
-              {section.title === "My recorded voices" && (
-                <Pressable onPress={() => navigation.navigate("RecordVoice")} hitSlop={8}>
-                  <Text style={styles.sectionHeaderAction}>Record your own</Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-          renderSectionFooter={({ section }) =>
-            section.title === "My recorded voices" && section.data.length === 0 ? (
-              <Text style={styles.emptySectionText}>
-                No recorded voice yet. Tap &quot;Record your own&quot; above and record as many of the
-                turn-by-turn phrases as you like. Your phone&apos;s voice fills in any you skip.
+        <Modal transparent visible={!!pendingSelection} animationType="fade" onRequestClose={() => setPendingSelection(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Use this voice?</Text>
+              <Text style={styles.modalBody}>
+                TrackLine will use this voice to speak your turn-by-turn directions and alerts.
               </Text>
-            ) : null
-          }
-          renderItem={({ item }) => renderRow(item)}
-        />
-      )}
-
-      <Modal transparent visible={!!pendingSelection} animationType="fade" onRequestClose={() => setPendingSelection(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Use this voice?</Text>
-            <Text style={styles.modalBody}>
-              TrackLine will use this voice to speak your turn-by-turn directions and alerts.
-            </Text>
-            <View style={styles.modalActions}>
-              <Button
-                variant="secondary"
-                label="Cancel"
-                onPress={() => setPendingSelection(null)}
-                style={{ flex: 1 }}
-              />
-              <Button
-                variant="primary"
-                label="Accept"
-                onPress={confirmPendingSelection}
-                style={{ flex: 1 }}
-              />
+              <View style={styles.modalActions}>
+                <Button
+                  variant="secondary"
+                  label="Cancel"
+                  onPress={() => setPendingSelection(null)}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  variant="primary"
+                  label="Accept"
+                  onPress={confirmPendingSelection}
+                  style={{ flex: 1 }}
+                />
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
+    </SurfaceScheme>
   );
 }
 

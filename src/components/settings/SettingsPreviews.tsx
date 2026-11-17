@@ -124,12 +124,12 @@ export function MapViewPreview({ view }: { view: "tilted3d" | "flat" | "satellit
 
 /** The map marker: the same gradient badge the map draws, or the default arrow. */
 export function MarkerPreview({ style, background }: { style: MapMarkerStyleKey; background: string }) {
-  const spec = style !== "default" ? MAP_MARKER_STYLE_ICONS[style] : null;
+  const iconSpec = style !== "default" ? MAP_MARKER_STYLE_ICONS[style] : null;
   return (
     <View style={[styles.center, { backgroundColor: background }]}>
-      {spec ? (
-        <LinearGradient colors={[shadeColor(spec.color, 0.28), spec.color, shadeColor(spec.color, -0.18)]} locations={[0, 0.55, 1]} style={styles.markerBadge}>
-          <MaterialCommunityIcons name={spec.name as never} size={24} color={WHITE} />
+      {iconSpec ? (
+        <LinearGradient colors={[shadeColor(iconSpec.color, 0.28), iconSpec.color, shadeColor(iconSpec.color, -0.18)]} locations={[0, 0.55, 1]} style={styles.markerBadge}>
+          <MaterialCommunityIcons name={iconSpec.name as never} size={24} color={WHITE} />
         </LinearGradient>
       ) : (
         <View style={[styles.markerBadge, { backgroundColor: BLUE }]}>
