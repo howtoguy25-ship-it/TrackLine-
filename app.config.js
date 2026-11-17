@@ -194,14 +194,19 @@ module.exports = {
         },
       ],
       [
-        // Place page "Add photo": picks one existing photo from the library. The camera is
-        // never opened, so no camera permission is asked for here.
+        // Place page "Add photo": picks one existing photo from the library. The picker itself
+        // never opens the camera, but `false` here would DELETE the app's camera and microphone
+        // texts from Info.plist -- and the app does use both (Live Vehicle Detection, sirens,
+        // voice search). Apple rejects any upload missing them (builds 189-201 never reached
+        // TestFlight because of this), so the same texts are passed through instead.
         "expo-image-picker",
         {
           photosPermission:
             "TrackLine lets you choose a photo to add to a place's page. Photos are reviewed before anyone else sees them.",
-          cameraPermission: false,
-          microphonePermission: false,
+          cameraPermission:
+            "TrackLine uses your camera for live AI Vehicle Detection, analyzed on-device in real time. Video is never recorded or stored. A cropped image of a detected number plate may be sent to a third-party plate-recognition service when that feature is enabled.",
+          microphonePermission:
+            "TrackLine listens for emergency vehicle sirens near you (analyzed on-device only, never recorded), hears your destination when you tap the microphone to search by voice, and lets you record your own voice clips for turn-by-turn directions, only when you choose to.",
         },
       ],
       [
