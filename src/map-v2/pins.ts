@@ -13,6 +13,8 @@ export interface MapPin {
   size?: number;
   /** Text drawn on the icon (cluster counts). */
   label?: string;
+  /** Text under the icon (a petrol price, a brand). */
+  caption?: string;
   /** Where the coordinate sits on the icon. */
   anchor?: "center" | "bottom";
   /** Higher draws on top. */
@@ -29,6 +31,7 @@ export function pinsToFeatures(pins: readonly MapPin[]): FeatureCollection<Point
         icon: p.icon,
         size: p.size ?? 1,
         label: p.label ?? "",
+        caption: p.caption ?? "",
         anchor: p.anchor ?? "center",
         // Mapbox draws lower sort keys first, so the priority becomes the key directly.
         priority: p.priority ?? 0,

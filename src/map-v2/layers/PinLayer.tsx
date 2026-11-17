@@ -44,6 +44,23 @@ export function PinLayer({ id, pins, onPress }: Props) {
           textIgnorePlacement: true,
         }}
       />
+      {/* Captions under pins (price / brand), dark on a white halo so they read on any map. */}
+      <SymbolLayer
+        id={`${id}-captions`}
+        filter={["!=", ["get", "caption"], ""]}
+        style={{
+          textField: ["get", "caption"],
+          textFont: ["DIN Pro Bold", "Arial Unicode MS Bold"],
+          textSize: 12,
+          textColor: "#1F2125",
+          textHaloColor: "#FFFFFF",
+          textHaloWidth: 2,
+          textAnchor: "top",
+          textOffset: [0, 1.5],
+          textOptional: true,
+          symbolSortKey: ["get", "priority"],
+        }}
+      />
     </ShapeSource>
   );
 }

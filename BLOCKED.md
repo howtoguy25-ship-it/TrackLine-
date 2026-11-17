@@ -28,3 +28,20 @@ repo: GitHub secrets → "Deploy Firebase" workflow with *Copy API keys* ticked 
 | 22 | Custom-token sign-in after phone/SMS recovery | IAM role | Grant the functions' service account "Service Account Token Creator" | After a phone reset the app stays signed in (otherwise it asks you to sign in again) |
 | 23 | **Map blank in TestFlight; Drive/Bike/Walk Mapbox routes fail** | EAS variable `MAPBOX_PUBLIC_TOKEN` (production AND preview) holds the text `***** (This is a sensitive env variable...)` instead of a token -- the hidden value `eas env:list` prints was pasted in as the value. Verified in build 202's own app.config. | expo.dev > TrackLine > Environment variables > `MAPBOX_PUBLIC_TOKEN` > Edit: paste your Mapbox **public** token (starts `pk.`, account.mapbox.com > Tokens > Default public token), visibility Sensitive or Plain text, environments production + preview + development. Or: `eas env:update --variable-name MAPBOX_PUBLIC_TOKEN --variable-environment production --value pk.…` (repeat for preview). Then tell Claude: it ships it to the installed build with an EAS Update (no new build needed) | Settings › About › Diagnostics: "Mapbox token present: Yes (…last4)", "Mapbox style loaded: Yes", "Directions: Bike/Walk: OK · Mapbox · HTTP 200" |
 | 18 | App Store review | Your phone tests | You confirm TEST_ON_PHONE passes; then submit from App Store Connect | -- |
+
+
+## Live NSW petrol prices (FuelCheck)
+
+The petrol list asks our `fuelPricesNearby` Cloud Function for NSW FuelCheck prices. Until it is
+deployed and has a key, the list says "Live NSW prices aren't set up yet." and shows Google's own
+station prices where Google has them (no price is ever made up).
+
+1. Register at api.nsw.gov.au and subscribe to the **Fuel API** product; note the API key and secret.
+2. Add GitHub secrets `FUELCHECK_API_KEY` and `FUELCHECK_API_SECRET` on this repo.
+3. Run Actions > "Deploy to Firebase" with Functions and **Copy API keys** ticked.
+4. Open Petrol in the app; Settings > About > Diagnostics shows "Last petrol prices request".
+
+Not yet run against the live FuelCheck API from this project (no key was available).
+
+The nearby lists also need the **Places API (New)** enabled on the app's Google key, and the
+drive times need the **Routes API** (route matrix) enabled. Diagnostics shows the last status of each.

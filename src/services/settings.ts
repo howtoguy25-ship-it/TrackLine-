@@ -141,6 +141,8 @@ export interface AppSettings {
   // units km, Australian English" -- see utils/navFormat.ts's own formatDistance for the exact
   // threshold rules in each unit.
   distanceUnit: "km" | "miles";
+  /** Petrol list: which fuel's price to show (E10, 91, 95, 98, diesel, LPG, EV chargers). */
+  preferredFuelType: "E10" | "91" | "95" | "98" | "diesel" | "lpg" | "ev";
   // Real, explicit request (Ghost mode + visibility control) -- whether this driver's presence
   // can be shown to other drivers at all (see Part 3's presence system, not yet built): "ghost"
   // never writes a presence doc, "friendsOnly" restricts it to accepted friends only once that
@@ -222,6 +224,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   spokenDirections: "normal",
   appearance: "auto",
   distanceUnit: "km",
+  preferredFuelType: "91",
   visibility: "ghost",
   showNameOnReports: false,
   showTrackysOnMap: true,
