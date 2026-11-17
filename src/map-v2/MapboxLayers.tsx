@@ -84,8 +84,6 @@ const FIXED_ICONS = [
   BLANK_ICON,
   // The brand & popular-place badges the base style draws (map/poiBadges.ts).
   ...BADGE_CATEGORIES.map(badgeIconName),
-  "person-dot",
-  "heading-cone",
   "flag",
   "start",
   "alert-cluster",
@@ -214,8 +212,6 @@ export function MapboxLayers(props: Props) {
           deviceHeading={user.deviceHeading}
           navigating={user.navigating}
           arrowIcon={arrowIcon}
-          dotIcon="person-dot"
-          coneIcon="heading-cone"
         />
       )}
 
