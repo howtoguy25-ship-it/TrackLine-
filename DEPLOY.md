@@ -103,6 +103,9 @@ Add a key later and re-run with **Copy API keys** ticked -- no app update needed
 ## Afterwards
 
 - Re-run the workflow whenever server code changes (I'll tell you when).
+- **Badge popularity (2026-11-17):** optional GitHub secret `GOOGLE_PLACES_SERVER_KEY` (a Google key with
+  Places API (New) enabled, server-only, ideally restricted to the Cloud Functions' IP or by API). Without
+  it badges still rank by Mapbox prominence, arrivals and the 300 m boost -- no ratings are made up.
 - **Reports (2026-11-16):** this deploy adds `submitReport`, `undoReport`, `publishPendingReport`
   and `applyReportVote`, and the Firestore rules stop the app writing alerts directly. Deploy
   functions and rules together (the default). Until then the app writes reports itself (no

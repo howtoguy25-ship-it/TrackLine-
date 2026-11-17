@@ -12,9 +12,9 @@
 //     file and written permission are in licences/. The style asks for "logo:<brand>" first and
 //     falls back to our category badge, so adding a partner is one entry, no style change.
 //
-// Not done here (see PROGRESS.md): ranking by Google Places rating counts and anonymous visit
-// counts. Those need a per-tile server cache (Places is billed per request) and an opt-in
-// visit pipeline; this ranks by Mapbox's prominence only.
+// Which of them get drawn is decided by the app, not native collision: map/poiRanking.ts ranks
+// the candidates on screen by real popularity (Google Places rating count + business status,
+// cached server-side; anonymous opt-in arrivals; a 300 m nearby boost) and draws the top ~12.
 //
 // Plain data, no React Native imports; tested in __tests__/poiBadges.test.ts.
 
@@ -122,3 +122,39 @@ export function badgeIconExpression(): Json {
 }
 
 export const BADGE_LAYER_IDS = ["poi-badges-early", "poi-badges"] as const;
+
+// ---- ranked badges (map/poiRanking.ts) -------------------------------------------------------
+// The map no longer lets native collision choose the badges. The badge layers above are
+// replaced by one invisible candidate layer (nothing drawn, nothing collides, but its features
+// can be read back); the app ranks those candidates by real popularity and draws the top ones
+// in its own layer (RANKED_BADGE_LAYER_ID).
+
+export const BADGE_CANDIDATE_LAYER_ID = "poi-badge-candidates";
+export const RANKED_BADGE_LAYER_ID = "ranked-badges";
+
+export function badgeCandidateLayer(): Json {
+  return {
+    id: BADGE_CANDIDATE_LAYER_ID,
+    type: "circle",
+    source: "composite",
+    "source-layer": "poi_label",
+    minzoom: EARLY_MIN_ZOOM,
+    filter: isBadgeFeature(),
+    paint: { "circle-radius": 1, "circle-opacity": 0, "circle-stroke-opacity": 0 },
+  };
+}
+
+/** A style with the badge layers swapped for the candidate layer (same position in the stack). */
+export function withRankedBadges<T extends { layers: { id: string }[] }>(style: T): T {
+  const layers: unknown[] = [];
+  let inserted = false;
+  for (const l of style.layers) {
+    if ((BADGE_LAYER_IDS as readonly string[]).includes(l.id)) {
+      if (!inserted) layers.push(badgeCandidateLayer());
+      inserted = true;
+      continue;
+    }
+    layers.push(l);
+  }
+  return { ...style, layers: layers as T["layers"] };
+}

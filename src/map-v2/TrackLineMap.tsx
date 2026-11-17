@@ -1,7 +1,9 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useLatest } from "@/hooks/useLatest";
-import { BADGE_LAYER_IDS } from "@/map/poiBadges";
-import { StyleSheet, View } from "react-native";
+import { BADGE_CANDIDATE_LAYER_ID, RANKED_BADGE_LAYER_ID, withRankedBadges } from "@/map/poiBadges";
+import { candidateFromFeature, rankBadges, rankedBadgeCollection, type BadgeCandidate } from "@/map/poiRanking";
+import { cachedPopularity, loadPopularity } from "@/services/poiPopularity";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import type { CameraStop, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { loadMapbox } from "@/map-v2/mapbox";
 import { TRAFFIC } from "@/theme/colors";
@@ -19,6 +21,7 @@ import {
   auSuburbLabelStyle,
   buildStyle,
   mapboxNameField,
+  LABEL_FONT,
   type LabelLanguage,
   type ThemeKey,
 } from "@/map-v2/styles/buildStyle";
@@ -84,6 +87,8 @@ interface Props {
   /** A tap on a named place drawn on the map itself (shops, parks...). */
   onPoiPress?: (poi: PoiPress) => void;
   onMapReady?: () => void;
+  /** The driver's position, for the badges' "nearby" boost. */
+  driver?: LatLng | null;
   children?: React.ReactNode;
 }
 
@@ -96,12 +101,15 @@ interface CameraRef {
 export function styleFor(theme: ThemeKey, roadThickness: keyof typeof ROAD_SCALES, satellite: boolean, dimmed: boolean, labels: LabelLanguage = "local", locale: string | null = deviceLocale()): string {
   const local = labels === "local";
   const labelOpt = local ? undefined : { mode: labels, field: mapboxNameField(locale) };
-  if (satellite) return JSON.stringify(local ? trackLineSatellite : buildStyle(SATELLITE_LABEL_PALETTE, { satellite: true, labels: labelOpt }));
+  // Brand / popular-place badges are ranked and drawn by the app (map/poiRanking.ts), so every
+  // style gets the invisible candidate layer in place of the native badge layers.
+  const out = (style: unknown) => JSON.stringify(withRankedBadges(style as { layers: { id: string }[] }));
+  if (satellite) return out(local ? trackLineSatellite : buildStyle(SATELLITE_LABEL_PALETTE, { satellite: true, labels: labelOpt }));
   const scale = ROAD_SCALES[roadThickness] ?? 1;
-  if (local && !dimmed && scale === 1 && (theme === "light" || theme === "normal")) return JSON.stringify(trackLineLight);
-  if (local && !dimmed && scale === 1 && theme === "dark") return JSON.stringify(trackLineDark);
+  if (local && !dimmed && scale === 1 && (theme === "light" || theme === "normal")) return out(trackLineLight);
+  if (local && !dimmed && scale === 1 && theme === "dark") return out(trackLineDark);
   const palette = THEME_PALETTES[theme] ?? SATELLITE_LABEL_PALETTE;
-  return JSON.stringify(buildStyle(palette, { roadScale: scale, dimmed, labels: labelOpt }));
+  return out(buildStyle(palette, { roadScale: scale, dimmed, labels: labelOpt }));
 }
 
 /** The phone's language ("en-AU"), for "My app language" labels. */
@@ -187,8 +195,51 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
     [props.onPanDrag]
   );
 
+  // ---- brand / popular-place badges, ranked (map/poiRanking.ts) ----
+  const window = useWindowDimensions();
+  const [rankedBadges, setRankedBadges] = useState<ReturnType<typeof rankedBadgeCollection>>(() => rankedBadgeCollection([]));
+  const rankSeq = useRef(0);
+  const driverRef = useLatest(props.driver ?? null);
+  const nameField = ((props.labelLanguage ?? "local") === "local" ? null : mapboxNameField(deviceLocale())) ?? "name";
+  const rankBadgesNow = async (zoom: number) => {
+    const seq = ++rankSeq.current;
+    const map = mapRef.current;
+    if (!map || zoom < 13) {
+      setRankedBadges(rankedBadgeCollection([]));
+      return;
+    }
+    try {
+      const fc = await map.queryRenderedFeaturesInRect([], [], [BADGE_CANDIDATE_LAYER_ID]);
+      const features = (fc?.features ?? []).slice(0, 120);
+      const candidates: BadgeCandidate[] = [];
+      for (const f of features) {
+        const coords = (f.geometry as { coordinates?: number[] })?.coordinates;
+        if (!coords) continue;
+        const pt = await map.getPointInView(coords as [number, number]);
+        const c = candidateFromFeature(f as never, [pt[0], pt[1]], nameField);
+        if (c) candidates.push(c);
+      }
+      if (seq !== rankSeq.current) return;
+      const rank = () =>
+        rankBadges(candidates, {
+          zoom,
+          driver: driverRef.current,
+          popularity: cachedPopularity(),
+          screen: { width: window.width, height: window.height },
+        });
+      setRankedBadges(rankedBadgeCollection(rank()));
+      // Real popularity arrives a moment later; re-rank when it does.
+      if (await loadPopularity(candidates.map((c) => ({ key: c.key, name: c.name, lat: c.lat, lng: c.lng })))) {
+        if (seq === rankSeq.current) setRankedBadges(rankedBadgeCollection(rank()));
+      }
+    } catch {
+      // Query not available (e.g. style still loading): keep what's shown.
+    }
+  };
+
   const onMapIdle = (state: CameraState) => {
     remember(state);
+    rankBadgesNow(state.properties.zoom);
     const region = regionFromBounds(state.properties.bounds.ne, state.properties.bounds.sw);
     props.onRegionChangeComplete?.(region, { isGesture: gestures.current.idle() });
   };
@@ -201,7 +252,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
       const hit = await mapRef.current.queryRenderedFeaturesAtPoint(
         [feature.properties.screenPointX, feature.properties.screenPointY],
         [],
-        ["poi-labels", ...BADGE_LAYER_IDS]
+        ["poi-labels", RANKED_BADGE_LAYER_ID]
       );
       const poi = hit?.features?.[0];
       const name = poi?.properties?.name_en ?? poi?.properties?.name;
@@ -283,6 +334,29 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
           }}
         />
       )}
+      {/* Brand / popular-place badges: the ranked top ones, drawn by us (at most ~12 a screen). */}
+      <ShapeSource id="ranked-badges-src" shape={rankedBadges as never}>
+        <SymbolLayer
+          id={RANKED_BADGE_LAYER_ID}
+          minZoomLevel={13}
+          style={{
+            iconImage: ["get", "icon"],
+            iconAnchor: "bottom",
+            iconAllowOverlap: true,
+            symbolSortKey: ["get", "rank"],
+            textField: ["get", "name"],
+            textFont: LABEL_FONT,
+            textSize: 12,
+            textMaxWidth: 9,
+            textAnchor: "left",
+            textOffset: [1.3, -1.5],
+            textOptional: true,
+            textColor: labelPalette.streetLabel,
+            textHaloColor: labelPalette.labelHalo,
+            textHaloWidth: 1.4,
+          }}
+        />
+      </ShapeSource>
       {props.showTraffic && (
         <VectorSource id="traffic" url="mapbox://mapbox.mapbox-traffic-v1">
           <LineLayer

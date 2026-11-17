@@ -15,7 +15,7 @@
 //
 // Pure; tested in __tests__/poiRanking.test.ts.
 
-import { BADGE_MIN_ZOOM, EARLY_CATEGORIES, EARLY_MIN_ZOOM, BADGE_PADDING_PX, type BadgeCategory } from "@/map/poiBadges";
+import { BADGE_MIN_ZOOM, EARLY_CATEGORIES, EARLY_MIN_ZOOM, BADGE_PADDING_PX, badgeCategoryForMaki, badgeIconName, type BadgeCategory } from "@/map/poiBadges";
 
 export const MAX_PER_SCREEN = 12;
 export const NEARBY_BOOST_M = 300;
@@ -113,4 +113,46 @@ export function rankBadges(candidates: readonly BadgeCandidate[], input: RankInp
 export function popularityKey(name: string, lat: number, lng: number): string {
   const n = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim().slice(0, 60);
   return `${n}|${lat.toFixed(3)}|${lng.toFixed(3)}`;
+}
+
+// ---- from the map's own features ------------------------------------------------------------
+
+export interface PoiFeatureLike {
+  id?: string | number;
+  geometry: { type: string; coordinates: number[] };
+  properties?: Record<string, unknown> | null;
+}
+
+/** A candidate from a Mapbox poi_label feature and its screen point, or null if it isn't one. */
+export function candidateFromFeature(f: PoiFeatureLike, screen: [number, number], nameField = "name"): BadgeCandidate | null {
+  if (f.geometry?.type !== "Point" || f.geometry.coordinates.length < 2) return null;
+  const p = f.properties ?? {};
+  const category = badgeCategoryForMaki(typeof p.maki === "string" ? p.maki : null);
+  const name = (typeof p[nameField] === "string" && (p[nameField] as string)) || (typeof p.name === "string" ? p.name : "");
+  if (!category || !name) return null;
+  const [lng, lat] = f.geometry.coordinates;
+  return {
+    key: popularityKey(name, lat, lng),
+    name,
+    brand: typeof p.brand === "string" ? p.brand : null,
+    category,
+    filterrank: typeof p.filterrank === "number" ? p.filterrank : 5,
+    lat,
+    lng,
+    x: screen[0],
+    y: screen[1],
+  };
+}
+
+/** The ranked badges as the GeoJSON the map's own badge layer draws. */
+export function rankedBadgeCollection(ranked: readonly RankedBadge[]): { type: "FeatureCollection"; features: { type: "Feature"; id: string; geometry: { type: "Point"; coordinates: [number, number] }; properties: { icon: string; name: string; rank: number } }[] } {
+  return {
+    type: "FeatureCollection",
+    features: ranked.map((b, i) => ({
+      type: "Feature",
+      id: b.key,
+      geometry: { type: "Point", coordinates: [b.lng, b.lat] },
+      properties: { icon: badgeIconName(b.category), name: b.name, rank: i },
+    })),
+  };
 }

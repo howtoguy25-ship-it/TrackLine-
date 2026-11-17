@@ -123,6 +123,8 @@ import { showLimitSign, thresholdKmhFor } from "@/settings/speedometer";
 import { REPORT_ITEM_BY_ID, itemOfAlert, alertsWhileDriving, isShown, osmFetchWanted, routeItemFor, type ReportItemId } from "@/settings/reportCatalog";
 import { osmFeaturePins, reportPinIcon, showsSpeedCameraPins, showsTrafficLightPins, visibleCommunityAlerts, visibleIncidents } from "@/map/reportPins";
 import { collectApproachFeatures } from "@/alerts/collectFeatures";
+import { recordArrival } from "@/services/poiPopularity";
+import { popularityKey } from "@/map/poiRanking";
 import { crashHistorySpots, laneEndingFeatures, trackySlowdownAhead } from "@/alerts/derivedFeatures";
 import { fetchCrashRecordsNear, type CrashRecord } from "@/services/crashRecords";
 import { nextApproachAlert, type ApproachMemory } from "@/alerts/approachAlerts";
@@ -470,6 +472,12 @@ export function MapScreen() {
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
   const [pendingDestination, setPendingDestination] = useState<PlaceDetails | null>(null);
+  // The place being driven to (kept after Start clears pendingDestination), for Share arrivals.
+  const lastDestinationPlaceRef = useRef<PlaceDetails | null>(null);
+  useEffect(() => {
+    if (pendingDestination) lastDestinationPlaceRef.current = pendingDestination;
+  }, [pendingDestination]);
+  const shareArrivalsRef = useLatest(settings.shareArrivals);
   // The place page (UI pass 2, section 4): a search result being looked at before any route is
   // fetched. The map is centred on it in the top 40%, under the page's own sheet.
   const [placePage, setPlacePage] = useState<PlaceDetails | null>(null);
@@ -2330,6 +2338,12 @@ export function MapScreen() {
     if (arrived) {
       dispatchApproachRef.current({ type: "arrived", steps: route.steps });
       announcePhrase({ kind: "arrived" });
+      // Settings > Privacy > Share arrivals (opt-in): an anonymous +1 for a named place.
+      const place = lastDestinationPlaceRef.current;
+      if (shareArrivalsRef.current && place && place.name) {
+        recordArrival({ key: popularityKey(place.name, place.location.latitude, place.location.longitude), name: place.name, lat: place.location.latitude, lng: place.location.longitude });
+      }
+      lastDestinationPlaceRef.current = null;
     } else if (
       announcement &&
       voiceEnabled &&
@@ -2350,6 +2364,7 @@ export function MapScreen() {
     navLanguage,
     announcePhrase,
     guidanceLatLngRef,
+    shareArrivalsRef,
     voiceIdentifierRef,
     voiceVolumeRef,
   ]);
@@ -5302,6 +5317,7 @@ export function MapScreen() {
       ) : (
         <TrackLineMap
           ref={mapRef}
+          driver={currentLatLng}
           theme={settings.mapTheme}
           labelLanguage={settings.mapLabels}
           roadThickness={settings.roadThickness}

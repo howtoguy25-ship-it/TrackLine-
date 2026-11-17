@@ -703,6 +703,20 @@ export function SettingsScreen() {
         </Text>
       </Section>
 
+      <Section title="Popular places" visible={shouldShow("Privacy")}>
+        <Row label="Share arrivals" icon={<Icon name="star-outline" size={18} color={settings.shareArrivals ? colors.accent : SETTINGS_TEXT_MUTED} />}>
+          <Switch
+            value={settings.shareArrivals}
+            onValueChange={(value) => updateSettings({ shareArrivals: value })}
+            trackColor={{ true: colors.accent, false: SETTINGS_BORDER }}
+            testID="share-arrivals-switch"
+          />
+        </Row>
+        <Text style={styles.helperText}>
+          {"When you arrive at a named place, add an anonymous +1 to how popular it is, so popular places get a badge on the map. Only a count per place is kept -- never who, or when you went. Off unless you turn it on."}
+        </Text>
+      </Section>
+
       <Section title="Live alerts" visible={shouldShow("Live alerts")}>
         <Row label="Receive alerts">
           <Switch

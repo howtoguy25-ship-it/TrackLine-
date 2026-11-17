@@ -399,6 +399,16 @@ Server parts need the Firebase deploy first (DEPLOY.md).
 7. Crash history: near a spot with two or more recorded crashes (needs the Firebase deploy and a
    few days of Live Traffic NSW data), "Crash-prone area ahead" once as you approach.
 
+## 25. Badge ranking — NEEDS DEVICE TEST
+
+1. Zoom into a busy shopping street (zoom 15+): about a dozen badges at most, none on top of each
+   other. Pan: they re-rank when the map settles.
+2. Zoom out to 13-14: only fuel and hospitals.
+3. Drive past a small café: within ~300 m it can get a badge it wouldn't have from further away.
+4. After the deploy with `GOOGLE_PLACES_SERVER_KEY`: big, well-rated places win over small ones
+   at the same spot; a place Google lists as closed has no badge.
+5. Settings › Privacy › Share arrivals: off by default; turn on, navigate to a named place, arrive.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the
