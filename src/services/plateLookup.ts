@@ -51,7 +51,7 @@ export async function runPlateLookup(plate: string, state: string): Promise<Plat
   } catch (err) {
     return {
       outcome: "error",
-      message: err instanceof Error ? err.message : "Couldn't reach the plate lookup service -- check your connection.",
+      message: err instanceof Error ? err.message : "Couldn't reach the plate lookup service — check your connection.",
     };
   }
 }

@@ -2054,7 +2054,7 @@ export function MapScreen() {
   const onWaveFromBubble = useCallback(async (): Promise<string> => {
     if (!bubblePresence) return "";
     const r = await callSendWave(bubblePresence.uid);
-    return r.outcome === "success" ? "Waved!" : r.outcome === "rate_limited" ? "You waved recently -- try again later." : "Couldn't wave right now.";
+    return r.outcome === "success" ? "Waved!" : r.outcome === "rate_limited" ? "You waved recently — try again later." : "Couldn't wave right now.";
   }, [bubblePresence]);
 
   // Home, Work, saved places and the parking spot on the map (SavedPlacePopup).
@@ -4399,13 +4399,13 @@ export function MapScreen() {
     // on launch hasn't resolved yet, a real (if rare) race, not something the driver caused.
     if (!type || !location) return;
     if (!user) {
-      setBannerMessage("Still signing you in -- try Set again in a moment.");
+      setBannerMessage("Still signing you in — try Set again in a moment.");
       setBannerVisible(true);
       return;
     }
     // The server checks a report is within 1 km of where the driver really is.
     if (!currentLatLng) {
-      setBannerMessage("Waiting for your location -- reports need it.");
+      setBannerMessage("Waiting for your location — reports need it.");
       setBannerVisible(true);
       return;
     }
@@ -4419,7 +4419,7 @@ export function MapScreen() {
         item,
       });
       if (result.kind === "merged") {
-        setBannerMessage(`${item ? itemLabel(item) : ALERT_LABELS[type]} was already reported here -- you've confirmed it.`);
+        setBannerMessage(`${item ? itemLabel(item) : ALERT_LABELS[type]} was already reported here — you've confirmed it.`);
         setBannerVisible(true);
       } else {
         setPendingReport({ result, type, label: item ? itemLabel(item) : undefined, untilMs: result.kind === "pending" ? result.publishAtMs : Date.now() + UNDO_MS });
@@ -4441,7 +4441,7 @@ export function MapScreen() {
       // they just tried to set never made it to Firestore.
       console.warn("[map] reportAlert failed", err);
       Sentry.logger.error("map: reportAlert failed", { error: String(err) });
-      setBannerMessage("Couldn't set that alert -- check your connection and try again.");
+      setBannerMessage("Couldn't set that alert — check your connection and try again.");
       setBannerVisible(true);
     } finally {
       submittingAlertRef.current = false;
@@ -4461,7 +4461,7 @@ export function MapScreen() {
         setBannerVisible(true);
       })
       .catch((err) => {
-        setBannerMessage(err instanceof ReportRefused ? err.message : "Couldn't undo -- it may already be on the map.");
+        setBannerMessage(err instanceof ReportRefused ? err.message : "Couldn't undo — it may already be on the map.");
         setBannerVisible(true);
       });
   }, [pendingReport, user]);
@@ -4994,7 +4994,7 @@ export function MapScreen() {
       ? `https://tracklinemaps.com/live/${shareId}`
       : `https://www.google.com/maps?q=${currentLatLng.latitude},${currentLatLng.longitude}`;
     const message =
-      `I'm on my way -- ETA ${formatDurationText(remainingDurationSeconds)}, arriving around ${arrivalClockText}. ` +
+      `I'm on my way — ETA ${formatDurationText(remainingDurationSeconds)}, arriving around ${arrivalClockText}. ` +
       `Follow my live location: ${liveLink}`;
     try {
       await Share.share({ message });
@@ -5460,7 +5460,7 @@ export function MapScreen() {
               <Icon name="map-marker-off-outline" size={40} color="#FFFFFF" />
               <Text style={styles.locationGateTitle}>Location access needed</Text>
               <Text style={styles.locationGateText}>
-                TrackLine needs your real location to show you on the map and navigate -- it never
+                TrackLine needs your real location to show you on the map and navigate — it never
                 shows a placeholder or guessed position.
               </Text>
               <Button
@@ -5885,7 +5885,7 @@ export function MapScreen() {
               variant="secondary"
               icon="arrow-back"
               onPress={cancelStopPreview}
-              accessibilityLabel="Back -- cancel adding this stop"
+              accessibilityLabel="Back — cancel adding this stop"
             />
             <Button
               variant="primary"
@@ -5922,7 +5922,7 @@ export function MapScreen() {
                   not just "save N min" on its own (same convention as the map's own ETA pill
                   right above this card). */}
               <Text style={styles.trafficSuggestionBody}>
-                Faster via side streets -- arrive {trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText}
+                Faster via side streets — arrive {trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText}
                 {" "}(save {Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} min)
               </Text>
             </View>
@@ -5930,7 +5930,7 @@ export function MapScreen() {
               onPress={dismissTrafficSuggestion}
               hitSlop={10}
               style={({ pressed }) => [styles.trafficSuggestionClose, pressed && { opacity: pressedOpacity }]}
-              accessibilityLabel="Close -- not wanted, keep current route"
+              accessibilityLabel="Close — not wanted, keep current route"
             >
               <Icon name="close" size={16} color={colors.text} />
             </Pressable>
@@ -5940,7 +5940,7 @@ export function MapScreen() {
               variant="secondary"
               label="No"
               onPress={dismissTrafficSuggestion}
-              accessibilityLabel="No -- keep current route"
+              accessibilityLabel="No — keep current route"
               style={{ flex: 1 }}
             />
             <Button
@@ -5948,7 +5948,7 @@ export function MapScreen() {
               icon="checkmark"
               label="Yes"
               onPress={acceptTrafficSuggestion}
-              accessibilityLabel={`Yes -- switch to the faster route, save about ${Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} minutes`}
+              accessibilityLabel={`Yes — switch to the faster route, save about ${Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} minutes`}
               style={{ flex: 1 }}
             />
           </View>
@@ -5965,7 +5965,7 @@ export function MapScreen() {
             icon="return-up-back"
             label="End suggested route"
             onPress={endSuggestedRoute}
-            accessibilityLabel="End suggested route -- return to your original route"
+            accessibilityLabel="End suggested route — return to your original route"
           />
         </View>
       )}
@@ -6170,7 +6170,7 @@ export function MapScreen() {
           />
           <View style={styles.placementCommentFooter}>
             {alertCommentBlocked ? (
-              <Text style={styles.placementCommentError}>That wording isn&apos;t allowed -- please rephrase.</Text>
+              <Text style={styles.placementCommentError}>That wording isn&apos;t allowed — please rephrase.</Text>
             ) : (
               <View />
             )}
@@ -6549,7 +6549,7 @@ export function MapScreen() {
           }}
           onMarkParking={() => {
             setParkingSpot({ latitude: selectedSaved.location.latitude, longitude: selectedSaved.location.longitude, label: selectedSaved.address || selectedSaved.title }).then(() => {
-              setBannerMessage("Parking spot marked -- tap the P to find your car.");
+              setBannerMessage("Parking spot marked — tap the P to find your car.");
               setBannerVisible(true);
             });
             setSelectedSaved(null);

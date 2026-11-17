@@ -18,8 +18,8 @@ export const ROUTING_ERROR_TEXT: Record<RoutingErrorKind, string> = {
   key_restricted: "Map service rejected the key (it isn't allowed for this app)",
   no_route: "No route found",
   bad_request: "Map service couldn't read this trip",
-  rate_limited: "Map service is busy -- try again in a moment",
-  server: "Map service is having problems -- try again in a moment",
+  rate_limited: "Map service is busy — try again in a moment",
+  server: "Map service is having problems — try again in a moment",
   timeout: "Map service didn't answer in time",
   offline: "No internet",
 };
@@ -82,7 +82,7 @@ export function routeErrorText(err: unknown): string {
   if (e && e.name === "DirectionsApiError") {
     const status = String(e.status ?? "");
     const msg = String(e.message ?? "");
-    if (/billing/i.test(msg)) return "Routing unavailable -- billing isn't enabled on this app's Google Cloud project";
+    if (/billing/i.test(msg)) return "Routing unavailable — billing isn't enabled on this app's Google Cloud project";
     if (status === "ZERO_RESULTS" || status === "NOT_FOUND") return ROUTING_ERROR_TEXT.no_route;
     if (status === "REQUEST_DENIED" || status === "403") return ROUTING_ERROR_TEXT.key_rejected;
     if (status === "401") return ROUTING_ERROR_TEXT.key_rejected;

@@ -1,7 +1,28 @@
-/** Mirrors the web app's utils/navFormat.ts formatArrivalClock -- same wall-clock format
- *  ("3:45 PM") on both surfaces. */
-export function formatArrivalClock(epochMs: number): string {
-  return new Date(epochMs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** Every time of day in the app: "10:27 pm", or "22:27" when the phone's region uses a 24-hour
+ *  clock. */
+export function formatArrivalClock(epochMs: number, use24Hour = phoneUses24Hour()): string {
+  const d = new Date(epochMs);
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  if (use24Hour) return `${String(d.getHours()).padStart(2, "0")}:${mm}`;
+  const h = d.getHours() % 12 || 12;
+  return `${h}:${mm} ${d.getHours() < 12 ? "am" : "pm"}`;
+}
+
+/** A weekday and time, e.g. "Tue 10:27 pm" (calendar events). */
+export function formatDayAndClock(epochMs: number, use24Hour = phoneUses24Hour()): string {
+  const day = new Date(epochMs).toLocaleDateString([], { weekday: "short" });
+  return `${day} ${formatArrivalClock(epochMs, use24Hour)}`;
+}
+
+/** Whether the phone's region shows times on a 24-hour clock. */
+export function phoneUses24Hour(): boolean {
+  try {
+    const o = new Intl.DateTimeFormat([], { hour: "numeric" }).resolvedOptions() as Intl.ResolvedDateTimeFormatOptions & { hourCycle?: string };
+    if (typeof o.hour12 === "boolean") return !o.hour12;
+    return o.hourCycle === "h23" || o.hourCycle === "h24";
+  } catch {
+    return false;
+  }
 }
 
 // Real, explicit request (Waze-style redesign, Phase 1B section 5) -- exact distance-formatting

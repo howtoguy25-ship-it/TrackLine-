@@ -166,7 +166,7 @@ export async function warmUpModel(): Promise<void> {
       Sentry.logger.error("vehicleDetection: warmUpModel timed out", { timeoutMs: MODEL_LOAD_TIMEOUT_MS });
       reject(
         new Error(
-          "Detection model is taking unusually long to load -- check your connection, or try again."
+          "Detection model is taking unusually long to load — check your connection, or try again."
         )
       );
     }, MODEL_LOAD_TIMEOUT_MS);

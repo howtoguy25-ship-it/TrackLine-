@@ -81,7 +81,7 @@ const ENTRIES: LicenseEntry[] = [
   {
     name: "Open-source software packages",
     license: "Various (MIT, Apache-2.0, BSD, ISC; no copyleft)",
-    description: "Every other library this app is built on (React Native, Expo, Firebase, and the rest). Run `npx license-checker --summary` from the repo root for the full list (see COPYRIGHT_AUDIT.md).",
+    description: "Every other library this app is built on (React Native, Expo, Firebase, and the rest). Run `npx license-checker —summary` from the repo root for the full list (see COPYRIGHT_AUDIT.md).",
   },
 ];
 

@@ -171,7 +171,7 @@ export function RevCheckScreen() {
       if (error.code === ErrorCode.SkuNotFound || error.code === ErrorCode.ItemUnavailable) {
         setResult({
           outcome: "error",
-          message: "REV Check payments aren't set up yet on the App Store -- try again later.",
+          message: "REV Check payments aren't set up yet on the App Store — try again later.",
         });
         return;
       }
@@ -297,7 +297,7 @@ export function RevCheckScreen() {
           <Text style={styles.title}>Vehicle REV Check</Text>
           <Text style={styles.subtitle}>
             Enter a plate + state for real model/spec data. Add a VIN too for stolen /
-            written-off / money-owing status -- Australia only.
+            written-off / money-owing status — Australia only.
           </Text>
         </View>
         <Button
@@ -374,7 +374,7 @@ export function RevCheckScreen() {
         </Text>
 
         <View style={styles.fieldLabelRow}>
-          <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>VIN (optional -- unlocks stolen/written-off/finance)</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelWrap]}>VIN (optional — unlocks stolen/written-off/finance)</Text>
           <Button
             variant="secondary"
             icon="camera-outline"
@@ -396,10 +396,10 @@ export function RevCheckScreen() {
           style={styles.plateInput}
         />
         <Text style={styles.helperText}>
-          The 17-character chassis number -- on the rego papers, or the compliance plate visible
+          The 17-character chassis number — on the rego papers, or the compliance plate visible
           through the windshield. Stolen/written-off/money-owing status only ever comes from a
           real PPSR search, which searches by VIN, not plate (a plate can change on
-          re-registration) -- leave this blank to just see model/spec data from the plate above.
+          re-registration) — leave this blank to just see model/spec data from the plate above.
         </Text>
 
         {paymentRequired && !hasPendingPaidRetry && paymentReady && (
@@ -416,7 +416,7 @@ export function RevCheckScreen() {
           <View style={styles.costNotice}>
             <Icon name="alert-circle-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
-              REV Check payments aren&apos;t available yet -- try again shortly.
+              REV Check payments aren&apos;t available yet — try again shortly.
             </Text>
           </View>
         )}
@@ -424,7 +424,7 @@ export function RevCheckScreen() {
           <View style={styles.costNotice}>
             <Icon name="information-outline" size={14} color={colors.warning} />
             <Text style={styles.costNoticeText}>
-              Your last check didn&apos;t complete after payment -- retrying is free, no second charge.
+              Your last check didn&apos;t complete after payment — retrying is free, no second charge.
             </Text>
           </View>
         )}
@@ -566,8 +566,8 @@ export function RevCheckScreen() {
                     <Icon name="information-outline" size={14} color={colors.textFaint} />
                     <Text style={styles.odometerUnavailableText}>
                       {state === "NSW"
-                        ? "Not returned by the connected provider yet. NSW itself records the last 3 annual roadworthy-check readings via Service NSW -- a future data source could surface them here."
-                        : `Odometer history isn't available for ${state} through any connected provider yet -- most states don't run a mandatory check that records it.`}
+                        ? "Not returned by the connected provider yet. NSW itself records the last 3 annual roadworthy-check readings via Service NSW — a future data source could surface them here."
+                        : `Odometer history isn't available for ${state} through any connected provider yet — most states don't run a mandatory check that records it.`}
                     </Text>
                   </View>
                 )}
@@ -575,7 +575,7 @@ export function RevCheckScreen() {
             </>
           ) : (
             <Text style={styles.resultText}>
-              No NEVDIS vehicle data came back for this VIN -- the PPSR security-interest result
+              No NEVDIS vehicle data came back for this VIN — the PPSR security-interest result
               below is still real.
             </Text>
           )}

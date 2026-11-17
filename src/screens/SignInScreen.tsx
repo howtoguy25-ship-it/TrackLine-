@@ -126,10 +126,10 @@ export function SignInScreen() {
           nonce: hashedNonce,
         }),
         APPLE_SIGN_IN_TIMEOUT_MS,
-        "Apple sign-in is taking too long to respond -- check your connection and try again."
+        "Apple sign-in is taking too long to respond — check your connection and try again."
       );
       if (!credential.identityToken) {
-        throw new Error("Apple didn't return an identity token -- try again.");
+        throw new Error("Apple didn't return an identity token — try again.");
       }
       await signInWithAppleCredential(credential.identityToken, rawNonce);
     };
@@ -201,7 +201,7 @@ export function SignInScreen() {
         Sentry.logger.error("sign-in: Google sign-in succeeded with no idToken", {
           hasUser: !!response.data.user,
         });
-        setError("Google didn't return a usable sign-in token -- try again.");
+        setError("Google didn't return a usable sign-in token — try again.");
         return;
       }
       await signInWithGoogleCredential(response.data.idToken);

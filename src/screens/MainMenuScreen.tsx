@@ -134,7 +134,7 @@ export function MainMenuScreen() {
 
   const onInviteFriend = () => {
     Share.share({
-      message: "Drive smarter with TrackLine -- real-time police, hazard and camera alerts from other drivers. Get it here: https://tracklinemaps.com",
+      message: "Drive smarter with TrackLine — real-time police, hazard and camera alerts from other drivers. Get it here: https://tracklinemaps.com",
     }).catch(() => {});
   };
 

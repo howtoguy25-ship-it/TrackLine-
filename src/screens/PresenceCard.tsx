@@ -105,7 +105,7 @@ export function PresenceCard({ presence, selfUid, onClose, onBlocked }: Props) {
   const onSubmitReport = async (reason: UserReportReason) => {
     await reportUser(presence.uid, reason, selfUid);
     setReportOpen(false);
-    Alert.alert("Report sent", "Thanks -- our team will take a look.");
+    Alert.alert("Report sent", "Thanks — our team will take a look.");
   };
 
   return (

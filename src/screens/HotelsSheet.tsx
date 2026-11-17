@@ -193,7 +193,7 @@ export const HotelsSheet = forwardRef<SimpleBottomSheetRef, Props>(function Hote
         <View style={styles.noticeBox}>
           <Icon name="information-circle-outline" size={14} color={colors.textMuted} />
           <Text style={styles.noticeText}>
-            Real listings, photos &amp; ratings from Google. Live prices and booking aren&apos;t connected yet --
+            Real listings, photos &amp; ratings from Google. Live prices and booking aren&apos;t connected yet —
             tap &quot;Open in Maps&quot; on a hotel for booking options.
           </Text>
         </View>

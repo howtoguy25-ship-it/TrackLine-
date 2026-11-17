@@ -89,7 +89,7 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
         <OptionRow
           icon="videocam-outline"
           label="Dashcam"
-          subtitle={detectionBatteryLow ? "Battery below 50% -- still works, may run slower" : undefined}
+          subtitle={detectionBatteryLow ? "Battery below 50% — still works, may run slower" : undefined}
           onPress={onOpenDetection}
           trailing={<Icon name="chevron-forward" size={18} color={colors.textMuted} />}
         />
@@ -127,7 +127,7 @@ function OptionRow({
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && { opacity: pressedOpacity }]}
-      accessibilityLabel={subtitle ? `${label} -- ${subtitle}` : label}
+      accessibilityLabel={subtitle ? `${label} — ${subtitle}` : label}
     >
       <View style={styles.rowIconWrap}>
         <Icon name={icon} size={20} color={colors.text} />

@@ -280,7 +280,7 @@ export function TrackyCustomizerScreen() {
 
       {!draftUnlocked && (
         <Text style={styles.lockedNotice}>
-          This design uses a part you haven&apos;t unlocked yet -- swap it out to save.
+          This design uses a part you haven&apos;t unlocked yet — swap it out to save.
         </Text>
       )}
       <View style={styles.actions}>

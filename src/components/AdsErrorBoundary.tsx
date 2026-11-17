@@ -22,7 +22,7 @@ export class AdsErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: unknown) {
-    console.warn("[ads] render error caught by AdsErrorBoundary -- ads disabled for this session", error);
+    console.warn("[ads] render error caught by AdsErrorBoundary — ads disabled for this session", error);
   }
 
   render() {
