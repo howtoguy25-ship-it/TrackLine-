@@ -5833,7 +5833,7 @@ export function MapScreen() {
         />
       )}
 
-      {route && aheadBannerOn && !navOptionsSheetOpen && !addingStopDuringNav && !manoeuvreChip && (
+      {route && aheadBannerOn && etaSheetEvents.length > 0 && !navOptionsSheetOpen && !addingStopDuringNav && !manoeuvreChip && (
         <SeeWhatsAheadBanner
           top={insets.top + instructionCardHeight + 8}
           count={etaSheetEvents.length}
@@ -6418,6 +6418,21 @@ export function MapScreen() {
         viaText={route?.summary}
         events={etaSheetEvents}
         loadLeaveTimes={loadLeaveTimes}
+        onShowMoreTimes={() => {
+          navOptionsSheetRef.current?.close();
+          if (!destinationLatLng) return;
+          navigation.navigate("PlanADrive", {
+            initialDestination: etaSheetPlace ?? { placeId: "", name: "Dropped pin", address: "", location: destinationLatLng },
+          });
+        }}
+        onOpenSettings={() => {
+          navOptionsSheetRef.current?.close();
+          navigation.navigate("Settings", { category: "navigationVoice" });
+        }}
+        onRoutes={() => {
+          navOptionsSheetRef.current?.close();
+          showRouteOverview();
+        }}
         onReportAlert={onNavOptionsReportAlert}
         onShareDrive={onNavOptionsShareEta}
         onOpenDetection={onNavOptionsOpenDetection}

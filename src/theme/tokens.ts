@@ -60,6 +60,9 @@ export const colors = {
   recenterGrey: DARK_GREY,
   /** The 1px edge on white map buttons. */
   hairline: "rgba(16,24,40,0.06)",
+  // Best time to leave chart: slower times red, faster ones yellow.
+  chartSlow: RED,
+  chartFast: YELLOW,
 } as const;
 
 export const spacing = {

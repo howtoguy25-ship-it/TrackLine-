@@ -20,6 +20,7 @@ import BriefcaseIcon from "lucide-react-native/icons/briefcase";
 import BriefcaseMedicalIcon from "lucide-react-native/icons/briefcase-medical";
 import Building2Icon from "lucide-react-native/icons/building-2";
 import BusIcon from "lucide-react-native/icons/bus";
+import AlarmClockIcon from "lucide-react-native/icons/alarm-clock";
 import CalendarIcon from "lucide-react-native/icons/calendar";
 import CameraIcon from "lucide-react-native/icons/camera";
 import CarIcon from "lucide-react-native/icons/car";
@@ -152,6 +153,7 @@ const ICONS = {
   "play-circle": CirclePlayIcon,
   "pause-circle": CirclePauseIcon,
   "add": PlusIcon,
+  "alarm": AlarmClockIcon,
   "add-circle": CirclePlusIcon,
   "airplane": PlaneIcon,
   "alert-circle": CircleAlertIcon,

@@ -16,7 +16,14 @@ jest.mock("@/context/LocationContext", () => ({
 }));
 const mockAuth: { user: { uid: string } | null } = { user: { uid: "u1" } };
 jest.mock("@/context/AuthContext", () => ({ useAuth: () => mockAuth }));
-jest.mock("@/components/trackys/Tracky", () => ({ Tracky: () => null }));
+jest.mock("@/components/art/ArriveOnTimeArt", () => ({ ArriveOnTimeArt: () => null }));
+jest.mock("@/services/plannedDriveReminders", () => ({ syncLeaveReminders: (...a: unknown[]) => mockSync(...a) }));
+const mockSync = jest.fn((..._a: unknown[]) => Promise.resolve());
+jest.mock("@/services/calendarEvents", () => ({
+  getCalendarPermissionStatus: () => Promise.resolve("undetermined"),
+  requestCalendarAccess: () => Promise.resolve(true),
+  getUpcomingEventsWithLocation: () => Promise.resolve([{ id: "e1", title: "Dentist", location: "1 George St", startDate: new Date(2030, 0, 1, 9, 10) }]),
+}));
 jest.mock("@/services/savedPlaces", () => ({ getSavedPlaces: () => Promise.resolve({ home: null, work: null, custom: [] }) }));
 jest.mock("@/services/searchHistory", () => ({ getSearchHistory: () => Promise.resolve([]) }));
 jest.mock("@/services/places", () => ({ searchPlaces: jest.fn(), getPlaceDetails: jest.fn() }));
@@ -36,6 +43,8 @@ jest.mock("@/services/plannedDrivesStore", () => ({
     return Promise.resolve("new");
   },
   deletePlannedDrive: jest.fn(() => Promise.resolve()),
+  getLeaveReminders: () => Promise.resolve(true),
+  setLeaveReminders: jest.fn(() => Promise.resolve()),
 }));
 const mockParams: { current: unknown } = { current: undefined };
 
@@ -103,11 +112,16 @@ describe("Plan a drive screen", () => {
     mockParams.current = undefined;
     mockAuth.user = { uid: "u1" };
     mockDirections.mockReset();
+    mockSync.mockClear();
   });
 
-  it("no drives: Tracky's empty state with Plan a drive", async () => {
+  it("no drives: Arrive on time, connect calendar, Plan a drive", async () => {
     await render(<PlanADriveScreen />);
     expect(screen.getByTestId("plan-empty")).toBeTruthy();
+    expect(screen.getByText("Arrive on time")).toBeTruthy();
+    expect(screen.getByText("Wherever you're going, TrackLine tells you when to leave based on live traffic.")).toBeTruthy();
+    await act(async () => fireEvent.press(screen.getByTestId("plan-calendar")));
+    expect(screen.getByText("Dentist")).toBeTruthy();
     await fireEvent.press(screen.getByTestId("plan-new"));
     expect(screen.getByTestId("plan-search")).toBeTruthy();
   });
@@ -120,9 +134,14 @@ describe("Plan a drive screen", () => {
 
   it("saved drives are listed with leave and arrive times", async () => {
     mockStore.drives = [drive("a", Date.now() + 3_600_000)];
+    mockDirections.mockResolvedValue({ durationSeconds: 900 });
     await render(<PlanADriveScreen />);
+    await waitFor(() => expect(screen.getByTestId("plan-live-a")).toHaveTextContent("15 mins now"));
     expect(screen.getByText("Place a")).toBeTruthy();
-    expect(screen.getByText(/^Leave .* · arrive .* · 20 mins$/)).toBeTruthy();
+    expect(screen.getByText(/^Arrive about .* · from Home$/)).toBeTruthy();
+    expect(screen.getByTestId("plan-reminders")).toBeTruthy();
+    // The phone's own leave alerts are synced to the list.
+    await waitFor(() => expect(mockSync).toHaveBeenCalledWith(mockStore.drives, true));
   });
 
   it("each time gets a real prediction; picking one and saving stores it", async () => {
@@ -142,7 +161,7 @@ describe("Plan a drive screen", () => {
   });
 
   it("a failed prediction says why and can't be picked", async () => {
-    mockParams.current = { initialDestination: { placeId: "p1", name: "Office", address: "", location: { latitude: -33.87, longitude: 151.21 } } };
+    mockParams.current = { initialDestination: { placeId: "p2", name: "Office", address: "", location: { latitude: -33.87, longitude: 151.21 } } };
     mockDirections.mockRejectedValue(new Error("Network request failed"));
     await render(<PlanADriveScreen />);
     await waitFor(() => expect(screen.getAllByText(/Couldn't get a time/).length).toBeGreaterThan(0));
