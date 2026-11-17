@@ -8,6 +8,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button, Chip } from "@/components/ui/Button";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
+import { SurfaceScheme, darkText } from "@/components/ui/surfaceScheme";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -85,6 +86,8 @@ interface TopCardProps {
   onHeightChange?: (height: number) => void;
 }
 
+const TOP_TEXT = darkText(colors.text) as string;
+
 export function RouteSelectionTopCard({
   originLabel,
   destinationLabel,
@@ -108,8 +111,10 @@ export function RouteSelectionTopCard({
       pointerEvents="box-none"
       onLayout={(e) => onHeightChange?.(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
     >
-      <View style={[styles.topCard, { borderRadius: 32 * k, padding: 10 * k, gap: 6 * k }]}>
-        <Button variant="ghost" icon="chevron-back" iconColor={colors.text} onPress={onBack} accessibilityLabel="Back" />
+      {/* The top card is always dark (Waze-style), over light or dark maps alike. */}
+      <SurfaceScheme value="dark">
+      <View style={[styles.topCard, { borderRadius: 32 * k, padding: 10 * k, gap: 6 * k }]} testID="route-preview-top">
+        <Button variant="ghost" icon="chevron-back" iconColor={TOP_TEXT} onPress={onBack} accessibilityLabel="Back" />
         <View style={[styles.field, { borderRadius: 22 * k, paddingHorizontal: 14 * k }]}>
           <Pressable
             onPress={onEditOrigin}
@@ -137,13 +142,14 @@ export function RouteSelectionTopCard({
           <Button
             variant="ghost"
             icon="swap-vertical"
-            iconColor={colors.text}
+            iconColor={TOP_TEXT}
             onPress={onSwap}
             accessibilityLabel={`Swap: start from ${destinationLabel} and go to ${originLabel}`}
             style={[styles.swapButton, { right: 4 * k, top: 48 * k - 22 }]}
           />
         </View>
       </View>
+      </SurfaceScheme>
       <View style={[styles.pillRow, { gap: 8 * k, marginTop: 8 * k }]} pointerEvents="box-none">
         <Chip
           onMap
@@ -374,6 +380,8 @@ interface SheetProps {
   errorText?: string | null;
   loadingText: string;
   onLeaveLater?: () => void;
+  /** Coming from Plan a drive: the secondary button is "Edit drive" (back to the plan). */
+  onEditDrive?: () => void;
   onGoNow: () => void;
   /** Whether the Go now fill is running. Turning it off resets the fill. */
   countdownRunning: boolean;
@@ -394,6 +402,7 @@ export function RouteSelectionSheet({
   errorText,
   loadingText,
   onLeaveLater,
+  onEditDrive,
   onGoNow,
   countdownRunning,
   onCountdownDone,
@@ -547,9 +556,11 @@ export function RouteSelectionSheet({
         {onDetails && (
           <Button variant="secondary" size="large" label="Trip details" onPress={onDetails} disabled={!hasRoutes} style={styles.footerButton} testID="trip-details" />
         )}
-        {onLeaveLater && (
-          <Button variant="secondary" size="large" label="Leave later" onPress={onLeaveLater} disabled={!hasRoutes} style={styles.footerButton} />
-        )}
+        {onEditDrive ? (
+          <Button variant="secondary" size="large" label="Edit drive" onPress={onEditDrive} style={styles.footerButton} testID="route-edit-drive" />
+        ) : onLeaveLater ? (
+          <Button variant="secondary" size="large" label="Leave later" onPress={onLeaveLater} disabled={!hasRoutes} style={styles.footerButton} testID="route-leave-later" />
+        ) : null}
         <Button
           variant="primary"
           size="large"

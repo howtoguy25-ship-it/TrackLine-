@@ -3383,11 +3383,16 @@ export function MapScreen() {
   // would hit -- never a separate/duplicated route-starting path. Cleared via setParams right
   // after so simply returning to Map normally afterward (closing the route picker, finishing the
   // trip) never re-triggers the same hand-off again.
+  // The route preview opened from Plan a drive offers "Edit drive" instead of "Leave later".
+  const [planDriveFor, setPlanDriveFor] = useState<PlaceDetails | null>(null);
+  const fromPlanADrive = !!pendingDestination && planDriveFor === pendingDestination;
+
   useEffect(() => {
     const place = navRoute.params?.planADriveDestination;
     if (!place) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-off hand-off from another screen (navigation params), cleared straight after
     onDestinationSelected(place);
+    setPlanDriveFor(place);
     navigation.setParams({ planADriveDestination: undefined });
   }, [navRoute.params?.planADriveDestination, onDestinationSelected, navigation]);
 
@@ -5683,6 +5688,7 @@ export function MapScreen() {
                   : `Finding a ${TRAVEL_MODE_LABELS[travelMode].toLowerCase()} route…`
               }
               onLeaveLater={travelMode === "driving" ? leaveLaterFromRouteSelection : undefined}
+              onEditDrive={fromPlanADrive && pendingDestination ? () => navigation.navigate("PlanADrive", { initialDestination: pendingDestination }) : undefined}
               onGoNow={goNowFromRouteSelection}
               countdownRunning={autoGoRunning && travelMode === "driving" && !reduceMotion}
               onCountdownDone={goNowFromRouteSelection}
