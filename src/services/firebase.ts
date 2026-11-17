@@ -19,6 +19,7 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   EmailAuthProvider,
+  updateProfile,
   type AuthCredential,
   type User,
 } from "@firebase/auth";
@@ -175,14 +176,14 @@ export async function reauthenticateWithGoogleCredential(idToken: string): Promi
   await reauthenticateWithCredential(current, GoogleAuthProvider.credential(idToken));
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<User> {
+export async function signUpWithEmail(email: string, password: string, displayName?: string): Promise<User> {
   const current = auth.currentUser;
-  if (current?.isAnonymous) {
-    const result = await linkWithCredential(current, EmailAuthProvider.credential(email, password));
-    return result.user;
-  }
-  const result = await createUserWithEmailAndPassword(auth, email, password);
-  return result.user;
+  const user = current?.isAnonymous
+    ? (await linkWithCredential(current, EmailAuthProvider.credential(email, password))).user
+    : (await createUserWithEmailAndPassword(auth, email, password)).user;
+  // The name from Create account. The account already exists if this fails, so don't fail sign-up.
+  if (displayName?.trim()) await updateProfile(user, { displayName: displayName.trim() }).catch(() => {});
+  return user;
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<User> {
