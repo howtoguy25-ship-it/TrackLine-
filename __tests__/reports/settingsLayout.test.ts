@@ -15,15 +15,15 @@ describe("Settings layout", () => {
     const lost = sections.filter((s) => !reachable.has(s) && !/dev only/.test(s));
     expect(lost).toEqual([]);
   });
-  it("Map information & overlays", () => {
-    expect(CATEGORY_SECTIONS.mapInfo).toEqual(["Reports", "Speedometer", "Map shortcuts"]);
+  it("Map information & overlays holds Reports, Speedometer and Map shortcuts (plus the map overlays)", () => {
+    for (const s of ["Reports", "Speedometer", "Speed limit sign", "Map shortcuts", "Mapped road features", "Live traffic (NSW)"]) expect(CATEGORY_SECTIONS.mapInfo).toContain(s);
   });
   it("Map shortcuts has Audio player, Sound button, Show Trackys, Traffic flow and Compass", () => {
-    const block = src.slice(src.indexOf('<Section title="Map shortcuts"'), src.indexOf('<Section title="Map appearance"'));
-    for (const label of ["Compass", "Audio player", "Sound button", "Show Trackys", "Traffic flow"]) expect(block).toContain(`label="${label}"`);
+    const block = src.slice(src.indexOf('<Section title="Map shortcuts"'), src.indexOf('<Section title="Voice guidance"'));
+    for (const label of ["Compass", "Audio player", "Sound button", "Show Trackys", "Traffic flow"]) expect(block).toContain(`title="${label}"`);
   });
   it("Speedometer has show, limit display with tick, thresholds and the chime", () => {
-    const block = src.slice(src.indexOf('<Section title="Speedometer"'));
-    for (const s of ["Show speedometer", "SPEED_LIMIT_DISPLAY_OPTIONS", "thresholdOptions(", "Alert at threshold (chime)"]) expect(block).toContain(s);
+    const block = src.slice(src.indexOf('<Section title="Speedometer"'), src.indexOf('<Section title="Map shortcuts"'));
+    for (const s of ["Show speedometer", "SPEED_LIMIT_DISPLAY_OPTIONS", 'openChoice("speedingThreshold")', "Speeding chime"]) expect(block).toContain(s);
   });
 });

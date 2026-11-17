@@ -2,7 +2,7 @@ import type { SignStyle } from "@/speedLimits/resolveLimit";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { shadow } from "@/theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
-import { StyleSheet, Animated, Pressable } from "react-native";
+import { StyleSheet, Animated, Pressable, View } from "react-native";
 import { Text } from "@/components/AppText";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
@@ -44,8 +44,6 @@ interface Props {
   showLimit?: boolean;
 }
 
-const AMBER_OVER_KMH = 1;
-const RED_OVER_KMH = 6;
 const CHIME_TRIGGER_OVER_KMH = 3;
 const CHIME_COOLDOWN_MS = 30_000;
 
@@ -70,8 +68,9 @@ export function LiveSpeedometer({
 }: Props) {
   const overBy = speedLimitKmh != null ? speedKmh - speedLimitKmh : 0;
   const shownSpeed = unit === "mph" ? Math.round(speedKmh / 1.609344) : Math.round(speedKmh);
-  const isAmber = speedLimitKmh != null && overBy >= AMBER_OVER_KMH && overBy < RED_OVER_KMH;
-  const isRed = speedLimitKmh != null && overBy >= RED_OVER_KMH;
+  // The ring turns red once you're past the speeding-alert threshold.
+  const isOverThreshold = speedLimitKmh != null && overBy >= thresholdKmh;
+  const isRed = isOverThreshold;
 
   const opacity = useState(() => new Animated.Value(visible ? 1 : 0))[0];
   useEffect(() => {
@@ -146,24 +145,20 @@ export function LiveSpeedometer({
       style={[styles.wrap, { opacity }, bottom != null && { bottom }]}
       accessibilityLabel={`Current speed ${shownSpeed} ${unit === "mph" ? "miles" : "kilometers"} per hour`}
     >
-      <Pressable onLongPress={onPressSign} disabled={!onPressSign} accessibilityHint={onPressSign ? "Long press to report a speed limit or school zone" : undefined}>
-      <Animated.View
-        style={[
-          styles.dial,
-          isAmber && styles.dialAmber,
-          isRed && styles.dialRed,
-          { transform: [{ scale: pulse }] },
-        ]}
-      >
-        <Text style={[styles.dialValue, (isAmber || isRed) && styles.dialValueDark]}>{shownSpeed}</Text>
-        <Text style={[styles.dialUnit, (isAmber || isRed) && styles.dialValueDark]}>{unit}</Text>
-      </Animated.View>
-      </Pressable>
+      {/* The limit sign sits ABOVE the dial with an 8pt gap, never touching it. */}
       {speedLimitKmh != null && showLimit && (
-        <Pressable onPress={onPressSign} disabled={!onPressSign} accessibilityRole={onPressSign ? "button" : undefined} accessibilityHint={onPressSign ? "Report a wrong limit or a school zone" : undefined} hitSlop={8}>
-          <SpeedLimitSign kmh={speedLimitKmh} unit={unit} signStyle={signStyle} schoolZone={schoolZone} />
+        <Pressable onPress={onPressSign} disabled={!onPressSign} accessibilityRole={onPressSign ? "button" : undefined} accessibilityHint={onPressSign ? "Report a wrong limit or a school zone" : undefined} hitSlop={8} style={styles.signBox} testID="speedometer-limit">
+          <View style={styles.signScale}>
+            <SpeedLimitSign kmh={speedLimitKmh} unit={unit} signStyle={signStyle} schoolZone={schoolZone} />
+          </View>
         </Pressable>
       )}
+      <Pressable onLongPress={onPressSign} disabled={!onPressSign} accessibilityHint={onPressSign ? "Long press to report a speed limit or school zone" : undefined}>
+        <Animated.View style={[styles.dial, isOverThreshold && styles.dialOver, { transform: [{ scale: pulse }] }]} testID="speedometer-dial">
+          <Text style={styles.dialValue}>{shownSpeed}</Text>
+          <Text style={styles.dialUnit}>{unit}</Text>
+        </Animated.View>
+      </Pressable>
       {explainerVisible && (
         <Animated.View style={styles.explainerBubble}>
           <Text style={styles.explainerText}>{explainerText(thresholdKmh)}</Text>
@@ -173,53 +168,44 @@ export function LiveSpeedometer({
   );
 }
 
-// Real, explicit request -- Waze-style redesign: smaller, cleaner dial than this app's original
-// (was 84px/3px border/heavy shadow). Every other measurement below (font sizes, border width,
-// shadow) scales down with it, not just this one constant, for a genuinely lighter look rather
-// than the same chunky dial just resized.
-const DIAL_SIZE = 64;
+// Waze-style dial: an 84pt dark circle with a thin ring, the speed big and bold, "km/h" under it.
+export const DIAL_SIZE = 84;
+export const SIGN_SIZE = 56;
+export const SIGN_GAP = 8;
 
 const styles = StyleSheet.create({
   wrap: {
     position: "absolute",
     left: 16,
     bottom: 24,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 10,
+    flexDirection: "column",
+    alignItems: "center",
+    gap: SIGN_GAP,
   },
+  signBox: { width: SIGN_SIZE, height: SIGN_SIZE, alignItems: "center", justifyContent: "center" },
+  signScale: { transform: [{ scale: SIGN_SIZE / 64 }] },
   dial: {
     width: DIAL_SIZE,
     height: DIAL_SIZE,
     borderRadius: DIAL_SIZE / 2,
-    backgroundColor: "rgba(17, 24, 39, 0.88)",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "#1C1D20",
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.28)",
     alignItems: "center",
     justifyContent: "center",
     ...shadow.floating,
   },
-  dialAmber: {
-    backgroundColor: "#F59E0B",
-    borderColor: "#FDE68A",
-  },
-  dialRed: {
-    backgroundColor: "#DC2626",
-    borderColor: "#FCA5A5",
-  },
+  dialOver: { borderColor: "#FF4D55", borderWidth: 4 },
   dialValue: {
-    fontSize: 20,
-    fontWeight: "900",
-    lineHeight: 22,
+    fontSize: 32,
+    fontWeight: "800",
+    lineHeight: 36,
     color: "#FFFFFF",
   },
-  dialValueDark: {
-    color: "#111827",
-  },
   dialUnit: {
-    fontSize: 9,
-    fontWeight: "700",
-    color: "#D1D5DB",
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#C9CCD1",
     marginTop: -2,
   },
   explainerBubble: {

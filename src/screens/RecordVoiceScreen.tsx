@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { View, Pressable, StyleSheet, SectionList, Alert } from "react-native";
+import { StyleSheet, SectionList, Alert } from "react-native";
+import { View, Pressable } from "@/components/ui/Surface";
+import { SurfaceScheme } from "@/components/ui/surfaceScheme";
+import { useSettingsNativeHeader } from "@/components/settings/SettingsKit";
 import { Text, TextInput } from "@/components/AppText";
 import Svg, { Circle } from "react-native-svg";
 import {
@@ -45,6 +48,7 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 export function RecordVoiceScreen() {
   const insets = useSafeAreaInsets();
+  const headerTheme = useSettingsNativeHeader();
   const { user } = useAuth();
 
   const [voiceName, setVoiceNameState] = useState("");
@@ -284,57 +288,59 @@ export function RecordVoiceScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerLabel}>Name this voice</Text>
-        <TextInput
-          value={voiceName}
-          onChangeText={onChangeVoiceName}
-          placeholder="e.g. My own voice"
-          placeholderTextColor={colors.textFaint}
-          style={styles.nameInput}
+    <SurfaceScheme value={headerTheme.scheme}>
+        <View style={[styles.container, { paddingBottom: insets.bottom, backgroundColor: headerTheme.colours.page }]}>
+        <View style={styles.header}>
+          <Text style={styles.headerLabel}>Name this voice</Text>
+          <TextInput
+            value={voiceName}
+            onChangeText={onChangeVoiceName}
+            placeholder="e.g. My own voice"
+            placeholderTextColor={colors.textFaint}
+            style={styles.nameInput}
+          />
+          <Text style={styles.progressText}>
+            {recordedCount} of {total} recorded
+          </Text>
+        </View>
+        <SectionList
+          sections={sections}
+          keyExtractor={(clip) => clip.key}
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
+          renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
+          renderSectionFooter={({ section }) =>
+            section.title === "Start of drive" ? (
+              <View style={styles.addPhraseRow}>
+                <TextInput
+                  value={newPhrase}
+                  onChangeText={setNewPhrase}
+                  placeholder={
+                    customPhrases.length >= CUSTOM_START_PHRASE_MAX_COUNT
+                      ? `That's the most you can add (${CUSTOM_START_PHRASE_MAX_COUNT})`
+                      : "Add your own start phrase…"
+                  }
+                  placeholderTextColor={colors.textFaint}
+                  style={styles.addPhraseInput}
+                  maxLength={CUSTOM_START_PHRASE_MAX_LENGTH}
+                  editable={customPhrases.length < CUSTOM_START_PHRASE_MAX_COUNT}
+                  returnKeyType="done"
+                  onSubmitEditing={onAddPhrase}
+                />
+                <Button
+                  variant="primary"
+                  icon="add"
+                  onPress={onAddPhrase}
+                  disabled={!canAddPhrase}
+                  accessibilityLabel="Add phrase"
+                />
+              </View>
+            ) : null
+          }
+          renderItem={({ item }) => renderClip(item)}
+          keyboardShouldPersistTaps="handled"
         />
-        <Text style={styles.progressText}>
-          {recordedCount} of {total} recorded
-        </Text>
       </View>
-      <SectionList
-        sections={sections}
-        keyExtractor={(clip) => clip.key}
-        contentContainerStyle={{ paddingBottom: spacing.xxl }}
-        renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
-        renderSectionFooter={({ section }) =>
-          section.title === "Start of drive" ? (
-            <View style={styles.addPhraseRow}>
-              <TextInput
-                value={newPhrase}
-                onChangeText={setNewPhrase}
-                placeholder={
-                  customPhrases.length >= CUSTOM_START_PHRASE_MAX_COUNT
-                    ? `That's the most you can add (${CUSTOM_START_PHRASE_MAX_COUNT})`
-                    : "Add your own start phrase…"
-                }
-                placeholderTextColor={colors.textFaint}
-                style={styles.addPhraseInput}
-                maxLength={CUSTOM_START_PHRASE_MAX_LENGTH}
-                editable={customPhrases.length < CUSTOM_START_PHRASE_MAX_COUNT}
-                returnKeyType="done"
-                onSubmitEditing={onAddPhrase}
-              />
-              <Button
-                variant="primary"
-                icon="add"
-                onPress={onAddPhrase}
-                disabled={!canAddPhrase}
-                accessibilityLabel="Add phrase"
-              />
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) => renderClip(item)}
-        keyboardShouldPersistTaps="handled"
-      />
-    </View>
+    </SurfaceScheme>
   );
 }
 

@@ -259,3 +259,52 @@ export const REPORT_STATUS: Record<ReportStatusKey, { fill: string; on: string; 
   amber: { fill: AMBER_SOFT, on: AMBER_TEXT, dot: AMBER, label: "Check" },
   red: { fill: RED_SOFT, on: RED_TEXT, dot: RED, label: "Problem" },
 };
+
+// ---- Settings ---------------------------------------------------------------------------------
+
+/** Every settings page, light and dark: grouped cards on a grey page. */
+export const SETTINGS_SURFACES = {
+  light: {
+    page: "#F2F3F5",
+    card: WHITE,
+    text: INK,
+    subtext: "#5F646C",
+    separator: "#E3E5E8",
+    tick: BLUE_TEXT,
+    highlight: SELECTED_TINT.light,
+    input: "#F2F3F5",
+    danger: RED_TEXT,
+    switchOff: "#C9CCD1",
+  },
+  dark: {
+    page: "#0E0F11",
+    card: "#1C1D20",
+    text: "#F2F3F5",
+    subtext: "#A3A8B0",
+    separator: "#2A2C30",
+    tick: BLUE,
+    highlight: SELECTED_TINT.dark,
+    input: "#26282C",
+    danger: RED_TEXT_DARK,
+    switchOff: "#3A3D42",
+  },
+} as const;
+
+/** What a settings row is about; its icon tile takes the meaning's colour. */
+export type SettingsIconMeaning = "map" | "routes" | "reports" | "safety" | "privacy" | "sound" | "account";
+
+/**
+ * Settings icon tiles by meaning: map & navigation blue, routes purple, reports yellow (the
+ * report button's yellow, so its glyph is ink like the report button's), safety & speed red,
+ * privacy & visibility green, voice & sound teal, account & about grey. Glyphs read on their
+ * tile at 3:1 or better (checked in __tests__/design/colours.test.ts).
+ */
+export const SETTINGS_ICON: Record<SettingsIconMeaning, { fill: string; glyph: string }> = {
+  map: { fill: "#1673D9", glyph: WHITE },
+  routes: { fill: PURPLE, glyph: WHITE },
+  reports: { fill: YELLOW, glyph: INK },
+  safety: { fill: "#D2303A", glyph: WHITE },
+  privacy: { fill: "#1E8449", glyph: WHITE },
+  sound: { fill: "#0B7F80", glyph: WHITE },
+  account: { fill: "#6B7078", glyph: WHITE },
+};

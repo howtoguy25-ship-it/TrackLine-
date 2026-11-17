@@ -11,6 +11,8 @@ jest.mock("@/services/firebase", () => ({ auth: { currentUser: null }, db: {} })
 const mockGetDoc = jest.fn(() => Promise.resolve({ exists: () => true }));
 jest.mock("firebase/firestore", () => ({ doc: () => ({}), getDocFromServer: () => mockGetDoc() }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+jest.mock("@react-navigation/native", () => ({ useNavigation: () => ({ setOptions: () => {}, navigate: () => {}, goBack: () => {} }) }));
+jest.mock("@/context/SettingsContext", () => ({ useSettings: () => ({ settings: { appearance: "light" }, updateSettings: () => Promise.resolve() }) }));
 jest.mock("@/config/getBuildStamp", () => ({ getBuildStamp: () => "1.3.0 (203) · c0ffee1" }));
 let mockLinked = true;
 let mockLoaded: object | null = null;
@@ -44,7 +46,7 @@ describe("Diagnostics", () => {
     await render(<DiagnosticsScreen />);
     await waitFor(() => screen.getByText("Yes (not signed in)"));
     // Both the token row and the style row say so.
-    expect(screen.getAllByText("No -- Map service key missing (the build has placeholder text instead of the key)")).toHaveLength(2);
+    expect(screen.getAllByText("No — Map service key missing (the build has placeholder text instead of the key)")).toHaveLength(2);
     expect(screen.getByText("Failed · Mapbox · HTTP 401 · Map service rejected the key")).toBeTruthy();
     expect(screen.getByText("OK · Google · HTTP 200 · 3 routes")).toBeTruthy();
     expect(screen.getAllByText("Not asked yet this session").length).toBeGreaterThan(0);
@@ -68,7 +70,7 @@ describe("Diagnostics", () => {
   it("Firebase down -> says why", async () => {
     mockGetDoc.mockImplementationOnce(() => Promise.reject(new Error("Failed to get document because the client is offline.")));
     await render(<DiagnosticsScreen />);
-    await waitFor(() => screen.getByText("No -- Failed to get document because the client is offline."));
+    await waitFor(() => screen.getByText("No — Failed to get document because the client is offline."));
   });
 
   it("directions line wording", () => {

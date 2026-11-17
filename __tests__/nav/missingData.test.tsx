@@ -32,7 +32,10 @@ describe("missing data falls back to the plain instruction", () => {
       </SafeAreaProvider>
     );
     expect(screen.queryByTestId("lane-strip")).toBeNull();
-    expect(screen.getAllByText(/Take the exit/).length).toBeGreaterThan(0);
+    // No street from the route: the bar says "Continue"; the full sentence is spoken and read by
+    // VoiceOver, never printed in the bar.
+    expect(screen.getByTestId("nav-street").props.children).toBe("Continue");
+    expect(screen.getByLabelText(/Take the exit/)).toBeTruthy();
   });
   it("lane strip with no lanes draws nothing", async () => {
     await render(<LaneStrip lanes={[]} />);

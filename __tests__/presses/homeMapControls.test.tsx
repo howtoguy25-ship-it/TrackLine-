@@ -17,7 +17,6 @@ function props(overrides: Record<string, unknown> = {}) {
     bottomInset: 0,
     topInset: 0,
     unreadCount: 0,
-    dashcamBadge: false,
     onMenu: jest.fn(),
     showCompass: true,
     bearing: shared(0),

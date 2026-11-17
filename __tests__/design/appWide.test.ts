@@ -60,7 +60,8 @@ describe("one icon set", () => {
       "src/map-v2/layers/MapIcons.tsx",
       "src/screens/OsmMarkerSheet.tsx",
       "src/screens/InboxScreen.tsx",
-      "src/screens/SettingsScreen.tsx",
+      // Settings > Map display: "Your map marker" previews draw the same vehicle badge as the map.
+      "src/components/settings/SettingsPreviews.tsx",
       // Settings > Reports: each item's icon is the same glyph as its map pin (MapIcons "feature:").
       "src/components/settings/ReportItemIcon.tsx",
     ].map((p) => p.split("/").join(path.sep))
@@ -121,7 +122,7 @@ describe("meaning colours stay in the theme", () => {
       sourceFiles()
         .filter((f) => !theme(f) && read(f).includes(token))
         .map((f) => f.split(path.sep).join("/"));
-    // NavBottomBar's in-drive Re-centre is the other re-centre button.
+    // NavBottomBar's in-drive Re-centre (above the bar, after a pan) is the other re-centre button.
     expect(users("colors.recenterGrey")).toEqual(["src/components/NavBottomBar.tsx"]);
     // The street pill's "N reports around you" mark is about reports, so it's report yellow.
     expect(users("colors.reportYellow")).toEqual(["src/components/StreetPill.tsx"]);

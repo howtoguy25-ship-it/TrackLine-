@@ -30,12 +30,17 @@ const BUILD_STAMP = { commit: gitShortHash(), builtAt: new Date().toISOString() 
 // loudly in the build log (the app itself then shows "Map service key missing" and routes with
 // Google -- see src/config/mapboxToken.ts, which applies the same rule).
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_PUBLIC_TOKEN;
-if (process.env.EAS_BUILD && !/^pk\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test((MAPBOX_TOKEN || "").trim())) {
-  console.warn(
-    "\n*** MAPBOX_PUBLIC_TOKEN is " +
-      (!MAPBOX_TOKEN ? "not set" : /\*|include-sensitive/.test(MAPBOX_TOKEN) ? "placeholder text, not a token" : "not a pk. public token") +
-      " -- the map will not load in this build. Set it to your Mapbox public token (pk.…) in EAS. ***\n"
-  );
+// On an EAS build machine, a missing or placeholder token FAILS the build: shipping it would
+// mean a blank map on every phone. (Locally, e.g. `expo start` without the variable, the app
+// still runs and shows "Map service key missing".)
+{
+  const { mapboxTokenProblem } = require("./scripts/mapboxTokenCheck");
+  const problem = mapboxTokenProblem(MAPBOX_TOKEN);
+  if (problem && process.env.EAS_BUILD) {
+    throw new Error(
+      `MAPBOX_PUBLIC_TOKEN is ${problem}. Set it to your Mapbox public token (pk.…) in expo.dev > Environment variables for this build's environment, then rebuild.`
+    );
+  }
 }
 
 module.exports = {

@@ -38,7 +38,7 @@ beforeEach(() => {
 describe("Reports list", () => {
   it("shows every section and every item with its icon, title, description and a chevron to its detail", async () => {
     await render(<ReportsSettingsScreen />);
-    for (const section of SECTION_ORDER) expect(screen.getByText(SECTION_TITLES[section])).toBeTruthy();
+    for (const section of SECTION_ORDER) expect(screen.getAllByText(SECTION_TITLES[section]).length).toBeGreaterThan(0);
     for (const item of REPORT_ITEMS) {
       expect(screen.getByTestId(`report-icon-${item.id}`)).toBeTruthy();
       expect(screen.getByText(item.description)).toBeTruthy();
