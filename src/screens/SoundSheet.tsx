@@ -15,7 +15,7 @@ import {
   type AudioRoute,
   type AudioRouteType,
 } from "audio-route";
-import type { SpokenDirectionsMode } from "@/services/settings";
+import { SPOKEN_DIRECTIONS_OPTIONS } from "@/settings/choiceLists";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 
 // Taller than it was, to fit the "Listening on" row without clipping the voice row below it.
@@ -36,12 +36,6 @@ const ROUTE_ICONS: Record<AudioRouteType, IconName> = {
 // or pulling out headphones shows up without closing and reopening it.
 const ROUTE_REFRESH_MS = 2000;
 
-const SPOKEN_DIRECTIONS_OPTIONS: { key: SpokenDirectionsMode; label: string; description: string }[] = [
-  { key: "normal", label: "Normal", description: "Hear every turn and alert" },
-  { key: "lessChatty", label: "Less chatty", description: "Fewer routine turn call-outs" },
-  { key: "onlyAlerts", label: "Only alerts", description: "Police, hazards and cameras only -- no turn-by-turn speech" },
-  { key: "off", label: "Off", description: "No spoken guidance at all" },
-];
 
 interface Props {
   onClose: () => void;
@@ -126,11 +120,11 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
               key={option.key}
               onPress={() => updateSettings({ spokenDirections: option.key })}
               style={({ pressed }) => [styles.radioRow, pressed && { opacity: pressedOpacity }]}
-              accessibilityLabel={`${option.label}. ${option.description}`}
+              accessibilityLabel={`${option.label}. ${option.hint}`}
             >
               <View style={styles.radioTextWrap}>
                 <Text style={styles.radioLabel}>{option.label}</Text>
-                <Text style={styles.radioDescription}>{option.description}</Text>
+                <Text style={styles.radioDescription}>{option.hint}</Text>
               </View>
               <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
                 {selected && <View style={styles.radioInner} />}

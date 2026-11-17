@@ -135,6 +135,8 @@ export interface AppSettings {
   // priority over) the existing defaultVoiceEnabled/voiceEnabled master toggle -- that one is
   // "is guidance speech on at all", this is "how much of it".
   spokenDirections: SpokenDirectionsMode;
+  /** Settings and other full screens: follow the phone (auto), or always light / dark. */
+  appearance: "auto" | "light" | "dark";
   // Real, explicit request -- Settings > General > Distance units. Default "km" per "default
   // units km, Australian English" -- see utils/navFormat.ts's own formatDistance for the exact
   // threshold rules in each unit.
@@ -206,7 +208,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertIconTheme: "default",
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
-  speedingThresholdKmh: 3,
+  speedingThresholdKmh: 5,
   lastTravelMode: "drive",
   mapLabels: "local",
   schoolZonesShowOnMap: true,
@@ -218,6 +220,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   show3DBuildings: false,
   routeAvoid: DEFAULT_ROUTE_AVOID,
   spokenDirections: "normal",
+  appearance: "auto",
   distanceUnit: "km",
   visibility: "ghost",
   showNameOnReports: false,

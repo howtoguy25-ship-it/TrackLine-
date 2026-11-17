@@ -225,7 +225,7 @@ export function VoicePickerScreen() {
             subtitle={
               row.recordedCount >= total
                 ? "Your own recordings"
-                : `${row.recordedCount} of ${total} recorded -- your phone's voice fills in the rest`
+                : `${row.recordedCount} of ${total} recorded. Your phone's voice fills in the rest`
             }
             selected={voiceIdentifier === RECORDED_VOICE_IDENTIFIER}
             previewing={previewingKey === RECORDED_VOICE_IDENTIFIER}
@@ -253,8 +253,8 @@ export function VoicePickerScreen() {
             name={row.entry.name}
             subtitle={
               installed
-                ? `${installed.name} -- directions are spoken in this language`
-                : "Not installed on this phone -- add it in your phone's text-to-speech settings"
+                ? `${installed.name}. Directions are spoken in this language`
+                : "Not installed on this phone. Add it in your phone's text-to-speech settings"
             }
             enhanced={installed?.quality === "Enhanced"}
             selected={!!installed && voiceIdentifier === installed.identifier}
@@ -329,7 +329,7 @@ export function VoicePickerScreen() {
             section.title === "My recorded voices" && section.data.length === 0 ? (
               <Text style={styles.emptySectionText}>
                 No recorded voice yet. Tap &quot;Record your own&quot; above and record as many of the
-                turn-by-turn phrases as you like -- your phone&apos;s voice fills in any you skip.
+                turn-by-turn phrases as you like. Your phone&apos;s voice fills in any you skip.
               </Text>
             ) : null
           }

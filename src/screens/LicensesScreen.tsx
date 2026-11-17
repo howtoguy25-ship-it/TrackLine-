@@ -1,10 +1,6 @@
 import React from "react";
-import { Button } from "@/components/ui/Button";
-import { View, Pressable, StyleSheet, ScrollView, Linking } from "react-native";
-import { Text } from "@/components/AppText";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
-import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { Linking } from "react-native";
+import { SettingsPage, SettingsRow, SettingsSection } from "@/components/settings/SettingsKit";
 
 // Real, explicit request (Copyright/trademark safety audit, Part 4) -- "Add About>'Licences &
 // attributions' screen." Lists every real bundled third-party asset/dataset this app actually
@@ -22,14 +18,14 @@ interface LicenseEntry {
 const ENTRIES: LicenseEntry[] = [
   {
     name: "Rubik (the app's typeface)",
-    license: "SIL Open Font License 1.1 -- © The Rubik Project Authors",
+    license: "SIL Open Font License 1.1 — © The Rubik Project Authors",
     description:
       "The font used throughout the app, in Regular, Medium, SemiBold and Bold. Bundled unmodified via the @expo-google-fonts/rubik package.",
     url: "https://openfontlicense.org",
   },
   {
     name: "OpenStreetMap",
-    license: "Open Database License (ODbL) -- © OpenStreetMap contributors",
+    license: "Open Database License (ODbL) — © OpenStreetMap contributors",
     description:
       "The roads, places and names on the map (through Mapbox's map data, which is built on OpenStreetMap), plus traffic-light and speed-camera locations and nearby fuel/restaurant/hotel/parking place data, queried live via the Overpass API.",
     url: "https://www.openstreetmap.org/copyright",
@@ -42,7 +38,7 @@ const ENTRIES: LicenseEntry[] = [
   },
   {
     name: "Mapbox",
-    license: "Mapbox Terms of Service -- © Mapbox, © OpenStreetMap",
+    license: "Mapbox Terms of Service — © Mapbox, © OpenStreetMap",
     description:
       "The map itself: map tiles, satellite imagery, live traffic and map rendering (@rnmapbox/maps). Also road-network map matching, used server-side to snap a visible driver's (delayed) location samples to the road they were on before showing them to other drivers (see Settings > Privacy).",
     url: "https://www.mapbox.com/legal/tos",
@@ -74,7 +70,7 @@ const ENTRIES: LicenseEntry[] = [
   {
     name: "\"Emergency vehicles\" dataset (Roboflow)",
     license: "Creative Commons Attribution 4.0 (CC BY 4.0)",
-    description: "This app's own small police-car/ambulance/firetruck classifier was fine-tuned on this labeled dataset (see training/README.md) -- the trained model ships on-device; the original images don't.",
+    description: "This app's own small police-car/ambulance/firetruck classifier was fine-tuned on this labelled dataset (see training/README.md). The trained model ships on the phone; the original images don't.",
     url: "https://universe.roboflow.com/traffic-rbwic/emergency-vehicles-snzgj",
   },
   {
@@ -84,66 +80,24 @@ const ENTRIES: LicenseEntry[] = [
   },
   {
     name: "Open-source software packages",
-    license: "Various (MIT, Apache-2.0, BSD, ISC -- no copyleft)",
-    description: "Every other library this app is built on (React Native, Expo, Firebase, and the rest). Run `npx license-checker --summary` from the repo root for the full, real list -- see COPYRIGHT_AUDIT.md.",
+    license: "Various (MIT, Apache-2.0, BSD, ISC; no copyleft)",
+    description: "Every other library this app is built on (React Native, Expo, Firebase, and the rest). Run `npx license-checker --summary` from the repo root for the full list (see COPYRIGHT_AUDIT.md).",
   },
 ];
 
 export function LicensesScreen() {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-
   return (
-    <View style={[styles.container, { paddingTop: insets.top + spacing.md }]}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Licences &amp; attributions</Text>
-        <Button
-          variant="ghost"
-          icon="close"
-          iconColor={colors.textMuted}
-          onPress={() => navigation.goBack()}
-          accessibilityLabel="Close"
-        />
-      </View>
-
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
-        <Text style={styles.intro}>
-          TrackLine&apos;s own original artwork (the Tracky characters, the app icon, and every alert
-          icon) is hand-made for this app, not traced or downloaded. Everything below is
-          third-party data, models, or services this app genuinely uses, with their real source
-          and licence.
-        </Text>
+    <SettingsPage title="Licences and attributions" testID="licences-screen">
+      <SettingsSection footer="TrackLine's own artwork (the Tracky characters, the app icon and every alert icon) is made for this app. Everything here is third-party data, models or services the app uses, with its source and licence.">
         {ENTRIES.map((entry) => (
-          <Pressable
+          <SettingsRow
             key={entry.name}
-            style={({ pressed }) => [styles.entry, entry.url && pressed && { opacity: pressedOpacity }]}
-            onPress={entry.url ? () => Linking.openURL(entry.url!) : undefined}
-            disabled={!entry.url}
-          >
-            <Text style={styles.entryName}>{entry.name}</Text>
-            <Text style={styles.entryLicense}>{entry.license}</Text>
-            <Text style={styles.entryDescription}>{entry.description}</Text>
-            {entry.url && <Text style={styles.entryLink}>{entry.url}</Text>}
-          </Pressable>
+            title={entry.name}
+            subtitle={`${entry.license}. ${entry.description}`}
+            onPress={entry.url ? () => void Promise.resolve(Linking.openURL(entry.url!)).catch(() => {}) : undefined}
+          />
         ))}
-      </ScrollView>
-    </View>
+      </SettingsSection>
+    </SettingsPage>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
-  title: { fontSize: 20, fontWeight: "800", color: colors.text, flex: 1, marginRight: spacing.sm },
-  intro: { fontSize: 13, color: colors.textMuted, lineHeight: 19, marginBottom: spacing.lg },
-  entry: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  entryName: { fontSize: 14, fontWeight: "700", color: colors.text },
-  entryLicense: { fontSize: 12, fontWeight: "700", color: colors.accent, marginTop: 2 },
-  entryDescription: { fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 17 },
-  entryLink: { fontSize: 11, color: colors.textFaint, marginTop: 4 },
-});

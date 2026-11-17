@@ -1,16 +1,12 @@
 import React, { useEffect, useState, useSyncExternalStore } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { doc, getDocFromServer } from "firebase/firestore";
-import { Text } from "@/components/AppText";
-import { Button } from "@/components/ui/Button";
+import { SettingsActionRow, SettingsPage, SettingsRow, SettingsSection } from "@/components/settings/SettingsKit";
 import { env } from "@/config/env";
 import { getBuildStamp } from "@/config/getBuildStamp";
 import { TOKEN_STATE_TEXT, mapboxTokenState, mapboxTokenTail } from "@/config/mapboxToken";
 import { getDiagnostics, subscribeDiagnostics, type DirectionsRecord } from "@/diagnostics/diagnostics";
 import { isMapboxNativeLinked } from "@/map-v2/mapbox";
 import { auth, db } from "@/services/firebase";
-import { colors, radius, spacing } from "@/theme/tokens";
 
 // Settings > About > Diagnostics: what's really working in this build, checkable on the phone.
 // Keys are never shown -- only yes/no, and the last 4 characters of the Mapbox public token.
@@ -47,7 +43,6 @@ async function probeFirebase(): Promise<FirebaseCheck> {
 }
 
 export function DiagnosticsScreen() {
-  const insets = useSafeAreaInsets();
   const diag = useSyncExternalStore(subscribeDiagnostics, getDiagnostics, getDiagnostics);
   const [firebase, setFirebase] = useState<FirebaseCheck>({ state: "checking" });
 
@@ -71,11 +66,11 @@ export function DiagnosticsScreen() {
   const style = diag.mapStyle;
 
   const rows: [string, string, boolean | null][] = [
-    ["Mapbox token present", tokenState === "ok" ? `Yes (…${tail})` : `No -- ${TOKEN_STATE_TEXT[tokenState]}`, tokenState === "ok"],
+    ["Mapbox token present", tokenState === "ok" ? `Yes (…${tail})` : `No — ${TOKEN_STATE_TEXT[tokenState]}`, tokenState === "ok"],
     ["Mapbox map engine in this build", isMapboxNativeLinked() ? "Yes" : "No", isMapboxNativeLinked()],
     [
       "Mapbox style loaded",
-      style == null ? "Map not opened yet" : style.loaded ? "Yes" : `No -- ${style.error ?? "unknown error"}`,
+      style == null ? "Map not opened yet" : style.loaded ? "Yes" : `No — ${style.error ?? "unknown error"}`,
       style == null ? null : style.loaded,
     ],
     ...DIRECTIONS_ROWS.map(([key, label]): [string, string, boolean | null] => {
@@ -85,38 +80,29 @@ export function DiagnosticsScreen() {
     ["Google key present", env.googleDirectionsApiKey && env.googlePlacesApiKey ? "Yes" : "No", !!(env.googleDirectionsApiKey && env.googlePlacesApiKey)],
     [
       "Firebase connected",
-      firebase.state === "checking" ? "Checking…" : firebase.state === "ok" ? `Yes${firebase.uid ? " (signed in)" : " (not signed in)"}` : `No -- ${firebase.reason}`,
+      firebase.state === "checking" ? "Checking…" : firebase.state === "ok" ? `Yes${firebase.uid ? " (signed in)" : " (not signed in)"}` : `No — ${firebase.reason}`,
       firebase.state === "checking" ? null : firebase.state === "ok",
     ],
     ["Build", getBuildStamp(), null],
   ];
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xl }]} testID="diagnostics-screen">
-      <Text style={styles.title}>Diagnostics</Text>
-      <Text style={styles.helper}>What&apos;s working in this build right now. Directions rows fill in as you look up routes.</Text>
-      {rows.map(([label, value, ok]) => (
-        <View key={label} style={styles.row} testID={`diag-${label}`}>
-          <Text style={styles.label}>
-            {ok === true ? "✅ " : ok === false ? "❌ " : "• "}
-            {label}
-          </Text>
-          <Text style={styles.value} selectable>
-            {value}
-          </Text>
-        </View>
-      ))}
-      <Button variant="secondary" label="Check again" onPress={checkFirebase} testID="diag-recheck" />
-    </ScrollView>
+    <SettingsPage title="Diagnostics" testID="diagnostics-screen">
+      <SettingsSection footer="What's working in this build right now. Directions rows fill in as you look up routes.">
+        {rows.map(([label, value, ok]) => (
+          <SettingsRow
+            key={label}
+            icon={ok === true ? "checkmark-circle" : ok === false ? "close-circle" : "information-circle"}
+            meaning={ok === true ? "privacy" : ok === false ? "safety" : "account"}
+            title={label}
+            subtitle={value}
+            testID={`diag-${label}`}
+          />
+        ))}
+      </SettingsSection>
+      <SettingsSection>
+        <SettingsActionRow title="Check again" onPress={checkFirebase} testID="diag-recheck" />
+      </SettingsSection>
+    </SettingsPage>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.surfaceMuted },
-  content: { paddingHorizontal: spacing.lg, gap: spacing.sm },
-  title: { fontSize: 24, fontWeight: "700", color: colors.text },
-  helper: { fontSize: 14, color: colors.textMuted, marginBottom: spacing.sm },
-  row: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, gap: 4 },
-  label: { fontSize: 15, fontWeight: "600", color: colors.text },
-  value: { fontSize: 14, color: colors.textMuted },
-});

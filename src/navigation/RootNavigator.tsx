@@ -5,6 +5,8 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MapScreen } from "@/screens/MapScreen";
 import { SettingsScreen, SETTINGS_CATEGORY_LABELS, type SettingsCategory } from "@/screens/SettingsScreen";
+import { SettingsChoiceScreen } from "@/screens/SettingsChoiceScreen";
+import type { ChoiceListId } from "@/settings/choiceLists";
 import { SettingsCategoriesScreen } from "@/screens/SettingsCategoriesScreen";
 import { MainMenuScreen } from "@/screens/MainMenuScreen";
 import { InboxScreen } from "@/screens/InboxScreen";
@@ -64,7 +66,9 @@ export type RootStackParamList = {
   // Real, explicit request (Waze-style redesign Phase 5) -- optional category filters this
   // screen down to just one group's real sections (see SettingsScreen.tsx's own shouldShow).
   // Omitted (every pre-existing navigate("Settings") call site) shows every section, unchanged.
-  Settings: { category?: SettingsCategory } | undefined;
+  /** highlight: a setting that search jumped to (its row flashes). */
+  Settings: { category?: SettingsCategory; highlight?: string } | undefined;
+  SettingsChoice: { list: ChoiceListId };
   // The new top-level Waze-style category list this screen is reached from. See
   // SettingsCategoriesScreen.tsx.
   SettingsCategories: undefined;
@@ -193,7 +197,7 @@ export function RootNavigator() {
           headerTintColor: colors.accent,
         }}
       >
-        <Stack.Screen name="Map" component={MapScreen} />
+        <Stack.Screen name="Map" component={MapScreen} options={{ title: "Map" }} />
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
@@ -202,38 +206,39 @@ export function RootNavigator() {
             title: route.params?.category ? SETTINGS_CATEGORY_LABELS[route.params.category] : "Settings",
           })}
         />
-        <Stack.Screen name="SettingsCategories" component={SettingsCategoriesScreen} />
+        <Stack.Screen name="SettingsCategories" component={SettingsCategoriesScreen} options={{ title: "Settings" }} />
         <Stack.Screen
           name="SignIn"
           component={SignInScreen}
-          options={{ headerShown: true, title: "Sign In" }}
+          options={{ headerShown: true, title: "Sign in" }}
         />
         <Stack.Screen
           name="MainMenu"
           component={MainMenuScreen}
           // An ordinary screen, not a modal: every row opens another screen, and on iOS a
           // screen opened from a modal is drawn underneath it (see navigation/modalStack.ts).
-          options={{ animation: "slide_from_left" }}
+          options={{ animation: "slide_from_left", title: "Menu" }}
         />
-        <Stack.Screen name="Inbox" component={InboxScreen} />
-        <Stack.Screen name="PlanADrive" component={PlanADriveScreen} />
-        <Stack.Screen name="Help" component={HelpScreen} />
+        <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: "Inbox" }} />
+        <Stack.Screen name="PlanADrive" component={PlanADriveScreen} options={{ title: "Plan a drive" }} />
+        <Stack.Screen name="Help" component={HelpScreen} options={{ title: "Help" }} />
         <Stack.Screen name="AccountRecovery" component={AccountRecoveryScreen} options={{ headerShown: true, title: "Account help" }} />
         <Stack.Screen name="SupportRequests" component={SupportRequestsScreen} options={{ headerShown: true, title: "Contact support" }} />
         <Stack.Screen name="PhoneSignIn" component={PhoneSignInScreen} options={{ headerShown: true, title: "Phone number" }} />
-        <Stack.Screen name="Licenses" component={LicensesScreen} />
+        <Stack.Screen name="Licenses" component={LicensesScreen} options={{ title: "Licences" }} />
         <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} options={{ headerShown: true, title: "Diagnostics" }} />
+        <Stack.Screen name="SettingsChoice" component={SettingsChoiceScreen} options={{ headerShown: true, title: "Settings" }} />
         {/* Development builds only (a JS bundle served by Metro: __DEV__). */}
         {__DEV__ ? <Stack.Screen name="SmokeTest" component={SmokeTestScreen} options={{ headerShown: true, title: "Smoke test" }} /> : null}
-        <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} />
-        <Stack.Screen name="TrackyCustomizer" component={TrackyCustomizerScreen} />
+        <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} options={{ title: "Your Tracky" }} />
+        <Stack.Screen name="TrackyCustomizer" component={TrackyCustomizerScreen} options={{ title: "Make your Tracky" }} />
         <Stack.Screen
           name="VehicleHistory"
           component={VehicleHistoryScreen}
-          options={{ headerShown: true, title: "Vehicle History" }}
+          options={{ headerShown: true, title: "Vehicle history" }}
         />
         <Stack.Screen name="ReportsSettings" component={ReportsSettingsScreen} options={{ headerShown: true, title: "Reports" }} />
-        <Stack.Screen name="ReportItemSettings" component={ReportItemSettingsScreen} options={{ headerShown: true, title: "" }} />
+        <Stack.Screen name="ReportItemSettings" component={ReportItemSettingsScreen} options={{ headerShown: true, title: "Report" }} />
         <Stack.Screen name="Moderation" component={ModerationScreen} options={{ headerShown: true, title: "Moderation queue" }} />
         <Stack.Screen
           name="VehicleCheck"
@@ -243,17 +248,17 @@ export function RootNavigator() {
         <Stack.Screen
           name="RevCheck"
           component={RevCheckScreen}
-          options={{ headerShown: true, title: "REV Check", presentation: MODAL_SCREENS.RevCheck as "modal" }}
+          options={{ headerShown: true, title: "REV check", presentation: MODAL_SCREENS.RevCheck as "modal" }}
         />
         <Stack.Screen
           name="OwnerDashboard"
           component={OwnerDashboardScreen}
-          options={{ headerShown: true, title: "Owner Dashboard" }}
+          options={{ headerShown: true, title: "Owner dashboard" }}
         />
         <Stack.Screen
           name="DocumentScan"
           component={DocumentScanScreen}
-          options={{ presentation: MODAL_SCREENS.DocumentScan as "modal" }}
+          options={{ presentation: MODAL_SCREENS.DocumentScan as "modal", title: "Scan" }}
         />
         <Stack.Screen
           name="VoicePicker"
@@ -269,6 +274,7 @@ export function RootNavigator() {
           name="VehicleDetection"
           component={VehicleDetectionRoute}
           options={{
+            title: "Vehicle detection",
             presentation: MODAL_SCREENS.VehicleDetection as "fullScreenModal",
             animation: "slide_from_bottom",
             // The real fix -- see this file's own header comment on VehicleDetectionRoute for
