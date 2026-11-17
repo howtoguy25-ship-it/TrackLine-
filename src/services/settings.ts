@@ -169,6 +169,8 @@ export interface AppSettings {
   showSoundButton: boolean;
   /** Live traffic flow colours on the map (home map too). */
   showTrafficFlow: boolean;
+  /** Settings > Privacy: add an anonymous +1 to a place's popularity when you arrive there. Off by default. */
+  shareArrivals: boolean;
 }
 
 export type VisibilityMode = "everyone" | "friendsOnly" | "ghost";
@@ -220,6 +222,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speedingThresholdPercent: null,
   showSoundButton: true,
   showTrafficFlow: true,
+  shareArrivals: false,
 };
 
 const STORAGE_KEY = "@trackline/settings";

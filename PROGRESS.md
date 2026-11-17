@@ -5,9 +5,10 @@
 Item 1 (alert settings) DONE (branch `alert-settings`, merged). Item 2 (report card remainder) DONE in
 code (branch `report-card`, merged); the server half is BLOCKED on the Firebase deploy like the rest of the
 server. Also done (branch `cleanup-live-alerts`, merged): ferry tests un-skipped on real recordings, lint 0 warnings,
-CarPlay/Android Auto scoped (NOTES.md), every alert type live (FINAL_STATUS.md). **Next step: item 3** — finish
-branch `poi-ranking` (pure ranking + server popularity done and tested; still to do: draw the ranked badges on the map
-from the tiles' POI features instead of the native style layers) — brand/POI badge popularity ranking (Places rating count + business status +
+CarPlay/Android Auto scoped (NOTES.md), every alert type live (FINAL_STATUS.md). Item 3 (badge ranking) DONE (branch `poi-ranking`, merged). **Next step: item 4** — travel modes steps 4-6 (transit
+timeline with TfNSW/GTFS-realtime, per-mode navigation, ferry details, unavailable modes greyed with a reason) on
+branch `travel-modes-2`. Then item 5 (admin dashboard + recovery + guests), item 6 (FINAL_STATUS/BLOCKED), final checks
+— brand/POI badge popularity ranking (Places rating count + business status +
 anonymous opted-in arrivals; max ~12 per screen, collision-free; z13/z15; 300 m nearby boost; ranking tests
 + per-screen cap render test), on a new branch `poi-ranking`. Then items 4-6 and the final checks.
 

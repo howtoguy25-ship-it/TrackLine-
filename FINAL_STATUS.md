@@ -18,6 +18,17 @@ below are kept up to date as each item lands.
 | Official enforcement-camera lists (e.g. NSW government fixed-camera locations) | NOT DONE: dataset not integrated yet; cameras come from OSM + driver reports | -- | Say if you want it; needs the dataset link checked |
 | Admin moderation queue | DONE (in-app, owner only; the web dashboard is item 5) | `ModerationScreen.tsx`, `moderationQueue` / `moderateReport` callables, emulator test | -- |
 
+## Brand / POI badge ranking (item 3, 2026-11-17)
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| Rank by Google Places rating count + business status | DONE (needs key + deploy) | `firebase/tests/poiPopularity.test.js` (8), `functions/poiPopularity.js` (30-day cache, 8 lookups/call, 200/user/day) | Add `GOOGLE_PLACES_SERVER_KEY` (DEPLOY.md), deploy |
+| Anonymous aggregate arrivals (opt-in) | DONE (needs deploy) | Settings › Privacy › Share arrivals (off by default); `recordArrival` counted once/driver/place/day | Deploy |
+| Max ~12 per screen, collision-free | DONE | `__tests__/poiRanking.test.tsx` render test (40 candidates → ≤12 drawn) + ranking tests | -- |
+| z13 (fuel, hospitals) / z15 (the rest) | DONE | `poiRanking.test.tsx` "fuel and hospitals from zoom 13" | -- |
+| Nearby boost within 300 m | DONE | `poiRanking.test.tsx` "within 300 m" | -- |
+| Closed places get no badge | DONE | `poiRanking.test.tsx` "closed places" | -- |
+
 ## Future items (not built)
 
 | Item | Status | Scope | What you must do |
