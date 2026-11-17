@@ -34,6 +34,17 @@ jest.mock("@react-navigation/native", () => ({
   useRoute: () => ({ params: mockRouteParams }),
 }));
 
+const mockSendPhoneCode = jest.fn<(phone: string) => Promise<string>>();
+const mockSignInExistingPhone = jest.fn<(vid: string, code: string) => Promise<unknown>>();
+const mockConfirmPhoneCode = jest.fn<(vid: string, code: string) => Promise<unknown>>();
+jest.mock("@/account/phoneAuth", () => ({
+  ...(jest.requireActual("@/account/phoneAuth") as object),
+  sendPhoneCode: (p: string) => mockSendPhoneCode(p),
+  signInExistingPhone: (v: string, c: string) => mockSignInExistingPhone(v, c),
+  confirmPhoneCode: (v: string, c: string) => mockConfirmPhoneCode(v, c),
+}));
+jest.mock("expo-web-browser", () => ({ openAuthSessionAsync: jest.fn() }));
+
 import { bucket, isFeatureOn, remoteGated, shouldShowWhatsNew, updateState, normalise, EMPTY_CONFIG, type RemoteConfig } from "@/remote/appConfig";
 import { contactKind, maskPhoneForDisplay, parseMonth, toInternational, RECOVERY_CHAT } from "@/account/recovery";
 import { EMPTY_PROMPT_STATE, GUEST_WARNING, shouldPrompt, maybePromptToSave, onSavePrompt, recordTripEnd } from "@/guest/savePrompt";
@@ -119,39 +130,37 @@ describe("recovery helpers", () => {
 });
 
 describe("Forgot password / Can't sign in? screen", () => {
-  it("phone: code -> new password; the screen shows the server's generic message, never whether an account exists", async () => {
+  it("phone: Firebase texts the code; the right code signs in, then a new password; other devices signed out", async () => {
     mockRouteParams = { mode: "forgot" };
-    mockCallable.mockImplementation((name, data) => {
-      if (data.op === "start") return ok({ ok: true, channel: "sms", message: "If an account exists for that, we've sent it a code.", challengeId: "c1", masked: "•••• ••5 678" });
-      if (data.op === "verify") return ok({ ok: true, grant: "g1" });
-      if (data.op === "reset") return ok({ ok: true, email: "ja•••@g•••.com", customToken: null });
-      return ok({});
-    });
+    mockSendPhoneCode.mockResolvedValue("vid-1");
+    mockSignInExistingPhone.mockResolvedValue({ uid: "u1", providerData: [{ providerId: "phone" }] });
+    mockCallable.mockImplementation((name, data) => ok(data.op === "afterPhoneReset" ? { ok: true, customToken: null } : { ok: true }));
     await render(<AccountRecoveryScreen />);
     await fireEvent.changeText(screen.getByTestId("recovery-contact"), "0412 345 678");
     await fireEvent.press(screen.getByTestId("recovery-send"));
-    expect(mockCallable.mock.calls[0][1]).toMatchObject({ op: "start", phone: "+61412345678" });
-    expect(screen.getByText(/If an account uses •••• ••5 678/)).toBeTruthy();
-    await fireEvent.changeText(screen.getByTestId("recovery-code"), "123456");
+    expect(mockCallable.mock.calls[0][1]).toMatchObject({ op: "phoneStart", phone: "+61412345678" });
+    expect(mockSendPhoneCode).toHaveBeenCalledWith("0412 345 678");
+    expect(screen.getByText(/We texted a 6-digit code to •••• ••5 678/)).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId("recovery-fb-code"), "123456");
     await fireEvent.press(screen.getByText("Continue"));
-    await fireEvent.changeText(screen.getByTestId("recovery-pass"), "new-password-1");
-    await fireEvent.changeText(screen.getByPlaceholderText("Type it again"), "new-password-1");
-    await fireEvent.press(screen.getByText("Save password"));
-    expect(mockCallable.mock.calls[2][1]).toEqual({ op: "reset", grant: "g1", newPassword: "new-password-1" });
+    expect(mockSignInExistingPhone).toHaveBeenCalledWith("vid-1", "123456");
+    expect(mockCallable.mock.calls.some((c) => c[1].op === "afterPhoneReset")).toBe(true);
     expect(screen.getByText(/Every other device was signed out/)).toBeTruthy();
   });
-  it("a wrong code shows the server's message with the tries left", async () => {
+  it("phone: a wrong code shows Firebase's message; no account for the number says so to its owner", async () => {
     mockRouteParams = { mode: "forgot" };
-    mockCallable.mockImplementation((name, data) => {
-      if (data.op === "start") return ok({ ok: true, channel: "sms", message: "m", challengeId: "c1" });
-      return Promise.reject({ code: "functions/invalid-argument", message: "That code isn't right.", details: { attemptsLeft: 3 } });
-    });
+    mockSendPhoneCode.mockResolvedValue("vid-2");
+    mockCallable.mockImplementation(() => ok({ ok: true }));
+    mockSignInExistingPhone.mockRejectedValueOnce(new Error("That code isn't right."));
     await render(<AccountRecoveryScreen />);
     await fireEvent.changeText(screen.getByTestId("recovery-contact"), "+61412345678");
     await fireEvent.press(screen.getByTestId("recovery-send"));
-    await fireEvent.changeText(screen.getByTestId("recovery-code"), "000000");
+    await fireEvent.changeText(screen.getByTestId("recovery-fb-code"), "000000");
     await fireEvent.press(screen.getByText("Continue"));
-    expect(screen.getByTestId("recovery-error").props.children).toBe("That code isn't right. 3 tries left.");
+    expect(screen.getByTestId("recovery-error").props.children).toBe("That code isn't right.");
+    mockSignInExistingPhone.mockResolvedValueOnce(null);
+    await fireEvent.press(screen.getByText("Continue"));
+    expect(screen.getByText(/No TrackLine account uses that number/)).toBeTruthy();
   });
   it("email: Firebase's reset link, same wording either way", async () => {
     mockRouteParams = { mode: "forgot" };
@@ -282,5 +291,36 @@ describe("legal: accept a major change once", () => {
     expect(pendingAcceptance(docs, {})).toBe("privacy");
     expect(pendingAcceptance(docs, { privacy: 2 })).toBe(null);
     expect(pendingAcceptance({ privacy: { version: 3, lastMajorVersion: null, text: "t" } }, {})).toBe(null);
+  });
+});
+
+describe("phone number sign-in (Firebase SMS)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { parsePhoneReturn, verifyPageUrl, phoneErrorText } = jest.requireActual("@/account/phoneAuth") as typeof import("@/account/phoneAuth");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { PhoneSignInScreen } = require("@/screens/PhoneSignInScreen") as typeof import("@/screens/PhoneSignInScreen");
+  it("the hosted page is on the project's own site and only returns to the app", () => {
+    expect(verifyPageUrl("+61412345678", "demo-proj")).toBe("https://demo-proj.web.app/phone-verify.html?phone=%2B61412345678&return=trackline%3A%2F%2Fphone-auth");
+    expect(parsePhoneReturn("trackline://phone-auth?vid=abc%3D")).toEqual({ vid: "abc=" });
+    expect(parsePhoneReturn("trackline://phone-auth?error=too-many-requests")).toEqual({ error: "too-many-requests" });
+    expect(phoneErrorText("auth/invalid-verification-code")).toBe("That code isn't right.");
+  });
+  it("number -> code -> signed in (a guest's account becomes the phone account)", async () => {
+    mockSendPhoneCode.mockResolvedValue("vid-9");
+    mockConfirmPhoneCode.mockResolvedValue({ user: { uid: "guest1" }, isNewUser: false });
+    await render(<PhoneSignInScreen />);
+    await fireEvent.changeText(screen.getByTestId("phone-number"), "0412 345 678");
+    await fireEvent.press(screen.getByTestId("phone-send"));
+    await fireEvent.changeText(screen.getByTestId("phone-code"), "246810");
+    await fireEvent.press(screen.getByTestId("phone-confirm"));
+    expect(mockConfirmPhoneCode).toHaveBeenCalledWith("vid-9", "246810");
+    expect(mockGoBack).toHaveBeenCalled();
+  });
+  it("shows why the code wasn't sent", async () => {
+    mockSendPhoneCode.mockRejectedValue(new Error("Too many tries from this phone. Wait a while and try again."));
+    await render(<PhoneSignInScreen />);
+    await fireEvent.changeText(screen.getByTestId("phone-number"), "+61412345678");
+    await fireEvent.press(screen.getByTestId("phone-send"));
+    expect(screen.getByTestId("phone-error").props.children).toMatch(/Too many tries/);
   });
 });

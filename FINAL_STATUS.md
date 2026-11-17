@@ -10,9 +10,9 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 |---|---|
 | `npx tsc --noEmit -p .` | exit 0, no errors |
 | `npx expo lint` | exit 0, 0 problems |
-| `npx jest --ci` | Test Suites: 45 passed, 45 total · Tests: 851 passed, 851 total |
+| `npx jest --ci` | Test Suites: 45 passed, 45 total · Tests: 854 passed, 854 total |
 | `scripts/test-*.ts` | all pass |
-| Emulator suite (`firebase emulators:exec … npm --prefix firebase/tests test`) | Test Suites: 11 passed, 11 total · Tests: 266 passed, 266 total (two consecutive runs) |
+| Emulator suite (`firebase emulators:exec … npm --prefix firebase/tests test`) | Test Suites: 11 passed, 11 total · Tests: 267 passed, 267 total |
 | `npx expo-doctor` | 19/21. Open (known, NOTES.md): `expo-camera` is a peer of `@tensorflow/tfjs-react-native`; React Native Directory has no entry for the local native modules. The 6 Expo patch mismatches were updated. |
 | `npx expo export --platform ios --platform android` | exit 0; iOS and Android Hermes bundles (14 MB each) |
 | Dashboard (`/admin`) | `tsc` 0 errors · vitest 2/2 · `next build` 14 static pages · sign-in renders in Chromium with no page errors |
@@ -20,6 +20,20 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 | `npm audit --omit=dev` (functions) | critical + high fixed (`npm audit fix`); 12 moderate left, all needing firebase-admin 14 / firebase-functions 7 (major upgrade, not done) |
 | `npm audit --omit=dev` (dashboard) | 0 vulnerabilities (postcss and @grpc/grpc-js pinned by `overrides`) |
 | `license-checker --production` | app: MIT 621, Apache-2.0 85, ISC 43, BSD 44, others permissive; "UNKNOWN" = this repo's own local modules; FSL-1.1-MIT = Sentry's build-time CLI only; node-forge dual BSD/GPL (BSD chosen). Dashboard: libvips (LGPL) only on the build machine via Next.js, nothing shipped. |
+
+## Sign-in, phone codes, web app (2026-11-17, round 2)
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| App: phone number sign-in with a 6-digit SMS code | DONE in code (Firebase sends the SMS; reCAPTCHA runs on `web/public/phone-verify.html`) | `__tests__/admin/appSide.test.tsx` "phone number sign-in"; a guest keeps the same uid | Enable Phone sign-in in Firebase console; deploy the website (it serves phone-verify.html); TEST_ON_PHONE §28 |
+| App: Forgot password by phone (Firebase code → new password, others signed out, notice) | DONE | app tests + emulator "phone recovery with Firebase's SMS" (real Auth-emulator phone sign-in) | Same as above |
+| App: Google sign-in | DONE on iOS (client ID + URL scheme are in the EAS env); Android needs `GOOGLE_WEB_CLIENT_ID` | `SignInScreen.tsx` | Add `GOOGLE_WEB_CLIENT_ID` to EAS env for Android |
+| App: Apple sign-in | DONE (expo-apple-authentication, nonce) | unchanged, previously tested on TestFlight | -- |
+| Guest → account in place updates every screen | FIXED (was stale: Firebase doesn't fire auth-state on linking) | `AuthContext` + web `App.tsx` use onIdTokenChanged | -- |
+| Dashboard sign-in end to end | DONE | `admin/tests/e2e.cjs` on the emulators in Chromium: wrong password refused, owner sign-in, Overview, user search (masked), audited action, App control publish, audit log + integrity, no-role account refused | ADMIN.md setup |
+| Dashboard: Google / Apple sign-in (authenticator code still required) | DONE in code | `AuthGate.tsx` | Turn on Google/Apple providers for the web domain |
+| Web app: account (Google, Apple, phone, email; guest kept on sign-up), Forgot password, Can't sign in, Help requests, Inbox, Notification settings, maintenance/banner/announcement, legal re-accept, Vehicle Check switch | DONE | `web/tests/e2e.cjs` on the emulators in Chromium (guest → help → inbox → email account same uid → recovery → maintenance block) | Deploy the website (deploy.ps1) |
+| Web app: map, search, routes + travel modes, navigation, reports, live cameras, vehicle detection, paid check | Already in the web app (unchanged) | `web/` typecheck + build | Maps key in the web build env |
 
 ## Owner dashboard, account recovery, guest data (item 5, 2026-11-17)
 

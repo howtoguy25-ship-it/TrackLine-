@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
+  connectAuthEmulator,
   onAuthStateChanged,
   signInAnonymously,
   signInWithPopup,
@@ -20,8 +21,8 @@ import {
   type ConfirmationResult,
   type User,
 } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getFunctions } from "firebase/functions";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
+import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -36,6 +37,13 @@ export const firebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 export const functions = getFunctions(firebaseApp);
+
+// Local testing against the Firebase emulators only (build-time flag, never set for the site).
+if (import.meta.env.VITE_USE_EMULATORS === "1") {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+}
 
 // Same anonymous-sign-in model as the mobile app so alerts share one createdBy/hiddenBy
 // uid space across both clients. This still runs first on every load -- signing in with

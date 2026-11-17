@@ -41,3 +41,5 @@ admin/.next/
 admin/out/
 admin/next-env.d.ts
 admin/.env.local
+admin/e2e-shots/
+web/e2e-shots/

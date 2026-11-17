@@ -1,0 +1,32 @@
+.account-center { position: absolute; top: 16px; bottom: 16px; right: 16px; left: 16px; max-width: 420px; margin-left: auto; background: var(--surface, #fff); color: var(--text, #101828); border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,.25); z-index: 40; display: flex; flex-direction: column; font-family: system-ui, sans-serif; overflow: hidden; }
+.ac-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid rgba(0,0,0,.08); }
+.ac-close { border: 0; background: none; font-size: 24px; cursor: pointer; color: inherit; min-width: 44px; min-height: 44px; }
+.ac-tabs { display: flex; gap: 4px; padding: 8px; overflow-x: auto; }
+.ac-tabs button { border: 0; border-radius: 999px; padding: 8px 12px; background: var(--input-bg, #f2f4f7); color: inherit; white-space: nowrap; cursor: pointer; min-height: 36px; }
+.ac-tabs button.on { background: #0a84ff; color: #fff; }
+.ac-body { padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.ac-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ac-field input, .ac-body textarea { border: 1px solid rgba(0,0,0,.2); border-radius: 10px; padding: 10px; font-size: 16px; background: var(--input-bg, #fff); color: inherit; }
+.ac-body textarea { min-height: 90px; }
+.ac-btn { border: 1px solid rgba(0,0,0,.15); border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 600; background: var(--surface, #fff); color: inherit; cursor: pointer; min-height: 44px; }
+.ac-btn.primary { background: #0a84ff; color: #fff; border-color: #0a84ff; }
+.ac-btn.danger { background: #d92d20; color: #fff; border-color: #d92d20; }
+.ac-btn:disabled, .ac-link:disabled { opacity: .5; cursor: default; }
+.ac-link { border: 0; background: none; color: #0a84ff; cursor: pointer; text-align: left; padding: 6px 0; font-size: 14px; }
+.ac-note { margin: 0; font-size: 14px; opacity: .8; }
+.ac-error { margin: 0; font-size: 14px; color: #d92d20; }
+.ac-or { text-align: center; font-size: 12px; opacity: .6; }
+.ac-row { display: flex; justify-content: space-between; border: 0; border-bottom: 1px solid rgba(0,0,0,.08); background: none; padding: 10px 0; cursor: pointer; color: inherit; font-size: 15px; }
+.ac-me, .ac-them { padding: 10px; border-radius: 10px; max-width: 85%; }
+.ac-me { align-self: flex-end; background: #0a84ff; color: #fff; }
+.ac-them { align-self: flex-start; background: var(--input-bg, #f2f4f7); }
+.ac-msg { border: 1px solid rgba(0,0,0,.08); border-radius: 10px; padding: 10px; }
+.ac-msg summary { cursor: pointer; font-weight: 600; }
+.ac-dot { display: inline-block; width: 8px; height: 8px; border-radius: 4px; background: #0a84ff; margin-right: 6px; }
+.ac-toggle { display: flex; justify-content: space-between; align-items: center; min-height: 44px; font-size: 15px; }
+.web-gate-banner { position: absolute; top: calc(70px + env(safe-area-inset-top, 0px)); left: 16px; right: 16px; max-width: 520px; margin: 0 auto; z-index: 35; background: var(--surface, #fff); color: var(--text, #101828); border: 1px solid rgba(0,0,0,.12); border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.15); font-family: system-ui, sans-serif; }
+.web-gate-banner.warn { border-color: #a35f00; }
+.web-gate-banner p { margin: 0; flex: 1; font-size: 14px; }
+.web-gate-block { position: fixed; inset: 0; z-index: 100; background: var(--surface, #fff); color: var(--text, #101828); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; font-family: system-ui, sans-serif; }
+.web-gate-modal { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.web-gate-modal > div { background: var(--surface, #fff); color: var(--text, #101828); border-radius: 16px; padding: 20px; max-width: 520px; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; font-family: system-ui, sans-serif; }

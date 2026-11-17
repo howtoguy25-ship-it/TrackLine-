@@ -309,6 +309,41 @@ async function reviewTicket(ctx, { ticketId, decision, reason }) {
   return { ok: true, outcome: "approved", changeId: cRef.id, executeAtMs: change.executeAtMs };
 }
 
+/**
+ * Phone recovery through Firebase Phone Auth (Firebase sends the SMS): first count the request
+ * against the same limits (3 a day per number and device), with no reply about the account.
+ */
+async function phoneStart({ db, data, ip, nowMs }) {
+  const phone = normalisePhone(data.phone);
+  if (!phone) throw new RecoveryError("invalid-argument", "Enter your full mobile number.");
+  const deviceId = typeof data.deviceId === "string" ? data.deviceId.slice(0, 100) : "unknown";
+  await countRequest(db, [[`acct|${phone}`, LIMITS.perAccountPerDay], [`dev|${deviceId}`, LIMITS.perDevicePerDay], [ipKey(ip), LIMITS.perIpPerDay]], nowMs);
+  await db.collection("recoveryEvents").add({ kind: "phone_start", deviceId, ip: ip || null, atMs: nowMs });
+  return { ok: true };
+}
+
+/**
+ * After the user proved the number with Firebase's code (signed in by phone in the last 15
+ * minutes) and maybe set a new password: sign out every other device, send the "password
+ * changed" notice, and hand back a token so this phone stays signed in.
+ */
+async function afterPhoneReset({ db, auth, caller, nowMs }) {
+  const t = caller && caller.token;
+  if (!t || !t.firebase || t.firebase.sign_in_provider !== "phone") throw new RecoveryError("permission-denied", "Verify your number first.");
+  if (typeof t.auth_time !== "number" || nowMs / 1000 - t.auth_time > 15 * 60) throw new RecoveryError("permission-denied", "That took too long. Start again.");
+  const user = await auth.getUser(caller.uid);
+  await auth.revokeRefreshTokens(caller.uid);
+  await passwordChangedNotice(db, user, nowMs);
+  await db.collection("recoveryEvents").add({ kind: "phone_reset", uid: caller.uid, atMs: nowMs });
+  let customToken = null;
+  try {
+    customToken = await auth.createCustomToken(caller.uid);
+  } catch (err) {
+    console.error("afterPhoneReset: createCustomToken failed (needs the Service Account Token Creator role)", err);
+  }
+  return { ok: true, customToken };
+}
+
 /** The old contact cancels within 24 h with the code they were sent. */
 async function cancelChange({ db, data, nowMs }) {
   const id = typeof data.changeId === "string" ? data.changeId : "";
@@ -364,6 +399,8 @@ module.exports = {
   createTicket,
   reviewTicket,
   cancelChange,
+  phoneStart,
+  afterPhoneReset,
   applyDueChanges,
   passwordChangedNotice,
 };

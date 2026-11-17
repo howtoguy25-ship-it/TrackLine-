@@ -26,6 +26,7 @@ import { PlanADriveScreen } from "@/screens/PlanADriveScreen";
 import { HelpScreen } from "@/screens/HelpScreen";
 import { navigationRef } from "@/navigation/deepLinks";
 import { AccountRecoveryScreen } from "@/screens/AccountRecoveryScreen";
+import { PhoneSignInScreen } from "@/screens/PhoneSignInScreen";
 import { SupportRequestsScreen } from "@/screens/SupportRequestsScreen";
 import { LicensesScreen } from "@/screens/LicensesScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
@@ -79,6 +80,8 @@ export type RootStackParamList = {
   AccountRecovery: { mode?: "forgot" | "cancel" } | undefined;
   // Help > Contact support: in-app requests to the support inbox.
   SupportRequests: undefined;
+  // Sign in > Continue with phone number (Firebase SMS code).
+  PhoneSignIn: undefined;
   // Real, explicit request (Copyright/trademark safety audit, Part 4) -- Settings > About's own
   // "Licences & attributions" row. See LicensesScreen.tsx.
   Licenses: undefined;
@@ -213,6 +216,7 @@ export function RootNavigator() {
         <Stack.Screen name="Help" component={HelpScreen} />
         <Stack.Screen name="AccountRecovery" component={AccountRecoveryScreen} options={{ headerShown: true, title: "Account help" }} />
         <Stack.Screen name="SupportRequests" component={SupportRequestsScreen} options={{ headerShown: true, title: "Contact support" }} />
+        <Stack.Screen name="PhoneSignIn" component={PhoneSignInScreen} options={{ headerShown: true, title: "Phone number" }} />
         <Stack.Screen name="Licenses" component={LicensesScreen} />
         <Stack.Screen name="TrackyProfile" component={TrackyProfileScreen} />
         <Stack.Screen name="TrackyCustomizer" component={TrackyCustomizerScreen} />

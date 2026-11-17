@@ -351,6 +351,9 @@ module.exports = {
       // (its CLIENT_ID field), or Google Cloud Console -> APIs & Services -> Credentials -> an
       // OAuth 2.0 Client ID of type "iOS".
       googleIosClientId: process.env.GOOGLE_IOS_CLIENT_ID,
+      // Android Google sign-in: the "Web client" OAuth ID from Firebase console > Authentication >
+      // Sign-in method > Google > Web SDK configuration. Not secret.
+      googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID,
       admobBannerAndroidUnitId: process.env.ADMOB_ANDROID_BANNER_UNIT_ID,
       admobBannerIosUnitId: process.env.ADMOB_IOS_BANNER_UNIT_ID,
       admobAppOpenAndroidUnitId: process.env.ADMOB_ANDROID_APP_OPEN_UNIT_ID,

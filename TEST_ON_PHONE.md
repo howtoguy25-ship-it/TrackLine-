@@ -446,6 +446,22 @@ Most of this needs the server deployed (BLOCKED.md #1); SMS needs Twilio (#5).
    *Banner* with a message: the banner shows. Set *Force update below* above your version: the
    app shows the Update screen (set it back after).
 
+## 28. Phone number, Google and Apple sign-in — NEEDS DEVICE TEST
+
+Needs BLOCKED.md #19 (Phone provider on + website deployed).
+
+1. Sign out (Settings > Account). Sign in > **Continue with phone number** > your mobile >
+   *Send code*. A browser sheet opens for a second and closes; an SMS with a 6-digit code arrives.
+   Enter it: you're signed in, and Settings > Account shows your number straight away.
+2. As a guest with Home saved, do step 1: Home is still saved (same account).
+3. **Forgot password by phone** (an account with email + password and your phone): Sign in >
+   *Forgot password?* > your mobile > code > new password. Sign in on another device with the old
+   password: refused.
+4. **Continue with Google** and **Continue with Apple** each sign in; Settings > Account updates
+   at once.
+5. Website: open it, logo > Account > *Account, help & inbox*: create an account, send a Help
+   request, check Inbox.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

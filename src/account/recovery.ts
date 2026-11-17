@@ -79,6 +79,16 @@ export async function sendRecoveryTicket(d: TicketDetails): Promise<{ ok: true; 
   });
 }
 
+/** Counts a phone recovery against the daily limits (the SMS itself comes from Firebase). */
+export async function startPhoneRecovery(phone: string): Promise<{ ok: true }> {
+  return callFn("accountRecovery", { op: "phoneStart", phone: toInternational(phone), deviceId: await installId() });
+}
+
+/** After Firebase's code: sign out other devices + notice; returns a token to stay signed in. */
+export function finishPhoneRecovery(): Promise<{ ok: true; customToken: string | null }> {
+  return callFn("accountRecovery", { op: "afterPhoneReset" });
+}
+
 export function cancelContactChange(changeId: string, code: string): Promise<{ ok: true }> {
   return callFn("accountRecovery", { op: "cancelChange", changeId: changeId.trim(), code: code.trim() });
 }

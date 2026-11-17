@@ -45,6 +45,7 @@ export const env = {
   // without it configured. GoogleSignInButton disables itself and explains why when this is
   // empty, rather than the button doing nothing or crashing on tap.
   googleIosClientId: extra.googleIosClientId ?? "",
+  googleWebClientId: extra.googleWebClientId ?? "",
   // Same "genuinely optional" treatment as googleIosClientId above -- live NSW transit
   // tracking is a real bonus feature, not something the app depends on; see
   // services/liveVehiclePositions.ts.

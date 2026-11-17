@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { AppState } from "react-native";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { onIdTokenChanged, type User } from "firebase/auth";
 import { auth, ensureSignedIn } from "@/services/firebase";
 import { upsertSignedInProfile } from "@/services/userProfile";
 import { ensureDeviceSession, touchDeviceSessionActivity } from "@/services/deviceSession";
@@ -9,6 +9,8 @@ import { registerForPushNotifications } from "@/services/pushNotifications";
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  /** Changes whenever the account changes in place (guest -> account). */
+  authTick?: number;
 }
 
 const AuthContext = createContext<AuthContextValue>({ user: null, loading: true });
@@ -16,6 +18,7 @@ const AuthContext = createContext<AuthContextValue>({ user: null, loading: true 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authTick, setAuthTick] = useState(0);
 
   useEffect(() => {
     // Bootstraps the very first session (anonymous sign-in if nothing is stored on-device
@@ -34,8 +37,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // and kept showing "Signed in as ..." after tapping Sign out, because this context's
     // `user` value was frozen at whatever ensureSignedIn() resolved with at mount and was
     // never updated again for the rest of the session.
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    // onIdTokenChanged also fires when a guest becomes a real account in place (linking keeps
+    // the same User object), so everything showing "guest" updates straight away.
+    const unsubscribe = onIdTokenChanged(auth, (u) => {
       setUser(u);
+      setAuthTick((t) => t + 1);
     });
     return unsubscribe;
   }, []);
@@ -50,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user && !user.isAnonymous) {
       upsertSignedInProfile(user).catch((err) => console.warn("[auth] profile sync failed", err));
     }
-  }, [user]);
+  }, [user, authTick]);
 
   // Real, owner-dashboard-backing install/activity tracking -- fires for EVERY session,
   // anonymous included (unlike the sign-in-only profile sync above), since an anonymous driver
@@ -78,12 +84,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
     return () => subscription.remove();
-  }, [user]);
+  }, [user, authTick]);
 
   // Same reasoning as SettingsContext's own fix -- a fresh object literal every render meant
   // every consumer re-rendered on any AuthProvider render, not just the ones that actually
   // change `user`/`loading`.
-  const value = useMemo(() => ({ user, loading }), [user, loading]);
+  // authTick: a new value after linking, so consumers re-render with the upgraded account.
+  const value = useMemo(() => ({ user, loading, authTick }), [user, loading, authTick]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

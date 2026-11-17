@@ -45,6 +45,8 @@ interface Props {
   onSignInPhone: () => void;
   onSignOut: () => void;
   onOpenAdmin: () => void;
+  /** Account, help, inbox, notifications and "Can't sign in?" (AccountCenter). */
+  onOpenAccountCenter?: () => void;
   onClose: () => void;
   // The full "Alert & camera settings" content (AlertCameraSettingsPanel), rendered here
   // instead of built inline -- App.tsx owns all of its actual state/handlers (map settings,
@@ -64,6 +66,7 @@ export function AboutPanel({
   onSignInPhone,
   onSignOut,
   onOpenAdmin,
+  onOpenAccountCenter,
   onClose,
   settingsPanel,
 }: Props) {
@@ -169,6 +172,11 @@ export function AboutPanel({
 
       {tab === "account" && (
         <div className="account-section">
+          {onOpenAccountCenter && (
+            <button className="account-signin-button" onClick={onOpenAccountCenter} data-testid="open-account-center">
+              Account, help &amp; inbox
+            </button>
+          )}
           {isRealAccount ? (
             <>
               <div className="account-signed-in">

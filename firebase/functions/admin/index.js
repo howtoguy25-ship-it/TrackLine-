@@ -72,6 +72,8 @@ function register(deps) {
     newContactVerify: recovery.newContactVerify,
     ticket: recovery.createTicket,
     cancelChange: recovery.cancelChange,
+    phoneStart: recovery.phoneStart,
+    afterPhoneReset: recovery.afterPhoneReset,
   };
   out.accountRecovery = onCall(async (request) => {
     const data = request.data || {};
@@ -79,7 +81,7 @@ function register(deps) {
     if (!fn) throw new HttpsError("invalid-argument", "Unknown recovery step.");
     const { clientIp } = require("./audit");
     try {
-      return await fn({ db: getFirestore(), auth: getAuth(), data, ip: clientIp(request.rawRequest), nowMs: Date.now() });
+      return await fn({ db: getFirestore(), auth: getAuth(), data, caller: request.auth || null, ip: clientIp(request.rawRequest), nowMs: Date.now() });
     } catch (err) {
       if (err instanceof recovery.RecoveryError) throw new HttpsError(err.code, err.message, { attemptsLeft: err.attemptsLeft ?? null, until: err.until ?? null });
       await logOpsError(getFirestore(), "accountRecovery", err);
