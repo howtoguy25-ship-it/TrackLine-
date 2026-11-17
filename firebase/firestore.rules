@@ -21,6 +21,49 @@ service cloud.firestore {
 
     // A report waiting out its 3 s undo window, and each reporter's limits / trust: server only.
     // Badge popularity caches, arrival counts and lookup budgets: server only.
+    // Owner dashboard + account recovery (firebase/functions/admin/). Everything here is
+    // written and read only by Cloud Functions (Admin SDK); the dashboard goes through the
+    // role-checked callables, never straight to Firestore. The audit log in particular can't be
+    // read, edited or deleted by any client.
+    match /auditLog/{id} { allow read, write: if false; }
+    match /auditChain/{id} { allow read, write: if false; }
+    match /staff/{uid} { allow read, write: if false; }
+    match /otpCodes/{id} { allow read, write: if false; }
+    match /otpThrottle/{id} { allow read, write: if false; }
+    match /recoveryLimits/{id} { allow read, write: if false; }
+    match /recoveryGrants/{id} { allow read, write: if false; }
+    match /recoveryEvents/{id} { allow read, write: if false; }
+    match /contactProofs/{id} { allow read, write: if false; }
+    match /contactChanges/{id} { allow read, write: if false; }
+    match /mail/{id} { allow read, write: if false; }
+    match /smsOutbox/{id} { allow read, write: if false; }
+    match /campaigns/{id} { allow read, write: if false; }
+    match /appConfigHistory/{id} { allow read, write: if false; }
+    match /statsDaily/{id} { allow read, write: if false; }
+    match /opsErrors/{id} { allow read, write: if false; }
+    match /pendingDeletions/{id} { allow read, write: if false; }
+    match /dataRequests/{id} { allow read, write: if false; }
+    match /refundNotes/{id} { allow read, write: if false; }
+    match /tripMarks/{id} { allow read, write: if false; }
+    // Help + recovery tickets: the app uses the helpTicket callable (only the user's own).
+    match /supportTickets/{id} {
+      allow read, write: if false;
+      match /{sub=**} { allow read, write: if false; }
+    }
+    // Remote config and the legal text the app shows: anyone can read (also before sign-in).
+    match /appConfig/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /legalDocs/{kind} {
+      allow read: if true;
+      allow write: if false;
+      match /versions/{v} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
     match /poiPopularity/{id} { allow read, write: if false; }
     match /poiArrivals/{id} { allow read, write: if false; }
     match /poiArrivalMarks/{id} { allow read, write: if false; }
@@ -175,6 +218,13 @@ service cloud.firestore {
       // the owner can read them (the app watches one fill in, and lists "My checks") but never
       // write one, so a report can't be forged or edited on the device.
       match /vehicleChecks/{reportId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      // Messages from TrackLine (dashboard, support replies). Delivered by Cloud Functions;
+      // opened / clicked / dismissed is reported through the inboxEvent callable.
+      match /inbox/{messageId} {
         allow read: if isSignedIn() && request.auth.uid == uid;
         allow write: if false;
       }
@@ -356,6 +406,14 @@ service cloud.firestore {
       allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
       allow write: if isSignedIn() && request.auth.uid == uid;
+
+      // One doc per phone the account is used on (model, OS, app version, last seen), for the
+      // dashboard's device list and the recovery "same device as before" check.
+      match /devices/{deviceId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if isSignedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['model', 'os', 'appVersion', 'lastSeenAt', 'platform']);
+      }
     }
 
     // Real send-history log for the owner's broadcast-notification button (see

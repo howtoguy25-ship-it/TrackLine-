@@ -78,6 +78,10 @@ function decide({ uid, input, state, nearby, nowMs }) {
     return reject("too-far", `You can only report within ${POLICY.maxDistanceFromDriverM / 1000} km of where you are.`);
   }
   if (s.blockUntil > nowMs) return reject("blocked", "Too many reports in a short time. Try again later.", { until: s.blockUntil });
+  // A ban set from the owner dashboard (users.reportBan): 1 h / 24 h / 7 d / permanent.
+  if (s.reportBanPermanent || (s.reportBanUntil || 0) > nowMs) {
+    return reject("banned", "Reporting is paused on this account.", s.reportBanPermanent ? {} : { until: s.reportBanUntil });
+  }
 
   const inLast = (ms) => s.log.filter((t) => nowMs - t < ms).length;
   // Burst: this one would be the Nth inside the window -> blocked (15 min; again within a day -> 24 h).

@@ -1428,3 +1428,25 @@ exports.retryVehicleCheckSection = onCall(
     return vehicleCheckCore.retrySection({ uid: request.auth.uid, reportId: data.reportId, section: String(data.section || "") }, deps);
   }
 );
+
+// ---- Owner dashboard, account recovery, guest data (firebase/functions/admin/, ADMIN.md) ----
+// Every dashboard call is a section callable that checks the caller's role claim per operation,
+// requires a second factor, and writes the append-only audit log.
+Object.assign(
+  exports,
+  require("./admin").register({
+    onCall,
+    onSchedule,
+    onDocumentCreated,
+    HttpsError,
+    getFirestore,
+    getAuth: () => require("firebase-admin/auth").getAuth(),
+    FieldValue,
+    defineSecret,
+    reportStore,
+    POLICY: reportsCore.POLICY,
+    TFNSW_API_KEY,
+    jobs: { refreshSchoolZones: refreshNswSchoolZones, resyncHazards: refreshNswTrafficSnapshot },
+    authV1: require("firebase-functions/v1").auth,
+  })
+);
