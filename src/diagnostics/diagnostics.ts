@@ -20,12 +20,23 @@ export interface MapStyleRecord {
   atMs: number;
 }
 
+export type ServiceName = "places" | "routes" | "search" | "osm" | "fuel";
+
+export interface ServiceRecord {
+  host: string;
+  status: number | null;
+  ok: boolean;
+  message: string;
+  atMs: number;
+}
+
 interface State {
   mapStyle: MapStyleRecord | null;
   directions: Record<string, DirectionsRecord>;
+  services: Partial<Record<ServiceName, ServiceRecord>>;
 }
 
-let state: State = { mapStyle: null, directions: {} };
+let state: State = { mapStyle: null, directions: {}, services: {} };
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -43,6 +54,12 @@ export function recordDirections(key: string, rec: Omit<DirectionsRecord, "atMs"
   emit();
 }
 
+/** The last request to a service (Places, Routes...): host, HTTP status, outcome. */
+export function recordService(service: ServiceName, rec: Omit<ServiceRecord, "atMs">, nowMs = Date.now()): void {
+  state = { ...state, services: { ...state.services, [service]: { ...rec, atMs: nowMs } } };
+  emit();
+}
+
 export function getDiagnostics(): State {
   return state;
 }
@@ -54,6 +71,6 @@ export function subscribeDiagnostics(fn: () => void): () => void {
 
 /** Tests only. */
 export function resetDiagnostics(): void {
-  state = { mapStyle: null, directions: {} };
+  state = { mapStyle: null, directions: {}, services: {} };
   emit();
 }
