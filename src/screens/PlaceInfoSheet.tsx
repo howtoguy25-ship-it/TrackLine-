@@ -218,7 +218,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
                   style={({ pressed }) => [styles.streetViewExpandHint, pressed && { opacity: pressedOpacity }]}
                   accessibilityLabel="Street view. Swipe up for more details."
                 >
-                  <Text style={styles.streetViewHint}>Street View -- swipe up for more</Text>
+                  <Text style={styles.streetViewHint}>Street View — swipe up for more</Text>
                   <View style={styles.streetViewExpandBadge}>
                     <Icon name="chevron-up" size={13} color={colors.accent} />
                   </View>

@@ -130,7 +130,7 @@ async function raceOverpassMirrors(query: string): Promise<OverpassResponse> {
     if (controller.signal.aborted) {
       throw new Error("Nearby-places lookup timed out");
     }
-    throw new Error("Nearby-places lookup failed -- all data sources unavailable");
+    throw new Error("Nearby-places lookup failed — all data sources unavailable");
   } finally {
     clearTimeout(timeoutHandle);
     controller.abort();
@@ -165,7 +165,7 @@ async function runOverpassQuery(query: string): Promise<OverpassResponse> {
       }
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("Nearby-places lookup failed -- all data sources unavailable");
+  throw lastError instanceof Error ? lastError : new Error("Nearby-places lookup failed — all data sources unavailable");
 }
 
 // Real address text from whichever OSM addr:* tags this specific place actually has -- these

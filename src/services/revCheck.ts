@@ -69,7 +69,7 @@ const runRevCheckCallable = httpsCallable<{ vin: string }, RevCheckResult>(funct
 export async function runRevCheck(vin: string): Promise<RevCheckResult> {
   const trimmedVin = vin.trim().toUpperCase();
   if (!trimmedVin) {
-    return { outcome: "error", message: "Enter a VIN to run a real check -- PPSR searches by VIN, not plate." };
+    return { outcome: "error", message: "Enter a VIN to run a real check — PPSR searches by VIN, not plate." };
   }
   try {
     const result = await runRevCheckCallable({ vin: trimmedVin });

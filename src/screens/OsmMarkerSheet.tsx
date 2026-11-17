@@ -192,7 +192,7 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
               </View>
             )}
             <Text style={styles.caption}>
-              Real Google Street View imagery of this spot -- location from OpenStreetMap
+              Real Google Street View imagery of this spot — location from OpenStreetMap
               community data. If the shot is blocked (e.g. by a passing truck), tap{" "}
               <Icon name="sync" size={11} color={colors.textMuted} /> on the photo to try a
               different real angle or a nearby capture.

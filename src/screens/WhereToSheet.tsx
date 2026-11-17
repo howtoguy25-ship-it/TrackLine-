@@ -29,7 +29,7 @@ import {
 } from "@/services/calendarEvents";
 import { Tracky } from "@/components/trackys/Tracky";
 import type { TrackyMoodKey } from "@/components/trackys/moods";
-import { formatDistance } from "@/utils/navFormat";
+import { formatDayAndClock, formatDistance } from "@/utils/navFormat";
 import {
   getSavedPlaces,
   setHomeOrWork,
@@ -232,8 +232,8 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
             setSearchFailure("service");
             setErrorText(
               /billing/i.test(err.message)
-                ? "Search unavailable -- billing isn't enabled on this app's Google Cloud project"
-                : `Search unavailable (${err.status}) -- check the Places API key`
+                ? "Search unavailable — billing isn't enabled on this app's Google Cloud project"
+                : `Search unavailable (${err.status}) — check the Places API key`
             );
           } else {
             setSearchFailure("offline");
@@ -349,7 +349,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
         setErrorText(
           err instanceof PlacesApiError
             ? `Couldn't load that place (${err.status})`
-            : "Couldn't load that place -- check your connection"
+            : "Couldn't load that place — check your connection"
         );
       }
     },
@@ -680,11 +680,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
               calendarStatus !== "granted"
                 ? "Get to events on time"
                 : nextEvent
-                  ? `${nextEvent.title} · ${nextEvent.startDate.toLocaleString(undefined, {
-                      weekday: "short",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}`
+                  ? `${nextEvent.title} · ${formatDayAndClock(nextEvent.startDate.getTime())}`
                   : "No upcoming events with a location"
             }
             onPress={onPressCalendar}
@@ -953,7 +949,7 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
                     {item.title}
                   </Text>
                   <Text style={styles.resultSubtitle} numberOfLines={1}>
-                    {item.startDate.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })} ·{" "}
+                    {formatDayAndClock(item.startDate.getTime())} ·{" "}
                     {item.location}
                   </Text>
                 </View>

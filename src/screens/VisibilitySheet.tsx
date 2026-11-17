@@ -15,7 +15,7 @@ const SNAP_POINTS = ["62%"];
 const VISIBILITY_OPTIONS: { key: VisibilityMode; label: string; description: string }[] = [
   { key: "everyone", label: "Visible to everyone", description: "Other drivers nearby can see your Tracky on the map while you're driving" },
   { key: "friendsOnly", label: "Friends only", description: "Only drivers you've added as a friend can see you" },
-  { key: "ghost", label: "Ghost mode", description: "Invisible to everyone -- you can still see and report alerts" },
+  { key: "ghost", label: "Ghost mode", description: "Invisible to everyone — you can still see and report alerts" },
 ];
 
 interface Props {

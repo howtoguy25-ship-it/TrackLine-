@@ -167,9 +167,9 @@ export async function fetchOsmTrafficData(
     data = await Promise.any(OVERPASS_ENDPOINTS.map(requestFrom));
   } catch {
     if (controller.signal.aborted) {
-      throw new Error("Traffic light/speed camera lookup timed out -- try panning the map again");
+      throw new Error("Traffic light/speed camera lookup timed out — try panning the map again");
     }
-    throw new Error("Traffic light/speed camera lookup failed -- all data sources unavailable");
+    throw new Error("Traffic light/speed camera lookup failed — all data sources unavailable");
   } finally {
     clearTimeout(timeoutHandle);
     // Whichever mirror answered first has already resolved `data` above -- abort the rest so

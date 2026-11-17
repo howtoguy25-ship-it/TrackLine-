@@ -61,7 +61,7 @@ export async function recognizePlateImage(imageBase64: string): Promise<PlateRec
   } catch (err) {
     return {
       outcome: "error",
-      message: err instanceof Error ? err.message : "Couldn't reach the plate recognition service -- check your connection.",
+      message: err instanceof Error ? err.message : "Couldn't reach the plate recognition service — check your connection.",
     };
   }
 }

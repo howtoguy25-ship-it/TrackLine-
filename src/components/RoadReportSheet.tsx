@@ -90,7 +90,7 @@ export function RoadReportSheet({ visible, onClose, uid, position, heading, regi
     setBusy(true);
     try {
       await submitRoadReport(uid, position, heading, input);
-      setMessage("Thanks -- it goes live once 3 other drivers confirm it.");
+      setMessage("Thanks — it goes live once 3 other drivers confirm it.");
       setMode("menu");
     } catch {
       setMessage("Couldn't send the report. Check your connection and try again.");
@@ -177,7 +177,7 @@ export function RoadReportSheet({ visible, onClose, uid, position, heading, regi
                   testID="report-hours-input"
                 />
                 <Text style={styles.body}>
-                  {"Report it on the road it's on, facing along it -- it covers only this stretch, in this direction (either way)."}
+                  {"Report it on the road it's on, facing along it — it covers only this stretch, in this direction (either way)."}
                 </Text>
                 <Button
                   variant="primary"

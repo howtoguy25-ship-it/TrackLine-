@@ -17,7 +17,7 @@ const FAQ: { question: string; answer: string }[] = [
   {
     question: "Where do alerts (police, hazards, cameras) come from?",
     answer:
-      "Every alert is reported by a real driver using TrackLine -- a community-sourced report, not a licensed government feed. They can be stale or wrong, which is why they auto-expire.",
+      "Every alert is reported by a real driver using TrackLine — a community-sourced report, not a licensed government feed. They can be stale or wrong, which is why they auto-expire.",
   },
   {
     question: "Is AI Vehicle Detection recording or storing video?",
@@ -27,7 +27,7 @@ const FAQ: { question: string; answer: string }[] = [
   {
     question: "Why can't I pick a departure time further in the future for Plan a Drive?",
     answer:
-      "TrackLine has no scheduled/unattended-start feature -- Plan a Drive's time presets only preview a predicted ETA for that departure time; tapping Start always begins routing right now.",
+      "TrackLine has no scheduled/unattended-start feature — Plan a Drive's time presets only preview a predicted ETA for that departure time; tapping Start always begins routing right now.",
   },
   {
     question: "Can other people see my reported alerts or recorded voice clips?",

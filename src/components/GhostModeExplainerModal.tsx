@@ -42,7 +42,7 @@ export function GhostModeExplainerModal({ visible, onStayHidden, onBecomeVisible
           </View>
           <Text style={styles.title}>You&apos;re invisible by default</Text>
           <Text style={styles.body}>
-            TrackLine starts every driver in Ghost mode -- other drivers can&apos;t see you on
+            TrackLine starts every driver in Ghost mode — other drivers can&apos;t see you on
             the map. You can still see everyone else&apos;s alerts and report your own,
             anonymously.
           </Text>

@@ -34,6 +34,6 @@ export const TOKEN_STATE_TEXT: Record<MapboxTokenState, string> = {
   ok: "Present",
   missing: "Map service key missing",
   placeholder: "Map service key missing (the build has placeholder text instead of the key)",
-  secret: "Map service key is a secret (sk.) key -- the app needs the public pk. key",
+  secret: "Map service key is a secret (sk.) key — the app needs the public pk. key",
   malformed: "Map service key isn't a valid Mapbox public key",
 };

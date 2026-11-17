@@ -145,7 +145,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
     const text = mapLoadErrorText(payload);
     if (!text) return;
     console.warn(`[map] loading error (${payload?.type ?? "unknown"}): ${payload?.error ?? ""}`);
-    recordMapStyle(false, `${text}${payload?.error ? ` -- ${payload.error.slice(0, 120)}` : ""}`);
+    recordMapStyle(false, `${text}${payload?.error ? ` — ${payload.error.slice(0, 120)}` : ""}`);
     setLoadError(text);
   }, []);
   const onStyleLoaded = useCallback(() => {
@@ -418,7 +418,7 @@ export function mapLoadErrorText(payload?: { error?: string; type?: string }): s
   const err = payload?.error ?? "";
   if (/\b401\b|unauthori[sz]ed|invalid token|access token/i.test(err)) return "Map service rejected the key";
   if (/\b403\b|forbidden/i.test(err)) return "Map service rejected the key (it isn't allowed for this app)";
-  if (/offline|not connected|network connection|internet/i.test(err)) return "No internet -- the map can't load";
+  if (/offline|not connected|network connection|internet/i.test(err)) return "No internet — the map can't load";
   if (payload?.type === "tile") return null;
   return `Map couldn't load${payload?.type ? ` (${payload.type})` : ""}`;
 }

@@ -103,7 +103,7 @@ describe("Map error card instead of a blank grey map", () => {
     expect(mapLoadErrorText({ type: "style", error: "HTTP status code 401" })).toBe("Map service rejected the key");
     expect(mapLoadErrorText({ type: "tile", error: "Unauthorized" })).toBe("Map service rejected the key");
     expect(mapLoadErrorText({ type: "source", error: "403 Forbidden" })).toBe("Map service rejected the key (it isn't allowed for this app)");
-    expect(mapLoadErrorText({ type: "style", error: "The Internet connection appears to be offline." })).toBe("No internet -- the map can't load");
+    expect(mapLoadErrorText({ type: "style", error: "The Internet connection appears to be offline." })).toBe("No internet — the map can't load");
     expect(mapLoadErrorText({ type: "tile", error: "timeout" })).toBeNull();
     expect(mapLoadErrorText({ type: "sprite", error: "bad" })).toBe("Map couldn't load (sprite)");
   });

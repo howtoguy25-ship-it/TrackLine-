@@ -47,9 +47,9 @@ export type VoiceSearchFailure =
 export const VOICE_SEARCH_MESSAGES: Record<VoiceSearchFailure, string> = {
   unavailable: "Voice search isn't available on this phone.",
   denied: "Voice search needs microphone and speech recognition access. You can turn them on in your phone's Settings.",
-  noSpeech: "Didn't catch that -- tap the microphone and try again.",
+  noSpeech: "Didn't catch that — tap the microphone and try again.",
   network: "Voice search needs an internet connection right now.",
-  failed: "Voice search stopped unexpectedly -- try again.",
+  failed: "Voice search stopped unexpectedly — try again.",
 };
 
 /** Maps the recognizer's own error codes onto the handful of outcomes the sheet explains. */

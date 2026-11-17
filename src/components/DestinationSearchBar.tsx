@@ -178,9 +178,9 @@ export function DestinationSearchBar({
           setErrorText(
             err instanceof PlacesApiError
               ? /billing/i.test(err.message)
-                ? "Search unavailable -- billing isn't enabled on this app's Google Cloud project"
-                : `Search unavailable (${err.status}) -- check the Places API key`
-              : "Search failed -- check your connection"
+                ? "Search unavailable — billing isn't enabled on this app's Google Cloud project"
+                : `Search unavailable (${err.status}) — check the Places API key`
+              : "Search failed — check your connection"
           );
         } finally {
           setLoading(false);
@@ -229,7 +229,7 @@ export function DestinationSearchBar({
         setErrorText(
           err instanceof PlacesApiError
             ? `Couldn't load that place (${err.status})`
-            : "Couldn't load that place -- check your connection"
+            : "Couldn't load that place — check your connection"
         );
       }
     },

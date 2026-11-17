@@ -124,7 +124,7 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
               {loadError && (
                 <View style={[StyleSheet.absoluteFill, styles.errorOverlay]} pointerEvents="none">
                   <Icon name="cloud-offline-outline" size={22} color="#FFFFFF" />
-                  <Text style={styles.errorOverlayText}>Camera feed unavailable -- retrying…</Text>
+                  <Text style={styles.errorOverlayText}>Camera feed unavailable — retrying…</Text>
                 </View>
               )}
             </View>

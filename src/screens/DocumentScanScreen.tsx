@@ -138,7 +138,7 @@ export function DocumentScanScreen() {
             <View style={[styles.guideBox, isVin ? styles.guideBoxVin : styles.guideBoxPlate]} />
             <Text style={styles.guideText}>
               {isVin
-                ? "Line up the VIN -- compliance plate, windshield etch, or rego papers"
+                ? "Line up the VIN — compliance plate, windshield etch, or rego papers"
                 : "Line up the number plate"}
             </Text>
           </View>
@@ -161,7 +161,7 @@ export function DocumentScanScreen() {
         <View style={styles.overlay}>
           <Icon name="alert-circle-outline" size={40} color="#FFFFFF" />
           <Text style={styles.overlayText}>
-            Couldn&apos;t read a {isVin ? "VIN" : "plate"} from that photo -- move closer, fill the
+            Couldn&apos;t read a {isVin ? "VIN" : "plate"} from that photo — move closer, fill the
             guide box, and avoid glare, then try again.
           </Text>
           <Button variant="secondary" label="Try again" onPress={onRetake} />
@@ -170,7 +170,7 @@ export function DocumentScanScreen() {
 
       {stage === "confirm" && (
         <View style={[styles.confirmCard, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Text style={styles.confirmLabel}>{isVin ? "VIN READ -- CHECK IT'S RIGHT" : "PLATE READ -- CHECK IT'S RIGHT"}</Text>
+          <Text style={styles.confirmLabel}>{isVin ? "VIN READ — CHECK IT'S RIGHT" : "PLATE READ — CHECK IT'S RIGHT"}</Text>
           <TextInput
             value={editedValue}
             onChangeText={(t) => setEditedValue(t.toUpperCase())}
@@ -204,7 +204,7 @@ export function DocumentScanScreen() {
 
           {isVin && (
             <Text style={styles.confirmHelper}>
-              A REV check also needs a plate -- enter or scan one on the next screen if you
+              A REV check also needs a plate — enter or scan one on the next screen if you
               haven&apos;t already.
             </Text>
           )}
