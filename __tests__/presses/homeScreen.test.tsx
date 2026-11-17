@@ -252,7 +252,10 @@ describe("ad bar", () => {
     expect(style.paddingBottom).toBe(mockSafeArea.bottom);
     expect(style.paddingTop ?? 0).toBe(0);
     expect(style.height).toBeUndefined();
-    expect(style.backgroundColor).toBe("#FFFFFF");
+    // The same colour as the sheet above it for the map's theme, so there's never a band.
+    const { SURFACES } = require("@/theme/colors");
+    expect([SURFACES.light.sheet, SURFACES.dark.sheet]).toContain(style.backgroundColor);
+    expect(style.backgroundColor).toBe(SURFACES[mockSettingsRef.current.mapTheme === "dark" ? "dark" : "light"].sheet);
     expect(BANNER_HEIGHT).toBe(50);
   });
 

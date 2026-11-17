@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Icon } from "@/components/ui/Icon";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Animated, {
   runOnJS,
@@ -36,7 +35,6 @@ interface Props {
 
   unreadCount: number;
   /** Small camera badge on Menu: the dashcam needs attention (it lives in the Menu now). */
-  dashcamBadge: boolean;
   onMenu: () => void;
   onMenuLongPress?: () => void;
 
@@ -117,16 +115,7 @@ export function HomeMapControls(props: Props) {
           onPress={props.onMenu}
           onLongPress={props.onMenuLongPress}
           accessibilityLabel={props.unreadCount > 0 ? `Menu, ${props.unreadCount} unread in Inbox` : "Menu"}
-          badge={
-            <>
-              {props.unreadCount > 0 && <View style={styles.unreadDot} pointerEvents="none" />}
-              {props.dashcamBadge && (
-                <View style={styles.dashcamBadge} pointerEvents="none">
-                  <Icon name="videocam" size={10} color="#FFFFFF" strokeWidth={2.25} />
-                </View>
-              )}
-            </>
-          }
+          badge={props.unreadCount > 0 ? <View style={styles.unreadDot} pointerEvents="none" /> : undefined}
         />
 
         {props.showCompass && (
@@ -156,7 +145,7 @@ export function HomeMapControls(props: Props) {
 
       {/* Bottom-right, riding on the sheet: Report */}
       <Animated.View pointerEvents="box-none" style={[styles.anchored, { right: size.side }, aboveSheetStyle]} testID="report-anchor">
-        <FloatingButton tone="report" size={size.round} onPress={props.onReport} accessibilityLabel="Report something on the road">
+        <FloatingButton tone="report" shape="menu" size={size.round} onPress={props.onReport} accessibilityLabel="Report something on the road" testID="report-button">
           <ReportIcon size={34 * k} />
         </FloatingButton>
       </Animated.View>
@@ -198,19 +187,6 @@ const styles = StyleSheet.create({
     height: 11,
     borderRadius: 5.5,
     backgroundColor: colors.dangerFill,
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
-  },
-  dashcamBadge: {
-    position: "absolute",
-    bottom: 5,
-    right: 5,
-    width: 17,
-    height: 17,
-    borderRadius: 8.5,
-    backgroundColor: colors.dangerFill,
-    alignItems: "center",
-    justifyContent: "center",
     borderWidth: 1.5,
     borderColor: "#FFFFFF",
   },

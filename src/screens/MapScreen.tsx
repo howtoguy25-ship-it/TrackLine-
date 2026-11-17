@@ -85,7 +85,6 @@ import { clusterPoints } from "@/utils/markerCluster";
 import { useLocation } from "@/context/LocationContext";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
-import { MuteButton } from "@/components/MuteButton";
 import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/DestinationSearchBar";
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
@@ -519,17 +518,6 @@ export function MapScreen() {
   // starts), not a permanent fixture competing with the map for attention.
   // Settings > Map shortcuts > Traffic flow: on the home map too, not just once a route is picked.
   const showsTrafficLayer = settings.showTrafficFlow;
-  const [trafficLegendVisible, setTrafficLegendVisible] = useState(false);
-  const wasShowingTrafficRef = useRef(false);
-  useEffect(() => {
-    if (showsTrafficLayer && !wasShowingTrafficRef.current) {
-      setTrafficLegendVisible(true);
-      const timer = setTimeout(() => setTrafficLegendVisible(false), 5000);
-      wasShowingTrafficRef.current = true;
-      return () => clearTimeout(timer);
-    }
-    if (!showsTrafficLayer) wasShowingTrafficRef.current = false;
-  }, [showsTrafficLayer]);
   const [stopLocation, setStopLocation] = useState<LatLng | null>(null);
   const [pickingStop, setPickingStop] = useState(false);
   // Real custom "From" -- Google/Apple-Maps-style, lets a route be planned between any two real
@@ -603,7 +591,7 @@ export function MapScreen() {
   // on region-change-complete, gated behind a min-zoom so a zoomed-out view doesn't fire an
   // Overpass query over a huge area), independent of the live community AlertType markers.
   const [osmData, setOsmData] = useState<OsmTrafficData | null>(null);
-  const [osmLoading, setOsmLoading] = useState(false);
+  const [, setOsmLoading] = useState(false);
   // Current zoom level (region.latitudeDelta), tracked purely to size the traffic-light
   // clustering grid below -- bigger delta (zoomed out) means bigger cluster cells, so a huge
   // real-world cluster of signals stays a handful of markers until you actually zoom in on it.
@@ -713,7 +701,7 @@ export function MapScreen() {
   // event (react-native-maps only fires that on Google Maps/Android), so instead any map tap
   // looks up whatever business is closest to that point via Places Nearby Search + Details.
   const [placeInfo, setPlaceInfo] = useState<PlaceInfo | null>(null);
-  const [placeInfoLoading, setPlaceInfoLoading] = useState(false);
+  const [, setPlaceInfoLoading] = useState(false);
   // Real quick drive-time check -- like Apple Maps' own "19 min." pill on a place card, a
   // lightweight traffic-aware Directions call from the real current trip origin, fired only
   // once a place card is actually open (not for every map tap/search result) and cleared the
@@ -834,18 +822,6 @@ export function MapScreen() {
   // since Map3DView is only ever mounted while show3D is true (unmounts fully when it's
   // toggled off), each mount starts from the same default camera, so a fixed +60/-60 delta
   // pair is a safe, always-correct toggle rather than needing to track absolute angle.
-  const [frontView, setFrontView] = useState(false);
-
-  if (!show3D && frontView) setFrontView(false);
-
-  const toggleFrontView = useCallback(() => {
-    setFrontView((was) => {
-      const next = !was;
-      // Front view: tilt almost to the horizon over the raised buildings; back to the 3D angle.
-      mapRef.current?.animateCamera({ pitch: next ? 80 : 65 }, { duration: 500 });
-      return next;
-    });
-  }, []);
 
   // Apple-Maps-style close-follow camera: tilted, zoomed in, rotates to match the direction
   // of travel. Uses react-native-maps' own `camera`/`animateCamera` API (pitch/heading/zoom),
@@ -5508,23 +5484,6 @@ export function MapScreen() {
         schoolZoneId={schoolZoneNow?.shape.zone.id ?? null}
       />
 
-      {/* Real, confirmed request -- explains what the live traffic layer's own yellow/red
-          actually mean, right when it turns on (see showsTrafficLayer/trafficLegendVisible
-          above), auto-dismissing on its own after a few seconds rather than sitting there
-          permanently. pointerEvents="none" -- purely informational, never blocks a tap on the
-          map/search bar underneath. */}
-      {trafficLegendVisible && showsTrafficLayer && (
-        <View pointerEvents="none" style={[styles.trafficLegend, { top: insets.top + spacing.md }]}>
-          <View style={styles.trafficLegendRow}>
-            <View style={[styles.trafficLegendDot, { backgroundColor: "#EAB308" }]} />
-            <Text style={styles.trafficLegendText}>Some traffic</Text>
-          </View>
-          <View style={styles.trafficLegendRow}>
-            <View style={[styles.trafficLegendDot, { backgroundColor: "#EF4444" }]} />
-            <Text style={styles.trafficLegendText}>Heavy traffic</Text>
-          </View>
-        </View>
-      )}
 
       {/* Fixed center-of-screen pin for manual alert placement -- see the comment on
           onAlertTypeSelected/onRegionChangeComplete above for why this replaced a draggable
@@ -5551,17 +5510,6 @@ export function MapScreen() {
         </View>
       )}
 
-      {/* 3D buildings on and not navigating: switch between the 3D angle and a near-horizon
-          "front view" over the raised buildings. */}
-      {show3D && !route && currentLatLng && (
-        <Chip
-          icon={frontView ? "layers" : "eye"}
-          label={frontView ? "Top-down" : "Front view"}
-          onPress={toggleFrontView}
-          accessibilityLabel={frontView ? "Switch to top-down 3D view" : "Switch to front view"}
-          onMap selected={frontView} style={[styles.frontViewSpot, { top: insets.top + spacing.md }]}
-        />
-      )}
 
       {/* Custom "From" picker -- reachable either from the idle search panel's own From row
           (no destination picked yet) or from the route-options card's From row once one has
@@ -5769,6 +5717,7 @@ export function MapScreen() {
           }}
           distanceUnit={settings.distanceUnit}
           lanes={laneStripLanes}
+          metersToManoeuvre={metersToManoeuvre}
         />
       )}
 
@@ -6061,39 +6010,18 @@ export function MapScreen() {
             button competing for attention; this only needs to be noticeable enough to find,
             not loud. Camera-height switching (front view <-> overview) lives on the always-
             present locate FAB instead of a separate button here. */}
-        {route && !followTilt && (
-          <FloatingButton
-            tone="recenter"
-            icon="navigate"
-            onPress={toggleFollowTilt}
-            accessibilityLabel="Recenter on my location"
-            size={44}
-          />
-        )}
-        {route && followTilt && (
+        {/* While navigating: just the sound button (it opens the sound sheet). Re-centre sits
+            above the bottom bar after a pan; ending the drive is in the ETA sheet. */}
+        {route ? (
           <FloatingButton
             tone="map"
-            icon="close"
-            onPress={toggleFollowTilt}
-            accessibilityLabel="Exit close-follow view"
-            size={44}
+            icon="volume-high"
+            onPress={() => soundSheetRef.current?.expand()}
+            accessibilityLabel="Sound"
+            size={52}
+            testID="nav-sound"
           />
-        )}
-        {/* Voice guidance only ever speaks during active turn-by-turn navigation, so mute
-            only means anything then -- previously always rendered here, which put it at the
-            exact same top offset as the destination search bar (both start at
-            insets.top + spacing.md) and painted on top of the search bar's right edge
-            whenever not navigating, looking like a broken "voice search" button glued to the
-            search input instead of a separate control. */}
-        {route && <MuteButton />}
-        {/* Overpass (OSM) traffic-light/speed-camera lookups can genuinely take a few
-            seconds -- a visible spinner while one is in flight replaces what used to look
-            like the layer being permanently stuck with no feedback at all. */}
-        {osmLoading && osmWantAny && (
-          <View style={styles.osmLoadingBadge} accessibilityLabel="Loading traffic light and speed camera data">
-            <ActivityIndicator size="small" color={colors.textMuted} />
-          </View>
-        )}
+        ) : null}
       </View>
 
       {/* Hidden while a bottom sheet is open, an alert is being placed, or the route/stop
@@ -6118,7 +6046,6 @@ export function MapScreen() {
           streetPill={!anySheetOpen && !pannedAwayIdle ? { streetName: currentRoadName, reportsAround, stationary } : null}
           topInset={insets.top}
           unreadCount={inboxUnreadCount}
-          dashcamBadge={detectionBatteryLow}
           onMenu={() => navigation.navigate("MainMenu")}
           onMenuLongPress={() => visibilitySheetRef.current?.expand()}
           showCompass={settings.showCompass}
@@ -6617,11 +6544,6 @@ export function MapScreen() {
         onSheetChange={(index) => setToolsSheetOpen(index >= 0)}
       />
 
-      {placeInfoLoading && (
-        <View style={styles.placeInfoLoadingBadge} pointerEvents="none">
-          <ActivityIndicator size="small" color={colors.text} />
-        </View>
-      )}
 
       {/* Rendered last so it always paints on top of the search bar/nav card below it,
           instead of being silently covered by them when both occupy the same top area. */}
@@ -6689,32 +6611,6 @@ const styles = StyleSheet.create({
     color: "#C7CDD6",
     textAlign: "center",
     lineHeight: 20,
-  },
-  trafficLegend: {
-    position: "absolute",
-    alignSelf: "center",
-    backgroundColor: "rgba(17, 24, 39, 0.85)",
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    flexDirection: "row",
-    gap: spacing.md,
-    ...shadow.medium,
-  },
-  trafficLegendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  trafficLegendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  trafficLegendText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
   },
   // Small, clear pointed pill for each route option's live ETA -- deliberately compact (not a
   // full card) so it reads at a glance without covering meaningful map area, per explicit
@@ -6846,15 +6742,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   // The place page's pin: a red disc with a white centre and a soft shadow.
-  osmLoadingBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
   reroutingBadge: {
     position: "absolute",
     left: spacing.md,
@@ -6950,18 +6837,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
     opacity: 0.9,
-  },
-  placeInfoLoadingBadge: {
-    position: "absolute",
-    alignSelf: "center",
-    top: "48%",
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
   },
   // Small advisory badge on the AI Detection FAB when battery is under 50% -- see
   // detectionBatteryLow's own comment. Purely visual, the Pressable underneath stays fully

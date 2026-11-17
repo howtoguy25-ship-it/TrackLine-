@@ -1,6 +1,8 @@
 import { View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
+import { useMapScheme } from "@/components/ui/uiScheme";
+import { SURFACES } from "@/theme/colors";
 import { env } from "@/config/env";
 import { Sentry } from "@/services/sentry";
 
@@ -30,13 +32,15 @@ export function shouldShowBanner(state: { navigating: boolean; choosingRoute: bo
 
 export function BannerAdBar() {
   const insets = useSafeAreaInsets();
+  // Same colour as the sheet above it, light or dark, so there's never a band around the ad.
+  const sheet = SURFACES[useMapScheme()].sheet;
   return (
     // White, and padded by the bottom safe area, so the banner sits inside it with the sheet's
     // own white running straight down to the screen edge -- no dark strip under the ad, and
     // nothing behind the home indicator but white.
     // Sits directly on the bottom safe-area edge: the only space under the 50pt banner is the
     // safe-area inset itself, filled white like the sheet above it (no dark strip).
-    <View testID="ad-bar" style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View testID="ad-bar" style={[styles.container, { paddingBottom: insets.bottom, backgroundColor: sheet }]}>
       <View style={styles.slot}>
         <BannerAd
           unitId={env.ads.bannerUnitId}
@@ -53,7 +57,7 @@ export function BannerAdBar() {
 }
 
 const styles = StyleSheet.create({
-  container: { width: "100%", backgroundColor: "#FFFFFF", alignItems: "center" },
+  container: { width: "100%", alignItems: "center" },
   // The slot keeps its 50pt whether or not an ad has loaded, so the layout above it (the sheet,
   // the floating buttons, the map padding) never jumps when one arrives.
   slot: { width: 320, height: BANNER_HEIGHT, alignItems: "center", justifyContent: "center" },

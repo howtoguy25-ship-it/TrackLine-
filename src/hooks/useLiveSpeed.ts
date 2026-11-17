@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
-import { haversineMeters } from "@/services/places";
+import { displayKmh, rawSpeedKmh } from "@/utils/gpsSpeed";
 import { isGpsReplayActive, subscribeGpsReplay, subscribeGpsReplayActiveChange, type ReplayFix } from "@/dev/gpsReplay";
 
 // Real, explicit request -- a dedicated GPS watch for the live speedometer, separate from
@@ -92,23 +92,9 @@ export function useLiveSpeed(active: boolean): LiveSpeedState {
       setAccuracyM(coords.accuracy ?? null);
       setHasFix(true);
 
-      let rawKmh: number;
-      if (coords.speed != null && coords.speed >= 0) {
-        rawKmh = coords.speed * 3.6;
-      } else {
-        // Real haversine-distance-over-time fallback, per spec -- only when the OS genuinely
-        // didn't give a speed for this fix, never used to override a real one.
-        const last = lastFixRef.current;
-        if (last) {
-          const dtSeconds = (timestamp - last.timestamp) / 1000;
-          rawKmh =
-            dtSeconds > 0
-              ? (haversineMeters(last, { latitude: coords.latitude, longitude: coords.longitude }) / dtSeconds) * 3.6
-              : 0;
-        } else {
-          rawKmh = 0;
-        }
-      }
+      const here = { latitude: coords.latitude, longitude: coords.longitude, timestamp };
+      const rawKmh = rawSpeedKmh(coords.speed, here, lastFixRef.current);
+      if (rawKmh == null) return; // an untrustworthy fix: not shown, not smoothed
       lastFixRef.current = { latitude: coords.latitude, longitude: coords.longitude, timestamp };
 
       // Real, confirmed bug (screenshot evidence: 146 km/h shown the instant the app opened,
@@ -135,7 +121,7 @@ export function useLiveSpeed(active: boolean): LiveSpeedState {
       } else {
         belowThresholdSinceRef.current = null;
       }
-      setSpeedKmh(Math.round(smoothed));
+      setSpeedKmh(displayKmh(smoothed));
     }
 
     if (__DEV__ && replayActive) {
