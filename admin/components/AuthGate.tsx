@@ -1,6 +1,9 @@
 "use client";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
+  GoogleAuthProvider,
+  OAuthProvider,
+  signInWithPopup,
   getMultiFactorResolver,
   multiFactor,
   onIdTokenChanged,
@@ -11,7 +14,7 @@ import {
   type TotpSecret,
   type User,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, USE_EMULATORS } from "@/lib/firebase";
 import { api } from "@/lib/api";
 import { IDLE_LIMIT_MS, isIdleExpired } from "@/lib/session";
 import type { Role } from "@/lib/nav";
@@ -44,7 +47,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         if (!user) return setStage({ s: "signin" });
         const token = await user.getIdTokenResult();
         const factor = (token.claims.firebase as { sign_in_second_factor?: string } | undefined)?.sign_in_second_factor;
-        if (!factor) {
+        if (!factor && !USE_EMULATORS) {
           if (multiFactor(user).enrolledFactors.length > 0) {
             // Enrolled already but this session skipped it (shouldn't happen): sign in again.
             await signOut(auth);
@@ -105,6 +108,27 @@ function SignIn({ error, onMfa }: { error?: string; onMfa: (r: MultiFactorResolv
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(error);
+  const handle = (ex: unknown) => {
+    const code = (ex as { code?: string }).code;
+    if (code === "auth/multi-factor-auth-required") onMfa(getMultiFactorResolver(auth, ex as never));
+    else if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") setErr(undefined);
+    else if (code === "auth/operation-not-allowed") setErr("That sign-in method isn't turned on for this project (ADMIN.md).");
+    else if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") setErr("Wrong email or password.");
+    else if (code === "auth/too-many-requests") setErr("Too many tries. Wait a few minutes and try again.");
+    else setErr((ex as Error).message);
+  };
+  const social = async (provider: GoogleAuthProvider | OAuthProvider) => {
+    setBusy(true);
+    setErr(undefined);
+    try {
+      if (provider instanceof OAuthProvider) provider.addScope("email");
+      await signInWithPopup(auth, provider);
+    } catch (ex) {
+      handle(ex);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <form
       className="space-y-3"
@@ -115,9 +139,7 @@ function SignIn({ error, onMfa }: { error?: string; onMfa: (r: MultiFactorResolv
         try {
           await signInWithEmailAndPassword(auth, email.trim(), password);
         } catch (ex) {
-          const code = (ex as { code?: string }).code;
-          if (code === "auth/multi-factor-auth-required") onMfa(getMultiFactorResolver(auth, ex as never));
-          else setErr(code === "auth/invalid-credential" ? "Wrong email or password." : (ex as Error).message);
+          handle(ex);
         } finally {
           setBusy(false);
         }
@@ -133,6 +155,10 @@ function SignIn({ error, onMfa }: { error?: string; onMfa: (r: MultiFactorResolv
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <button className="btn-primary w-full" disabled={busy || !email || !password}>Continue</button>
+      <div className="flex items-center gap-2 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
+      <button type="button" className="btn-secondary w-full" disabled={busy} onClick={() => social(new GoogleAuthProvider())}>Continue with Google</button>
+      <button type="button" className="btn-secondary w-full" disabled={busy} onClick={() => social(new OAuthProvider("apple.com"))}>Continue with Apple</button>
+      <p className="text-xs text-slate-400">Your authenticator code is still required after Google or Apple.</p>
     </form>
   );
 }

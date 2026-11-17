@@ -511,6 +511,39 @@ d("on the emulators", () => {
     expect((await auditFor(uids.driver2, "recovery.review"))[0].after.outcome).toBe("approved");
   });
 
+  // Real phone sign-in on the Auth emulator (Firebase's own SMS flow), then the callable with that session.
+  async function phoneSession(phone) {
+    const base = `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1`;
+    const post = (path, body) => fetch(`${base}/${path}?key=fake-api-key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    const { sessionInfo } = await post("accounts:sendVerificationCode", { phoneNumber: phone, recaptchaToken: "emulator" });
+    const codes = await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/emulator/v1/projects/${PROJECT_ID}/verificationCodes`).then((r) => r.json());
+    const code = codes.verificationCodes.filter((c) => c.phoneNumber === phone).pop().code;
+    const signed = await post("accounts:signInWithPhoneNumber", { sessionInfo, code });
+    return signed.idToken;
+  }
+  const callAs = (idToken, name, data) =>
+    fetch(`http://127.0.0.1:5001/${PROJECT_ID}/us-central1/${name}`, { method: "POST", headers: { "Content-Type": "application/json", ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) }, body: JSON.stringify({ data }) }).then((r) => r.json());
+
+  test("phone recovery with Firebase's SMS: limits, then other devices signed out + notice", async () => {
+    const phone = "+61400555666";
+    const u = await aauth.createUser({ email: `phone${Date.now()}@test.trackline`, emailVerified: true, phoneNumber: phone, password: "old-pass-123" });
+    // Counted against the daily limits (no account info in the reply).
+    for (let i = 0; i < 3; i++) expect((await callAs(null, "accountRecovery", { op: "phoneStart", phone, deviceId: `pd${i}` })).result).toEqual({ ok: true });
+    expect((await callAs(null, "accountRecovery", { op: "phoneStart", phone, deviceId: "pd9" })).error.status).toBe("RESOURCE_EXHAUSTED");
+    // Without a phone sign-in it's refused.
+    expect((await callAs(null, "accountRecovery", { op: "afterPhoneReset" })).error.status).toBe("PERMISSION_DENIED");
+    const before = (await aauth.getUser(u.uid)).tokensValidAfterTime;
+    await new Promise((res) => setTimeout(res, 1100)); // the revoke time has 1-second resolution
+    const idToken = await phoneSession(phone);
+    const r = await callAs(idToken, "accountRecovery", { op: "afterPhoneReset" });
+    expect(r.result.ok).toBe(true);
+    expect(typeof r.result.customToken).toBe("string");
+    expect((await aauth.getUser(u.uid)).tokensValidAfterTime).not.toBe(before);
+    const notice = await db.collection("mail").where("uid", "==", u.uid).where("kind", "==", "password_changed").get();
+    expect(notice.size).toBe(1);
+    await aauth.deleteUser(u.uid);
+  });
+
   test("an approved change applies after 24 h and a reset goes to the new contact", async () => {
     const u = await aauth.createUser({ email: `apply${Date.now()}@test.trackline`, emailVerified: true });
     const newEmail = `applied${Date.now()}@test.trackline`;

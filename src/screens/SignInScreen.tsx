@@ -24,6 +24,9 @@ import { Sentry } from "@/services/sentry";
 // sign-in is deliberately not offered here: Firebase's phone auth needs a browser reCAPTCHA
 // that doesn't exist in a native app, unlike Google/Apple/Email which all work the same way
 // on mobile as they logically do on web.
+// iOS needs the iOS client ID; Android needs the web client ID (for the ID token Firebase checks).
+const googleConfigured = Platform.OS === "android" ? !!env.googleWebClientId : !!env.googleIosClientId;
+
 export function SignInScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -52,8 +55,8 @@ export function SignInScreen() {
   }, []);
 
   useEffect(() => {
-    if (!env.googleIosClientId) return;
-    GoogleSignin.configure({ iosClientId: env.googleIosClientId });
+    if (!googleConfigured) return;
+    GoogleSignin.configure({ iosClientId: env.googleIosClientId || undefined, webClientId: env.googleWebClientId || undefined });
   }, []);
 
   const onAppleSignIn = useCallback(async () => {
@@ -272,11 +275,20 @@ export function SignInScreen() {
         size={GoogleSigninButton.Size.Wide}
         color={GoogleSigninButton.Color.Light}
         onPress={onGoogleSignIn}
-        disabled={busy}
+        disabled={busy || !googleConfigured}
       />
-      {!env.googleIosClientId && (
+      {!googleConfigured && (
         <Text style={styles.disabledNote}>Google sign-in isn&apos;t configured for this build yet.</Text>
       )}
+
+      <Button
+        variant="secondary"
+        label="Continue with phone number"
+        onPress={() => navigation.navigate("PhoneSignIn")}
+        disabled={busy}
+        fullWidth
+        testID="phone-sign-in-button"
+      />
 
       <View style={styles.divider}>
         <View style={styles.dividerLine} />

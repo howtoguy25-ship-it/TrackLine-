@@ -3,7 +3,8 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Device from "expo-device";
-import { signInWithCustomToken } from "firebase/auth";
+import { signInWithCustomToken, updatePassword } from "firebase/auth";
+import { sendPhoneCode, signInExistingPhone } from "@/account/phoneAuth";
 import { Text } from "@/components/AppText";
 import { Button } from "@/components/ui/Button";
 import { auth } from "@/services/firebase";
@@ -20,6 +21,8 @@ import {
   setNewPassword,
   startNewContact,
   startRecovery,
+  startPhoneRecovery,
+  finishPhoneRecovery,
   toInternational,
   verifyNewContact,
   verifyRecoveryCode,
@@ -34,6 +37,8 @@ type Step =
   | { s: "emailSent"; message: string }
   | { s: "code"; challengeId: string; masked: string }
   | { s: "password"; grant: string }
+  | { s: "fbCode"; vid: string; masked: string }
+  | { s: "fbPassword" }
   | { s: "done"; text: string }
   | { s: "chat"; index: number; answers: Record<string, string> }
   | { s: "newContact"; answers: Record<string, string> }
@@ -45,6 +50,7 @@ function errText(err: unknown): string {
     const left = typeof err.details?.attemptsLeft === "number" ? ` ${err.details.attemptsLeft} tries left.` : "";
     return `${err.message}${left}`;
   }
+  if (err instanceof Error && err.message) return err.message;
   return "Something went wrong. Check your connection and try again.";
 }
 
@@ -109,6 +115,13 @@ export function AccountRecoveryScreen() {
             testID="recovery-send"
             onPress={() =>
               run(async () => {
+                if (contactKind(toInternational(input)) === "phone") {
+                  // Firebase sends the 6-digit SMS (account/phoneAuth.ts); the server only counts it.
+                  await startPhoneRecovery(input);
+                  const vid = await sendPhoneCode(input);
+                  go({ s: "fbCode", vid, masked: maskPhoneForDisplay(toInternational(input)) });
+                  return;
+                }
                 const r = await startRecovery(input);
                 if (r.channel === "email") go({ s: "emailSent", message: r.message });
                 else go({ s: "code", challengeId: r.challengeId as string, masked: r.masked || maskPhoneForDisplay(input) });
@@ -159,6 +172,58 @@ export function AccountRecoveryScreen() {
                 } else {
                   go({ s: "done", text: `Password changed. Sign in with ${r.email ?? "your email"} and the new password. Every other device was signed out.` });
                 }
+              })
+            }
+          />
+        </>
+      );
+      break;
+    case "fbCode":
+      body = (
+        <>
+          <Text style={styles.title}>Enter the code</Text>
+          <Text style={styles.help}>We texted a 6-digit code to {step.masked}.</Text>
+          {field(input, setInput, "6-digit code", { keyboardType: "number-pad", maxLength: 6, testID: "recovery-fb-code", textContentType: "oneTimeCode" })}
+          <Button
+            variant="primary"
+            label="Continue"
+            loading={busy}
+            disabled={busy || input.length !== 6}
+            fullWidth
+            onPress={() =>
+              run(async () => {
+                const user = await signInExistingPhone(step.vid, input);
+                if (!user) return go({ s: "done", text: "No TrackLine account uses that number. Try the email you signed up with, or 'I can't use my email or phone any more'." });
+                if (user.providerData.some((p) => p.providerId === "password")) return go({ s: "fbPassword" });
+                const r = await finishPhoneRecovery();
+                if (r.customToken) await signInWithCustomToken(auth, r.customToken);
+                go({ s: "done", text: "You're signed in. Every other device was signed out." });
+              })
+            }
+          />
+        </>
+      );
+      break;
+    case "fbPassword":
+      body = (
+        <>
+          <Text style={styles.title}>Choose a new password</Text>
+          {field(input, setInput, "New password (8+ characters)", { secureTextEntry: true, autoComplete: "new-password", testID: "recovery-fb-pass" })}
+          {field(input2, setInput2, "Type it again", { secureTextEntry: true, autoComplete: "new-password" })}
+          {input2.length > 0 && input !== input2 && <Text style={styles.error}>The two passwords don&apos;t match.</Text>}
+          <Button
+            variant="primary"
+            label="Save password"
+            loading={busy}
+            disabled={busy || input.length < 8 || input !== input2}
+            fullWidth
+            onPress={() =>
+              run(async () => {
+                if (!auth.currentUser) throw new Error("Start again.");
+                await updatePassword(auth.currentUser, input);
+                const r = await finishPhoneRecovery();
+                if (r.customToken) await signInWithCustomToken(auth, r.customToken);
+                go({ s: "done", text: r.customToken ? "Password changed and you're signed in. Every other device was signed out." : "Password changed. Sign in again with your new password. Every other device was signed out." });
               })
             }
           />
