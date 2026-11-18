@@ -56,11 +56,12 @@ describe("map style", () => {
     expect(layer("land").paint!["background-color"]).toBe("#F7F8F7");
     expect(layer("parks").paint!["fill-color"]).toBe("#C9EFC9");
     expect(layer("water").paint!["fill-color"]).toBe("#A9D3F5");
-    expect(layer("buildings").paint!["fill-color"]).toBe("#E6E8EA");
-    expect(layer("road-residential").paint!["line-color"]).toBe("#D5D9DD");
+    // Very light flat buildings, soft grey roads (Waze-style).
+    expect(layer("buildings").paint!["fill-color"]).toBe("#EEF0F2");
+    expect(layer("road-residential").paint!["line-color"]).toBe("#D2D6DB");
     expect(layer("road-casing-residential").paint!["line-color"]).toBe("#FFFFFF");
     expect(layer("suburb-labels").paint!["text-color"]).toBe("#6E8FA6");
-    expect(layer("road-label-primary").paint!["text-color"]).toBe("#3A3F44");
+    expect(layer("road-label-primary").paint!["text-color"]).toBe("#2E3338");
   });
 
   it.each([
@@ -93,18 +94,18 @@ describe("map style", () => {
     expect(ROAD_LINE_MIN_ZOOM).toBe(9);
   });
 
-  it("road widths: motorway 7->18, primary 6->14, secondary 5->12, residential 3->9, service 2->6 (z14->z18)", () => {
+  it("road widths: motorway 9->22, primary 7->17, secondary 5.5->13, residential 3->9, service 2->6 (z14->z18)", () => {
     const at = (cls: RoadClass) => {
       const e = roadWidthExpression(cls) as number[];
       return [e[6], e[8]]; // values at z14 and z18
     };
-    expect(at("motorway")).toEqual([7, 18]);
-    expect(at("primary")).toEqual([6, 14]);
-    expect(at("secondary")).toEqual([5, 12]);
+    expect(at("motorway")).toEqual([9, 22]);
+    expect(at("primary")).toEqual([7, 17]);
+    expect(at("secondary")).toEqual([5.5, 13]);
     expect(at("residential")).toEqual([3, 9]);
     expect(at("service")).toEqual([2, 6]);
     // Casing is 2px wider than the road it outlines.
-    expect((layer("road-casing-primary").paint!["line-width"] as number[])[6]).toBe(8);
+    expect((layer("road-casing-primary").paint!["line-width"] as number[])[6]).toBe(9);
   });
 
   it("motorways draw over the streets they cross", () => {
@@ -127,10 +128,12 @@ describe("map style", () => {
     const shields = layer("road-shields");
     const plate = (props: Record<string, string>) => evalMatch(shields.layout!["icon-image"], props);
     const text = (props: Record<string, string>) => evalMatch(shields.paint!["text-color"], props);
-    // Australia: national highway green with the data's yellow text; state routes blue.
+    // Australia: national highways and the alphanumeric M/A/B routes on green plates, with the
+    // data's yellow text.
     expect(plate({ shield: "au-national-highway" })).toBe("tl-shield-green");
     expect(text({ shield: "au-national-highway", shield_text_color: "yellow" })).toBe("#FFD400");
-    expect(plate({ shield: "au-state" })).toBe("tl-shield-blue");
+    expect(plate({ shield: "au-state" })).toBe("tl-shield-green");
+    expect(plate({ shield: "au-national-route" })).toBe("tl-shield-green");
     // The generic plates Mapbox uses for alphanumeric routes (M5, A22) follow the data too.
     expect(plate({ shield: "rectangle-green" })).toBe("tl-shield-green");
     // US Interstate blue, US highway white with black text, UK motorway blue, NZ red.
@@ -151,7 +154,9 @@ describe("map style", () => {
       expect(layer(id).layout!["text-field"]).toEqual(["coalesce", ["get", "name"], ["get", "name_en"]]);
     }
     // The fallback font covers Arabic, CJK and Cyrillic.
-    expect(layer("road-label-primary").layout!["text-font"]).toContain("Arial Unicode MS Regular");
+    expect(layer("road-label-residential").layout!["text-font"]).toContain("Arial Unicode MS Regular");
+    // Main roads' names are bold (with the same wide-coverage fallback).
+    expect(layer("road-label-primary").layout!["text-font"]).toContain("Arial Unicode MS Bold");
   });
 
   it("Map labels: local by default; my app language; both (app language underneath where different)", () => {
@@ -352,5 +357,22 @@ describe("simulate drive", () => {
 
   it("an empty route simulates nothing", () => {
     expect(routeToReplayPoints([], 50)).toEqual([]);
+  });
+});
+
+describe("Waze-style look (Pass 3 §4)", () => {
+  it("dark style: navy-grey roads on a dark background", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DARK_PALETTE } = require("../src/map-v2/styles/buildStyle");
+    expect(DARK_PALETTE.road).toBe("#36435A");
+    expect(DARK_PALETTE.land).toBe("#161B24");
+  });
+  it("3D buildings: off by default; when on, low and see-through", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { BUILDING_EXTRUSION_STYLE } = require("../src/map-v2/styles/buildStyle");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    expect(require("../src/services/settings").DEFAULT_SETTINGS.show3DBuildings).toBe(false);
+    expect(BUILDING_EXTRUSION_STYLE.opacity).toBeLessThanOrEqual(0.5);
+    expect(BUILDING_EXTRUSION_STYLE.maxHeightM).toBeLessThanOrEqual(40);
   });
 });

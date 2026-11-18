@@ -11,6 +11,7 @@ import { INK, RED_SOFT, RED_TEXT, TRAFFIC, WHITE } from "@/theme/colors";
 import { GestureTracker } from "@/map-v2/gestures";
 import {
   BUILDING_EXTRUSION_MIN_PITCH,
+  BUILDING_EXTRUSION_STYLE,
   ROAD_SCALES,
   SATELLITE_LABEL_PALETTE,
   SHIELD_IMAGE,
@@ -356,11 +357,13 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
           filter={["==", ["get", "extrude"], "true"]}
           minZoomLevel={14}
           maxZoomLevel={22}
+          // Only when 3D buildings are switched on, and then low and see-through so the route
+          // is never hidden behind a tower.
           style={{
-            fillExtrusionColor: "#E6E8EA",
-            fillExtrusionOpacity: 0.85,
-            fillExtrusionHeight: ["get", "height"],
-            fillExtrusionBase: ["get", "min_height"],
+            fillExtrusionColor: BUILDING_EXTRUSION_STYLE.color,
+            fillExtrusionOpacity: BUILDING_EXTRUSION_STYLE.opacity,
+            fillExtrusionHeight: ["min", ["*", ["get", "height"], BUILDING_EXTRUSION_STYLE.heightScale], BUILDING_EXTRUSION_STYLE.maxHeightM],
+            fillExtrusionBase: ["min", ["*", ["get", "min_height"], BUILDING_EXTRUSION_STYLE.heightScale], BUILDING_EXTRUSION_STYLE.maxHeightM],
           }}
         />
       )}

@@ -26,10 +26,11 @@ export const ROAD_DRAW_ORDER: RoadClass[] = ["service", "residential", "tertiary
 
 /** Line width in px at zoom 14 and zoom 18 (Mapbox interpolates between and beyond). */
 export const ROAD_WIDTHS: Record<RoadClass, { z14: number; z18: number }> = {
-  motorway: { z14: 7, z18: 18 },
-  trunk: { z14: 7, z18: 18 },
-  primary: { z14: 6, z18: 14 },
-  secondary: { z14: 5, z18: 12 },
+  // Main roads clearly thicker than streets, Waze-style.
+  motorway: { z14: 9, z18: 22 },
+  trunk: { z14: 8.5, z18: 21 },
+  primary: { z14: 7, z18: 17 },
+  secondary: { z14: 5.5, z18: 13 },
   tertiary: { z14: 4, z18: 10 },
   residential: { z14: 3, z18: 9 },
   service: { z14: 2, z18: 6 },
@@ -62,6 +63,8 @@ export const LABEL_PRIORITY: Record<RoadClass, number> = {
 };
 /** Above this camera pitch the buildings are raised (handled by TrackLineMap, not the style). */
 export const BUILDING_EXTRUSION_MIN_PITCH = 30;
+/** Raised buildings (only when the driver turns 3D buildings on): low and see-through. */
+export const BUILDING_EXTRUSION_STYLE = { color: "#E6E8EA", opacity: 0.45, heightScale: 0.5, maxHeightM: 40 } as const;
 
 // Mapbox-hosted fonts. Rubik isn't on Mapbox's glyph server (uploading it needs a Mapbox
 // Studio account step), so labels use the closest geometric sans Mapbox hosts, with a
@@ -70,7 +73,7 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 5;
+export const STYLE_VERSION = 6;
 
 /** Australian suburb names with postcodes (ABS data) are drawn from this zoom up to 16. */
 export const AU_SUBURB_MIN_ZOOM = 11;
@@ -169,8 +172,9 @@ export const SHIELD_PLATE_FOR: Record<string, ShieldPlate> = {
   "rectangle-blue": "blue",
   "circle-white": "white",
   "au-national-highway": "green",
-  "au-national-route": "white",
-  "au-state": "blue",
+  // Australia's alphanumeric routes (M1, A6, B83) are signed on green plates.
+  "au-national-route": "green",
+  "au-state": "green",
   "au-tourist": "brown",
   "nz-state": "red",
   "us-interstate": "blue",
@@ -247,25 +251,27 @@ export const LIGHT_PALETTE: StylePalette = {
   land: "#F7F8F7",
   park: "#C9EFC9",
   water: "#A9D3F5",
-  building: "#E6E8EA",
-  road: "#D5D9DD",
+  // Very light, flat buildings so the roads read first.
+  building: "#EEF0F2",
+  road: "#D2D6DB",
   roadCasing: "#FFFFFF",
-  motorway: "#D5D9DD",
+  motorway: "#C9CED5",
   suburbLabel: "#6E8FA6",
-  streetLabel: "#3A3F44",
+  streetLabel: "#2E3338",
   labelHalo: "#FFFFFF",
   shieldText: "#FFD400",
 };
 
 export const DARK_PALETTE: StylePalette = {
   name: "TrackLine Dark",
-  land: "#1B1F24",
-  park: "#1F3324",
-  water: "#132B44",
-  building: "#2A2F36",
-  road: "#3A4049",
-  roadCasing: "#14171B",
-  motorway: "#4A515C",
+  // Navy-grey roads on a dark background.
+  land: "#161B24",
+  park: "#1A2C26",
+  water: "#0F2540",
+  building: "#1F2632",
+  road: "#36435A",
+  roadCasing: "#0D1118",
+  motorway: "#475673",
   suburbLabel: "#8FAFC6",
   streetLabel: "#D7DBE0",
   labelHalo: "#14171B",
@@ -319,15 +325,18 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Bigger street names than before (Waze-style): readable at a glance while driving.
 const LABEL_SIZES: Record<RoadClass, [number, number]> = {
-  motorway: [12, 16],
-  trunk: [12, 16],
-  primary: [12, 15],
-  secondary: [11, 14],
-  tertiary: [11, 14],
-  residential: [11, 13],
-  service: [10, 12],
+  motorway: [13, 18],
+  trunk: [13, 18],
+  primary: [13, 17],
+  secondary: [12, 16],
+  tertiary: [12, 15],
+  residential: [12, 15],
+  service: [11, 13],
 };
+/** Main roads' names in bold. */
+const BOLD_LABEL_CLASSES: RoadClass[] = ["motorway", "trunk", "primary", "secondary"];
 
 /** The street-name layer for one road class. */
 export function roadLabelLayer(cls: RoadClass, palette: StylePalette, text: unknown = LOCAL_NAME): Json {
@@ -344,7 +353,7 @@ export function roadLabelLayer(cls: RoadClass, palette: StylePalette, text: unkn
       "symbol-spacing": LABEL_SPACING_PX,
       "symbol-sort-key": LABEL_PRIORITY[cls],
       "text-field": text,
-      "text-font": LABEL_FONT,
+      "text-font": BOLD_LABEL_CLASSES.includes(cls) ? LABEL_FONT_BOLD : LABEL_FONT,
       "text-size": ["interpolate", ["linear"], ["zoom"], LABEL_MIN_ZOOM[cls], small, 18, large],
       "text-max-angle": 30,
       "text-padding": 4,
@@ -356,7 +365,7 @@ export function roadLabelLayer(cls: RoadClass, palette: StylePalette, text: unkn
     paint: {
       "text-color": palette.streetLabel,
       "text-halo-color": palette.labelHalo,
-      "text-halo-width": 1.5,
+      "text-halo-width": 2,
     },
   };
 }
@@ -448,7 +457,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
         "source-layer": "building",
         minzoom: 14,
         filter: ["==", ["get", "underground"], "false"],
-        paint: { "fill-color": p.building, "fill-outline-color": dim(p.building, 0.2) },
+        paint: { "fill-color": p.building, "fill-outline-color": dim(p.building, 0.12), "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.5, 16, 1] },
       }
     );
   }
