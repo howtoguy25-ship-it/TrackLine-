@@ -462,6 +462,58 @@ Needs BLOCKED.md #19 (Phone provider on + website deployed).
 5. Website: open it, logo > Account > *Account, help & inbox*: create an account, send a Help
    request, check Inbox.
 
+## 29. Nav permanent fix: preview, route list, arrow, camera, controls — NEEDS DEVICE TEST
+
+Drive it for real: **323 Stacey St, Bankstown → 40 Bazentin St, Belfield** (the same route the
+simulation in `docs/nav-fix/` and `__tests__/nav/staceyToBazentin.test.ts` drives).
+
+1. **Route preview.** Search 40 Bazentin St > the route screen: the map is flat (not tilted) and
+   north-up. Every route line, your start dot and the chequered destination are all on screen,
+   between the dark top card and the route sheet: none under either. Drag the sheet up and down:
+   the map re-fits each time. Pick another route in the list: the map fits that one.
+2. **Route list.** The sheet never covers more than about 60% of the screen. If there's a
+   back-street way, it's listed and says **Side streets** under the time.
+3. **Go now.** The camera eases over ~1 s into the driving view: tilted (45°), heading-up, your
+   arrow about 70% of the way down the screen. Only ONE arrow (teal, white outline): no second
+   Tracky or dot on top of you, no faint copy where you were.
+4. **Route line.** One purple line with a dark edge, starting exactly at the tip of your arrow:
+   no grey "already driven" line behind you, no gap and no stub.
+5. **Speed.** Faster roads zoom out a little, slow streets zoom in. A turn more than ~45 m away
+   shows the small purple callout only for the next turn.
+6. **Controls.** Bottom-left: speed limit sign above the speedometer, a clear gap between.
+   Bottom-right: yellow Report. Pan the map: Re-centre appears ABOVE Report (never over the
+   speedometer); tap it to return. Nothing overlaps on your phone.
+7. **Bottom bar.** Swipe it up (or tap the time): the dark trip sheet opens. Long-press it: asks
+   to end navigation.
+8. **End.** Stop in the trip sheet ends the drive: all sheets close, the map goes back to the
+   normal home view, no route line left behind.
+
+## 30. Street and back-lane shortcuts — NEEDS DEVICE TEST
+
+1. During a drive in suburbs with traffic, within ~1.5 min a banner can appear: **Back-lane
+   shortcut** / **Side-street shortcut** / **Faster route found**, "Save 3 min via Smith Ln —
+   arrive 5:42 pm". The green line on the map is the shortcut. Yes switches to it; No or ✕ keeps
+   your road. Nothing shows when no road really saves time (that's correct, not broken).
+2. If traffic just ahead is slow, the title starts "Traffic ahead ·" and the voice says so.
+3. The arrival time in the bottom bar follows the live time of the road you're actually on.
+
+## 31. Driving sheets look like the driving UI — NEEDS DEVICE TEST
+
+1. Tap the bottom bar's time: the trip sheet is dark. A row of round tiles: Share drive, Report,
+   Add a stop, Dashcam, Map. Each does its job; Add a stop opens Search along route.
+2. Search (magnifier on the bottom bar): dark sheet, pill search field and **Back**, round
+   category tiles (Fuel, Food, Parking, Coffee, EV; the chosen one has a white ring), results with
+   a coloured disc, "+3 min" in bold and the distance, and **Add stop**. Back returns to driving.
+3. Yellow Report: dark sheet titled **Report**, big round icons in a 3-wide grid.
+
+## 32. Dashcam vehicle detection (new tracker) — NEEDS DEVICE TEST
+
+1. Menu > Dashcam (or the trip sheet's Dashcam tile) and point at traffic: boxes appear after
+   about two frames, stay locked to each car as it moves (no lag behind a car pulling away), and
+   don't blink off when a car is briefly faint or partly hidden.
+2. Two cars crossing: each keeps its own box and number (no swapping).
+3. A bus or truck reads further away than a car with the same-size box; a motorbike closer.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the
