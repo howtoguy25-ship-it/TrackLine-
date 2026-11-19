@@ -6,7 +6,7 @@ import React from "react";
 import { describe, expect, it, jest } from "@jest/globals";
 import { readFileSync } from "fs";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import { navControlFrames, overlaps } from "@/nav/navControlsLayout";
+import { crowded, navControlFrames, overlaps } from "@/nav/navControlsLayout";
 import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
 import { detourFrom, detourText, encodePolyline, sortByDetour, type AlongResult } from "@/places/alongRoute";
 
@@ -28,8 +28,34 @@ describe("driving controls never overlap", () => {
   it.each(PHONES.map((p) => [p.width, p] as const))("%ipt wide, with and without the limit sign and re-centre", (_w, p) => {
     for (const showSpeedLimit of [true, false]) {
       for (const showRecenter of [true, false]) {
-        const frames = navControlFrames({ ...p, bottomBarHeight: 110, topBarHeight: 120, showSpeedLimit, showRecenter });
-        expect(overlaps(frames)).toEqual([]);
+        for (const extras of [false, true]) {
+          // Every control the driving screen can show: compass top-left, audio player + sound +
+          // voice top-right, street chip and info banner between the bottom columns.
+          const frames = navControlFrames({
+            ...p,
+            bottomBarHeight: 110,
+            topBarHeight: 120,
+            showSpeedLimit,
+            showRecenter,
+            showCompass: true,
+            showAudioPlayer: extras,
+            showSound: true,
+            showVoice: true,
+            showStreetChip: extras,
+            showInfoBanner: true,
+          });
+          expect(overlaps(frames)).toEqual([]);
+          // 12pt between every pair of floating controls, not just "not touching".
+          expect(crowded(frames)).toEqual([]);
+          // Nothing off screen.
+          for (const [k, f] of Object.entries(frames)) {
+            expect([k, f!.x >= 0 && f!.y >= 0 && f!.x + f!.width <= p.width && f!.y + f!.height <= p.height]).toEqual([k, true]);
+          }
+          // Every requested control got a place.
+          for (const k of ["compass", "sound", "voice", "infoBanner", ...(extras ? ["audioPlayer", "streetChip"] : [])]) expect([k, !!frames[k as keyof typeof frames]]).toEqual([k, true]);
+          // The info banner has room for "Hazard ahead · 800 m" even on a 320pt phone.
+          expect(frames.infoBanner!.width).toBeGreaterThanOrEqual(110);
+        }
       }
     }
   });
@@ -93,10 +119,17 @@ describe("search along route", () => {
     mockSearch.mockResolvedValue([place("p1", 180)]);
     const onClose = jest.fn();
     const onAddStop = jest.fn();
-    const r = await render(<SearchAlongRouteSheet route={ROUTE} origin={ROUTE[0]} remainingSeconds={900} unit="km" onClose={onClose} onAddStop={onAddStop} />);
+    const onGo = jest.fn();
+    const r = await render(<SearchAlongRouteSheet route={ROUTE} origin={ROUTE[0]} remainingSeconds={900} unit="km" onClose={onClose} onAddStop={onAddStop} onGo={onGo} />);
     await waitFor(() => expect(screen.getByText("+3 min")).toBeTruthy());
     await fireEvent.press(screen.getByTestId("search-along-add-p1"));
     expect(onAddStop).toHaveBeenCalledWith(expect.objectContaining({ placeId: "p1" }));
+    await fireEvent.press(screen.getByTestId("search-along-go-p1"));
+    expect(onGo).toHaveBeenCalledWith(expect.objectContaining({ placeId: "p1" }));
+    // Every category has a tile, Toilets included, and each asks Places for its own type.
+    for (const c of ["fuel", "food", "coffee", "parking", "ev", "toilets"]) expect(screen.getByTestId(`search-along-${c}`)).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("search-along-toilets"));
+    await waitFor(() => expect(mockSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "public toilet", type: "public_bathroom" })));
     await fireEvent.press(screen.getByTestId("search-along-close"));
     expect(onClose).toHaveBeenCalled();
     r.unmount();
@@ -108,7 +141,7 @@ describe("search along route", () => {
 
   it("a failed search says why and retries; it never hangs", async () => {
     mockSearch.mockRejectedValueOnce(new Error("Network request failed")).mockResolvedValue([]);
-    await render(<SearchAlongRouteSheet route={ROUTE} origin={ROUTE[0]} remainingSeconds={900} unit="km" onClose={jest.fn()} onAddStop={jest.fn()} />);
+    await render(<SearchAlongRouteSheet route={ROUTE} origin={ROUTE[0]} remainingSeconds={900} unit="km" onClose={jest.fn()} onAddStop={jest.fn()} onGo={jest.fn()} />);
     await waitFor(() => expect(screen.getByTestId("search-along-error")).toBeTruthy());
     await act(async () => fireEvent.press(screen.getByTestId("search-along-error")));
     await waitFor(() => expect(screen.getByText("Nothing found along your route. Try another search.")).toBeTruthy());
@@ -129,7 +162,7 @@ describe("routes and ending navigation", () => {
   it("ending navigation closes the sheets, search and alternatives and puts the camera back home", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
     const at = src.indexOf("const exitNavigation = useCallback");
-    const body = src.slice(at, at + 1400);
-    for (const s of ["navOptionsSheetRef.current?.close()", "setSearchAlongOpen(false)", "setNavAlternatives(null)", "stopNavSpeech()", "HOME_FOLLOW_ZOOM"]) expect(body).toContain(s);
+    const body = src.slice(at, src.indexOf("\n  );\n", at));
+    for (const s of ["navOptionsSheetRef.current?.close()", "setSearchAlongOpen(false)", "setNavAlternatives(null)", "stopNavSpeech()", "homeCameraAfterDrive("]) expect(body).toContain(s);
   });
 });

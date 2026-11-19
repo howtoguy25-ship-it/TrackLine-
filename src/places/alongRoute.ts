@@ -8,14 +8,16 @@ import { netFetch } from "@/services/netFetch";
 import { parsePlace, PlacesNewError, type NearbyResult } from "@/places/nearbyNew";
 import type { LatLng } from "@/utils/polyline";
 
-export type AlongCategory = "fuel" | "food" | "parking" | "coffee" | "ev";
+export type AlongCategory = "fuel" | "food" | "coffee" | "parking" | "ev" | "toilets";
 
 export const ALONG_CATEGORIES: { key: AlongCategory; label: string; query: string; type: string }[] = [
   { key: "fuel", label: "Fuel", query: "petrol station", type: "gas_station" },
   { key: "food", label: "Food", query: "restaurant", type: "restaurant" },
-  { key: "parking", label: "Parking", query: "parking", type: "parking" },
   { key: "coffee", label: "Coffee", query: "coffee", type: "cafe" },
+  { key: "parking", label: "Parking", query: "parking", type: "parking" },
   { key: "ev", label: "EV", query: "EV charging station", type: "electric_vehicle_charging_station" },
+  // Google Places (New) type "public_bathroom" (Table A).
+  { key: "toilets", label: "Toilets", query: "public toilet", type: "public_bathroom" },
 ];
 
 export interface AlongResult extends NearbyResult {
