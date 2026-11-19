@@ -225,6 +225,7 @@ import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
+import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
 import { presencesToShow } from "@/map/presenceFilter";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
@@ -1269,7 +1270,7 @@ export function MapScreen() {
   // The arrow sits directly above the street pill, which rides the sheet's peek edge.
   const homePadding = homeMapPadding(mapAreaHeight, whereToHeights.peek, windowHeight, homeArrowTargetY(mapAreaHeight, whereToHeights.peek, scaleFor(windowWidth)));
   const mapPadding = isNavChaseView
-    ? { top: windowHeight * 0.34, right: 0, bottom: 0, left: 0 }
+    ? navFollowPadding(windowHeight)
     : placePage
       ? // The place sits in the middle of the 40% above the place page's sheet.
         { top: insets.top, right: 0, bottom: windowHeight * PLACE_PAGE_SHEET_FRACTION, left: 0 }
@@ -1286,6 +1287,7 @@ export function MapScreen() {
   // stopped).
   const currentSpeedKmh =
     location?.coords.speed != null && location.coords.speed >= 0 ? location.coords.speed * 3.6 : null;
+  const currentSpeedKmhRef = useLatest(currentSpeedKmh);
 
   // Real, explicit request -- live speed + speed limit on the Home map view, not just during
   // navigation. Dedicated 1Hz GPS watch, EMA-smoothed, with a real haversine fallback and a
@@ -1492,10 +1494,10 @@ export function MapScreen() {
     mapRef.current?.animateCamera(
       overviewMode
         ? { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 45, zoom: isFlatViewStyle ? 17 : 15 }
-        : { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18.5 },
+        : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current, isFlatViewStyle),
       { duration: 700 }
     );
-  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle]);
+  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle, currentSpeedKmhRef]);
 
   // The approach view around exits, merges, splits, roundabouts, lane changes and complex turns
   // (nav/approach.ts): zoom in 200 m out (400 m above 90 km/h), confirm the manoeuvre with a
@@ -1549,7 +1551,7 @@ export function MapScreen() {
                 ? { center: cam.currentLatLng, heading: cam.heading, pitch: 0, zoom: 17 }
                 : cam.overviewMode
                   ? { center: cam.currentLatLng, heading: cam.heading, pitch: 45, zoom: 15 }
-                  : { center: cam.currentLatLng, heading: cam.heading, pitch: 60, zoom: 18.5 },
+                  : navFollowPose(cam.currentLatLng, cam.heading, currentSpeedKmhRef.current),
               { duration: effect.durationMs }
             );
           }
@@ -1570,7 +1572,7 @@ export function MapScreen() {
         }
       }
     },
-    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef]
+    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef, currentSpeedKmhRef]
   );
   const dispatchApproachRef = useRef(dispatchApproach);
   useEffect(() => {
@@ -1939,11 +1941,11 @@ export function MapScreen() {
       mapRef.current?.animateCamera(
         nextOverview
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : { center: currentLatLng, heading, pitch: 60, zoom: 18.5 },
+          : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current),
         { duration: 500 }
       );
     },
-    [currentLatLng, heading]
+    [currentLatLng, heading, currentSpeedKmhRef]
   );
 
   // The locate/recenter button, per explicit request: while already following (the common
@@ -3875,8 +3877,8 @@ export function MapScreen() {
       if (currentLatLng) {
         const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
         mapRef.current?.animateCamera(
-          { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 60, zoom: isFlatViewStyle ? 17 : 18.5 },
-          { duration: 600 }
+          navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current, isFlatViewStyle),
+          { duration: NAV_START_MS }
         );
       }
       setRouteChoices(null);
@@ -3904,7 +3906,7 @@ export function MapScreen() {
           .catch((err) => console.warn("[nav] Mapbox route unavailable, staying on the picked route", err));
       }
     },
-    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.routeAvoid, announcePhrase]
+    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.routeAvoid, announcePhrase, currentSpeedKmhRef]
   );
 
   // Development builds: Settings › Developer › test drives start a recorded motorway drive here
@@ -4553,7 +4555,7 @@ export function MapScreen() {
       mapRef.current?.animateCamera(
         overviewMode
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : { center: currentLatLng, heading, pitch: 60, zoom: 18.5 },
+          : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current),
         { duration: 400 }
       );
     }
@@ -5330,14 +5332,15 @@ export function MapScreen() {
   }, [previewFit, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight]);
 
   const mapboxNavRoute = useMemo(() => (route ? detailedRoutePolyline(route) : null), [route]);
+  // The purple street callout: only at the NEXT manoeuvre, and hidden once it's close enough
+  // to sit on top of the arrow (the top bar already names the street then).
+  const calloutVisible = showManoeuvreCallout(metersToManoeuvre);
   const mapboxTurnCallouts = useMemo(
     () =>
-      route && !addingStopDuringNav && !stopPreviewRoute
-        ? route.steps
-            .slice(activeStepIndex, Math.min(route.steps.length - 1, activeStepIndex + 3))
-            .map((step, i) => ({ key: `turn-${activeStepIndex + i}`, coordinate: step.endLocation, text: step.targetStreetName ?? step.instruction }))
+      route && !addingStopDuringNav && !stopPreviewRoute && calloutVisible && activeStepIndex < route.steps.length - 1
+        ? [route.steps[activeStepIndex]].map((step) => ({ key: `turn-${activeStepIndex}`, coordinate: step.endLocation, text: step.targetStreetName ?? step.instruction }))
         : [],
-    [route, addingStopDuringNav, stopPreviewRoute, activeStepIndex]
+    [route, addingStopDuringNav, stopPreviewRoute, activeStepIndex, calloutVisible]
   );
   const mapboxSelection = useMemo(
     () =>
