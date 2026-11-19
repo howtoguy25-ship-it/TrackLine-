@@ -308,3 +308,22 @@ export const SETTINGS_ICON: Record<SettingsIconMeaning, { fill: string; glyph: s
   sound: { fill: "#0B7F80", glyph: WHITE },
   account: { fill: "#6B7078", glyph: WHITE },
 };
+
+/**
+ * In-drive quick actions and search categories, each a round tile with its own colour (our own
+ * palette): what it is, at a glance, the way a driver scans them. White glyphs read at 3:1+ on
+ * every fill (checked in __tests__/design/colours.test.ts). Report keeps the report yellow.
+ */
+export type DriveTileKind = "share" | "report" | "addStop" | "dashcam" | "map" | "fuel" | "food" | "parking" | "coffee" | "ev";
+export const DRIVE_TILE: Record<DriveTileKind, { fill: string; glyph: string }> = {
+  share: { fill: "#1673D9", glyph: WHITE },
+  report: { fill: YELLOW, glyph: INK },
+  addStop: { fill: "#0B7F80", glyph: WHITE },
+  dashcam: { fill: "#4B5563", glyph: WHITE },
+  map: { fill: "#5B3FC4", glyph: WHITE },
+  fuel: { fill: "#C2410C", glyph: WHITE },
+  food: { fill: "#B4235A", glyph: WHITE },
+  parking: { fill: "#1D4ED8", glyph: WHITE },
+  coffee: { fill: "#7C4A2D", glyph: WHITE },
+  ev: { fill: "#15803D", glyph: WHITE },
+};

@@ -19,6 +19,7 @@ import {
   TRAFFIC,
   TRAFFIC_TEXT,
   YELLOW,
+  DRIVE_TILE,
   allowedColours,
   contrastRatio,
   darken,
@@ -189,5 +190,20 @@ describe("dark sheets over the map", () => {
   it("the dark sheet and card colours are the brief's", () => {
     expect(DARK_SURFACE["#FFFFFF"]).toBe("#1C1D20");
     expect(DARK_SURFACE["#F4F5F8"]).toBe("#26282C");
+  });
+});
+
+describe("in-drive tiles (DriveTile)", () => {
+  it("every glyph reads on its round tile, and every label reads on the dark driving sheet", () => {
+    for (const [kind, c] of Object.entries(DRIVE_TILE)) {
+      expect([kind, contrastRatio(c.glyph, c.fill) >= AA_LARGE]).toEqual([kind, true]);
+    }
+    expect(contrastRatio("#FFFFFF", SURFACES.dark.sheet)).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+  it("only Report is yellow, and the categories are told apart by colour", () => {
+    const yellow = Object.entries(DRIVE_TILE).filter(([, c]) => c.fill === YELLOW).map(([k]) => k);
+    expect(yellow).toEqual(["report"]);
+    const fills = Object.values(DRIVE_TILE).map((c) => c.fill);
+    expect(new Set(fills).size).toBe(fills.length);
   });
 });
