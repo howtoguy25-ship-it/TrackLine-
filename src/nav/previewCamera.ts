@@ -10,7 +10,7 @@ export const PREVIEW_HEADING = 0;
 export const PREVIEW_FIT_MS = 600;
 export const FIT_MARGIN = { top: 24, bottom: 24, side: 32 } as const;
 /** The route sheet never covers more than this share of the screen, so the map stays visible. */
-export const MAX_SHEET_FRACTION = 0.6;
+export const MAX_SHEET_FRACTION = 0.55;
 
 export interface EdgePadding {
   top: number;

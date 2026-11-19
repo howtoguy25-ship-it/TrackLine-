@@ -130,14 +130,14 @@ import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
 import { LiveSpeedometer } from "@/components/LiveSpeedometer";
 import { showLimitSign, thresholdKmhFor } from "@/settings/speedometer";
-import { REPORT_ITEM_BY_ID, itemOfAlert, alertsWhileDriving, isShown, osmFetchWanted, routeItemFor, type ReportItemId } from "@/settings/reportCatalog";
-import { osmFeaturePins, reportPinIcon, showsSpeedCameraPins, showsTrafficLightPins, visibleCommunityAlerts, visibleIncidents } from "@/map/reportPins";
+import { itemOfAlert, alertsWhileDriving, isShown, osmFetchWanted, routeItemFor, type ReportItemId } from "@/settings/reportCatalog";
+import { osmFeaturePins, reportPinIcon, visibleCommunityAlerts, visibleIncidents } from "@/map/reportPins";
 import { collectApproachFeatures } from "@/alerts/collectFeatures";
 import { recordArrival } from "@/services/poiPopularity";
 import { popularityKey } from "@/map/poiRanking";
 import { crashHistorySpots, laneEndingFeatures, trackySlowdownAhead } from "@/alerts/derivedFeatures";
 import { fetchCrashRecordsNear, type CrashRecord } from "@/services/crashRecords";
-import { nextApproachAlert, type ApproachMemory } from "@/alerts/approachAlerts";
+import { nextApproachAlert, projectOnPolyline, type ApproachMemory } from "@/alerts/approachAlerts";
 import { INITIAL_LIMIT_CHANGE, stepLimitChange, type LimitChangeState } from "@/alerts/speedLimitChange";
 import { ReportItemIcon } from "@/components/settings/ReportItemIcon";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
@@ -232,6 +232,7 @@ import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
 import { REPORT_SIZE, SIDE_MARGIN, controlsBottom } from "@/nav/navControlsLayout";
 import { infoBannerFor } from "@/nav/infoBanner";
+import { chipRemainingM, featureChipText, routeFeatureIcons, routeFeaturesAhead, shouldSpeakFeature, type RouteFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
 import { startVoiceSearch, VOICE_SEARCH_MESSAGES, type VoiceSearchSession } from "@/services/voiceSearch";
@@ -266,7 +267,7 @@ import {
 import { classifyAuRegion } from "@/utils/auStates";
 import { sirenDetection } from "@/services/sirenDetection";
 import { containsBlockedLanguage, clampToWordLimit, MAX_ALERT_COMMENT_WORDS } from "@/utils/commentFilter";
-import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmTrafficData } from "@/services/osmTrafficData";
+import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmFeatureKind, type OsmTrafficData } from "@/services/osmTrafficData";
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
 import { setNavigationActive } from "@/services/navState";
 import { startLiveActivity, updateLiveActivity, endLiveActivity, maneuverToSfSymbol } from "live-activity";
@@ -3207,12 +3208,6 @@ export function MapScreen() {
   // suburb's worth within the radius setting can be several hundred.
   // Cell size scales with the current zoom (osmZoomDelta) so clusters split apart into their
   // real individual pins as the driver zooms in, floored so it never over-clusters at max zoom.
-  const trafficLightClusters = useMemo(() => {
-    const points = osmData?.trafficLights ?? [];
-    if (points.length === 0) return [];
-    const cellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
-    return clusterPoints(points, cellSizeDegrees);
-  }, [osmData?.trafficLights, osmZoomDelta]);
 
   const onTrafficLightClusterPress = useCallback((lat: number, lng: number) => {
     mapRef.current?.animateToRegion(
@@ -3229,12 +3224,6 @@ export function MapScreen() {
   // of render-count map lag the traffic-light clustering above already exists to prevent, so
   // speed cameras get the same treatment now instead of being the one layer still exempt from
   // it once a wide radius makes them dense too.
-  const speedCameraClusters = useMemo(() => {
-    const points = osmData?.speedCameras ?? [];
-    if (points.length === 0) return [];
-    const cellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
-    return clusterPoints(points, cellSizeDegrees);
-  }, [osmData?.speedCameras, osmZoomDelta]);
 
   const onSpeedCameraClusterPress = useCallback((lat: number, lng: number) => {
     mapRef.current?.animateToRegion(
@@ -4885,7 +4874,10 @@ export function MapScreen() {
   );
 
   const approachMemoryRef = useRef<ApproachMemory>({});
-  const [approachChip, setApproachChip] = useState<{ item: ReportItemId; distanceM: number } | null>(null);
+  // alongM: where the feature is along the route (while navigating), so the chip counts down
+  // from the car's real progress and goes once it's passed (nav/roadFeatureAlerts.ts).
+  const [approachChip, setApproachChip] = useState<{ item: ReportItemId; distanceM: number; key?: string; alongM?: number | null } | null>(null);
+  const featureSpokenRef = useRef<Set<string>>(new Set());
   // Transit navigation: "Get off at the next stop" (with a buzz) / "Get off in 2 stops".
   const rideNowMs = location?.timestamp ?? 0;
   const ride = useMemo(() => {
@@ -4921,10 +4913,24 @@ export function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navMatch, presenceList]);
   useEffect(() => {
-    if (!approachChip) return;
+    // An on-route chip stays until the feature is passed; any other goes after 6 s.
+    if (!approachChip || approachChip.alongM != null) return;
     const t = setTimeout(() => setApproachChip(null), 6000);
     return () => clearTimeout(t);
   }, [approachChip]);
+  // Live countdown for an on-route chip; voice once at ~300 m; gone once passed (not drawn).
+  const chipAheadM = approachChip?.alongM != null && navMatch ? chipRemainingM(approachChip.alongM, navMatch.along) : null;
+  const approachChipShown = !!approachChip && (approachChip.alongM == null || chipAheadM != null);
+  useEffect(() => {
+    if (!approachChip || approachChip.alongM == null || !navMatch || chipAheadM == null) return;
+    const key = approachChip.key ?? "";
+    if (shouldSpeakFeature(chipAheadM, featureSpokenRef.current.has(key))) {
+      featureSpokenRef.current.add(key);
+      announcePhrase({ kind: "feature", item: approachChip.item });
+    }
+    // Each matched fix re-checks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chipAheadM]);
   useEffect(() => {
     if (!currentLatLng || travelMode !== "driving" || approachFeatures.length === 0) return;
     const onRoute = route && navMatch?.onRoute ? { polyline: route.polyline, alongM: navMatch.along } : null;
@@ -4935,8 +4941,12 @@ export function MapScreen() {
     );
     approachMemoryRef.current = memory;
     if (!alert) return;
-    setApproachChip({ item: alert.item, distanceM: alert.distanceM });
-    announcePhrase({ kind: "feature", item: alert.item });
+    // While navigating, a feature on the route gets a counting-down chip and is spoken at ~300 m.
+    const feature = approachFeatures.find((f) => f.key === alert.key);
+    const onLine = onRoute && feature ? projectOnPolyline(onRoute.polyline, { latitude: feature.lat, longitude: feature.lng }) : null;
+    const alongM = onLine && onLine.offM <= 35 && onLine.alongM > onRoute!.alongM ? onLine.alongM : null;
+    setApproachChip({ item: alert.item, distanceM: alert.distanceM, key: alert.key, alongM });
+    if (alongM == null) announcePhrase({ kind: "feature", item: alert.item });
     // Only a new fix (or a newly loaded feature list) runs this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLatLng, approachFeatures]);
@@ -5353,6 +5363,22 @@ export function MapScreen() {
     return () => clearInterval(interval);
   }, [route, heading, arrivalClockText, remainingDurationSeconds, currentLatLngRef]);
 
+  // Every road feature around (OpenStreetMap, lane endings), for the on-route icons and chip.
+  const roadFeatureList = useMemo<RouteFeature[]>(() => {
+    if (!route) return [];
+    const list: RouteFeature[] = [];
+    for (const p of osmData?.trafficLights ?? []) list.push({ key: `tl:${p.id}`, item: "trafficLights", lat: p.lat, lng: p.lng });
+    for (const p of osmData?.speedCameras ?? []) list.push({ key: `sc:${p.id}`, item: "speedCamera", lat: p.lat, lng: p.lng });
+    for (const p of osmFeaturePins({ ...settings, reportPrefs: settings.reportPrefs }, osmData, nearbyAlerts)) list.push({ key: p.id, item: p.kind as ReportItemId, lat: p.lat, lng: p.lng });
+    for (const f of laneEndingFeatures(route.steps)) list.push({ key: `lane:${f.key}`, item: "laneEnding", lat: f.lat, lng: f.lng });
+    return list;
+  }, [route, osmData, settings, nearbyAlerts]);
+  const routeFeaturesNow = useMemo(
+    () => (route && navMatch?.onRoute ? routeFeaturesAhead(roadFeatureList, route.polyline, navMatch.along) : []),
+    [route, navMatch, roadFeatureList]
+  );
+  const routeFeatureIconList = useMemo(() => routeFeatureIcons(routeFeaturesNow, (item) => isShown(settings, item)), [routeFeaturesNow, settings]);
+
   // ---- What the Mapbox map draws (map-v2/MapboxLayers.tsx) ----
   // Every icon pin with what tapping it does, keyed by the pin's id.
   const mapboxPinData = useMemo(() => {
@@ -5381,51 +5407,19 @@ export function MapScreen() {
         { kind: "alert", alert }
       );
     }
-    if (showsTrafficLightPins(settings)) {
-      for (const c of trafficLightClusters) {
-        if (c.count === 1) {
-          add({ id: `tl:${c.points[0].id}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "traffic-light", priority: 5 }, {
-            kind: "osm",
-            osm: "traffic_light",
-            at: { latitude: c.lat, longitude: c.lng },
-          });
-        } else {
-          add(
-            { id: `tlc:${c.key}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "traffic-light-cluster", label: String(c.count), priority: 5 },
-            { kind: "trafficLightCluster", lat: c.lat, lng: c.lng }
-          );
-        }
-      }
-    }
-    if (showsSpeedCameraPins(settings)) {
-      for (const c of speedCameraClusters) {
-        if (c.count === 1) {
-          add({ id: `sc:${c.points[0].id}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "speed-camera", priority: 8 }, {
-            kind: "osm",
-            osm: "speed_camera",
-            at: { latitude: c.lat, longitude: c.lng },
-          });
-        } else {
-          add(
-            { id: `scc:${c.key}`, coordinate: { latitude: c.lat, longitude: c.lng }, icon: "speed-camera-cluster", label: String(c.count), priority: 8 },
-            { kind: "speedCameraCluster", lat: c.lat, lng: c.lng }
-          );
-        }
-      }
-    }
-    // The other OpenStreetMap items switched on in Settings > Reports (crossings, other cameras ...).
-    // Lane endings on the route (route data), when shown.
-    if (route && isShown(settings, "laneEnding")) {
-      for (const f of laneEndingFeatures(route.steps)) {
-        add({ id: `feature:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon: "feature:laneEnding", priority: 7 });
-      }
-    }
-    for (const p of osmFeaturePins(settings, osmData, nearbyAlerts)) {
-      add({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, icon: p.icon, priority: 7 }, {
-        kind: "osm",
-        osm: p.kind,
-        at: { latitude: p.lat, longitude: p.lng },
-      });
+    // Road features are alerts, not dots (nav/roadFeatureAlerts.ts): nothing on the home map or
+    // the route preview; while driving, at most three on the route ahead within 1 km.
+    for (const f of routeFeatureIconList) {
+      const icon = f.item === "trafficLights" ? "traffic-light" : f.item === "speedCamera" ? "speed-camera" : `feature:${f.item}`;
+      const pin = { id: `route-feature:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon, priority: 7 };
+      // Lane endings come from the route itself: nothing to open.
+      if (f.item === "laneEnding") add(pin);
+      else
+        add(pin, {
+          kind: "osm",
+          osm: f.item === "trafficLights" ? "traffic_light" : f.item === "speedCamera" ? "speed_camera" : (f.item as OsmFeatureKind),
+          at: { latitude: f.lat, longitude: f.lng },
+        });
     }
     const venueLayer = (
       kind: "fuel" | "restaurant" | "hotel",
@@ -5498,10 +5492,7 @@ export function MapScreen() {
     selectedAlert?.id,
     // Settings > Reports switches, live traffic and camera layers all decide which pins show.
     settings,
-    osmData,
-    nearbyAlerts,
-    trafficLightClusters,
-    speedCameraClusters,
+    routeFeatureIconList,
     fuelStationsSheetOpen,
     fuelStationPins,
     nearbyPins,
@@ -5699,7 +5690,7 @@ export function MapScreen() {
           roadThickness={settings.roadThickness}
           satellite={mapType === "hybrid"}
           dimmed={isPickingRoute}
-          show3DBuildings={settings.show3DBuildings}
+          show3DBuildings={settings.show3DBuildings && !inRouteSelection}
           showTraffic={showsTrafficLayer}
           padding={mapPadding}
           initialCenter={currentLatLng ?? { latitude: -33.8688, longitude: 151.2093 }}
@@ -6372,16 +6363,16 @@ export function MapScreen() {
           <Text style={styles.reroutingBadgeText}>{rideText}</Text>
         </View>
       )}
-      {approachChip && (
+      {approachChip && approachChipShown && (
         <Pressable
           style={[styles.reroutingBadge, { top: insets.top + spacing.md + (route ? instructionCardHeight + spacing.md : 0) + (fasterRouteBanner || rerouting ? 48 : 0) }]}
           onPress={() => setApproachChip(null)}
           accessibilityRole="alert"
-          accessibilityLabel={`${REPORT_ITEM_BY_ID[approachChip.item].title} ahead, ${formatDistance(approachChip.distanceM, settings.distanceUnit)}`}
+          accessibilityLabel={featureChipText(approachChip.item, chipAheadM ?? approachChip.distanceM, settings.distanceUnit)}
           testID="approach-chip"
         >
           <ReportItemIcon id={approachChip.item} size={24} />
-          <Text style={styles.reroutingBadgeText}>{`${REPORT_ITEM_BY_ID[approachChip.item].title} ahead · ${formatDistance(approachChip.distanceM, settings.distanceUnit)}`}</Text>
+          <Text style={styles.reroutingBadgeText}>{featureChipText(approachChip.item, chipAheadM ?? approachChip.distanceM, settings.distanceUnit)}</Text>
         </Pressable>
       )}
 
