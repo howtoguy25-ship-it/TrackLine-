@@ -131,7 +131,7 @@ export function metersRadiusExpression(meters: number, latitude: number): unknow
 // ---------------------------------------------------------------------------------------------
 // Route geometry
 
-function metersBetween(a: LatLng, b: LatLng): number {
+export function metersBetween(a: LatLng, b: LatLng): number {
   const toRad = Math.PI / 180;
   const dLat = (b.latitude - a.latitude) * toRad;
   const dLng = (b.longitude - a.longitude) * toRad;

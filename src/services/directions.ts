@@ -102,6 +102,8 @@ export interface Route {
   // Only on routes from getRouteChoices: Google's live speed along route.polyline (index ranges
   // into that array), for drawing the slow and jammed stretches over the selected route.
   speedIntervals?: SpeedInterval[];
+  /** Asked for with "avoid highways": a side-streets route (labelled so in the route list). */
+  viaSideStreets?: boolean;
   /** Where the route came from. Navigation uses Mapbox; previews may be Google. */
   source?: "google" | "mapbox";
   /** Mapbox's maxspeed annotation per polyline segment, in km/h (null where unknown). */
@@ -786,6 +788,53 @@ export async function getRouteChoices(
   const routes: any[] = json.routes ?? [];
   if (routes.length === 0) throw new DirectionsApiError("ZERO_RESULTS", "No route found");
   return routes.map((r) => parseRoutesApiRoute(r, true));
+}
+
+/**
+ * The live-traffic time of the road you're on: a Routes API request forced along it with
+ * pass-through (via) points, a stop kept as a real stop. Used to judge shortcuts against your
+ * actual road, not against whatever Google's best route happens to be now. With TRAFFIC_ON_POLYLINE
+ * so slow traffic just ahead can be read off it. Falls back to the classic API's `via:` waypoints.
+ */
+export async function getRouteThrough(
+  origin: LatLng,
+  destination: LatLng,
+  through: { point: LatLng; via: boolean }[]
+): Promise<Route> {
+  const toWaypoint = (p: LatLng, via = false) => ({ ...(via ? { via: true } : {}), location: { latLng: { latitude: p.latitude, longitude: p.longitude } } });
+  const body = {
+    origin: toWaypoint(origin),
+    destination: toWaypoint(destination),
+    intermediates: through.map((t) => toWaypoint(t.point, t.via)),
+    travelMode: "DRIVE",
+    routingPreference: "TRAFFIC_AWARE",
+    polylineQuality: "HIGH_QUALITY",
+    extraComputations: ["TRAFFIC_ON_POLYLINE"],
+    ...(directionsLanguage !== "en" ? { languageCode: directionsLanguage } : {}),
+  };
+  let res: Response;
+  try {
+    res = await netFetch("routes", ROUTES_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": env.googleDirectionsApiKey, "X-Goog-FieldMask": ROUTE_CHOICES_FIELD_MASK },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new DirectionsApiError("NETWORK_ERROR", err instanceof Error ? err.message : String(err));
+  }
+  if (res.ok) {
+    const json = await res.json();
+    const r = json.routes?.[0];
+    if (!r) throw new DirectionsApiError("ZERO_RESULTS", "No route found");
+    return parseRoutesApiRoute(r);
+  }
+  const waypoints = through.map((t) => `${t.via ? "via:" : ""}${t.point.latitude},${t.point.longitude}`).join("|");
+  const url =
+    buildDirectionsUrl(origin, destination, "driving", { useTraffic: true }) + (waypoints ? `&waypoints=${encodeURIComponent(waypoints)}` : "");
+  const classic = await netFetch("routes", url);
+  const json = await classic.json();
+  if (json.status !== "OK" || !json.routes?.length) throw new DirectionsApiError(json.status ?? "UNKNOWN_ERROR", json.error_message);
+  return parseRoute(json.routes[0]);
 }
 
 async function getClassicRouteChoices(

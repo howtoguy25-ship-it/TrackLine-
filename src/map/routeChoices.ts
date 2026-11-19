@@ -12,6 +12,8 @@ export interface ChoiceRoute {
   durationInTrafficSeconds?: number;
   steps?: { maneuver?: string }[];
   tollEstimate?: { hasToll: boolean };
+  /** A side-streets ("avoid highways") route, shown as "Side streets" in the list. */
+  viaSideStreets?: boolean;
 }
 
 /** The time the driver will actually see: live-traffic time when Google gave one. */
@@ -250,7 +252,7 @@ export const TRAFFIC_LEVEL_LABELS: Record<TrafficLevel, string> = {
   heavy: "Heavy traffic",
 };
 
-export type RouteTag = "Best" | "Fastest" | "No tolls";
+export type RouteTag = "Best" | "Fastest" | "No tolls" | "Side streets";
 
 // An alternative only earns "Fastest" if it's a real minute quicker than the best route.
 const FASTEST_MARGIN_S = 60;
@@ -268,6 +270,7 @@ export function routeTags(routes: ChoiceRoute[]): (RouteTag | null)[] {
     if (i === 0) return "Best";
     if (i === quickest && routeSeconds(r) <= routeSeconds(best) - FASTEST_MARGIN_S) return "Fastest";
     if (bestHasToll && r.tollEstimate && !r.tollEstimate.hasToll) return "No tolls";
+    if (r.viaSideStreets) return "Side streets";
     return null;
   });
 }
@@ -281,7 +284,7 @@ export interface RouteSummaryParts {
 
 /** The pieces of "Best route, Typical traffic · Toll", so the traffic words can be coloured. */
 export function routeSummaryParts(tag: RouteTag | null, level: TrafficLevel | null, hasToll: boolean): RouteSummaryParts {
-  const lead = tag === "Best" ? "Best route" : tag === "Fastest" ? "Fastest route" : tag === "No tolls" ? "No tolls" : "Alternative route";
+  const lead = tag === "Best" ? "Best route" : tag === "Fastest" ? "Fastest route" : tag === "No tolls" ? "No tolls" : tag === "Side streets" ? "Side streets" : "Alternative route";
   return { lead, traffic: level, tail: hasToll ? " · Toll" : "" };
 }
 
