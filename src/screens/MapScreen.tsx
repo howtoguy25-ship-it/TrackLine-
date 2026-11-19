@@ -153,6 +153,7 @@ import { fetchLiveTrafficCameras, type LiveTrafficCamera } from "@/services/live
 import {
   getDirections,
   getRouteChoices,
+  getRouteThrough,
   getDirectionsForMode,
   getModeRouteOptions,
   getHeadingAwareReroute,
@@ -168,6 +169,7 @@ import {
   bubbleAnchors,
   distinctRoutes,
   formatRouteDuration,
+  routeHasUturn,
   routeSeconds,
   routeSummaryLine,
   routeTags,
@@ -197,7 +199,6 @@ import {
   distanceKm,
   encodeGeohash,
   bearingDegrees,
-  pointAheadOnPolylineMeters,
   offsetLatLngByHeading,
   distanceToPolylineMeters,
 } from "@/utils/geo";
@@ -228,6 +229,7 @@ import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
 import { REPORT_SIZE, SIDE_MARGIN, controlsBottom } from "@/nav/navControlsLayout";
+import { pickShortcut, shortcutText, slowTrafficAhead, throughPointsAhead, withSideStreets, type ShortcutKind } from "@/nav/shortcuts";
 import { ReportIcon } from "@/components/icons/MapControlIcons";
 import { SearchAlongRouteSheet } from "@/components/SearchAlongRouteSheet";
 import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
@@ -299,7 +301,6 @@ const ALERT_CARD_CAMERA_MS = 600;
 /** The alert card that's up: a community report or an official Live Traffic NSW incident. */
 type OpenAlertCard = { model: AlertCardModel; alert: AlertDoc | null; incident: NearbyIncident | null };
 const TRAFFIC_SUGGESTION_COOLDOWN_MS = 8 * 60_000;
-const MIN_SAVED_SECONDS_TO_SUGGEST = 180;
 const MIN_REMAINING_METERS_TO_CHECK = 1500;
 // How long the suggestion banner stays up before auto-dismissing if the driver doesn't tap
 // Yes/No/X -- per explicit request. An unattended banner clears itself the same way a manual
@@ -2639,10 +2640,20 @@ export function MapScreen() {
       try {
         if (mode === "driving") {
           const avoid = avoidOverride ?? settings.routeAvoid;
-          const all = await getRouteChoices(origin, destination, { ...avoidRouteOptions(avoid), waypoint });
+          // Side streets too (avoid highways), unless motorways are already avoided: Google's own
+          // alternatives rarely include the back-street way round, so it was never on the list.
+          const avoidOpts = avoidRouteOptions(avoid);
+          const [all, side] = await Promise.all([
+            getRouteChoices(origin, destination, { ...avoidOpts, waypoint }),
+            avoidOpts.avoidHighways
+              ? Promise.resolve<Route[]>([])
+              : getRouteChoices(origin, destination, { ...avoidOpts, avoidHighways: true, waypoint }).catch(() => [] as Route[]),
+          ]);
           if (!waypoint) rememberRoutes(origin, destination, "", all).catch(() => {});
+          const sideRoute: Route | null = side[0] ? { ...side[0], viaSideStreets: true } : null;
           const { routes: usable, allHaveUturns } = avoid.uturns ? withoutUturns(all) : { routes: all, allHaveUturns: false };
-          const choices = distinctRoutes(usable);
+          const sideUsable = sideRoute && !(avoid.uturns && routeHasUturn(sideRoute)) ? sideRoute : null;
+          const choices = withSideStreets(distinctRoutes(usable), sideUsable);
           setRouteChoices(choices);
           setSelectedChoiceIndex(0);
           setRouteAvoidNote(allHaveUturns ? "Every route here has a U-turn, so they're shown anyway." : null);
@@ -3528,6 +3539,12 @@ export function MapScreen() {
   // still-live blue route until the driver actually accepts it.
   const [trafficSuggestionRoute, setTrafficSuggestionRoute] = useState<Route | null>(null);
   const [trafficSuggestionSavedSeconds, setTrafficSuggestionSavedSeconds] = useState(0);
+  const [trafficSuggestionInfo, setTrafficSuggestionInfo] = useState<{ kind: ShortcutKind; road: string | null; slowAhead: boolean; arriveAtMs: number }>({
+    kind: "alternative",
+    road: null,
+    slowAhead: false,
+    arriveAtMs: 0,
+  });
   // The route that was live right before a traffic suggestion was accepted -- kept around only
   // while driving the accepted suggestion, so "End suggested route" can put the driver straight
   // back on the exact route they started with, not just re-fetch a fresh one from scratch.
@@ -3615,8 +3632,16 @@ export function MapScreen() {
   const slowdownAheadRef = useRef(false);
   const trafficSuggestionDismissedAtRef = useRef(0);
 
+  // Shortcuts (nav/shortcuts.ts has the root causes this fixes): every check, with no "is there a
+  // jam in the next 1 km" gate, asks Google for (1) the live time of YOUR road, forced along it
+  // with pass-through points, (2) Google's alternative routes and (3) the side-streets route,
+  // then offers the one that leaves your road and saves the most, if it saves at least
+  // minSavingFor(what's left). Slow traffic just ahead is read off your road's own live speeds.
+  const routeAvoidRef = useLatest(settings.routeAvoid);
+  const yourRoadEtaAtRef = useRef(0);
   useEffect(() => {
-    if (!route || !destinationLatLng) return;
+    if (!route || !destinationLatLng || travelMode !== "driving") return;
+    const line = detailedRoutePolyline(route);
     const interval = setInterval(async () => {
       if (trafficSuggestionRouteRef.current || trafficCheckInFlightRef.current) return;
       if (otherFlowActiveRef.current) return;
@@ -3629,45 +3654,45 @@ export function MapScreen() {
       if (remainingMeters < MIN_REMAINING_METERS_TO_CHECK) return;
       trafficCheckInFlightRef.current = true;
       try {
-        // Step 1: the actual trigger -- is there a real, live-traffic delay in just the next
-        // 1km of the route ahead of the driver right now. aheadPoint is a real point on the
-        // route's own polyline (falls back to the destination itself if the remaining route is
-        // already shorter than the window, which MIN_REMAINING_METERS_TO_CHECK above already
-        // guards against in practice).
-        const aheadPoint =
-          pointAheadOnPolylineMeters(latLng.latitude, latLng.longitude, route.polyline, NEAR_TERM_TRAFFIC_CHECK_METERS) ??
-          destinationLatLng;
-        const nearTerm = await getDirections(latLng, aheadPoint, { useTraffic: true });
-        // Settings > Reports > Sudden slowdown: said once as a jam appears just ahead.
-        const jamStarted = nearTerm.hasTrafficDelay && !slowdownAheadRef.current;
-        slowdownAheadRef.current = !!nearTerm.hasTrafficDelay;
-        if (jamStarted && alertsWhileDriving(reportSettingsRef.current, "suddenSlowdown")) announcePhrase({ kind: "slowdown" });
-        if (!nearTerm.hasTrafficDelay) return;
-
-        // Step 2: only once a real, near-term jam is confirmed does this fetch the actual
-        // full-route side-streets alternative (what's offered/switched to if accepted) and
-        // re-check the whole trip is still genuinely worth the interruption.
-        const waypoint = stopLocationRef.current ?? undefined;
-        const [liveCurrent, sideStreets] = await Promise.all([
-          getDirections(latLng, destinationLatLng, { waypoint, useTraffic: true }),
-          getDirections(latLng, destinationLatLng, { waypoint, useTraffic: true, avoidHighways: true }),
+        const stop = stopLocationRef.current;
+        const avoidOpts = avoidRouteOptions(routeAvoidRef.current);
+        const ahead = routeAheadOf(line, latLng);
+        const [yours, alts, side] = await Promise.all([
+          getRouteThrough(latLng, destinationLatLng, throughPointsAhead(line, latLng, stop)),
+          getRouteChoices(latLng, destinationLatLng, { ...avoidOpts, waypoint: stop ?? undefined }).catch(() => [] as Route[]),
+          avoidOpts.avoidHighways
+            ? Promise.resolve<Route[]>([])
+            : getRouteChoices(latLng, destinationLatLng, { ...avoidOpts, avoidHighways: true, waypoint: stop ?? undefined }).catch(() => [] as Route[]),
         ]);
-        const currentSeconds = liveCurrent.durationInTrafficSeconds ?? liveCurrent.durationSeconds;
-        const altSeconds = sideStreets.durationInTrafficSeconds ?? sideStreets.durationSeconds;
-        const savedSeconds = currentSeconds - altSeconds;
-        if (savedSeconds >= MIN_SAVED_SECONDS_TO_SUGGEST) {
-          setTrafficSuggestionRoute(sideStreets);
-          announcePhrase({ kind: "heavyTraffic" });
-          setTrafficSuggestionSavedSeconds(savedSeconds);
+        const currentSeconds = routeSeconds(yours);
+        setLiveEtaSeconds(currentSeconds);
+        yourRoadEtaAtRef.current = Date.now();
+
+        // Settings > Reports > Sudden slowdown: said once as slow traffic appears just ahead.
+        const slowAhead = slowTrafficAhead(yours.polyline, yours.speedIntervals, NEAR_TERM_TRAFFIC_CHECK_METERS);
+        const jamStarted = slowAhead && !slowdownAheadRef.current;
+        slowdownAheadRef.current = slowAhead;
+        if (jamStarted && alertsWhileDriving(reportSettingsRef.current, "suddenSlowdown")) announcePhrase({ kind: "slowdown" });
+
+        const shortcut = pickShortcut({
+          currentSeconds,
+          currentAhead: ahead,
+          candidates: [...alts, ...side.map((r) => ({ ...r, viaSideStreets: true }))],
+        });
+        if (shortcut) {
+          setTrafficSuggestionRoute(shortcut.route);
+          setTrafficSuggestionSavedSeconds(shortcut.savedSeconds);
+          setTrafficSuggestionInfo({ kind: shortcut.kind, road: shortcut.road, slowAhead, arriveAtMs: Date.now() + routeSeconds(shortcut.route) * 1000 });
+          if (slowAhead) announcePhrase({ kind: "heavyTraffic" });
         }
       } catch (err) {
-        Sentry.logger.error("map: traffic reroute check failed", { error: String(err) });
+        Sentry.logger.error("map: shortcut check failed", { error: String(err) });
       } finally {
         trafficCheckInFlightRef.current = false;
       }
     }, TRAFFIC_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [route, destinationLatLng, announcePhrase, currentLatLngRef, reportSettingsRef]);
+  }, [route, destinationLatLng, travelMode, announcePhrase, currentLatLngRef, reportSettingsRef, routeAvoidRef]);
 
   // Clears any stale suggestion the moment the underlying route is replaced for any other
   // reason (a real reroute, an add-stop confirm, exiting navigation) -- a suggestion computed
@@ -3708,6 +3733,8 @@ export function MapScreen() {
     const refresh = async () => {
       const latLng = currentLatLngRef.current;
       if (!latLng) return;
+      // The shortcut check just timed your actual road: that's the better number, keep it.
+      if (Date.now() - yourRoadEtaAtRef.current < TRAFFIC_CHECK_INTERVAL_MS / 2) return;
       try {
         const fresh = await getDirections(latLng, destinationLatLng, { ...profileOptions, useTraffic: true });
         if (!cancelled) setLiveEtaSeconds(fresh.durationInTrafficSeconds ?? fresh.durationSeconds);
@@ -3740,6 +3767,15 @@ export function MapScreen() {
     }, TRAFFIC_SUGGESTION_DISPLAY_MS);
     return () => clearTimeout(timer);
   }, [trafficSuggestionRoute]);
+
+  const shortcutTitle = useMemo(
+    () =>
+      shortcutText(
+        { kind: trafficSuggestionInfo.kind, road: trafficSuggestionInfo.road, savedSeconds: trafficSuggestionSavedSeconds },
+        formatArrivalClock(trafficSuggestionInfo.arriveAtMs)
+      ),
+    [trafficSuggestionInfo, trafficSuggestionSavedSeconds]
+  );
 
   const acceptTrafficSuggestion = useCallback(() => {
     if (!trafficSuggestionRoute) return;
@@ -6065,13 +6101,15 @@ export function MapScreen() {
               <Icon name="flash" size={18} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.trafficSuggestionTitle}>Heavy traffic ahead</Text>
-              {/* Real, explicit request -- the real arrival time alongside the relative saving,
-                  not just "save N min" on its own (same convention as the map's own ETA pill
-                  right above this card). */}
-              <Text style={styles.trafficSuggestionBody}>
-                Faster via side streets — arrive {trafficSuggestionRoute.etaInTrafficText ?? trafficSuggestionRoute.etaText}
-                {" "}(save {Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} min)
+              {/* "Back-lane shortcut" / "Side-street shortcut" / "Faster route found", then
+                  "Save 4 min via Smith Ln — arrive 5:42 pm": the real saving, the road it takes
+                  you onto and the real arrival time (nav/shortcuts.ts shortcutText). */}
+              <Text style={styles.trafficSuggestionTitle} testID="shortcut-title">
+                {trafficSuggestionInfo.slowAhead ? "Traffic ahead · " : ""}
+                {shortcutTitle.title}
+              </Text>
+              <Text style={styles.trafficSuggestionBody} testID="shortcut-body">
+                {shortcutTitle.body}
               </Text>
             </View>
             <Pressable
