@@ -98,6 +98,12 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof NavOptionsSh
     onShareDrive: jest.fn(),
     onReportAlert: jest.fn(),
     onAddStop: jest.fn(),
+    onSoundVoice: jest.fn(),
+    mapViewLabel: "3D",
+    onMapView: jest.fn(),
+    avoidSummary: "None",
+    onAvoid: jest.fn(),
+    onHelp: jest.fn(),
     onOpenDetection: jest.fn(),
     onOpenMapTools: jest.fn(),
     onEndNavigation: jest.fn(),
@@ -155,6 +161,10 @@ describe("ETA sheet", () => {
       ["eta-sheet-share", props.onShareDrive as jest.Mock],
       ["eta-sheet-report", props.onReportAlert as jest.Mock],
       ["eta-sheet-add-stop", props.onAddStop as jest.Mock],
+      ["eta-sheet-sound", props.onSoundVoice as jest.Mock],
+      ["eta-sheet-map-view", props.onMapView as jest.Mock],
+      ["eta-sheet-avoid", props.onAvoid as jest.Mock],
+      ["eta-sheet-help", props.onHelp as jest.Mock],
       ["eta-sheet-dashcam", props.onOpenDetection as jest.Mock],
       ["eta-sheet-map", props.onOpenMapTools as jest.Mock],
       ["eta-sheet-stop", props.onEndNavigation as jest.Mock],
@@ -168,18 +178,18 @@ describe("ETA sheet", () => {
 });
 
 describe("ETA sheet looks like a driving sheet", () => {
-  it("is dark like the bottom bar and has the trip's actions as one row of round tiles", async () => {
+  it("is dark like the bottom bar, with the trip's options as 56pt rows and Stop / Continue", async () => {
     const { el } = renderSheet();
     await render(el);
-    const row = screen.getByTestId("eta-sheet-actions");
-    const json = JSON.stringify(row);
-    for (const id of ["eta-sheet-share", "eta-sheet-report", "eta-sheet-add-stop", "eta-sheet-dashcam", "eta-sheet-map"]) expect(json).toContain(id);
+    const json = JSON.stringify(screen.getByTestId("eta-sheet-options"));
+    for (const id of ["eta-sheet-share", "eta-sheet-add-stop", "eta-sheet-report", "eta-sheet-sound", "eta-sheet-map-view", "eta-sheet-dashcam", "eta-sheet-avoid", "eta-sheet-help"]) expect(json).toContain(id);
+    expect(screen.getByText("Share drive")).toBeTruthy();
+    expect(screen.getByText("3D")).toBeTruthy();
     const src = require("fs").readFileSync("src/screens/NavOptionsSheet.tsx", "utf8");
     expect(src).toMatch(/SurfaceScheme value="dark"/);
-    expect(src).toMatch(/SURFACES\.dark\.sheet/);
-    // Stop and Go now stay the two big buttons at the bottom.
-    expect(screen.getByTestId("eta-sheet-stop")).toBeTruthy();
-    expect(screen.getByTestId("eta-sheet-go")).toBeTruthy();
+    expect(src).toMatch(/minHeight: 56/);
+    expect(screen.getByText("Stop")).toBeTruthy();
+    expect(screen.getByText("Continue")).toBeTruthy();
   });
 });
 

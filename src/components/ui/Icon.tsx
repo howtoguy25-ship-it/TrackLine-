@@ -130,6 +130,7 @@ import DownloadIcon from "lucide-react-native/icons/download";
 import BatteryWarningIcon from "lucide-react-native/icons/battery-warning";
 import BatteryFullIcon from "lucide-react-native/icons/battery-full";
 import CoffeeIcon from "lucide-react-native/icons/coffee";
+import ToiletIcon from "lucide-react-native/icons/toilet";
 import ShoppingBagIcon from "lucide-react-native/icons/shopping-bag";
 import ThumbsUpIcon from "lucide-react-native/icons/thumbs-up";
 
@@ -149,6 +150,7 @@ const ICONS = {
   "battery-heart-variant": BatteryFullIcon,
   "battery-alert": BatteryWarningIcon,
   "coffee": CoffeeIcon,
+  "toilet": ToiletIcon,
   "download": DownloadIcon,
   "play-circle": CirclePlayIcon,
   "pause-circle": CirclePauseIcon,

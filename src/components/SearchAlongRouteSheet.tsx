@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FlatList, Keyboard, StyleSheet, useWindowDimensions } from "react-native";
+import { FlatList, Keyboard, ScrollView, StyleSheet, useWindowDimensions } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
 import { SurfaceScheme } from "@/components/ui/surfaceScheme";
 import { DriveTile } from "@/components/ui/DriveTile";
@@ -29,6 +29,7 @@ const CATEGORY_ICON: Record<AlongCategory, IconName> = {
   parking: "parking",
   coffee: "coffee",
   ev: "flash",
+  toilets: "toilet",
 };
 
 interface Props {
@@ -37,12 +38,14 @@ interface Props {
   remainingSeconds: number;
   unit: "km" | "miles";
   onAddStop: (r: AlongResult) => void;
+  /** Go straight there instead (it becomes the destination). */
+  onGo: (r: AlongResult) => void;
   onClose: () => void;
 }
 
 type State = { status: "loading" } | { status: "ok"; results: AlongResult[] } | { status: "error"; message: string };
 
-export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, onAddStop, onClose }: Props) {
+export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, onAddStop, onGo, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const [category, setCategory] = useState<AlongCategory | null>("fuel");
@@ -94,7 +97,7 @@ export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, o
         </View>
         <Button variant="secondary" label="Back" onPress={onClose} accessibilityLabel="Close search and go back to navigation" testID="search-along-close" />
       </View>
-      <View style={styles.tiles}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tiles} style={styles.tilesScroll} keyboardShouldPersistTaps="handled">
         {ALONG_CATEGORIES.map((c) => (
           <DriveTile
             key={c.key}
@@ -109,7 +112,7 @@ export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, o
             testID={`search-along-${c.key}`}
           />
         ))}
-      </View>
+      </ScrollView>
       {!origin ? (
         <Text style={styles.note}>Waiting for your location.</Text>
       ) : state.status === "loading" ? (
@@ -150,7 +153,10 @@ export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, o
                   {extra ? <Text style={styles.detour}>{extra}</Text> : null}
                   <Text style={styles.address}>{formatDistance(item.distanceMeters, unit)}</Text>
                 </View>
-                <Button variant="primary" label="Add stop" onPress={() => onAddStop(item)} accessibilityLabel={`Add ${item.name} as a stop`} testID={`search-along-add-${item.placeId}`} />
+                <View style={styles.rowButtons}>
+                  <Button variant="secondary" label="Add stop" onPress={() => onAddStop(item)} accessibilityLabel={`Add ${item.name} as a stop`} testID={`search-along-add-${item.placeId}`} />
+                  <Button variant="primary" label="Go" onPress={() => onGo(item)} accessibilityLabel={`Go to ${item.name} instead`} testID={`search-along-go-${item.placeId}`} />
+                </View>
               </View>
             );
           }}
@@ -177,9 +183,11 @@ const styles = StyleSheet.create({
   grabber: { alignSelf: "center", width: 40, height: 5, borderRadius: 3, backgroundColor: colors.surfaceMuted, marginBottom: spacing.sm },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
   searchRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceMuted, borderRadius: radius.pill, paddingHorizontal: spacing.md, minHeight: 48 },
-  tiles: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm },
+  tiles: { gap: spacing.md, paddingVertical: spacing.sm, paddingRight: spacing.lg },
+  tilesScroll: { flexGrow: 0 },
   disc: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   right: { alignItems: "flex-end", minWidth: 56 },
+  rowButtons: { gap: 6 },
   input: { flex: 1, fontSize: 16, color: colors.text },
   note: { fontSize: 15, color: colors.textMuted, paddingVertical: spacing.lg, textAlign: "center" },
   error: { fontSize: 15, color: colors.danger, paddingVertical: spacing.lg, textAlign: "center" },

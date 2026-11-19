@@ -1,10 +1,10 @@
 import React, { forwardRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { DriveTile } from "@/components/ui/DriveTile";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { StyleSheet } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
 import { SurfaceScheme } from "@/components/ui/surfaceScheme";
-import { SURFACES } from "@/theme/colors";
+import { DRIVE_TILE, SURFACES, type DriveTileKind } from "@/theme/colors";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,6 +35,15 @@ interface Props {
   onReportAlert: () => void;
   /** Search along the route and add a stop (fuel, food, parking...). */
   onAddStop: () => void;
+  /** Settings > Sound & voice. */
+  onSoundVoice: () => void;
+  /** The driving view now ("3D", "2D", "North up"); the row cycles to the next one. */
+  mapViewLabel: string;
+  onMapView: () => void;
+  /** Avoid tolls / motorways / ferries: the switches, and the route is worked out again. */
+  avoidSummary: string;
+  onAvoid: () => void;
+  onHelp: () => void;
   onOpenDetection: () => void;
   // Satellite, 3D buildings, alerts and the nearby-place lists while driving.
   onOpenMapTools: () => void;
@@ -68,6 +77,12 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     onShareDrive,
     onReportAlert,
     onAddStop,
+    onSoundVoice,
+    mapViewLabel,
+    onMapView,
+    avoidSummary,
+    onAvoid,
+    onHelp,
     onOpenDetection,
     onOpenMapTools,
     onEndNavigation,
@@ -119,23 +134,6 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
           <Button variant="secondary" icon="swap-vertical" onPress={onRoutes} accessibilityLabel="Other routes" testID="eta-sheet-routes" />
         </View>
 
-        {/* The trip's actions as one row of round tiles, thumb-reachable at a glance. */}
-        <View style={styles.tiles} testID="eta-sheet-actions">
-          <DriveTile kind="share" icon="share" label="Share drive" onPress={onShareDrive} testID="eta-sheet-share" />
-          <DriveTile kind="report" icon="warning" label="Report" onPress={onReportAlert} testID="eta-sheet-report" />
-          <DriveTile kind="addStop" icon="add-circle" label="Add a stop" onPress={onAddStop} testID="eta-sheet-add-stop" />
-          <DriveTile
-            kind="dashcam"
-            icon="videocam"
-            label="Dashcam"
-            onPress={onOpenDetection}
-            accessibilityLabel={detectionBatteryLow ? "Dashcam. Battery below 50%. Still works, may run slower" : "Dashcam"}
-            testID="eta-sheet-dashcam"
-          />
-          <DriveTile kind="map" icon="layers" label="Map" onPress={onOpenMapTools} accessibilityLabel="Map display: satellite, 3D buildings, alerts, places nearby" testID="eta-sheet-map" />
-        </View>
-        {detectionBatteryLow ? <Text style={styles.quiet}>Battery below 50%: Dashcam still works, may run slower.</Text> : null}
-
         <View style={styles.card}>
           <View style={styles.toRow}>
             <Text style={styles.toLabel}>To</Text>
@@ -167,9 +165,29 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         <LeaveTimesChart state={leave} onRetry={fetchLeaveTimes} />
         <Button variant="ghost" label="Show more" inline onPress={onShowMoreTimes} accessibilityLabel="Show more leave times in Plan a drive" testID="eta-sheet-more" />
 
+        {/* The trip's options: one 56pt row each, our own line icons in coloured discs. */}
+        <View style={styles.card} testID="eta-sheet-options">
+          <OptionRow kind="share" icon="share" label="Share drive" subtitle="Send a live arrival-time link" onPress={onShareDrive} testID="eta-sheet-share" />
+          <OptionRow kind="addStop" icon="add-circle" label="Add a stop" subtitle="Fuel, food, coffee, parking on the way" onPress={onAddStop} testID="eta-sheet-add-stop" />
+          <OptionRow kind="report" icon="warning" label="Report" subtitle="Police, crash, hazard, traffic" onPress={onReportAlert} testID="eta-sheet-report" />
+          <OptionRow kind="sound" icon="volume-high" label="Sound & voice" onPress={onSoundVoice} testID="eta-sheet-sound" />
+          <OptionRow kind="map" icon="layers" label="Map view" value={mapViewLabel} onPress={onMapView} testID="eta-sheet-map-view" />
+          <OptionRow
+            kind="dashcam"
+            icon="videocam"
+            label="Dashcam & AI detection"
+            subtitle={detectionBatteryLow ? "Battery below 50%. Still works, may run slower" : undefined}
+            onPress={onOpenDetection}
+            testID="eta-sheet-dashcam"
+          />
+          <OptionRow kind="avoid" icon="options" label="Avoid" value={avoidSummary} onPress={onAvoid} testID="eta-sheet-avoid" />
+          <OptionRow kind="help" icon="help-circle" label="Help" onPress={onHelp} testID="eta-sheet-help" last />
+        </View>
+        <Button variant="ghost" label="Map display options" inline onPress={onOpenMapTools} accessibilityLabel="Map display: satellite, 3D buildings, alerts, places nearby" testID="eta-sheet-map" />
+
         <View style={styles.actions}>
-          <Button variant="destructive" label="Stop" size="large" onPress={onEndNavigation} accessibilityLabel="Stop navigation" style={styles.actionBtn} testID="eta-sheet-stop" />
-          <Button variant="primary" label="Go now" size="large" onPress={onClose} accessibilityLabel="Go now, keep driving" style={styles.actionBtn} testID="eta-sheet-go" />
+          <Button variant="destructiveConfirm" label="Stop" size="large" onPress={onEndNavigation} accessibilityLabel="Stop navigation" style={styles.actionBtn} testID="eta-sheet-stop" />
+          <Button variant="primary" label="Continue" size="large" onPress={onClose} accessibilityLabel="Continue driving" style={styles.actionBtn} testID="eta-sheet-go" />
         </View>
       </BottomSheetScrollView>
       </SurfaceScheme>
@@ -274,12 +292,78 @@ function LeaveTimesChart({ state, onRetry }: { state: LeaveState; onRetry: () =>
   );
 }
 
+type RowKind = "share" | "addStop" | "report" | "sound" | "map" | "dashcam" | "avoid" | "help";
+const ROW_TILE: Record<RowKind, DriveTileKind> = {
+  share: "share",
+  addStop: "addStop",
+  report: "report",
+  sound: "sound",
+  map: "map",
+  dashcam: "dashcam",
+  avoid: "avoid",
+  help: "help",
+};
+
+function OptionRow({
+  kind,
+  icon,
+  label,
+  subtitle,
+  value,
+  onPress,
+  testID,
+  last,
+}: {
+  kind: RowKind;
+  icon: IconName;
+  label: string;
+  subtitle?: string;
+  value?: string;
+  onPress: () => void;
+  testID?: string;
+  last?: boolean;
+}) {
+  const tile = DRIVE_TILE[ROW_TILE[kind]];
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && styles.rowPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={[label, value, subtitle].filter(Boolean).join(". ")}
+      testID={testID}
+    >
+      <View style={[styles.rowDisc, { backgroundColor: tile.fill }]}>
+        <Icon name={icon} size={18} color={tile.glyph} />
+      </View>
+      <View style={styles.rowTextWrap}>
+        <Text style={styles.rowLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.rowSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   // Dark while driving, like the bottom bar it opens from (the sheet's own background isn't a
   // Surface view, so it's set here; everything inside follows SurfaceScheme dark).
   sheetBackground: { backgroundColor: SURFACES.dark.sheet, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },
   handleIndicator: { backgroundColor: SURFACES.dark.textFaint, width: 40 },
-  tiles: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minHeight: 56 },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  rowPressed: { opacity: 0.6 },
+  rowDisc: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  rowTextWrap: { flex: 1 },
+  rowLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
+  rowSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
+  rowValue: { fontSize: 15, color: colors.textMuted },
   container: { paddingHorizontal: spacing.lg, gap: spacing.sm },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   headerText: { flex: 1, alignItems: "center" },

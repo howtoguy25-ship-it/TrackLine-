@@ -90,7 +90,9 @@ import { DestinationSearchBar, MY_LOCATION_PLACE_ID } from "@/components/Destina
 import { NavigationInstructionCard } from "@/components/NavigationInstructionCard";
 import { NavBottomBar } from "@/components/NavBottomBar";
 import { NavOptionsSheet } from "@/screens/NavOptionsSheet";
-import { SeeWhatsAheadBanner } from "@/components/SeeWhatsAheadBanner";
+import { NavMapControls } from "@/components/NavMapControls";
+import { ArrivedCard } from "@/components/ArrivedCard";
+import { addSearchHistoryEntry } from "@/services/searchHistory";
 import { MapToolsSheet } from "@/screens/MapToolsSheet";
 import { SoundSheet } from "@/screens/SoundSheet";
 import { VisibilitySheet } from "@/screens/VisibilitySheet";
@@ -229,6 +231,10 @@ import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
 import { REPORT_SIZE, SIDE_MARGIN, controlsBottom } from "@/nav/navControlsLayout";
+import { infoBannerFor } from "@/nav/infoBanner";
+import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
+import { parseNavVoiceCommand } from "@/nav/voiceCommand";
+import { startVoiceSearch, VOICE_SEARCH_MESSAGES, type VoiceSearchSession } from "@/services/voiceSearch";
 import { pickShortcut, shortcutText, slowTrafficAhead, throughPointsAhead, withSideStreets, type ShortcutKind } from "@/nav/shortcuts";
 import { ReportIcon } from "@/components/icons/MapControlIcons";
 import { SearchAlongRouteSheet } from "@/components/SearchAlongRouteSheet";
@@ -516,6 +522,7 @@ export function MapScreen() {
   // The same place as state, for the ETA sheet's "To" line (a ref can't be read while drawing).
   const [navDestinationPlace, setNavDestinationPlace] = useState<PlaceDetails | null>(null);
   if (pendingDestination && pendingDestination !== navDestinationPlace) setNavDestinationPlace(pendingDestination);
+  const navDestinationPlaceRef = useLatest(navDestinationPlace);
   const shareArrivalsRef = useLatest(settings.shareArrivals);
   // The place page (UI pass 2, section 4): a search result being looked at before any route is
   // fetched. The map is centred on it in the top 40%, under the page's own sheet.
@@ -1043,6 +1050,13 @@ export function MapScreen() {
   // heading-up again.
   const [northUp, setNorthUp] = useState(false);
   const northUpRef = useLatest(northUp);
+  // While driving, the compass (or Map view > North up) holds the map north-up; the arrow still
+  // turns with the car. Off again at the end of every drive.
+  const [navNorthUp, setNavNorthUp] = useState(false);
+  // The "You've arrived" card (nav/endDrive.ts); the drive ends when it goes.
+  const [arrival, setArrival] = useState<ArrivalInfo | null>(null);
+  // Avoid switches while driving (the ETA sheet's Avoid row).
+  const [navAvoidOpen, setNavAvoidOpen] = useState(false);
   useEffect(() => {
     // Not while a place page is up (the camera is showing the place), and not while choosing a
     // route: every GPS fix used to pull the camera back onto the driver at street zoom, undoing
@@ -1441,8 +1455,10 @@ export function MapScreen() {
     // During the approach view the camera sits a little ahead, so the split and the lanes show.
     const approaching = approachRef.current.phase === "approach" && approachRef.current.zoomed && approachRef.current.stepIndex !== null;
     const split = approaching ? route.steps[approachRef.current.stepIndex!]?.endLocation : null;
-    mapRef.current?.animateCamera({ center: split ? approachCenter(currentLatLng, split) : currentLatLng, heading }, { duration: 600 });
-  }, [route, followTilt, currentLatLng, heading, detectionOpen, placingAlert]);
+    const bearing = navNorthUp ? 0 : heading;
+    mapRef.current?.animateCamera({ center: split ? approachCenter(currentLatLng, split) : currentLatLng, heading: bearing }, { duration: 600 });
+    mapBearing.set(bearing);
+  }, [route, followTilt, currentLatLng, heading, detectionOpen, placingAlert, navNorthUp, mapBearing]);
 
   // Actually applies the "tilted, zoomed in" chase cam the comment above promises -- followTilt
   // defaulting to true was previously the *only* thing that happened on nav start; the per-tick
@@ -2360,6 +2376,8 @@ export function MapScreen() {
     if (arrived) {
       dispatchApproachRef.current({ type: "arrived", steps: route.steps });
       announcePhrase({ kind: "arrived" });
+      const arrivedAt = navDestinationPlaceRef.current;
+      setArrival((a) => a ?? { name: arrivedAt?.name ?? "Your destination", address: arrivedAt?.address ?? null, location: destinationLatLng, arrivedAtMs: Date.now() });
       recordTripEnd().catch(() => {});
       // Settings > Privacy > Share arrivals (opt-in): an anonymous +1 for a named place.
       const place = lastDestinationPlaceRef.current;
@@ -2386,6 +2404,8 @@ export function MapScreen() {
     settings.distanceUnit,
     navLanguage,
     announcePhrase,
+    destinationLatLng,
+    navDestinationPlaceRef,
     guidanceLatLngRef,
     shareArrivalsRef,
     voiceIdentifierRef,
@@ -4335,46 +4355,6 @@ export function MapScreen() {
     );
   }, [pendingDestination, pickingDestinationPoint, originOverride, currentLatLng, openOriginPicker, clearOriginOverride]);
 
-  const exitNavigation = useCallback(() => {
-    stopNavSpeech();
-    // Back to the home map cleanly: no sheet, search or alternatives left open, and the camera
-    // back on the driver in the normal home view.
-    navOptionsSheetRef.current?.close();
-    setSearchAlongOpen(false);
-    setNavAlternatives(null);
-    setAddingStopDuringNav(false);
-    setStopPreviewRoute(null);
-    setStopPreviewPlace(null);
-    setOverviewMode(false);
-    userMovedMapRef.current = false;
-    setPannedAwayIdle(false);
-    const here = currentLatLngRef.current;
-    if (here) mapRef.current?.animateCamera({ center: here, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
-    setRoute(null);
-    setActiveStepIndex(0);
-    setFollowTilt(true);
-    setStopLocation(null);
-    setDestinationLatLng(null);
-    setAcceptedSuggestionOriginalRoute(null);
-    // Ends the real native Live Activity started in confirmRoute -- fire-and-forget, same
-    // reasoning as endLiveShare below (nothing useful to block exit on; a safe no-op on
-    // Android/unsupported iOS versions/no activity currently running).
-    endLiveActivity();
-    // Per explicit user answer ("Until navigation ends"), a share started this trip stops
-    // updating right here -- fire-and-forget since there's nothing useful to block exit on.
-    if (liveShareIdRef.current) {
-      const shareId = liveShareIdRef.current;
-      liveShareIdRef.current = null;
-      endLiveShare(shareId).catch((err) => {
-        Sentry.logger.error("map: end live share failed", { error: String(err) });
-      });
-    }
-    // Real, explicit request -- "Auto-ghost ... on arrival." This is the one real place a trip
-    // ends (the manual Exit button today; any future automatic arrival detection would call
-    // this same function), so it's the real, single hook point for that trigger -- see
-    // useAutoGhostMode.ts's own comment.
-    autoGhostOnArrival(visibilityRef.current, updateSettingsRef.current);
-  }, [currentLatLngRef]);
 
   // Flow (per spec: select the type first, then drag to place, then Set/Save):
   // 1. FAB -> openAlertTypePicker: opens AlertReportSheet, nothing else happens yet.
@@ -5119,28 +5099,217 @@ export function MapScreen() {
     navOptionsSheetRef.current?.close();
     shareEta();
   }, [shareEta]);
-  // "See what's ahead": shown for the first 12 s of each new drive (not after a reroute).
-  const [hadRoute, setHadRoute] = useState(false);
-  const [aheadBannerOn, setAheadBannerOn] = useState(false);
-  if (!!route !== hadRoute) {
-    setHadRoute(!!route);
-    setAheadBannerOn(!!route);
-  }
+  // Map view while driving, cycled from the ETA sheet: 3D (tilted, heading-up) -> 2D (flat,
+  // heading-up) -> North up (flat) -> 3D. 3D/2D is the saved "default map view" setting; north-up
+  // is just for this drive. Applied to the camera straight away.
+  type NavView = "3d" | "2d" | "northUp";
+  const navView: NavView = navNorthUp ? "northUp" : settings.defaultMapViewStyle === "flat" ? "2d" : "3d";
+  const NAV_VIEW_LABEL: Record<NavView, string> = { "3d": "3D", "2d": "2D", northUp: "North up" };
+  const applyNavView = useCallback(
+    (next: NavView) => {
+      setNavNorthUp(next === "northUp");
+      const flat = next !== "3d";
+      if ((settings.defaultMapViewStyle === "flat") !== flat) updateSettings({ defaultMapViewStyle: flat ? "flat" : "tilted3d" });
+      const here = currentLatLngRef.current;
+      if (here) {
+        const pose = navFollowPose(here, next === "northUp" ? 0 : heading, currentSpeedKmhRef.current, flat);
+        mapRef.current?.animateCamera(pose, { duration: 500 });
+        mapBearing.set(pose.heading);
+      }
+    },
+    [settings.defaultMapViewStyle, updateSettings, currentLatLngRef, heading, currentSpeedKmhRef, mapBearing]
+  );
+  const nextNavView: Record<NavView, NavView> = { "3d": "2d", "2d": "northUp", northUp: "3d" };
+
+  // "Go" in Search along route: that place becomes the destination, routed from here now (the
+  // stop, if any, is dropped -- going somewhere else instead).
+  const goInsteadDuringNav = useCallback(
+    async (place: PlaceDetails) => {
+      const here = currentLatLngRef.current;
+      if (!here) return;
+      setRerouting(true);
+      try {
+        const fresh = (await getRouteChoices(here, place.location, avoidRouteOptions(settings.routeAvoid)))[0];
+        setStopLocation(null);
+        setNavDestinationPlace(place);
+        startRoute(fresh, place);
+      } catch (err) {
+        Sentry.logger.error("map: go instead failed", { error: String(err) });
+        Alert.alert("Couldn't route there", "Your current drive is kept. Check your connection and try again.");
+      } finally {
+        setRerouting(false);
+      }
+    },
+    [currentLatLngRef, settings.routeAvoid, startRoute]
+  );
+
+  // Avoid while driving: the switches, then the route is worked out again from here with them.
+  const onToggleAvoidDuringNav = useCallback(
+    async (key: RouteAvoidKey, value: boolean) => {
+      const next = { ...settings.routeAvoid, [key]: value };
+      updateSettings({ routeAvoid: next });
+      const here = currentLatLngRef.current;
+      if (!here || !destinationLatLng || travelMode !== "driving") return;
+      setRerouting(true);
+      try {
+        const fresh = (await getRouteChoices(here, destinationLatLng, { ...avoidRouteOptions(next), waypoint: stopLocation ?? undefined }))[0];
+        guidanceRef.current = createGuidanceState();
+        setActiveStepIndex(0);
+        setRoute(fresh);
+        setAcceptedSuggestionOriginalRoute(null);
+      } catch (err) {
+        Sentry.logger.error("map: avoid reroute failed", { error: String(err) });
+        Alert.alert("Couldn't change the route", "Your current route is kept. Check your connection and try again.");
+      } finally {
+        setRerouting(false);
+      }
+    },
+    [settings.routeAvoid, updateSettings, currentLatLngRef, destinationLatLng, travelMode, stopLocation]
+  );
+
+  // Voice command while driving (the microphone button): the phone's own speech recogniser hears
+  // it, nav/voiceCommand.ts decides what it means. "Stop navigation" ends the drive the same way
+  // as every other end path (exitNavigation).
+  const [navListening, setNavListening] = useState(false);
+  const navVoiceSessionRef = useRef<VoiceSearchSession | null>(null);
+  const navCommandRef = useRef<(text: string) => void>(() => {});
+  const listenForNavCommand = useCallback(() => {
+    if (navVoiceSessionRef.current) {
+      navVoiceSessionRef.current.stop();
+      return;
+    }
+    setNavListening(true);
+    startVoiceSearch(navLanguage, {
+      onPartial: () => {},
+      onFinal: (text) => navCommandRef.current(text),
+      onEnd: () => {
+        navVoiceSessionRef.current = null;
+        setNavListening(false);
+      },
+      onError: (failure) => {
+        setNavListening(false);
+        Alert.alert("Voice command", VOICE_SEARCH_MESSAGES[failure]);
+      },
+    }).then((session) => {
+      navVoiceSessionRef.current = session;
+      if (!session) setNavListening(false);
+    });
+  }, [navLanguage]);
+  // THE end of a drive (nav/endDrive.ts): Stop, long-press + confirm, the voice command, the X on
+  // the top bar and arriving all come here, so the reset can't differ by path. Closes and unmounts
+  // every driving overlay, clears the route from the map, stops guidance, saves the trip to
+  // Recents, and eases the camera back to the live location in the home follow view (or snaps to
+  // the first fix if there isn't one right now).
+  const homeSnapPendingRef = useRef(false);
+  const exitNavigation = useCallback(
+    (reason: EndReason = "exit") => {
+      Sentry.logger.info("map: drive ended", { reason });
+      stopNavSpeech();
+      navVoiceSessionRef.current?.stop();
+      navOptionsSheetRef.current?.close();
+      reportSheetRef.current?.close();
+      soundSheetRef.current?.close();
+      directionsSheetRef.current?.close();
+      toolsSheetRef.current?.close();
+      setSearchAlongOpen(false);
+      setNavAlternatives(null);
+      setNavAvoidOpen(false);
+      setAddingStopDuringNav(false);
+      setStopPreviewRoute(null);
+      setStopPreviewPlace(null);
+      setOverviewMode(false);
+      setTrafficSuggestionRoute(null);
+      setTrafficSuggestionSavedSeconds(0);
+      setFasterRouteBanner(null);
+      setManoeuvreChip(null);
+      setAlertCard(null);
+      setRerouting(false);
+      setNavNorthUp(false);
+      setArrival(null);
+      approachRef.current = INITIAL_APPROACH;
+      setApproach(INITIAL_APPROACH);
+      guidanceRef.current = createGuidanceState();
+      userMovedMapRef.current = false;
+      setPannedAwayIdle(false);
+      // The trip's destination goes into Recents (a dropped pin has no name to list).
+      const place = navDestinationPlaceRef.current;
+      if (place && place.placeId) addSearchHistoryEntry(place).catch(() => {});
+      setPlanDriveFor(null);
+      const pose = homeCameraAfterDrive(currentLatLngRef.current, followHeadingRef.current, northUpRef.current);
+      if (pose) {
+        mapRef.current?.animateCamera(pose, { duration: HOME_RESET_MS });
+        mapBearing.set(pose.heading);
+      } else {
+        homeSnapPendingRef.current = true;
+      }
+      setRoute(null);
+      setActiveStepIndex(0);
+      setFollowTilt(true);
+      setStopLocation(null);
+      setDestinationLatLng(null);
+      setAcceptedSuggestionOriginalRoute(null);
+    // Ends the real native Live Activity started in confirmRoute -- fire-and-forget, same
+    // reasoning as endLiveShare below (nothing useful to block exit on; a safe no-op on
+    // Android/unsupported iOS versions/no activity currently running).
+    endLiveActivity();
+    // Per explicit user answer ("Until navigation ends"), a share started this trip stops
+    // updating right here -- fire-and-forget since there's nothing useful to block exit on.
+    if (liveShareIdRef.current) {
+      const shareId = liveShareIdRef.current;
+      liveShareIdRef.current = null;
+      endLiveShare(shareId).catch((err) => {
+        Sentry.logger.error("map: end live share failed", { error: String(err) });
+      });
+    }
+    // Real, explicit request -- "Auto-ghost ... on arrival." This is the one real place a trip
+    // ends (the manual Exit button today; any future automatic arrival detection would call
+    // this same function), so it's the real, single hook point for that trigger -- see
+    // useAutoGhostMode.ts's own comment.
+    autoGhostOnArrival(visibilityRef.current, updateSettingsRef.current);
+    },
+    [currentLatLngRef, northUpRef, mapBearing, navDestinationPlaceRef]
+  );
+  // No fix when the drive ended: snap home to the first one that arrives.
   useEffect(() => {
-    if (!aheadBannerOn) return;
-    const t = setTimeout(() => setAheadBannerOn(false), 12_000);
+    if (!homeSnapPendingRef.current || !currentLatLng || route) return;
+    homeSnapPendingRef.current = false;
+    const pose = homeCameraAfterDrive(currentLatLng, followHeadingRef.current, northUpRef.current);
+    if (pose) mapRef.current?.animateCamera(pose, { duration: 0 });
+  }, [currentLatLng, route, northUpRef]);
+
+  // "You've arrived": the destination, the time, Rate drive / Park here / Done. Ends the drive
+  // after ARRIVAL_CARD_MS or on Done (any button ends it too, after doing its job).
+  useEffect(() => {
+    if (!arrival) return;
+    const t = setTimeout(() => exitNavigation("arrived"), ARRIVAL_CARD_MS);
     return () => clearTimeout(t);
-  }, [aheadBannerOn]);
+  }, [arrival, exitNavigation]);
+
+  useEffect(() => {
+    navCommandRef.current = (text: string) => {
+      const cmd = parseNavVoiceCommand(text);
+      if (cmd === "stop") exitNavigation("voice");
+      else if (cmd === "report") openAlertTypePicker();
+      else if (cmd === "mute") updateSettings({ spokenDirections: "off" });
+      else if (cmd === "unmute") updateSettings({ spokenDirections: "normal" });
+      else if (cmd === "routes") showNavRoutes();
+      else if (cmd === "search") setSearchAlongOpen(true);
+      else Alert.alert("Voice command", `Didn't catch a command in "${text}". Try "stop navigation", "report" or "mute".`);
+    };
+  });
+
   // The ETA sheet's "On your route" list: reports and live incidents within reach of the road
   // still ahead. Only worked out while the sheet is open.
   const etaSheetEvents = useMemo(() => {
-    if ((!navOptionsSheetOpen && !aheadBannerOn) || remainingPolyline.length < 2) return [];
+    if (!route || remainingPolyline.length < 2) return [];
     const points: RoutePoint[] = [
       ...nearbyAlerts.map((a) => ({ id: `a-${a.id}`, kind: "report" as const, label: ALERT_LABELS[a.type] ?? "Report", lat: a.lat, lng: a.lng })),
       ...trafficIncidents.map((i) => ({ id: `i-${i.id}`, kind: "incident" as const, label: i.category || i.headline, lat: i.lat, lng: i.lng })),
     ];
     return eventsAlongRoute(remainingPolyline, points);
-  }, [navOptionsSheetOpen, aheadBannerOn, remainingPolyline, nearbyAlerts, trafficIncidents]);
+  }, [route, remainingPolyline, nearbyAlerts, trafficIncidents]);
+  // The info banner above the bottom bar: the nearest real report or incident ahead.
+  const navInfoBanner = useMemo(() => infoBannerFor(etaSheetEvents, settings.distanceUnit), [etaSheetEvents, settings.distanceUnit]);
   // Only name the place if it's still where this trip ends (a later dropped-pin trip has none).
   const etaSheetPlace =
     navDestinationPlace &&
@@ -5158,10 +5327,7 @@ export function MapScreen() {
       getDirections(origin, dest, { useTraffic: t === "now" ? true : t, waypoint }).then((r) => r.durationInTrafficSeconds ?? r.durationSeconds)
     );
   }, [currentLatLng, destinationLatLng, stopLocation]);
-  const onNavOptionsEndNavigation = useCallback(() => {
-    navOptionsSheetRef.current?.close();
-    exitNavigation();
-  }, [exitNavigation]);
+  const onNavOptionsEndNavigation = useCallback(() => exitNavigation("stop"), [exitNavigation]);
 
   // Keeps the live share doc (if one was ever started for this trip) fresh while navigating --
   // 12s matches the cadence other live-position writes in this app use as a reasonable
@@ -5897,7 +6063,7 @@ export function MapScreen() {
           step={activeStep}
           roadName={navRoadName}
           themeKey={settings.navCardTheme}
-          onExit={exitNavigation}
+          onExit={() => exitNavigation("exit")}
           onExpandDirections={() => directionsSheetRef.current?.expand()}
           onHeightChange={setInstructionCardHeight}
           nextStep={route.steps[activeStepIndex + 1] ?? null}
@@ -5938,13 +6104,38 @@ export function MapScreen() {
           onLongPressEnd={() =>
             Alert.alert("End navigation?", undefined, [
               { text: "Keep driving", style: "cancel" },
-              { text: "End", style: "destructive", onPress: exitNavigation },
+              { text: "End", style: "destructive", onPress: () => exitNavigation("longPress") },
             ])
           }
           onHeightChange={setBottomBarHeight}
           isFollowing={followTilt}
           onRecenter={onRecenter}
           onOverview={showNavRoutes}
+        />
+      )}
+
+      {/* Every floating control while driving, at the frames nav/navControlsLayout.ts computes
+          (checked for overlaps on 320-430pt phones): compass, audio player, sound, voice command,
+          the street chip and the info banner. */}
+      {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
+        <NavMapControls
+          safeTop={insets.top}
+          safeBottom={insets.bottom}
+          topBarHeight={instructionCardHeight}
+          bottomBarHeight={bottomBarHeight}
+          showSpeedLimit={!!speedLimitKmh}
+          bearing={mapBearing}
+          northUp={navNorthUp}
+          onCompass={() => applyNavView(navNorthUp ? (settings.defaultMapViewStyle === "flat" ? "2d" : "3d") : "northUp")}
+          showAudioPlayer={settings.showAudioPlayer}
+          onAudioPlayer={openAudioPlayer}
+          soundOff={settings.spokenDirections === "off"}
+          onSound={() => soundSheetRef.current?.expand()}
+          onVoice={listenForNavCommand}
+          listening={navListening}
+          streetName={navRoadName}
+          banner={navOptionsSheetOpen ? null : navInfoBanner}
+          onBanner={() => navOptionsSheetRef.current?.expand()}
         />
       )}
 
@@ -5958,20 +6149,6 @@ export function MapScreen() {
           too. Floats just above NavBottomBar, horizontally centered -- same hide conditions as
           that bar (the add-stop search/confirm bars occupy this same screen region) so nothing
           ever stacks on top of it. */}
-      {route && !addingStopDuringNav && !stopPreviewRoute && navRoadName && (
-        <View
-          pointerEvents="none"
-          style={[styles.currentStreetChipWrap, { bottom: insets.bottom + bottomBarHeight + spacing.md + 8 }]}
-        >
-          <View style={styles.currentStreetChip}>
-            <Icon name="navigate" size={11} color="#FFFFFF" style={{ transform: [{ rotate: "90deg" }] }} />
-            <Text style={styles.currentStreetChipText} numberOfLines={1}>
-              {navRoadName}
-            </Text>
-          </View>
-        </View>
-      )}
-
       {/* The street-name pill under the driver's arrow on the home map (components/StreetPill).
           Shown only while the map is actually following the driver -- once they pan away the
           arrow is no longer above it, so a pill there would be labelling empty road. */}
@@ -5994,14 +6171,27 @@ export function MapScreen() {
         />
       )}
 
-      {route && aheadBannerOn && etaSheetEvents.length > 0 && !navOptionsSheetOpen && !addingStopDuringNav && !manoeuvreChip && (
-        <SeeWhatsAheadBanner
-          top={insets.top + instructionCardHeight + 8}
-          count={etaSheetEvents.length}
-          onPress={() => {
-            setAheadBannerOn(false);
-            navOptionsSheetRef.current?.expand();
+      {route && arrival && (
+        <ArrivedCard
+          arrival={arrival}
+          bottom={insets.bottom + bottomBarHeight + spacing.md}
+          onRate={() => {
+            exitNavigation("arrived");
+            navigation.navigate("Help");
           }}
+          onPark={
+            currentLatLng
+              ? () => {
+                  const here = currentLatLng;
+                  addCustomPlace(
+                    { placeId: `parked-${arrival.arrivedAtMs}`, name: "Parked car", address: arrival.address ?? arrival.name, location: here },
+                    "Parked car"
+                  ).catch((err) => Sentry.logger.error("map: park here failed", { error: String(err) }));
+                  exitNavigation("arrived");
+                }
+              : null
+          }
+          onDone={() => exitNavigation("arrived")}
         />
       )}
 
@@ -6015,6 +6205,10 @@ export function MapScreen() {
           onAddStop={(r) => {
             setSearchAlongOpen(false);
             onStopSelectedDuringNav({ placeId: r.placeId, name: r.name, address: r.address, location: r.location });
+          }}
+          onGo={(r) => {
+            setSearchAlongOpen(false);
+            goInsteadDuringNav({ placeId: r.placeId, name: r.name, address: r.address, location: r.location });
           }}
         />
       )}
@@ -6259,16 +6453,7 @@ export function MapScreen() {
             present locate FAB instead of a separate button here. */}
         {/* While navigating: just the sound button (it opens the sound sheet). Re-centre sits
             above the bottom bar after a pan; ending the drive is in the ETA sheet. */}
-        {route ? (
-          <FloatingButton
-            tone="map"
-            icon="volume-high"
-            onPress={() => soundSheetRef.current?.expand()}
-            accessibilityLabel="Sound"
-            size={52}
-            testID="nav-sound"
-          />
-        ) : null}
+        {/* While navigating, the compass, audio, sound and voice buttons are NavMapControls. */}
       </View>
 
       {/* Hidden while a bottom sheet is open, an alert is being placed, or the route/stop
@@ -6648,6 +6833,21 @@ export function MapScreen() {
           setSearchAlongOpen(true);
         }}
         onShareDrive={onNavOptionsShareEta}
+        onSoundVoice={() => {
+          navOptionsSheetRef.current?.close();
+          navigation.navigate("Settings", { category: "navigationVoice" });
+        }}
+        mapViewLabel={NAV_VIEW_LABEL[navView]}
+        onMapView={() => applyNavView(nextNavView[navView])}
+        avoidSummary={avoidCount(settings.routeAvoid) ? avoidPillLabel(settings.routeAvoid) : "None"}
+        onAvoid={() => {
+          navOptionsSheetRef.current?.close();
+          setNavAvoidOpen(true);
+        }}
+        onHelp={() => {
+          navOptionsSheetRef.current?.close();
+          navigation.navigate("Help");
+        }}
         onOpenDetection={onNavOptionsOpenDetection}
         onOpenMapTools={() => {
           navOptionsSheetRef.current?.close();
@@ -6658,6 +6858,12 @@ export function MapScreen() {
         onSheetChange={(index) => setNavOptionsSheetOpen(index >= 0)}
         detectionBatteryLow={detectionBatteryLow}
       />
+
+      {route ? (
+        <MapSurface>
+          <AvoidSheet visible={navAvoidOpen} prefs={settings.routeAvoid} onToggle={onToggleAvoidDuringNav} onClose={() => setNavAvoidOpen(false)} />
+        </MapSurface>
+      ) : null}
 
       <SoundSheet
         ref={soundSheetRef}
