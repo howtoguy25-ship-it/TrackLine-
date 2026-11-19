@@ -442,9 +442,15 @@ function enforceMinAspectRatio(bbox: [number, number, number, number]): [number,
 // length 5x longer than at 1x, not the same one just cropped. Leaving this unscaled (the bug,
 // before this fix) made estimateDistanceM assume the 1x FOV even when actually shooting at 5x,
 // so a real vehicle's on-screen box width was being read against the wrong geometry entirely.
-function estimateDistanceM(boxWidthPx: number, imageWidthPx: number, zoomFactor: number): number {
+// Real widths by kind, seen from behind: a car ~1.8 m; buses and trucks are built to the 2.5 m
+// Australian Design Rule maximum; a motorcycle with rider ~0.8 m. Using 1.8 m for everything put
+// a bus 28% closer than it was and a motorbike more than twice as far away.
+export const VEHICLE_WIDTH_M: Record<string, number> = { car: ASSUMED_VEHICLE_WIDTH_M, truck: 2.5, bus: 2.5, motorcycle: 0.8 };
+
+export function estimateDistanceM(boxWidthPx: number, imageWidthPx: number, zoomFactor: number, cls?: string): number {
   const focalLengthPx = imageWidthPx * ASSUMED_FOCAL_LENGTH_FACTOR * Math.max(zoomFactor, 1);
-  return (ASSUMED_VEHICLE_WIDTH_M * focalLengthPx) / Math.max(boxWidthPx, 1);
+  const widthM = (cls && VEHICLE_WIDTH_M[cls]) || ASSUMED_VEHICLE_WIDTH_M;
+  return (widthM * focalLengthPx) / Math.max(boxWidthPx, 1);
 }
 
 export function createSpeedTracker() {
@@ -457,6 +463,11 @@ export function createSpeedTracker() {
       score: number;
       label: string;
       confidence?: number;
+      /** From detection/boxTracker.ts: who this box is (stable across frames), and its box is
+       *  already Kalman-filtered, so it's matched by id and not smoothed a second time. */
+      trackId?: number;
+      /** COCO class ("car", "truck", "bus", "motorcycle") for its real width in distance. */
+      cls?: string;
     }[],
     imageWidthPx: number,
     nowMs: number,
@@ -489,7 +500,11 @@ export function createSpeedTracker() {
 
       let best: InternalTrack | null = null;
       let bestDist = Infinity;
-      for (const t of tracks) {
+      if (det.trackId != null) {
+        best = tracks.find((t) => t.id === det.trackId && unmatched.has(t.id)) ?? null;
+        bestDist = 0;
+      }
+      if (det.trackId == null) for (const t of tracks) {
         if (!unmatched.has(t.id)) continue;
         const [tcx, tcy] = boxCenter(t.bbox);
         const d = Math.hypot(cx - tcx, cy - tcy);
@@ -504,7 +519,7 @@ export function createSpeedTracker() {
         }
       }
 
-      const rawDistanceM = estimateDistanceM(det.bbox[2], imageWidthPx, zoomFactor);
+      const rawDistanceM = estimateDistanceM(det.bbox[2], imageWidthPx, zoomFactor, det.cls);
       let speedKmh: number | null = null;
 
       if (best) {
@@ -579,11 +594,12 @@ export function createSpeedTracker() {
           speedKmh = null;
         }
 
-        const bbox = enforceMinAspectRatio(clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING)));
+        // A tracker-filtered box is already smooth (and predicted forward, so no lag): use it as is.
+        const bbox = det.trackId != null ? enforceMinAspectRatio(det.bbox) : enforceMinAspectRatio(clampShrink(best.bbox, smoothBbox(best.bbox, det.bbox, BBOX_SMOOTHING)));
         // Capped, not left to grow unbounded -- only ever compared against CONFIRM_FRAMES_REQUIRED,
         // so there's no reason for this to keep climbing for the lifetime of a long-tracked
         // vehicle.
-        const confirmCount = Math.min(best.confirmCount + 1, CONFIRM_FRAMES_REQUIRED);
+        const confirmCount = det.trackId != null ? CONFIRM_FRAMES_REQUIRED : Math.min(best.confirmCount + 1, CONFIRM_FRAMES_REQUIRED);
         const {
           candidate: occupantCandidate,
           streak: occupantCandidateStreak,
@@ -646,7 +662,9 @@ export function createSpeedTracker() {
           });
         }
       } else {
-        const id = nextId++;
+        // The box tracker already confirmed this one (it only hands over shown tracks).
+        const fromTracker = det.trackId != null;
+        const id = fromTracker ? (det.trackId as number) : nextId++;
         // Same aspect-ratio floor as the matched-track path -- a brand new track's very first
         // detection can just as easily come back as a narrow partial clip as any later tick,
         // and starting the track off already corrected means every subsequent smoothBbox() call
@@ -681,7 +699,7 @@ export function createSpeedTracker() {
           lowMovementSinceMs: null,
           smoothedMovementRatio: 0,
           aboveThresholdStreak: 0,
-          confirmCount: 1,
+          confirmCount: fromTracker ? CONFIRM_FRAMES_REQUIRED : 1,
           occupantCandidate,
           occupantCandidateStreak,
           occupantCount: null,

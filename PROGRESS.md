@@ -6,6 +6,19 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Nav permanent fix, shortcuts, driving sheets, Dashcam tracker — 2026-11-19
+
+| Section | Status | Evidence |
+|---|---|---|
+| §1-2 Route preview fit + route list (follow camera ran during preview; fit ran before the card and sheet were measured) | DONE + NEEDS DEVICE TEST (TEST_ON_PHONE §29) | `__tests__/nav/previewCamera.test.ts`, `__tests__/presses/routePreview.test.tsx` |
+| §3 One arrow, no own Tracky, one route line starting at the arrow | DONE + NEEDS DEVICE TEST | `__tests__/nav/navArrowLine.test.tsx` |
+| §4 Nav camera (pitch 45, arrow at 70%, speed zoom, one shared pose) | DONE + NEEDS DEVICE TEST | `__tests__/nav/navCamera.test.ts` |
+| §5 Controls (no overlaps on 320-430 pt), Search along route, Routes alternatives, clean End | DONE + NEEDS DEVICE TEST | `__tests__/nav/navControls.test.tsx`, `navControlsLayout.test.ts` |
+| §6 Acceptance drive 323 Stacey St → 40 Bazentin St (real recorded route, clean + noisy GPS) | DONE in simulation; frames in `docs/nav-fix/` are SIMULATION frames, not app screenshots (no simulator or map tiles in this container) | `__tests__/nav/staceyToBazentin.test.ts`, `docs/nav-fix/drive-log.json` |
+| Street and back-lane shortcuts (no jam gate; Google alternatives + side streets; judged against the live time of YOUR road; 10% / 1-3 min threshold; banner names the road) + Side streets in the route list | DONE + NEEDS DEVICE TEST (§30) | `__tests__/nav/shortcuts.test.ts`, `__tests__/nav/routeThrough.test.ts` |
+| Driving sheets look like the driving UI (dark ETA sheet with round action tiles incl. new Add a stop; dark Search along route with category tiles; dark Report grid) | DONE + NEEDS DEVICE TEST (§31) | `__tests__/travel/etaSheet.test.tsx`, `__tests__/design/colours.test.ts` |
+| Dashcam: new trained tracker (Kalman + two-stage matching), class-aware distance | see "Dashcam tracker training" below | `__tests__/detection/boxTracker.test.ts`, `training/tracker/REPORT.json` |
+
 ## Waze match + Pass 3 — 2026-11-17
 
 | Section | Status | Evidence |

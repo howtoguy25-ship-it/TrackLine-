@@ -1,0 +1,15 @@
+{
+  "note": "Placeholder until training/tracker/train.ts writes the trained values.",
+  "params": {
+    "highScore": 0.5,
+    "lowScore": 0.15,
+    "newTrackScore": 0.5,
+    "matchIoU": 0.3,
+    "lowMatchIoU": 0.3,
+    "minHits": 2,
+    "maxCoastMs": 900,
+    "qPos": 0.05,
+    "qVel": 0.2,
+    "rMeas": 0.08
+  }
+}

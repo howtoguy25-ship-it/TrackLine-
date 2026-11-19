@@ -34,6 +34,7 @@ import { decodePhotoForLightbarSampling } from "@/services/vehicleDetection";
 import { loadBoxedTFLiteModel, TFLITE_INPUT_SIZE } from "@/services/tfliteVehicleModel";
 import { sampleLightbarActivity, pruneLightbarTracks } from "@/utils/lightbarDetector";
 import { createSpeedTracker, type TrackedBox } from "@/utils/speedTracker";
+import { createBoxTracker, DEFAULT_TRACKER_PARAMS } from "@/detection/boxTracker";
 import { locatePlateRegion, type PlateRegion } from "@/utils/plateLocator";
 import { readPlateTextSmart, subscribePlateRecognizerProviderStatus } from "@/services/plateRecognizer";
 import { useLocation } from "@/context/LocationContext";
@@ -63,6 +64,9 @@ import { Sentry } from "@/services/sentry";
 // never cleared the bar to start being tracked at all). Same real trade as before: a few more
 // false positives for meaningfully fewer real, partially-visible vehicles going undetected.
 const MIN_DETECTION_SCORE = 0.3;
+// The trained tracker's low bar (detection/boxTrackerParams.json): read once so the worklet
+// captures a plain number.
+const TRACKER_LOW_SCORE = DEFAULT_TRACKER_PARAMS.lowScore;
 // See this constant's own call site (the Frame Processor's brightness boost / detection-score
 // loosening) for the full reasoning -- both apply only while night mode is active, either
 // switched on automatically by the real sunset/sunrise calculation or a manual Settings
@@ -214,6 +218,8 @@ const INFO_DISMISSED_KEY = "@trackline/aiDetectionInfoDismissed";
 
 interface RawDetection {
   label: "Vehicle" | "Heavy Vehicle";
+  /** The detector's own class, for the tracker and the real vehicle width in distance. */
+  cls: "car" | "motorcycle" | "bus" | "truck";
   score: number;
   bbox: [number, number, number, number];
 }
@@ -642,6 +648,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
   // VehicleDetectionRoute for the full root-cause explanation (a documented conflict between
   // expo-screen-orientation and react-native-screens, which native-stack uses under the hood).
   const speedTrackerRef = useRef(createSpeedTracker());
+  const boxTrackerRef = useRef(createBoxTracker());
   // Mirrors `boxes` state so the side capture loop (a stable, empty-deps useCallback) can read
   // the latest tracked vehicles without depending on the state itself -- same reasoning as
   // plateTextsRef below.
@@ -764,8 +771,11 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
       frameSizeRef.current = { width: frameWidth, height: frameHeight };
       setRawFrameInfo({ width: rawWidth, height: rawHeight, orientation });
       const suppressed = suppressOverlappingDetections(detections);
+      // Steady, named tracks first (Kalman + two-stage matching, trained on real traffic video:
+      // detection/boxTracker.ts), then speed, distance, parked and occupants per track.
+      const steady = boxTrackerRef.current.update(suppressed, Date.now());
       const tracked = speedTrackerRef.current.update(
-        suppressed,
+        steady.map((t) => ({ bbox: t.bbox, score: t.score, label: t.label ?? "Vehicle", trackId: t.id, cls: t.cls })),
         frameWidth,
         Date.now(),
         egoSpeedRef.current,
@@ -969,13 +979,16 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
           continue;
         }
 
-        if (score < minDetectionScore) continue;
+        // Faint detections (down to the trained tracker's low bar) only keep an existing track
+        // alive (detection/boxTracker.ts); they never start a box on their own.
+        if (score < Math.min(minDetectionScore, TRACKER_LOW_SCORE)) continue;
         // car=2, motorcycle=3, bus=5, truck=7 -- see labelmap.txt (raw ids, no offset -- see
         // this block's own comment above for why that differs from the old v1 model).
         let label: "Vehicle" | "Heavy Vehicle" | null = null;
         if (classId === 2 || classId === 3) label = "Vehicle";
         else if (classId === 5 || classId === 7) label = "Heavy Vehicle";
         if (!label) continue;
+        const cls = classId === 2 ? "car" : classId === 3 ? "motorcycle" : classId === 5 ? "bus" : "truck";
 
         const ymin = boxesArr[i * 4 + 0];
         const xmin = boxesArr[i * 4 + 1];
@@ -1001,7 +1014,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         // occluded down to an odd shape) through, just requires much stronger evidence for it.
         const aspectRatio = w / h;
         if (aspectRatio < MIN_ASPECT_RATIO_FOR_LOW_CONFIDENCE && score < HIGH_CONFIDENCE_ASPECT_OVERRIDE) continue;
-        detections.push({ label, score, bbox: [xmin * uprightWidth, ymin * uprightHeight, w, h] });
+        detections.push({ label, cls, score, bbox: [xmin * uprightWidth, ymin * uprightHeight, w, h] });
       }
 
       // Only the parsed, tiny result array (plus the upright frame dimensions the boxes are
