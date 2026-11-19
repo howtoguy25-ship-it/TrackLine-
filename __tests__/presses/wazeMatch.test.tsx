@@ -121,7 +121,10 @@ describe("navigation", () => {
       )
     );
     const recenter = StyleSheet.flatten(screen.getByTestId("nav-recenter").props.style);
-    expect(recenter).toMatchObject({ position: "absolute", bottom: "100%", left: 16 });
+    // Bottom-RIGHT above the bar, over the Report button: bottom-left was the speedometer's
+    // spot and they overlapped (nav/navControlsLayout.ts).
+    expect(recenter).toMatchObject({ position: "absolute", bottom: "100%", right: 18 });
+    expect(recenter.left).toBeUndefined();
   });
 });
 
