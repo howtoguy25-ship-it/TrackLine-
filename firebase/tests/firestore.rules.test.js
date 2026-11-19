@@ -535,3 +535,70 @@ describe("vehicle full check (reports, credits, purchases, cache, provider costs
     await assertFails(setDoc(doc(admin, "providerUsage/y"), {}));
   });
 });
+
+describe("users/{uid}/plannedDrives (Plan a drive)", () => {
+  const place = (name, lat, lng) => ({ name, address: "NSW", lat, lng });
+  const drive = (extra = {}) => ({
+    from: place("Home", -33.918, 151.04),
+    to: place("40 Bazentin St", -33.907, 151.082),
+    mode: "arrive",
+    targetMs: 1_800_000_000_000,
+    leaveAtMs: 1_799_998_800_000,
+    durationSeconds: 1200,
+    createdAt: 1_799_990_000_000,
+    tz: "Australia/Sydney",
+    recheckedAt: null,
+    reminded: false,
+    ...extra,
+  });
+  // A guest: Firebase anonymous sign-in.
+  const guest = (uid) => testEnv.authenticatedContext(uid, { firebase: { sign_in_provider: "anonymous" } }).firestore();
+
+  test("a guest (anonymous) saves, lists and deletes their own drives", async () => {
+    const db = guest("guestA");
+    const ref = await assertSucceeds(addDoc(collection(db, "users/guestA/plannedDrives"), drive()));
+    await assertSucceeds(getDocs(collection(db, "users/guestA/plannedDrives")));
+    await assertSucceeds(deleteDoc(ref));
+  });
+
+  test("a signed-in user saves a 'leave at' drive with no time zone", async () => {
+    const db = testEnv.authenticatedContext("userB").firestore();
+    const d = drive({ mode: "leave" });
+    delete d.tz;
+    await assertSucceeds(addDoc(collection(db, "users/userB/plannedDrives"), d));
+  });
+
+  test("nobody else can read, add to or delete someone's drives", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "users/owner1/plannedDrives/d1"), drive());
+    });
+    const other = guest("intruder");
+    await assertFails(getDoc(doc(other, "users/owner1/plannedDrives/d1")));
+    await assertFails(getDocs(collection(other, "users/owner1/plannedDrives")));
+    await assertFails(addDoc(collection(other, "users/owner1/plannedDrives"), drive()));
+    await assertFails(deleteDoc(doc(other, "users/owner1/plannedDrives/d1")));
+    const signedOut = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDocs(collection(signedOut, "users/owner1/plannedDrives")));
+  });
+
+  test("bad drives are refused: missing place, bad coordinates, unknown mode, extra fields, pre-reminded", async () => {
+    const db = guest("guestC");
+    const col = collection(db, "users/guestC/plannedDrives");
+    await assertFails(addDoc(col, drive({ to: { name: "Nowhere" } })));
+    await assertFails(addDoc(col, drive({ from: place("Bad", 123, 151) })));
+    await assertFails(addDoc(col, drive({ mode: "whenever" })));
+    await assertFails(addDoc(col, drive({ secret: "x" })));
+    await assertFails(addDoc(col, drive({ reminded: true })));
+    await assertFails(addDoc(col, drive({ durationSeconds: -5 })));
+    const noTarget = drive();
+    delete noTarget.targetMs;
+    await assertFails(addDoc(col, noTarget));
+  });
+
+  test("the owner can't edit a saved drive (the server re-checks it); edit = save new + delete old", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "users/guestD/plannedDrives/d1"), drive());
+    });
+    await assertFails(updateDoc(doc(guest("guestD"), "users/guestD/plannedDrives/d1"), { leaveAtMs: 1 }));
+  });
+});

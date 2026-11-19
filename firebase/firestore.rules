@@ -7,6 +7,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // A from/to place on a planned drive: a name and real coordinates.
+    function isPlannedPlace(p) {
+      return p is map && p.name is string && p.lat is number && p.lng is number
+        && p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180;
+    }
+
     function isOwner(createdBy) {
       return isSignedIn() && request.auth.uid == createdBy;
     }
@@ -233,12 +239,19 @@ service cloud.firestore {
       // re-checks traffic before each one and writes leaveAtMs / recheckedAt / reminded.
       match /plannedDrives/{driveId} {
         allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        // Signed in includes a guest's anonymous account: guests can plan drives too.
         allow create: if isSignedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['from', 'to', 'mode', 'targetMs', 'leaveAtMs', 'durationSeconds', 'createdAt', 'recheckedAt', 'reminded', 'tz'])
+          && request.resource.data.keys().hasAll(['from', 'to', 'mode', 'targetMs', 'leaveAtMs', 'durationSeconds'])
+          && isPlannedPlace(request.resource.data.from)
+          && isPlannedPlace(request.resource.data.to)
           && request.resource.data.mode in ['arrive', 'leave']
           && request.resource.data.targetMs is number
           && request.resource.data.leaveAtMs is number
           && request.resource.data.durationSeconds is number
+          && request.resource.data.durationSeconds >= 0
+          && (!('tz' in request.resource.data) || request.resource.data.tz is string)
+          && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
           && request.resource.data.reminded == false;
         allow update: if false;
       }

@@ -33,3 +33,19 @@ export async function getLeaveReminders(uid: string): Promise<boolean> {
 export async function setLeaveReminders(uid: string, on: boolean): Promise<void> {
   await setDoc(doc(db, "users", uid), { plannedDriveReminders: on }, { merge: true });
 }
+
+/**
+ * What the list says when it can't load or save. Never the raw Firebase text ("Missing or
+ * insufficient permissions") -- that's for the log, with its code.
+ */
+export function plannedDrivesErrorText(action: "load" | "save" | "delete"): string {
+  if (action === "save") return "Couldn't save your drive — check your connection and try again.";
+  if (action === "delete") return "Couldn't delete that drive — try again.";
+  return "Couldn't load your drives — tap to retry.";
+}
+
+/** Firebase's error code ("permission-denied", "unavailable"...), for the log. */
+export function firebaseErrorCode(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : err instanceof Error ? err.name : "unknown";
+}

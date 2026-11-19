@@ -15,7 +15,9 @@ import { getSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { getSearchHistory } from "@/services/searchHistory";
 import { getDirections } from "@/services/directions";
 import { placesErrorText, routeErrorText } from "@/services/routingErrors";
-import { deletePlannedDrive, getLeaveReminders, savePlannedDrive, setLeaveReminders, watchPlannedDrives } from "@/services/plannedDrivesStore";
+import { deletePlannedDrive, firebaseErrorCode, getLeaveReminders, plannedDrivesErrorText, savePlannedDrive, setLeaveReminders, watchPlannedDrives } from "@/services/plannedDrivesStore";
+import { ensureSignedIn } from "@/services/firebase";
+import { Sentry } from "@/services/sentry";
 import { syncLeaveReminders } from "@/services/plannedDriveReminders";
 import { getCalendarPermissionStatus, getUpcomingEventsWithLocation, requestCalendarAccess, type UpcomingDriveEvent } from "@/services/calendarEvents";
 import { distanceKm } from "@/utils/geo";
@@ -47,8 +49,30 @@ export function PlanADriveScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const planRoute = useRoute<RouteProp<RootStackParamList, "PlanADrive">>();
   const initial = planRoute.params?.initialDestination ?? null;
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const uid = user?.uid ?? null;
+  // Drives belong to a signed-in user (a guest's anonymous account counts). Never load before
+  // auth has settled, and if there's no user at all, sign in as a guest first -- no "sign in to
+  // plan drives" dead end.
+  const [signInFailed, setSignInFailed] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+  const [retryKey, setRetryKey] = useState(0);
+  useEffect(() => {
+    if (authLoading || uid) return;
+    let cancelled = false;
+    ensureSignedIn().catch((err) => {
+      Sentry.logger.error("plan a drive: guest sign-in failed", { code: firebaseErrorCode(err) });
+      if (!cancelled) setSignInFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, uid, retryKey]);
 
   const [step, setStep] = useState<Step>(initial ? "time" : "list");
   const [destination, setDestination] = useState<PlaceDetails | null>(initial);
@@ -65,9 +89,12 @@ export function PlanADriveScreen() {
     return watchPlannedDrives(
       uid,
       (d) => setDrives({ status: "ok", drives: d }),
-      (err) => setDrives({ status: "error", message: err.message })
+      (err) => {
+        Sentry.logger.error("plan a drive: load failed", { code: firebaseErrorCode(err) });
+        setDrives({ status: "error", message: plannedDrivesErrorText("load") });
+      }
     );
-  }, [uid]);
+  }, [uid, retryKey]);
 
   // The phone's own "time to leave" alerts follow the latest leave times.
   const driveList = drives.status === "ok" ? drives.drives : null;
@@ -119,6 +146,12 @@ export function PlanADriveScreen() {
             if (uid) setLeaveReminders(uid, on).catch(() => setRemindersOn(!on));
           }}
           onSignIn={() => navigation.navigate("SignIn")}
+          signingIn={!uid && !signInFailed}
+          onRetry={() => {
+            setSignInFailed(false);
+            setDrives({ status: "loading" });
+            setRetryKey((k) => k + 1);
+          }}
         />
       ) : step === "search" ? (
         <DestinationSearch
@@ -142,8 +175,15 @@ export function PlanADriveScreen() {
             setEditing(null);
             setInitialTime(null);
             setStep("list");
+            // Confirm, with the leave time it saved (the reminder follows from the list sync).
+            setToast(`Drive saved — leave ${formatArrivalClock(drive.leaveAtMs)}${remindersOn ? ", we'll remind you" : ""}`);
           }}
         />
+      ) : null}
+      {toast ? (
+        <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + spacing.lg }]} testID="plan-toast" accessibilityLiveRegion="polite">
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -165,6 +205,8 @@ function DrivesList({
   remindersOn,
   onToggleReminders,
   onSignIn,
+  signingIn,
+  onRetry,
 }: {
   uid: string | null;
   state: DrivesState;
@@ -177,14 +219,27 @@ function DrivesList({
   remindersOn: boolean;
   onToggleReminders: (on: boolean) => void;
   onSignIn: () => void;
+  /** Auth hasn't settled / a guest sign-in is under way: show the loading rows. */
+  signingIn: boolean;
+  onRetry: () => void;
 }) {
   const [now] = useState(() => Date.now());
   const sections = useMemo(() => (state.status === "ok" ? groupDrives(state.drives, now) : []), [state, now]);
 
-  if (!uid) {
-    return <EmptyState action={<Button label="Sign in to plan drives" onPress={onSignIn} size="large" fullWidth testID="plan-sign-in" />} />;
+  if (!uid && !signingIn) {
+    return (
+      <EmptyState
+        note="Couldn't sign you in to save drives."
+        action={
+          <View style={styles.actionsCol}>
+            <Button label="Try again" onPress={onRetry} size="large" fullWidth testID="plan-retry" />
+            <Button variant="secondary" label="Sign in" onPress={onSignIn} size="large" fullWidth testID="plan-sign-in" />
+          </View>
+        }
+      />
+    );
   }
-  if (state.status === "loading") {
+  if (!uid || state.status === "loading") {
     return (
       <View style={styles.skeletonList} testID="plan-loading">
         {[0, 1, 2].map((i) => (
@@ -194,7 +249,17 @@ function DrivesList({
     );
   }
   if (state.status === "error") {
-    return <EmptyState note={`Couldn't load your planned drives: ${state.message}.`} action={<Button label="Plan a drive" onPress={onPlan} size="large" fullWidth />} />;
+    return (
+      <EmptyState
+        note={state.message}
+        action={
+          <View style={styles.actionsCol}>
+            <Button label="Retry" onPress={onRetry} size="large" fullWidth testID="plan-retry" />
+            <Button variant="secondary" label="Plan a drive" onPress={onPlan} size="large" fullWidth />
+          </View>
+        }
+      />
+    );
   }
   if (sections.length === 0) {
     return (
@@ -588,7 +653,8 @@ function TimePicker({
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
     } catch (err) {
-      setSaving({ error: `Couldn't save the drive: ${err instanceof Error ? err.message : "unknown error"}. Try again.`, busy: false });
+      Sentry.logger.error("plan a drive: save failed", { code: firebaseErrorCode(err) });
+      setSaving({ error: plannedDrivesErrorText("save"), busy: false });
     }
   };
 
@@ -679,7 +745,7 @@ function TimePicker({
         {saving.error ? <Text style={styles.errorText}>{saving.error}</Text> : null}
       </ScrollView>
       <Button
-        label={canSave ? saveLabel : "Sign in to save drives"}
+        label={canSave ? saveLabel : "Getting ready…"}
         onPress={save}
         disabled={!canSave || chosen?.status !== "ok" || saving.busy}
         loading={saving.busy}
@@ -693,6 +759,9 @@ function TimePicker({
 }
 
 const styles = StyleSheet.create({
+  actionsCol: { alignSelf: "stretch", gap: spacing.sm },
+  toast: { position: "absolute", left: spacing.lg, right: spacing.lg, borderRadius: radius.lg, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: colors.text },
+  toastText: { color: colors.surface, fontSize: 15, fontWeight: "600", textAlign: "center" },
   container: { flex: 1, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   flex: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },

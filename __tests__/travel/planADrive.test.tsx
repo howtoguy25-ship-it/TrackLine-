@@ -14,7 +14,11 @@ jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({
 jest.mock("@/context/LocationContext", () => ({
   useLocation: () => ({ location: { coords: { latitude: -33.8, longitude: 151.2 } } }),
 }));
-const mockAuth: { user: { uid: string } | null } = { user: { uid: "u1" } };
+const mockAuth: { user: { uid: string } | null; loading: boolean } = { user: { uid: "u1" }, loading: false };
+const mockEnsureSignedIn = jest.fn<() => Promise<unknown>>(() => Promise.resolve({ uid: "guest" }));
+jest.mock("@/services/firebase", () => ({ ensureSignedIn: () => mockEnsureSignedIn() }));
+jest.mock("@/services/sentry", () => ({ Sentry: { logger: { info: () => {}, warn: () => {}, error: (...a: unknown[]) => mockLogError(...a) } } }));
+const mockLogError = jest.fn((..._a: unknown[]) => {});
 jest.mock("@/context/AuthContext", () => ({ useAuth: () => mockAuth }));
 jest.mock("@/components/art/ArriveOnTimeArt", () => ({ ArriveOnTimeArt: () => null }));
 jest.mock("@/services/plannedDriveReminders", () => ({ syncLeaveReminders: (...a: unknown[]) => mockSync(...a) }));
@@ -32,10 +36,12 @@ jest.mock("@/services/directions", () => ({ getDirections: (...a: unknown[]) => 
 const mockStore = {
   drives: [] as PlannedDrive[],
   saved: [] as unknown[],
+  loadError: null as null | { code: string; message: string },
 };
 jest.mock("@/services/plannedDrivesStore", () => ({
-  watchPlannedDrives: (_uid: string, onDrives: (d: PlannedDrive[]) => void) => {
-    onDrives(mockStore.drives);
+  watchPlannedDrives: (_uid: string, onDrives: (d: PlannedDrive[]) => void, onError: (e: Error) => void) => {
+    if (mockStore.loadError) onError(Object.assign(new Error(mockStore.loadError.message), { code: mockStore.loadError.code }));
+    else onDrives(mockStore.drives);
     return () => {};
   },
   savePlannedDrive: (_uid: string, d: unknown) => {
@@ -45,6 +51,10 @@ jest.mock("@/services/plannedDrivesStore", () => ({
   deletePlannedDrive: jest.fn(() => Promise.resolve()),
   getLeaveReminders: () => Promise.resolve(true),
   setLeaveReminders: jest.fn(() => Promise.resolve()),
+  ...(() => {
+    const real = jest.requireActual("@/services/plannedDrivesStore") as Record<string, unknown>;
+    return { plannedDrivesErrorText: real.plannedDrivesErrorText, firebaseErrorCode: real.firebaseErrorCode };
+  })(),
 }));
 const mockParams: { current: unknown } = { current: undefined };
 
@@ -111,6 +121,8 @@ describe("Plan a drive screen", () => {
     mockStore.saved = [];
     mockParams.current = undefined;
     mockAuth.user = { uid: "u1" };
+    mockAuth.loading = false;
+    mockStore.loadError = null;
     mockDirections.mockReset();
     mockSync.mockClear();
   });
@@ -126,10 +138,36 @@ describe("Plan a drive screen", () => {
     expect(screen.getByTestId("plan-search")).toBeTruthy();
   });
 
-  it("signed out: asks to sign in rather than showing a list it can't save", async () => {
+  it("not signed in: waits for auth, then signs in as a guest (no sign-in dead end)", async () => {
     mockAuth.user = null;
+    mockAuth.loading = true;
+    const r = await render(<PlanADriveScreen />);
+    expect(screen.getByTestId("plan-loading")).toBeTruthy();
+    expect(mockEnsureSignedIn).not.toHaveBeenCalled(); // auth hasn't settled yet
+    mockAuth.loading = false;
+    r.rerender(<PlanADriveScreen />);
+    await waitFor(() => expect(mockEnsureSignedIn).toHaveBeenCalled());
+    expect(screen.getByTestId("plan-loading")).toBeTruthy();
+    mockAuth.loading = false;
+  });
+
+  it("guest sign-in failing offers Try again and Sign in", async () => {
+    mockAuth.user = null;
+    mockEnsureSignedIn.mockRejectedValueOnce(Object.assign(new Error("network"), { code: "auth/network-request-failed" }));
     await render(<PlanADriveScreen />);
+    await waitFor(() => expect(screen.getByTestId("plan-retry")).toBeTruthy());
     expect(screen.getByTestId("plan-sign-in")).toBeTruthy();
+  });
+
+  it("a permission error never shows Firebase's text: a plain retry, and the real code is logged", async () => {
+    mockStore.loadError = { code: "permission-denied", message: "Missing or insufficient permissions." };
+    await render(<PlanADriveScreen />);
+    await waitFor(() => expect(screen.getByText("Couldn't load your drives — tap to retry.")).toBeTruthy());
+    expect(screen.queryByText(/insufficient permissions/i)).toBeNull();
+    expect(mockLogError).toHaveBeenCalledWith("plan a drive: load failed", { code: "permission-denied" });
+    mockStore.loadError = null;
+    await fireEvent.press(screen.getByTestId("plan-retry"));
+    await waitFor(() => expect(screen.queryByText("Couldn't load your drives — tap to retry.")).toBeNull());
   });
 
   it("saved drives are listed with leave and arrive times", async () => {
