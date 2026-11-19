@@ -378,6 +378,8 @@ interface SheetProps {
   onSelect: (index: number) => void;
   loading: boolean;
   errorText?: string | null;
+  /** A plain note above the routes (e.g. offline: a saved route, traffic not live). */
+  notice?: string | null;
   loadingText: string;
   onLeaveLater?: () => void;
   /** Coming from Plan a drive: the secondary button is "Edit drive" (back to the plan). */
@@ -400,6 +402,7 @@ export function RouteSelectionSheet({
   onSelect,
   loading,
   errorText,
+  notice,
   loadingText,
   onLeaveLater,
   onEditDrive,
@@ -475,6 +478,12 @@ export function RouteSelectionSheet({
           >
             <View style={styles.grabber} />
           </Pressable>
+          {notice && !errorText ? (
+            <View style={[styles.statusRow, { paddingHorizontal: 20 * k, paddingTop: 0 }]} testID="route-notice">
+              <Icon name="cloud-offline" size={20} color={colors.warning} />
+              <Text style={styles.noticeText}>{notice}</Text>
+            </View>
+          ) : null}
           {errorText ? (
             <View style={[styles.statusRow, { paddingHorizontal: 20 * k }]}>
               <Icon name="alert-circle" size={22} color={colors.danger} />
@@ -639,6 +648,7 @@ const styles = StyleSheet.create({
   fieldDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.chipBorder, marginLeft: 32 },
   swapButton: { position: "absolute" },
   pillRow: { flexDirection: "row" },
+  noticeText: { flex: 1, fontSize: 14, color: colors.warning, fontWeight: "600" },
 
   sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)" },
   modalSheet: {

@@ -65,6 +65,19 @@ export function classifyFetchFailure(err: unknown, timedOut: boolean, online: bo
   return "server";
 }
 
+/**
+ * True when a route request failed because the phone couldn't reach the server (no signal,
+ * airplane mode, a timed-out request), as opposed to the server answering with a problem. Used to
+ * fall back to a saved route (nav/routeCache.ts).
+ */
+export function isConnectionFailure(err: unknown): boolean {
+  if (err instanceof RoutingError) return err.kind === "offline" || err.kind === "timeout";
+  const e = err as { name?: string; message?: string } | null;
+  if (e?.name === "RequestTimeoutError") return true;
+  if (err instanceof TypeError && /network/i.test(err.message)) return true;
+  return /network request failed|internet connection appears to be offline|NETWORK_ERROR/i.test(String(e?.message ?? err));
+}
+
 /** Errors worth retrying with the other provider (Google): anything but "there's no route". */
 export function shouldFallBack(err: unknown): boolean {
   if (err instanceof RoutingError) return err.kind !== "no_route" && err.kind !== "offline";

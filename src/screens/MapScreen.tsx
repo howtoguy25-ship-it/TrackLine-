@@ -65,7 +65,7 @@ import { cardForOfficial, cardForReport, distanceLine, roadAndSuburb, spotlightC
 import { MapboxLayers } from "@/map-v2/MapboxLayers";
 import { isMapboxUsable, mapboxUnavailableReason } from "@/map-v2/mapbox";
 import { usableMapboxToken } from "@/config/mapboxToken";
-import { routeErrorText } from "@/services/routingErrors";
+import { isConnectionFailure, routeErrorText } from "@/services/routingErrors";
 import type { CameraLike, Region } from "@/map-v2/geo";
 import type { MapPin } from "@/map-v2/pins";
 import { startSimulatedDrive, stopSimulatedDrive } from "@/dev/simulateDrive";
@@ -222,6 +222,8 @@ import { openMusicApp } from "@/services/musicApp";
 import { subscribeNswTraffic } from "@/services/trafficNsw";
 import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/services/trafficNswModel";
 import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
+import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
+import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
@@ -562,6 +564,8 @@ export function MapScreen() {
   const [selectedChoiceIndex, setSelectedChoiceIndex] = useState(0);
   // "Every route here has a U-turn" -- set when the U-turns avoid option couldn't be honoured.
   const [routeAvoidNote, setRouteAvoidNote] = useState<string | null>(null);
+  // No internet: the routes shown are a saved set for this trip (see nav/routeCache.ts).
+  const [routeOfflineNote, setRouteOfflineNote] = useState<string | null>(null);
   const [avoidSheetOpen, setAvoidSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
   // Measured edges of the route-selection top card and bottom sheet, so the routes are fitted
@@ -2633,10 +2637,12 @@ export function MapScreen() {
       Keyboard.dismiss();
       setLoadingRouteOptions(true);
       setRouteOptionsError(null);
+      setRouteOfflineNote(null);
       try {
         if (mode === "driving") {
           const avoid = avoidOverride ?? settings.routeAvoid;
           const all = await getRouteChoices(origin, destination, { ...avoidRouteOptions(avoid), waypoint });
+          if (!waypoint) rememberRoutes(origin, destination, "", all).catch(() => {});
           const { routes: usable, allHaveUturns } = avoid.uturns ? withoutUturns(all) : { routes: all, allHaveUturns: false };
           const choices = distinctRoutes(usable);
           setRouteChoices(choices);
@@ -2667,10 +2673,24 @@ export function MapScreen() {
       } catch (err) {
         Sentry.logger.error("map: failed to fetch route options", { error: String(err), mode });
         console.warn("[map] failed to fetch route options", err);
+        // No connection: a route saved for this same trip still lets the drive start.
+        const offline = mode === "driving" && !waypoint && isConnectionFailure(err);
+        const saved = offline ? await savedRoutesFor(origin, destination).catch(() => null) : null;
+        if (saved) {
+          setRouteChoices(saved.routes);
+          setSelectedChoiceIndex(0);
+          setModeRoute(null);
+          setModeRouteOptions([]);
+          setRouteOfflineNote(`No internet. Using the route saved ${savedAgo(saved.savedAt)}; traffic isn't live.`);
+          fitRoutesOnScreen(saved.routes.map(detailedRoutePolyline));
+          return;
+        }
         // Same underlying cause as the destination search billing check below -- the
         // Directions API call hits the exact same Google Cloud project/key, so it fails the
         // same way whenever billing isn't enabled there.
-        setRouteOptionsError(routeErrorText(err));
+        setRouteOptionsError(
+          offline ? "No internet, and no saved route to here from where you are. Routes you've looked at before work offline." : routeErrorText(err)
+        );
       } finally {
         setLoadingRouteOptions(false);
       }
@@ -3828,6 +3848,10 @@ export function MapScreen() {
       recordDriveToday().catch(() => {});
       setAcceptedSuggestionOriginalRoute(null);
       setDestinationLatLng(destination.location);
+      // Keep this exact route for an offline start next time, and fetch the map tiles along it
+      // so the map still draws if the signal drops on the way.
+      if (currentLatLng) rememberRoutes(currentLatLng, destination.location, destination.name, [chosen]).catch(() => {});
+      downloadRouteArea(chosen.polyline).catch(() => {});
       // Real native Live Activity (see modules/liveActivity) -- starts the moment a trip
       // actually begins, per explicit request to keep navigating visible on the Lock Screen/
       // Dynamic Island once the driver leaves the app. iOS-only and a safe no-op everywhere else
@@ -5717,6 +5741,7 @@ export function MapScreen() {
               onSelect={onSelectRouteRow}
               loading={loadingRouteOptions}
               errorText={routeOptionsError}
+              notice={routeOfflineNote}
               loadingText={
                 travelMode === "driving"
                   ? "Finding the best routes…"
