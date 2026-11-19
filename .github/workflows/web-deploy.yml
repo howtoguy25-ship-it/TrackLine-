@@ -1,0 +1,52 @@
+name: Deploy web app (main website)
+
+# Manual only. Builds the TrackLine web app (web/, the browser version of the iOS and Android
+# app) and deploys it to the project's default Firebase Hosting site, so web gets the same
+# release as each iOS/Android build. Run it after firebase-deploy.yml when the Cloud Functions
+# or rules changed. The build holds only the public web config (VITE_* values are shipped to
+# every browser anyway); the service account key stays in the FIREBASE_SERVICE_ACCOUNT secret.
+on:
+  workflow_dispatch:
+
+jobs:
+  test-build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm ci --prefix web
+      - name: Write service account key to a temp file
+        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Resolve project
+        id: ids
+        run: echo "project=$(node -e "console.log(require('$RUNNER_TEMP/sa.json').project_id)")" >> "$GITHUB_OUTPUT"
+      - name: Typecheck + build (public web config only)
+        env:
+          VITE_FIREBASE_PROJECT_ID: ${{ steps.ids.outputs.project }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.WEB_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.WEB_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.WEB_FIREBASE_APP_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.WEB_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.WEB_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.WEB_GOOGLE_MAPS_API_KEY }}
+        run: |
+          for V in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_APP_ID VITE_GOOGLE_MAPS_API_KEY; do
+            [ -n "${!V}" ] || { echo "::error::GitHub secret WEB_${V#VITE_} is not set (DEPLOY.md > Web app)."; exit 1; }
+          done
+          npm --prefix web run build
+          test -f web/dist/phone-verify.html
+      - name: Deploy hosting
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npx -y firebase-tools@14 deploy --only hosting --project "${{ steps.ids.outputs.project }}" --non-interactive
+          echo "Web app: https://${{ steps.ids.outputs.project }}.web.app"
+      - name: Clean up
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

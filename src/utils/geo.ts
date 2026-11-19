@@ -51,6 +51,43 @@ export function bearingDegrees(lat1: number, lon1: number, lat2: number, lon2: n
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
+/** Real great-circle destination point (not a flat-plane approximation), given a start point,
+ *  an initial bearing in degrees, and a distance in meters -- the direct inverse of
+ *  bearingDegrees/distanceKm above (start + bearing + distance -> end point, instead of two
+ *  points -> bearing/distance). Used to place a live alert a short distance AHEAD of the
+ *  driver's own current heading rather than exactly on top of their live GPS fix -- a report
+ *  genuinely reflects a real hazard on the ROAD ahead, and placing it exactly at the reporter's
+ *  own coordinate (their live GPS fix, itself always a little stale, plus however many seconds
+ *  the type-picker/confirm tap sequence took) was landing pins measurably behind where the
+ *  hazard actually is relative to the direction traffic is moving -- the real, confirmed
+ *  complaint behind "the set alert doesn't set in its direction placed". */
+export function offsetLatLngByHeading(
+  lat: number,
+  lon: number,
+  headingDeg: number,
+  distanceMeters: number
+): { latitude: number; longitude: number } {
+  const R = 6371000; // mean Earth radius, meters
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const lat1 = toRad(lat);
+  const lon1 = toRad(lon);
+  const brng = toRad(headingDeg);
+  const angularDist = distanceMeters / R;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDist) + Math.cos(lat1) * Math.sin(angularDist) * Math.cos(brng)
+  );
+  const lon2 =
+    lon1 +
+    Math.atan2(
+      Math.sin(brng) * Math.sin(angularDist) * Math.cos(lat1),
+      Math.cos(angularDist) - Math.sin(lat1) * Math.sin(lat2)
+    );
+
+  return { latitude: toDeg(lat2), longitude: ((toDeg(lon2) + 540) % 360) - 180 };
+}
+
 /** Shortest distance in meters from a point to a polyline (the minimum over every segment's
  *  point-to-segment distance) -- the real signal for "has the driver actually left the route,"
  *  not just "is the current step's endpoint getting farther away" (which never fires at all if
@@ -92,6 +129,68 @@ export function distanceToPolylineMeters(
     if (dist < minDist) minDist = dist;
   }
   return minDist;
+}
+
+/** Smallest angle (0-180) between two compass bearings, independent of rotation direction -- the
+ *  real "how far off is the driver's heading from the route's" signal, since a 170° difference
+ *  and a -170° (190°) difference mean the same thing (almost exactly backwards). */
+export function headingDiffDeg(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+/** Same nearest-segment search as distanceToPolylineMeters, but also returns that segment's own
+ *  compass bearing -- the real "which way the route is actually headed right here" signal used
+ *  to detect a driver heading the wrong way / about to miss a turn (comparing it against the
+ *  driver's own live GPS heading), not just "how far from the line." One combined pass instead
+ *  of calling distanceToPolylineMeters separately, since both need the exact same nearest-
+ *  segment search. */
+export function routeDeviationInfo(
+  lat: number,
+  lon: number,
+  polyline: { latitude: number; longitude: number }[]
+): { distanceMeters: number; routeBearingDeg: number | null } {
+  if (polyline.length === 0) return { distanceMeters: Infinity, routeBearingDeg: null };
+  if (polyline.length === 1) {
+    return {
+      distanceMeters: distanceKm(lat, lon, polyline[0].latitude, polyline[0].longitude) * 1000,
+      routeBearingDeg: null,
+    };
+  }
+
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
+  const px = lon * metersPerDegLon;
+  const py = lat * metersPerDegLat;
+
+  let minDist = Infinity;
+  let bestA = polyline[0];
+  let bestB = polyline[1];
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i];
+    const b = polyline[i + 1];
+    const ax = a.longitude * metersPerDegLon;
+    const ay = a.latitude * metersPerDegLat;
+    const bx = b.longitude * metersPerDegLon;
+    const by = b.latitude * metersPerDegLat;
+
+    const abx = bx - ax;
+    const aby = by - ay;
+    const lengthSq = abx * abx + aby * aby;
+    const t = lengthSq > 0 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSq)) : 0;
+    const cx = ax + t * abx;
+    const cy = ay + t * aby;
+    const dist = Math.hypot(px - cx, py - cy);
+    if (dist < minDist) {
+      minDist = dist;
+      bestA = a;
+      bestB = b;
+    }
+  }
+  return {
+    distanceMeters: minDist,
+    routeBearingDeg: bearingDegrees(bestA.latitude, bestA.longitude, bestB.latitude, bestB.longitude),
+  };
 }
 
 /** Walks forward along a polyline starting from the point on it nearest (lat, lon), returning

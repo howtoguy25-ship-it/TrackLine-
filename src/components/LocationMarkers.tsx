@@ -1,7 +1,11 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import Svg, { Path } from "react-native-svg";
-import { colors, shadow } from "@/theme/tokens";
+import Svg, { Ellipse, Path } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { shadow } from "@/theme/tokens";
+import { MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { shadeColor } from "@/utils/color";
 
 // Real, professionally-drawn vector icons (react-native-svg), replacing the earlier photo-based
 // markers -- per explicit request to move back to an app-designed look, and a real technical
@@ -16,20 +20,76 @@ import { colors, shadow } from "@/theme/tokens";
 // triangle, so it reads as a real directional arrow at a glance rather than an abstract shape.
 const ARROW_PATH = "M12 1.5 L21 21.5 L12 17 L3 21.5 Z";
 
+// Real, explicit request -- Waze's own live-position marker is teal, not this app's usual blue
+// brand accent. Scoped to just these two markers (not theme/tokens.ts's shared `colors.accent`)
+// since nothing else in the app should change color along with it.
+export const LIVE_MARKER_TEAL = "#14B8A6";
+
 /**
  * The live navigation puck -- rendered inside a Marker with flat + rotation={heading} by the
  * caller (see MapScreen.tsx), so this component itself never rotates on its own; it just draws
  * the stationary "nose up" glyph that rotation then turns to match the direction of travel.
+ * `markerStyle` (see utils/mapMarkerStyles.ts) swaps the original hand-drawn SVG arrow for a
+ * real vehicle icon inside the exact same rotating circular badge, per explicit request to let a
+ * driver pick how they appear on the map -- "default" (the arrow) is completely unchanged, so
+ * every existing user's marker looks identical to before this setting existed.
  */
-export function CarNavArrow() {
+export function CarNavArrow({ markerStyle = "default" }: { markerStyle?: MapMarkerStyleKey }) {
+  const iconSpec = markerStyle !== "default" ? MAP_MARKER_STYLE_ICONS[markerStyle] : null;
+  // The default is TrackLine's own 3D navigation arrow (no badge); a chosen vehicle keeps its
+  // round badge.
+  if (!iconSpec) return <NavArrow3D />;
+  // Real, explicit request for a "more realistic, polished, professional" badge -- a single flat
+  // fill colour read as a cheap placeholder. A real two-stop gradient (a lighter tint of the
+  // vehicle's own colour at the top, its true colour at the bottom) plus a genuine glossy
+  // highlight ellipse is the same "glossy pin" treatment real map-pin icon sets (Google Maps' own
+  // coloured pins, for one) use for exactly this reason -- it reads as a deliberately designed,
+  // dimensional badge instead of a flat coloured circle with an icon stamped on it.
+  const baseColor = iconSpec?.color ?? LIVE_MARKER_TEAL;
+  const gradientColors = [shadeColor(baseColor, 0.28), baseColor, shadeColor(baseColor, -0.18)] as const;
   return (
-    <View style={styles.navBadge}>
-      {/* Soft top-left highlight -- a cheap fake-gloss touch (an offset, partially-transparent
-          circle) since RN's View styling has no true gradient support without another native
-          dependency; this alone is enough to keep the badge from reading as a single flat disc. */}
-      <View style={styles.navBadgeHighlight} pointerEvents="none" />
-      <Svg width={22} height={22} viewBox="0 0 24 24">
-        <Path d={ARROW_PATH} fill="#FFFFFF" stroke={colors.accent} strokeWidth={1} strokeLinejoin="round" />
+    <View style={styles.navBadgeShadowWrap}>
+      <LinearGradient
+        colors={gradientColors}
+        locations={[0, 0.55, 1]}
+        style={styles.navBadge}
+      >
+        {/* Real glossy highlight -- an angled, soft-edged ellipse near the top, not a plain
+            centered circle, so it reads as a light source catching a curved surface rather than
+            a flat decal. */}
+        <View style={styles.navBadgeHighlight} pointerEvents="none" />
+        {iconSpec ? (
+          <MaterialCommunityIcons name={iconSpec.name as any} size={20} color="#FFFFFF" />
+        ) : (
+          <Svg width={22} height={22} viewBox="0 0 24 24">
+            <Path d={ARROW_PATH} fill="#FFFFFF" stroke={LIVE_MARKER_TEAL} strokeWidth={1} strokeLinejoin="round" />
+          </Svg>
+        )}
+      </LinearGradient>
+    </View>
+  );
+}
+
+// The 3D arrow's two faces: the left catches the light, the right is the darker bevel, split
+// along the arrow's spine so it reads as a raised shape lying on the road.
+const ARROW_OUTLINE = "M22 3 L38 38 L22 30 L6 38 Z";
+const ARROW_LEFT_FACE = "M22 3 L22 30 L6 38 Z";
+const ARROW_RIGHT_FACE = "M22 3 L38 38 L22 30 Z";
+
+/**
+ * The driver's position: a teal arrow with a darker bevel and a thin white outline, ~44pt, with a
+ * soft shadow under it. Drawn nose-up; the map turns it to the heading and lays it flat with the
+ * map's tilt.
+ */
+export function NavArrow3D({ size = 44 }: { size?: number }) {
+  return (
+    <View style={{ width: size, height: size }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Svg width={size} height={size} viewBox="0 0 44 44">
+        {/* Soft shadow on the road, a little behind and below the arrow. */}
+        <Ellipse cx="22" cy="36" rx="14" ry="4.5" fill="rgba(0,0,0,0.22)" />
+        <Path d={ARROW_LEFT_FACE} fill={shadeColor(LIVE_MARKER_TEAL, 0.18)} />
+        <Path d={ARROW_RIGHT_FACE} fill={shadeColor(LIVE_MARKER_TEAL, -0.28)} />
+        <Path d={ARROW_OUTLINE} fill="none" stroke="#FFFFFF" strokeWidth={1.75} strokeLinejoin="round" />
       </Svg>
     </View>
   );
@@ -56,26 +116,34 @@ export function PersonLocationDot() {
 }
 
 const styles = StyleSheet.create({
+  // Shadow lives on this outer, unclipped wrap -- RN shadows don't render through a clipped
+  // (overflow:hidden) parent, which navBadge itself needs for the gradient/highlight to respect
+  // its own rounded corners.
+  navBadgeShadowWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    ...shadow.medium,
+  },
   navBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 3,
     borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    ...shadow.medium,
   },
   navBadgeHighlight: {
     position: "absolute",
-    top: -10,
-    left: -6,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    top: -14,
+    left: -2,
+    width: 38,
+    height: 24,
+    borderRadius: 19,
+    transform: [{ rotate: "-18deg" }],
+    backgroundColor: "rgba(255,255,255,0.3)",
   },
   personWrap: {
     width: 64,
@@ -88,14 +156,14 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.accent,
+    backgroundColor: LIVE_MARKER_TEAL,
     opacity: 0.18,
   },
   personDot: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: colors.accent,
+    backgroundColor: LIVE_MARKER_TEAL,
     borderWidth: 3,
     borderColor: "#FFFFFF",
     ...shadow.medium,

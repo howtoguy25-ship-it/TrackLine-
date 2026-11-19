@@ -1,0 +1,252 @@
+{
+  "_about": "Report rules shared by the app (src/types/alertPolicy.ts) and the server (reports/core.js). Times in minutes.",
+  "undoSeconds": 3,
+  "maxUndosPerHour": 2,
+  "maxPerHour": 10,
+  "maxPerDay": 30,
+  "maxDistanceFromDriverM": 1000,
+  "duplicateRadiusM": 150,
+  "burst": {
+    "count": 4,
+    "withinMinutes": 2,
+    "firstBlockMinutes": 15,
+    "repeatBlockMinutes": 1440,
+    "repeatWithinMinutes": 1440
+  },
+  "trust": {
+    "start": 50,
+    "min": 0,
+    "max": 100,
+    "needsConfirmationBelow": 30,
+    "confirmed": 2,
+    "notThere": -3,
+    "removed": -10,
+    "undone": 0
+  },
+  "removeAfterNotThere": 2,
+  "types": {
+    "police": {
+      "lifetimeMinutes": 45,
+      "askAfterMinutes": 10,
+      "extendMinutes": 20,
+      "maxLifeMinutes": 180
+    },
+    "emergency_vehicle": {
+      "lifetimeMinutes": 45,
+      "askAfterMinutes": 5,
+      "extendMinutes": 10,
+      "maxLifeMinutes": 60
+    },
+    "hazard": {
+      "lifetimeMinutes": 120,
+      "askAfterMinutes": 20,
+      "extendMinutes": 30,
+      "maxLifeMinutes": 720
+    },
+    "crash": {
+      "lifetimeMinutes": 120,
+      "askAfterMinutes": 15,
+      "extendMinutes": 30,
+      "maxLifeMinutes": 360
+    },
+    "camera": {
+      "lifetimeMinutes": 1440,
+      "askAfterMinutes": 30,
+      "extendMinutes": 120,
+      "maxLifeMinutes": 2880
+    },
+    "traffic_light": {
+      "lifetimeMinutes": 120,
+      "askAfterMinutes": 30,
+      "extendMinutes": 60,
+      "maxLifeMinutes": 1440
+    }
+  },
+  "items": {
+    "speedCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "redLightCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "redLightSpeedCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "stopSignCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "transitLaneCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "carpoolLaneCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "busLaneCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "mobilePhoneCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "noiseCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "safeDistanceCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "seatBeltCamera": {
+      "type": "camera",
+      "fixed": true
+    },
+    "railwayCrossing": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "tollBooth": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "speedBump": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "sharpCurve": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "complexIntersection": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "multiLaneMerge": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "laneEnding": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "raisedCrossing": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "pedestrianCrossing": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "shoulderEnding": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "narrowBridge": {
+      "type": "hazard",
+      "fixed": true
+    },
+    "mobilePoliceCamera": {
+      "type": "camera"
+    },
+    "trafficLights": {
+      "type": "traffic_light"
+    },
+    "police": {
+      "type": "police"
+    },
+    "crash": {
+      "type": "crash"
+    },
+    "emergencyVehicles": {
+      "type": "emergency_vehicle"
+    },
+    "traffic": {
+      "type": "hazard",
+      "lifetimeMinutes": 60,
+      "askAfterMinutes": 10,
+      "extendMinutes": 15,
+      "maxLifeMinutes": 240
+    },
+    "suddenSlowdown": {
+      "type": "hazard",
+      "lifetimeMinutes": 30,
+      "askAfterMinutes": 5,
+      "extendMinutes": 10,
+      "maxLifeMinutes": 120
+    },
+    "roadwork": {
+      "type": "hazard",
+      "lifetimeMinutes": 720,
+      "askAfterMinutes": 60,
+      "extendMinutes": 240,
+      "maxLifeMinutes": 10080
+    },
+    "closures": {
+      "type": "hazard",
+      "lifetimeMinutes": 360,
+      "askAfterMinutes": 30,
+      "extendMinutes": 120,
+      "maxLifeMinutes": 2880
+    },
+    "animals": {
+      "type": "hazard",
+      "lifetimeMinutes": 60,
+      "askAfterMinutes": 10,
+      "extendMinutes": 15,
+      "maxLifeMinutes": 180
+    },
+    "carOnShoulder": {
+      "type": "hazard",
+      "lifetimeMinutes": 60,
+      "askAfterMinutes": 15,
+      "extendMinutes": 20,
+      "maxLifeMinutes": 240
+    },
+    "badWeather": {
+      "type": "hazard",
+      "lifetimeMinutes": 180,
+      "askAfterMinutes": 30,
+      "extendMinutes": 60,
+      "maxLifeMinutes": 720
+    },
+    "blockedLane": {
+      "type": "hazard",
+      "lifetimeMinutes": 180,
+      "askAfterMinutes": 20,
+      "extendMinutes": 60,
+      "maxLifeMinutes": 720
+    },
+    "otherHazards": {
+      "type": "hazard"
+    },
+    "mapChats": {
+      "type": "hazard",
+      "lifetimeMinutes": 120,
+      "askAfterMinutes": 60,
+      "extendMinutes": 60,
+      "maxLifeMinutes": 480,
+      "needsComment": true
+    },
+    "trackyNeedsHelp": {
+      "type": "hazard",
+      "lifetimeMinutes": 60,
+      "askAfterMinutes": 10,
+      "extendMinutes": 20,
+      "maxLifeMinutes": 180
+    }
+  },
+  "fixed": {
+    "_about": "Fixed cameras and road features: wait for confirmation, then stay.",
+    "pendingLifetimeMinutes": 43200,
+    "askAfterMinutes": 60,
+    "extendMinutes": 0,
+    "permanentAfterConfirms": 3,
+    "permanentYears": 20
+  }
+}

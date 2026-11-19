@@ -1,8 +1,11 @@
-import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, Pressable } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useEffect, useState } from "react";
+import { useLatest } from "@/hooks/useLatest";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { Animated, StyleSheet } from "react-native";
+import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, shadow, spacing } from "@/theme/tokens";
 
 interface Props {
   visible: boolean;
@@ -12,7 +15,8 @@ interface Props {
 
 export function AlertBanner({ visible, message, onDismiss }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(-120)).current;
+  const translateY = useState(() => new Animated.Value(-120))[0];
+  const onDismissRef = useLatest(onDismiss);
 
   useEffect(() => {
     Animated.spring(translateY, {
@@ -22,21 +26,25 @@ export function AlertBanner({ visible, message, onDismiss }: Props) {
     }).start();
 
     if (visible) {
-      const timer = setTimeout(onDismiss, 6000);
+      const timer = setTimeout(() => onDismissRef.current(), 6000);
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+  }, [visible, translateY, onDismissRef]);
 
   return (
     <Animated.View
       style={[styles.banner, { top: insets.top + spacing.md, transform: [{ translateY }] }]}
       pointerEvents={visible ? "auto" : "none"}
     >
-      <MaterialCommunityIcons name="ambulance" size={22} color="#FFFFFF" />
+      <Icon name="ambulance" size={22} color="#FFFFFF" />
       <Text style={styles.text}>{message}</Text>
-      <Pressable onPress={onDismiss} hitSlop={12} style={({ pressed }) => pressed && { opacity: pressedOpacity }}>
-        <MaterialCommunityIcons name="close" size={20} color="#FFFFFF" />
-      </Pressable>
+      <Button
+        variant="ghost"
+        icon="close"
+        iconColor="#FFFFFF"
+        onPress={onDismiss}
+        accessibilityLabel="Close"
+      />
     </Animated.View>
   );
 }

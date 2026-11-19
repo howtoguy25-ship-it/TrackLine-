@@ -1,0 +1,28 @@
+{
+  "region": "AU-NSW",
+  "timezone": "Australia/Sydney",
+  "validFrom": "2026-01-01",
+  "validTo": "2026-12-31",
+  "terms": [
+    ["2026-02-02", "2026-04-02"],
+    ["2026-04-22", "2026-07-03"],
+    ["2026-07-21", "2026-09-25"],
+    ["2026-10-13", "2026-12-17"]
+  ],
+  "lateOpeningTerms": [
+    ["2026-02-09", "2026-04-02"],
+    ["2026-04-22", "2026-07-03"],
+    ["2026-07-21", "2026-09-25"],
+    ["2026-10-13", "2026-12-17"]
+  ],
+  "publicHolidays": [
+    "2026-01-01", "2026-01-26", "2026-04-03", "2026-04-04", "2026-04-05", "2026-04-06",
+    "2026-04-25", "2026-06-08", "2026-10-05", "2026-12-25", "2026-12-26", "2026-12-28"
+  ],
+  "rule": "School-zone days: not a weekend, not a NSW public holiday, not a publicly notified government-school holiday. Pupil-free days inside term count (zones follow the official terms even if a school does not).",
+  "sources": [
+    "Terms: Transport for NSW Speed Zones dataset, School Zones data, OP_CAL field (generated 2026-11-06), CC BY 4.0 -- https://opendata.transport.nsw.gov.au/data/dataset/speed-zones",
+    "Public holidays: NSW Guide to Public Holidays 2024-2026 (TfNSW 'School and public holidays' dataset, from industrialrelations.nsw.gov.au), CC BY -- https://opendata.transport.nsw.gov.au/data/dataset/school-and-public-holidays"
+  ],
+  "lastVerified": "2026-11-12"
+}

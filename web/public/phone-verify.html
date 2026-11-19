@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>TrackLine – verify your number</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 32px 20px; color: #101828; background: #fff; text-align: center; }
+    h1 { font-size: 20px; }
+    p { color: #475467; }
+    #err { color: #b42318; }
+  </style>
+</head>
+<body>
+  <h1>Sending your TrackLine code…</h1>
+  <p id="msg">Checking you're not a robot. This takes a second.</p>
+  <p id="err"></p>
+  <div id="recaptcha"></div>
+  <!-- The TrackLine app opens this page to send a sign-in code by SMS with Firebase Phone
+       Authentication (which needs reCAPTCHA, only available in a browser). It hands the
+       verification ID back to the app; the app then asks for the 6-digit code. Firebase config
+       comes from Firebase Hosting's own reserved URLs: nothing is hard-coded here. -->
+  <script src="/__/firebase/10.12.2/firebase-app-compat.js"></script>
+  <script src="/__/firebase/10.12.2/firebase-auth-compat.js"></script>
+  <script src="/__/firebase/init.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var phone = params.get("phone") || "";
+      var back = params.get("return") || "";
+      // Only ever hand the result back to the TrackLine app itself.
+      if (back.indexOf("trackline://") !== 0) {
+        document.getElementById("err").textContent = "This page can only be opened from the TrackLine app.";
+        return;
+      }
+      function done(q) {
+        location.href = back + (back.indexOf("?") >= 0 ? "&" : "?") + q;
+      }
+      if (!/^\+\d{8,15}$/.test(phone)) return done("error=invalid-phone-number");
+      try {
+        var auth = firebase.auth();
+        auth.languageCode = (navigator.language || "en").split("-")[0];
+        var verifier = new firebase.auth.RecaptchaVerifier("recaptcha", { size: "invisible" });
+        new firebase.auth.PhoneAuthProvider(auth)
+          .verifyPhoneNumber(phone, verifier)
+          .then(function (vid) {
+            document.getElementById("msg").textContent = "Code sent. Returning to TrackLine…";
+            done("vid=" + encodeURIComponent(vid));
+          })
+          .catch(function (e) {
+            done("error=" + encodeURIComponent((e && e.code ? e.code : "unknown").replace("auth/", "")));
+          });
+      } catch (e) {
+        done("error=setup-failed");
+      }
+    })();
+  </script>
+</body>
+</html>

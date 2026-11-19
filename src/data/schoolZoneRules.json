@@ -1,0 +1,15 @@
+{
+  "_readme": "Fallback rules for a school zone that is mapped (e.g. OpenStreetMap hazard=school_zone) but has no hours of its own. ONLY rows verified against an official source are listed; a region without a row gets no school-zone alert (the normal posted limit is shown). See NOTES.md > School zones.",
+  "rows": [
+    {
+      "region": "AU-NSW",
+      "timezone": "Australia/Sydney",
+      "speedKmh": 40,
+      "windows": [["08:00", "09:30"], ["14:30", "16:00"]],
+      "days": "School days: every day that is not a weekend, a NSW public holiday or a publicly notified NSW government school holiday (pupil-free staff development days inside term are school-zone days).",
+      "source": "Transport for NSW, Speed Zones dataset (School Zones data, updated 2026-11-05) and School Zone Timetables dataset description, opendata.transport.nsw.gov.au/data/dataset/speed-zones, CC BY 4.0. The default hours are those of 3,219 of the 3,302 NSW zones in that data; zones with their own hours use them.",
+      "sourceUrl": "https://opendata.transport.nsw.gov.au/data/dataset/speed-zones",
+      "lastVerified": "2026-11-12"
+    }
+  ]
+}

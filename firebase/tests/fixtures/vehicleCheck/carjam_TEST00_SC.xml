@@ -1,0 +1,11 @@
+<message>
+  <vehicles __array="true">
+    <vin>KMHH351EMKU00TEST</vin>
+    <chassis/>
+    <registration>
+      <plate>TEST00</plate>
+      <state>VIC</state>
+    </registration>
+    <stolen __array="true"/>
+  </vehicles>
+</message>

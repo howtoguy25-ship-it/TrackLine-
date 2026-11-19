@@ -1,3 +1,5 @@
+import { featureOnNow } from "@/remote/useAppConfig";
+import { auth } from "@/services/firebase";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { useAppOpenAd } from "react-native-google-mobile-ads";
@@ -35,6 +37,8 @@ export function AppOpenAdManager() {
   const evaluateOpen = useCallback(() => {
     pendingShowRef.current = false;
     if (isNavigationActive()) return;
+    // Owner dashboard > App control > ads off: no ad at all.
+    if (!featureOnNow("ads", auth.currentUser?.uid ?? null)) return;
     shouldShowAppOpenAd()
       .then((should) => {
         if (!should || isNavigationActive()) return;

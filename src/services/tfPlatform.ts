@@ -18,6 +18,7 @@ import { Sentry } from "@/services/sentry";
 // This is the same handful of methods tfjs-react-native's own platform shim implemented,
 // backed directly by React Native/Hermes's built-in fetch/TextEncoder/TextDecoder instead
 // of anything React-Native-specific from that now-unmaintained package.
+// eslint-disable-next-line import/namespace -- Platform is a type-only export of tfjs-core (checked by tsc)
 class PlatformReactNative implements tf.Platform {
   private textEncoder = new TextEncoder();
 

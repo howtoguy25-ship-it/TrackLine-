@@ -9,5 +9,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "web", "modules/**/android", "modules/**/ios", "legacy"]
+  "exclude": ["node_modules", "web", "admin", "modules/**/android", "modules/**/ios", "legacy"]
 }

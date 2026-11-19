@@ -1,14 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  Platform,
-  KeyboardAvoidingView,
-  ActivityIndicator,
-} from "react-native";
+import { Button } from "@/components/ui/Button";
+import { View, Pressable, StyleSheet, Platform, KeyboardAvoidingView, ScrollView, Linking } from "react-native";
+import { Text, TextInput } from "@/components/AppText";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 import { GoogleSignin, GoogleSigninButton, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
@@ -21,9 +14,11 @@ import {
   signUpWithEmail,
 } from "@/services/firebase";
 import { env } from "@/config/env";
-import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
+import { Icon } from "@/components/ui/Icon";
+import { authErrorToField, passwordStrength, validateAuthForm, type FieldErrors } from "@/auth/signInForm";
 
 // Real Firebase-backed sign-in (Google/Apple/Email), optional -- the app already works fully
 // signed in anonymously (see firebase.ts's ensureSignedIn), this just upgrades that same
@@ -31,10 +26,16 @@ import { Sentry } from "@/services/sentry";
 // sign-in is deliberately not offered here: Firebase's phone auth needs a browser reCAPTCHA
 // that doesn't exist in a native app, unlike Google/Apple/Email which all work the same way
 // on mobile as they logically do on web.
+// iOS needs the iOS client ID; Android needs the web client ID (for the ID token Firebase checks).
+const googleConfigured = Platform.OS === "android" ? !!env.googleWebClientId : !!env.googleIosClientId;
+
 export function SignInScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   // A plain `busy` state read is only as fresh as the closure it's captured in, and (per
@@ -53,14 +54,19 @@ export function SignInScreen() {
   // common case and only flips off in the genuine rare case the check itself says no.
   const [appleAvailable, setAppleAvailable] = useState(Platform.OS === "ios");
 
+  // The header says which form this is; the back button keeps the previous screen's name.
+  useEffect(() => {
+    navigation.setOptions({ title: mode === "signup" ? "Create account" : "Sign in" });
+  }, [mode, navigation]);
+
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
   }, []);
 
   useEffect(() => {
-    if (!env.googleIosClientId) return;
-    GoogleSignin.configure({ iosClientId: env.googleIosClientId });
+    if (!googleConfigured) return;
+    GoogleSignin.configure({ iosClientId: env.googleIosClientId || undefined, webClientId: env.googleWebClientId || undefined });
   }, []);
 
   const onAppleSignIn = useCallback(async () => {
@@ -120,10 +126,10 @@ export function SignInScreen() {
           nonce: hashedNonce,
         }),
         APPLE_SIGN_IN_TIMEOUT_MS,
-        "Apple sign-in is taking too long to respond -- check your connection and try again."
+        "Apple sign-in is taking too long to respond — check your connection and try again."
       );
       if (!credential.identityToken) {
-        throw new Error("Apple didn't return an identity token -- try again.");
+        throw new Error("Apple didn't return an identity token — try again.");
       }
       await signInWithAppleCredential(credential.identityToken, rawNonce);
     };
@@ -195,7 +201,7 @@ export function SignInScreen() {
         Sentry.logger.error("sign-in: Google sign-in succeeded with no idToken", {
           hasUser: !!response.data.user,
         });
-        setError("Google didn't return a usable sign-in token -- try again.");
+        setError("Google didn't return a usable sign-in token — try again.");
         return;
       }
       await signInWithGoogleCredential(response.data.idToken);
@@ -215,141 +221,238 @@ export function SignInScreen() {
 
   const onEmailSubmit = useCallback(async () => {
     setError(null);
-    if (!email.trim() || !password) {
-      setError("Enter an email and password.");
-      return;
-    }
+    const errs = validateAuthForm(mode, { name, email, password });
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return;
     setBusy(true);
     try {
       if (mode === "signup") {
-        await signUpWithEmail(email.trim(), password);
+        await signUpWithEmail(email.trim(), password, name);
       } else {
         await signInWithEmail(email.trim(), password);
       }
       navigation.goBack();
     } catch (err: any) {
-      const code = err?.code as string | undefined;
-      const message =
-        code === "auth/invalid-email"
-          ? "That email address doesn't look right."
-          : code === "auth/wrong-password" || code === "auth/invalid-credential"
-            ? "Incorrect email or password."
-            : code === "auth/email-already-in-use"
-              ? "That email already has an account -- try signing in instead."
-              : code === "auth/weak-password"
-                ? "Password must be at least 6 characters."
-                : err instanceof Error
-                  ? err.message
-                  : "Something went wrong.";
-      setError(message);
+      const { field, message } = authErrorToField(err?.code, err instanceof Error ? err.message : "Something went wrong. Try again.");
+      if (field === "form") setError(message);
+      else setFieldErrors({ [field]: message });
     } finally {
       setBusy(false);
     }
-  }, [email, password, mode, navigation]);
+  }, [email, password, name, mode, navigation]);
+
+  const switchMode = () => {
+    setError(null);
+    setFieldErrors({});
+    setMode((m) => (m === "signup" ? "signin" : "signup"));
+  };
+  const strength = mode === "signup" && password ? passwordStrength(password) : null;
+  const policyBase = env.firebase.projectId ? `https://${env.firebase.projectId}.web.app` : null;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <Text style={styles.title}>Sign in</Text>
-      <Text style={styles.subtitle}>
-        Optional -- TrackLine already works fully without an account. Signing in just makes your
-        reports and settings recoverable if you get a new phone.
-      </Text>
-
-      {Platform.OS === "ios" && appleAvailable && (
-        // AppleAuthenticationButton (unlike GoogleSigninButton below) has no `disabled` prop at
-        // all -- see onAppleSignIn's busyRef guard for how the double-tap this button can't stop
-        // on its own is actually prevented. Wrapped in a plain View with pointerEvents so a tap
-        // while busy is dropped before it ever reaches the native button/onPress.
-        <View pointerEvents={busy ? "none" : "auto"} style={busy && styles.appleButtonBusy}>
-          <AppleAuthentication.AppleAuthenticationButton
-            buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
-            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-            cornerRadius={radius.md}
-            style={styles.appleButton}
-            onPress={onAppleSignIn}
-          />
-        </View>
-      )}
-
-      <GoogleSigninButton
-        style={styles.googleButton}
-        size={GoogleSigninButton.Size.Wide}
-        color={GoogleSigninButton.Color.Light}
-        onPress={onGoogleSignIn}
-        disabled={busy}
-      />
-      {!env.googleIosClientId && (
-        <Text style={styles.disabledNote}>Google sign-in isn't configured for this build yet.</Text>
-      )}
-
-      <View style={styles.divider}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or</Text>
-        <View style={styles.dividerLine} />
-      </View>
-
-      <TextInput
-        value={email}
-        onChangeText={setEmail}
-        placeholder="Email"
-        placeholderTextColor={colors.textFaint}
-        autoCapitalize="none"
-        autoComplete="email"
-        keyboardType="email-address"
-        style={styles.input}
-      />
-      <TextInput
-        value={password}
-        onChangeText={setPassword}
-        placeholder="Password"
-        placeholderTextColor={colors.textFaint}
-        secureTextEntry
-        autoCapitalize="none"
-        autoComplete={mode === "signup" ? "new-password" : "current-password"}
-        style={styles.input}
-      />
-
-      {error && <Text style={styles.errorText}>{error}</Text>}
-
-      <Pressable
-        style={({ pressed }) => [styles.primaryButton, pressed && { opacity: pressedOpacity }]}
-        onPress={onEmailSubmit}
-        disabled={busy}
-      >
-        {busy ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <Text style={styles.primaryButtonText}>
-            {mode === "signup" ? "Create account" : "Sign in"}
-          </Text>
-        )}
-      </Pressable>
-
-      <Pressable
-        onPress={() => {
-          setError(null);
-          setMode((m) => (m === "signup" ? "signin" : "signup"));
-        }}
-        hitSlop={8}
-      >
-        <Text style={styles.switchModeText}>
-          {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 96 : 0}>
+      <ScrollView style={styles.flex} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" testID="sign-in-scroll">
+        <Text style={styles.title} accessibilityRole="header">
+          {mode === "signup" ? "Create account" : "Sign in"}
         </Text>
-      </Pressable>
+        <Text style={styles.subtitle}>Optional. Save your places, reports and settings so they come back on a new phone.</Text>
+
+        {Platform.OS === "ios" && appleAvailable && (
+          <View pointerEvents={busy ? "none" : "auto"} style={busy && styles.appleButtonBusy}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={radius.md}
+              style={styles.appleButton}
+              onPress={onAppleSignIn}
+            />
+          </View>
+        )}
+
+        <GoogleSigninButton
+          style={styles.googleButton}
+          size={GoogleSigninButton.Size.Wide}
+          color={GoogleSigninButton.Color.Light}
+          onPress={onGoogleSignIn}
+          disabled={busy || !googleConfigured}
+        />
+        {!googleConfigured && <Text style={styles.disabledNote}>Google sign-in isn&apos;t set up in this build yet.</Text>}
+
+        <Button
+          variant="secondary"
+          icon="call"
+          label="Continue with phone number"
+          onPress={() => navigation.navigate("PhoneSignIn")}
+          disabled={busy}
+          fullWidth
+          testID="phone-sign-in-button"
+        />
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {mode === "signup" ? (
+          <FieldBlock error={fieldErrors.name}>
+            <TextInput
+              value={name}
+              onChangeText={(t) => {
+                setName(t);
+                if (fieldErrors.name) setFieldErrors((e) => ({ ...e, name: undefined }));
+              }}
+              placeholder="Name"
+              placeholderTextColor={colors.textFaint}
+              autoComplete="name"
+              textContentType="name"
+              style={[styles.input, fieldErrors.name && styles.inputError]}
+              accessibilityLabel="Name"
+              testID="sign-in-name"
+            />
+          </FieldBlock>
+        ) : null}
+
+        <FieldBlock error={fieldErrors.email}>
+          <TextInput
+            value={email}
+            onChangeText={(t) => {
+              setEmail(t);
+              if (fieldErrors.email) setFieldErrors((e) => ({ ...e, email: undefined }));
+            }}
+            placeholder="Email"
+            placeholderTextColor={colors.textFaint}
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            textContentType="emailAddress"
+            style={[styles.input, fieldErrors.email && styles.inputError]}
+            accessibilityLabel="Email"
+            testID="sign-in-email"
+          />
+        </FieldBlock>
+
+        <FieldBlock error={fieldErrors.password} hint={!fieldErrors.password ? strength?.hint : undefined} hintTone={strength?.level}>
+          <View style={[styles.input, styles.passwordRow, fieldErrors.password && styles.inputError]}>
+            <TextInput
+              value={password}
+              onChangeText={(t) => {
+                setPassword(t);
+                if (fieldErrors.password) setFieldErrors((e) => ({ ...e, password: undefined }));
+              }}
+              placeholder="Password"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              textContentType={mode === "signup" ? "newPassword" : "password"}
+              style={styles.passwordInput}
+              accessibilityLabel="Password"
+              testID="sign-in-password"
+            />
+            <Pressable
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+              testID="sign-in-show-password"
+            >
+              <Icon name={showPassword ? "eye-off" : "eye"} size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        </FieldBlock>
+
+        {mode === "signup" ? (
+          <Text style={styles.legal}>
+            By creating an account you agree to the{" "}
+            <Text style={styles.link} onPress={() => policyBase && Linking.openURL(`${policyBase}/terms.html`).catch(() => {})} accessibilityRole="link" testID="sign-in-terms">
+              Terms of use
+            </Text>{" "}
+            and{" "}
+            <Text style={styles.link} onPress={() => policyBase && Linking.openURL(`${policyBase}/privacy.html`).catch(() => {})} accessibilityRole="link" testID="sign-in-privacy">
+              Privacy policy
+            </Text>
+            .
+          </Text>
+        ) : null}
+
+        {error ? (
+          <Text style={styles.errorText} accessibilityLiveRegion="polite" testID="sign-in-error">
+            {error}
+          </Text>
+        ) : null}
+
+        <Button
+          variant="primary"
+          label={mode === "signup" ? "Create account" : "Sign in"}
+          onPress={onEmailSubmit}
+          disabled={busy}
+          size="large"
+          fullWidth
+          loading={busy}
+          testID="sign-in-submit"
+        />
+
+        <View style={styles.links}>
+          {mode !== "signup" ? (
+            <>
+              <Pressable onPress={() => navigation.navigate("AccountRecovery", { mode: "forgot" })} hitSlop={8} accessibilityRole="link" testID="forgot-password">
+                <Text style={styles.linkText}>Forgot password?</Text>
+              </Pressable>
+              <Text style={styles.linkDot}>·</Text>
+            </>
+          ) : null}
+          <Pressable onPress={() => navigation.navigate("AccountRecovery", {})} hitSlop={8} accessibilityRole="link" testID="cant-sign-in">
+            <Text style={styles.linkText}>Can&apos;t sign in?</Text>
+          </Pressable>
+        </View>
+        <Pressable onPress={switchMode} hitSlop={8} accessibilityRole="button" testID="sign-in-switch-mode">
+          <Text style={styles.linkText}>{mode === "signup" ? "Have an account? Sign in" : "New here? Create account"}</Text>
+        </Pressable>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+/** A field with its error (red) or hint right under it. */
+function FieldBlock({ children, error, hint, hintTone }: { children: React.ReactNode; error?: string; hint?: string; hintTone?: "weak" | "okay" | "strong" }) {
+  return (
+    <View style={styles.field}>
+      {children}
+      {error ? (
+        <Text style={styles.fieldError} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      ) : hint ? (
+        <Text style={[styles.fieldHint, hintTone === "strong" ? styles.hintStrong : hintTone === "weak" ? styles.hintWeak : null]} testID="password-strength">
+          {hint}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: colors.surfaceMuted },
   container: {
-    flex: 1,
     backgroundColor: colors.surfaceMuted,
     padding: spacing.xl,
+    paddingBottom: spacing.xxl * 2,
     gap: spacing.md,
   },
+  field: { gap: 4 },
+  inputError: { borderColor: colors.danger },
+  passwordRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  passwordInput: { flex: 1, fontSize: 15, color: colors.text, height: 46 },
+  fieldError: { fontSize: 13, color: colors.danger },
+  fieldHint: { fontSize: 13, color: colors.textMuted },
+  hintWeak: { color: colors.warning },
+  hintStrong: { color: colors.goodText },
+  legal: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+  link: { color: colors.accent, fontWeight: "600" },
+  links: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs },
+  linkText: { fontSize: 14, color: colors.accent, textAlign: "center", fontWeight: "600" },
+  linkDot: { fontSize: 14, color: colors.textMuted },
   title: {
     fontSize: 24,
     fontWeight: "800",
@@ -357,10 +460,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: colors.textMuted,
-    marginBottom: spacing.md,
-    lineHeight: 18,
+    marginBottom: spacing.sm,
+    lineHeight: 21,
   },
   appleButton: {
     height: 48,
@@ -406,25 +509,5 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: colors.danger,
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    ...shadow.low,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  switchModeText: {
-    fontSize: 13,
-    color: colors.accent,
-    textAlign: "center",
-    fontWeight: "600",
-    marginTop: spacing.xs,
   },
 });

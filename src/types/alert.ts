@@ -1,3 +1,5 @@
+import { EMERGENCY_PIN, REPORTS, TRAFFIC_LIGHT_PIN, type ReportColour } from "@/theme/colors";
+
 export type AlertType = "police" | "emergency_vehicle" | "hazard" | "camera" | "crash" | "traffic_light";
 
 export interface AlertDoc {
@@ -13,8 +15,22 @@ export interface AlertDoc {
   region?: string;
   createdBy: string;
   createdAt: number; // ms epoch
+  /** Posted by a low-trust reporter: shown, but not announced until someone confirms it. */
+  needsConfirmation?: boolean;
+  /** The Settings > Reports item (e.g. "stopSignCamera"); absent on older reports. */
+  item?: string;
+  /** A fixed camera / road feature confirmed by 3 drivers or approved by an admin. */
+  permanent?: boolean;
+  /** A fixed feature still waiting for those confirmations. */
+  awaitingApproval?: boolean;
+  /** When someone last said "Still here" (the server sets it). */
+  lastConfirmedAt?: number;
   expiresAt: number; // ms epoch
   confirmCount: number;
+  // "Not here" vote count -- mirrors confirmCount exactly (see services/alerts.ts's denyAlert),
+  // for the automatic proximity "Still here? / Not here" prompt (MapScreen's AlertStillHereCard).
+  // Purely a counter, same as confirmCount -- nothing currently reads it to auto-expire an alert.
+  denyCount: number;
   // Map of uid -> the ms timestamp they hid this alert -- self-only (never affects any other
   // user's own view) and time-boxed, per explicit request: services/alerts.ts's
   // isHiddenForUser treats an entry older than its own HIDE_DURATION_MS (1 hour) as expired, so
@@ -26,6 +42,12 @@ export interface AlertDoc {
   // the reporter didn't add one (the overwhelming majority of alerts, same as before this
   // existed) -- never an empty string.
   comment?: string;
+  // Thumbs-up count from the alert card -- once per user, never on your own report, enforced by
+  // firestore.rules (alerts/{id}/thanks/{uid}). 0 on alerts written before this existed.
+  thanksCount: number;
+  // The reporter's signed-in name, present only when they turned on "Show my name on reports"
+  // (the rules check it matches their auth token). Undefined = "by anonymous".
+  reporterName?: string;
 }
 
 // Speed cameras and traffic lights are community-reported like everything else here —
@@ -71,11 +93,21 @@ export const ALERT_ICONS: Record<AlertType, string> = {
   traffic_light: "traffic-light",
 };
 
+/** Each alert type's pin colour and the glyph colour that reads on it (theme/colors.ts). */
+export const ALERT_PIN: Record<AlertType, ReportColour> = {
+  police: REPORTS.police,
+  emergency_vehicle: EMERGENCY_PIN,
+  hazard: REPORTS.hazard,
+  camera: REPORTS.camera,
+  crash: REPORTS.crash,
+  traffic_light: TRAFFIC_LIGHT_PIN,
+};
+
 export const ALERT_COLORS: Record<AlertType, string> = {
-  police: "#2563EB",
-  emergency_vehicle: "#DC2626",
-  hazard: "#F59E0B",
-  camera: "#7C3AED",
-  crash: "#EA580C",
-  traffic_light: "#0D9488",
+  police: ALERT_PIN.police.fill,
+  emergency_vehicle: ALERT_PIN.emergency_vehicle.fill,
+  hazard: ALERT_PIN.hazard.fill,
+  camera: ALERT_PIN.camera.fill,
+  crash: ALERT_PIN.crash.fill,
+  traffic_light: ALERT_PIN.traffic_light.fill,
 };
