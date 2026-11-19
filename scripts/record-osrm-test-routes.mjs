@@ -30,6 +30,8 @@ const ROUTES = [
   { name: "fr-paris-etoile", from: [2.285, 48.868], to: [2.305, 48.877] },
   { name: "uk-london-m4", from: [-0.42, 51.488], to: [-0.31, 51.495] },
   { name: "jp-tokyo", from: [139.7, 35.69], to: [139.76, 35.68] },
+  // The nav-fix acceptance drive: Stacey St, Bankstown (near no. 323) to 40 Bazentin St, Belfield.
+  { name: "stacey-to-bazentin", from: [151.0405682, -33.9180346], to: [151.0821752, -33.9071596] },
 ];
 
 const only = process.argv.slice(2);
