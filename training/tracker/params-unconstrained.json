@@ -1,0 +1,15 @@
+{
+  "note": "Trained by training/tracker/train.ts; see training/tracker/REPORT.json.",
+  "params": {
+    "highScore": 0.5037,
+    "lowScore": 0.1177,
+    "newTrackScore": 0.5005,
+    "matchIoU": 0.0677,
+    "lowMatchIoU": 0.1301,
+    "minHits": 1,
+    "maxCoastMs": 222,
+    "qPos": 0.1187,
+    "qVel": 1.376,
+    "rMeas": 0.1015
+  }
+}
