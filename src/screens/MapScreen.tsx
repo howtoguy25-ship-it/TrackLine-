@@ -6643,6 +6643,10 @@ export function MapScreen() {
           showRouteOverview();
         }}
         onReportAlert={onNavOptionsReportAlert}
+        onAddStop={() => {
+          navOptionsSheetRef.current?.close();
+          setSearchAlongOpen(true);
+        }}
         onShareDrive={onNavOptionsShareEta}
         onOpenDetection={onNavOptionsOpenDetection}
         onOpenMapTools={() => {

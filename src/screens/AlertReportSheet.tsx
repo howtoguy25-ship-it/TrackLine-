@@ -1,6 +1,9 @@
 import React, { forwardRef, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { View, Pressable, StyleSheet, ScrollView } from "react-native";
+import { StyleSheet, ScrollView } from "react-native";
+import { Pressable, View } from "@/components/ui/Surface";
+import { SurfaceScheme } from "@/components/ui/surfaceScheme";
+import { SURFACES } from "@/theme/colors";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,6 +17,8 @@ import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens"
 // own icon. A one-item category reports straight away. Choosing an item hands off to MapScreen's
 // placement flow (drag the pin, Set) with the item; "Speed limit / school zone" opens the road
 // report sheet instead.
+// Dark like the rest of the driving UI, a big "Report" title and the kinds as large round
+// coloured icons in a 3-wide grid, so the right one is quick to hit at a glance.
 
 interface Props {
   onItemSelected: (item: ReportItemId) => void;
@@ -60,12 +65,13 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
     >
+      <SurfaceScheme value="dark">
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
           {category ? (
             <Button variant="ghost" icon="chevron-back" onPress={() => setCategory(null)} accessibilityLabel="Back to categories" testID="report-back" />
           ) : null}
-          <Text style={styles.title}>{category ? category.title : "What do you see?"}</Text>
+          <Text style={styles.title}>{category ? category.title : "Report"}</Text>
           <Button variant="ghost" icon="close" iconColor={colors.textMuted} onPress={onClose} accessibilityLabel="Close" />
         </View>
         <ScrollView contentContainerStyle={styles.grid}>
@@ -82,7 +88,7 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
                   accessibilityLabel={`Report ${itemLabel(item)}`}
                   testID={`report-item-${item}`}
                 >
-                  <ReportItemIcon id={item} size={44} />
+                  <ReportItemIcon id={item} size={56} />
                   <Text style={styles.typeLabel} numberOfLines={2}>{itemLabel(item)}</Text>
                 </Pressable>
               ))
@@ -95,25 +101,26 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
                   accessibilityLabel={c.title}
                   testID={`report-category-${c.id}`}
                 >
-                  <ReportItemIcon id={c.iconItem} size={48} />
+                  <ReportItemIcon id={c.iconItem} size={64} />
                   <Text style={styles.typeLabel} numberOfLines={2}>{c.title}</Text>
                 </Pressable>
               ))}
         </ScrollView>
       </BottomSheetView>
+      </SurfaceScheme>
     </BottomSheet>
   );
 });
 
 const styles = StyleSheet.create({
   sheetBackground: {
-    backgroundColor: colors.surface,
+    backgroundColor: SURFACES.dark.sheet,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     ...shadow.high,
   },
   handleIndicator: {
-    backgroundColor: colors.border,
+    backgroundColor: SURFACES.dark.textFaint,
     width: 40,
   },
   container: {
@@ -129,8 +136,8 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     color: colors.text,
   },
   grid: {
@@ -141,17 +148,14 @@ const styles = StyleSheet.create({
   },
   typeTile: {
     width: "30%",
-    aspectRatio: 1,
+    minHeight: 104,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs + 2,
+    gap: spacing.sm,
   },
   typeLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "600",
     color: colors.text,
     textAlign: "center",

@@ -97,6 +97,7 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof NavOptionsSh
     onRoutes: jest.fn(),
     onShareDrive: jest.fn(),
     onReportAlert: jest.fn(),
+    onAddStop: jest.fn(),
     onOpenDetection: jest.fn(),
     onOpenMapTools: jest.fn(),
     onEndNavigation: jest.fn(),
@@ -153,6 +154,7 @@ describe("ETA sheet", () => {
       ["eta-sheet-more", props.onShowMoreTimes as jest.Mock],
       ["eta-sheet-share", props.onShareDrive as jest.Mock],
       ["eta-sheet-report", props.onReportAlert as jest.Mock],
+      ["eta-sheet-add-stop", props.onAddStop as jest.Mock],
       ["eta-sheet-dashcam", props.onOpenDetection as jest.Mock],
       ["eta-sheet-map", props.onOpenMapTools as jest.Mock],
       ["eta-sheet-stop", props.onEndNavigation as jest.Mock],
@@ -162,6 +164,22 @@ describe("ETA sheet", () => {
       await fireEvent.press(screen.getByTestId(id));
       expect(fn).toHaveBeenCalledTimes(1);
     }
+  });
+});
+
+describe("ETA sheet looks like a driving sheet", () => {
+  it("is dark like the bottom bar and has the trip's actions as one row of round tiles", async () => {
+    const { el } = renderSheet();
+    await render(el);
+    const row = screen.getByTestId("eta-sheet-actions");
+    const json = JSON.stringify(row);
+    for (const id of ["eta-sheet-share", "eta-sheet-report", "eta-sheet-add-stop", "eta-sheet-dashcam", "eta-sheet-map"]) expect(json).toContain(id);
+    const src = require("fs").readFileSync("src/screens/NavOptionsSheet.tsx", "utf8");
+    expect(src).toMatch(/SurfaceScheme value="dark"/);
+    expect(src).toMatch(/SURFACES\.dark\.sheet/);
+    // Stop and Go now stay the two big buttons at the bottom.
+    expect(screen.getByTestId("eta-sheet-stop")).toBeTruthy();
+    expect(screen.getByTestId("eta-sheet-go")).toBeTruthy();
   });
 });
 

@@ -1,11 +1,14 @@
 import React, { forwardRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Icon, type IconName } from "@/components/ui/Icon";
-import { View, Pressable, StyleSheet } from "react-native";
+import { DriveTile } from "@/components/ui/DriveTile";
+import { StyleSheet } from "react-native";
+import { Pressable, View } from "@/components/ui/Surface";
+import { SurfaceScheme } from "@/components/ui/surfaceScheme";
+import { SURFACES } from "@/theme/colors";
 import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { colors, radius, spacing } from "@/theme/tokens";
 import { formatArrivalClock, formatDistance, formatDurationText, type DistanceUnit } from "@/utils/navFormat";
 import { quickestSlot, type LeavePrediction, type RouteEvent } from "@/travel/etaSheet";
 
@@ -30,6 +33,8 @@ interface Props {
   onRoutes: () => void;
   onShareDrive: () => void;
   onReportAlert: () => void;
+  /** Search along the route and add a stop (fuel, food, parking...). */
+  onAddStop: () => void;
   onOpenDetection: () => void;
   // Satellite, 3D buildings, alerts and the nearby-place lists while driving.
   onOpenMapTools: () => void;
@@ -62,6 +67,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     onRoutes,
     onShareDrive,
     onReportAlert,
+    onAddStop,
     onOpenDetection,
     onOpenMapTools,
     onEndNavigation,
@@ -98,6 +104,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
     >
+      <SurfaceScheme value="dark">
       <BottomSheetScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + spacing.lg }]}>
         <View style={styles.header}>
           <Button variant="secondary" icon="settings" onPress={onOpenSettings} accessibilityLabel="Navigation settings" testID="eta-sheet-settings" />
@@ -111,6 +118,23 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
           </View>
           <Button variant="secondary" icon="swap-vertical" onPress={onRoutes} accessibilityLabel="Other routes" testID="eta-sheet-routes" />
         </View>
+
+        {/* The trip's actions as one row of round tiles, thumb-reachable at a glance. */}
+        <View style={styles.tiles} testID="eta-sheet-actions">
+          <DriveTile kind="share" icon="share" label="Share drive" onPress={onShareDrive} testID="eta-sheet-share" />
+          <DriveTile kind="report" icon="warning" label="Report" onPress={onReportAlert} testID="eta-sheet-report" />
+          <DriveTile kind="addStop" icon="add-circle" label="Add a stop" onPress={onAddStop} testID="eta-sheet-add-stop" />
+          <DriveTile
+            kind="dashcam"
+            icon="videocam"
+            label="Dashcam"
+            onPress={onOpenDetection}
+            accessibilityLabel={detectionBatteryLow ? "Dashcam. Battery below 50%. Still works, may run slower" : "Dashcam"}
+            testID="eta-sheet-dashcam"
+          />
+          <DriveTile kind="map" icon="layers" label="Map" onPress={onOpenMapTools} accessibilityLabel="Map display: satellite, 3D buildings, alerts, places nearby" testID="eta-sheet-map" />
+        </View>
+        {detectionBatteryLow ? <Text style={styles.quiet}>Battery below 50%: Dashcam still works, may run slower.</Text> : null}
 
         <View style={styles.card}>
           <View style={styles.toRow}>
@@ -143,24 +167,12 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         <LeaveTimesChart state={leave} onRetry={fetchLeaveTimes} />
         <Button variant="ghost" label="Show more" inline onPress={onShowMoreTimes} accessibilityLabel="Show more leave times in Plan a drive" testID="eta-sheet-more" />
 
-        <View style={styles.card}>
-          <OptionRow icon="share-outline" label="Share drive" onPress={onShareDrive} testID="eta-sheet-share" />
-          <OptionRow icon="warning" label="Report" onPress={onReportAlert} testID="eta-sheet-report" />
-          <OptionRow
-            icon="videocam-outline"
-            label="Dashcam"
-            subtitle={detectionBatteryLow ? "Battery below 50%. Still works, may run slower" : undefined}
-            onPress={onOpenDetection}
-            testID="eta-sheet-dashcam"
-          />
-          <OptionRow icon="layers-outline" label="Map display" subtitle="Satellite, 3D buildings, alerts, places nearby" onPress={onOpenMapTools} testID="eta-sheet-map" last />
-        </View>
-
         <View style={styles.actions}>
           <Button variant="destructive" label="Stop" size="large" onPress={onEndNavigation} accessibilityLabel="Stop navigation" style={styles.actionBtn} testID="eta-sheet-stop" />
           <Button variant="primary" label="Go now" size="large" onPress={onClose} accessibilityLabel="Go now, keep driving" style={styles.actionBtn} testID="eta-sheet-go" />
         </View>
       </BottomSheetScrollView>
+      </SurfaceScheme>
     </BottomSheet>
   );
 });
@@ -262,42 +274,12 @@ function LeaveTimesChart({ state, onRetry }: { state: LeaveState; onRetry: () =>
   );
 }
 
-function OptionRow({
-  icon,
-  label,
-  subtitle,
-  onPress,
-  testID,
-  last,
-}: {
-  icon: IconName;
-  label: string;
-  subtitle?: string;
-  onPress: () => void;
-  testID?: string;
-  last?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && { opacity: pressedOpacity }]}
-      accessibilityRole="button"
-      accessibilityLabel={subtitle ? `${label}. ${subtitle}` : label}
-      testID={testID}
-    >
-      <Icon name={icon} size={22} color={colors.text} />
-      <View style={styles.rowTextWrap}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
-      </View>
-      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  sheetBackground: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },
-  handleIndicator: { backgroundColor: colors.surfaceMuted, width: 40 },
+  // Dark while driving, like the bottom bar it opens from (the sheet's own background isn't a
+  // Surface view, so it's set here; everything inside follows SurfaceScheme dark).
+  sheetBackground: { backgroundColor: SURFACES.dark.sheet, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },
+  handleIndicator: { backgroundColor: SURFACES.dark.textFaint, width: 40 },
+  tiles: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm },
   container: { paddingHorizontal: spacing.lg, gap: spacing.sm },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   headerText: { flex: 1, alignItems: "center" },
@@ -327,11 +309,6 @@ const styles = StyleSheet.create({
   chartValue: { fontSize: 12, fontWeight: "700", color: colors.text, marginBottom: 2 },
   chartLabel: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
   chartLabelBest: { color: colors.goodText, fontWeight: "700" },
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minHeight: 52 },
-  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  rowTextWrap: { flex: 1 },
-  rowLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
-  rowSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
   actions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md },
   actionBtn: { flex: 1 },
 });
