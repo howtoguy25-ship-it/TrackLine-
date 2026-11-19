@@ -58,8 +58,12 @@ const SPACE: Record<keyof TrackerParams, Range> = {
   newTrackScore: [0.3, 0.8],
   matchIoU: [0.05, 0.5],
   lowMatchIoU: [0.05, 0.6],
-  minHits: [1, 4, true],
-  maxCoastMs: [200, 2000, true],
+  // Product limits, not tuned away: at least 2 frames before a box shows (no one-frame ghost
+  // boxes) and at least 0.6 s of coasting (no box blinking off on one missed frame). A first,
+  // unconstrained run chose 1 frame / 0.2 s -- better MOTA on fixed traffic cameras, but exactly
+  // the two things drivers complained about (training/tracker/REPORT-unconstrained.json).
+  minHits: [2, 4, true],
+  maxCoastMs: [600, 2000, true],
   qPos: [0.005, 0.3],
   qVel: [0.02, 1.5],
   rMeas: [0.01, 0.3],

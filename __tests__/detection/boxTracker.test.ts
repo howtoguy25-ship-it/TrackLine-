@@ -76,6 +76,12 @@ describe("boxTracker", () => {
     expect(report.trainedSeconds).toBeGreaterThanOrEqual(290);
     expect(report.params).toEqual(trained.params);
     expect(report.source).toMatch(/UA-DETRAC/);
+    // Product limits the training was not allowed to tune away: no one-frame ghost boxes, no blinking.
+    expect(trained.params.minHits).toBeGreaterThanOrEqual(2);
+    expect(trained.params.maxCoastMs).toBeGreaterThanOrEqual(600);
+    // On video it never trained on, it beats the tracker it replaces.
+    expect(report.heldOut.after_trained.mota).toBeGreaterThan(report.heldOut.before_shippedTracker.mota);
+    expect(report.heldOut.after_trained.fp).toBeLessThan(report.heldOut.before_shippedTracker.fp);
   });
 });
 

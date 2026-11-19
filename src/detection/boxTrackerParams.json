@@ -1,15 +1,15 @@
 {
-  "note": "Placeholder until training/tracker/train.ts writes the trained values.",
+  "note": "Trained by training/tracker/train.ts; see training/tracker/REPORT.json.",
   "params": {
-    "highScore": 0.5,
-    "lowScore": 0.15,
-    "newTrackScore": 0.5,
-    "matchIoU": 0.3,
-    "lowMatchIoU": 0.3,
+    "highScore": 0.5372,
+    "lowScore": 0.2542,
+    "newTrackScore": 0.5388,
+    "matchIoU": 0.0526,
+    "lowMatchIoU": 0.1545,
     "minHits": 2,
-    "maxCoastMs": 900,
-    "qPos": 0.05,
-    "qVel": 0.2,
-    "rMeas": 0.08
+    "maxCoastMs": 644,
+    "qPos": 0.0393,
+    "qVel": 1.2137,
+    "rMeas": 0.0834
   }
 }
