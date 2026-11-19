@@ -56,6 +56,7 @@ import {
   ActionSheetIOS,
   useWindowDimensions,
   Linking,
+  Alert,
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { MapErrorBanner, TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
@@ -226,6 +227,10 @@ import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
+import { REPORT_SIZE, SIDE_MARGIN, controlsBottom } from "@/nav/navControlsLayout";
+import { ReportIcon } from "@/components/icons/MapControlIcons";
+import { SearchAlongRouteSheet } from "@/components/SearchAlongRouteSheet";
+import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
 import { presencesToShow } from "@/map/presenceFilter";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
@@ -3506,6 +3511,9 @@ export function MapScreen() {
   // the route through that stop the same way the off-route auto-reroute effect above does,
   // without leaving/re-entering navigation.
   const [addingStopDuringNav, setAddingStopDuringNav] = useState(false);
+  // Search along route (the bar's Search button) and the Routes button's alternatives.
+  const [searchAlongOpen, setSearchAlongOpen] = useState(false);
+  const [navAlternatives, setNavAlternatives] = useState<Route[] | null>(null);
   // Real preview step, per explicit request -- picking a place no longer applies the reroute
   // immediately; it computes the route through that stop and holds it here so it can be drawn
   // green (see the Polyline render below) alongside the still-live blue route, with a
@@ -3547,11 +3555,13 @@ export function MapScreen() {
       } catch (err) {
         console.warn("[map] add stop preview failed", err);
         Sentry.logger.error("map: add stop preview failed", { error: String(err) });
+        // It used to fail silently, which read as the search being stuck.
+        showManoeuvreChip(`Couldn't add that stop: ${routeErrorText(err)}`, "neutral", 5000);
       } finally {
         setRerouting(false);
       }
     },
-    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid]
+    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip]
   );
 
   const confirmStopPreview = useCallback(() => {
@@ -4291,6 +4301,19 @@ export function MapScreen() {
 
   const exitNavigation = useCallback(() => {
     stopNavSpeech();
+    // Back to the home map cleanly: no sheet, search or alternatives left open, and the camera
+    // back on the driver in the normal home view.
+    navOptionsSheetRef.current?.close();
+    setSearchAlongOpen(false);
+    setNavAlternatives(null);
+    setAddingStopDuringNav(false);
+    setStopPreviewRoute(null);
+    setStopPreviewPlace(null);
+    setOverviewMode(false);
+    userMovedMapRef.current = false;
+    setPannedAwayIdle(false);
+    const here = currentLatLngRef.current;
+    if (here) mapRef.current?.animateCamera({ center: here, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
     setRoute(null);
     setActiveStepIndex(0);
     setFollowTilt(true);
@@ -4315,7 +4338,7 @@ export function MapScreen() {
     // this same function), so it's the real, single hook point for that trigger -- see
     // useAutoGhostMode.ts's own comment.
     autoGhostOnArrival(visibilityRef.current, updateSettingsRef.current);
-  }, []);
+  }, [currentLatLngRef]);
 
   // Flow (per spec: select the type first, then drag to place, then Set/Save):
   // 1. FAB -> openAlertTypePicker: opens AlertReportSheet, nothing else happens yet.
@@ -4932,6 +4955,28 @@ export function MapScreen() {
       animated: true,
     });
   }, [remainingPolyline, instructionCardHeight, bottomBarHeight, insets.top, insets.bottom]);
+  // The Routes button: the whole route on screen plus the other ways there from here, each
+  // labelled with the time difference; tap one to switch to it.
+  const showNavRoutes = useCallback(() => {
+    showRouteOverview();
+    if (!currentLatLng || !destinationLatLng || travelMode !== "driving") return;
+    const current = remainingPolyline;
+    getRouteChoices(currentLatLng, destinationLatLng, { ...avoidRouteOptions(settings.routeAvoid), waypoint: stopLocation ?? undefined })
+      .then((choices) => {
+        const alts = pickAlternatives(choices, current);
+        setNavAlternatives(alts);
+        if (!alts.length) showManoeuvreChip("No other routes right now", "neutral", 3000);
+      })
+      .catch((err) => showManoeuvreChip(`Couldn't load other routes: ${routeErrorText(err)}`, "neutral", 4000));
+  }, [showRouteOverview, currentLatLng, destinationLatLng, travelMode, remainingPolyline, settings.routeAvoid, stopLocation, showManoeuvreChip]);
+  const switchToAlternative = useCallback((alt: Route) => {
+    guidanceRef.current = createGuidanceState();
+    setActiveStepIndex(0);
+    setRoute(alt);
+    setNavAlternatives(null);
+    setFollowTilt(true);
+  }, []);
+
   const remainingDistanceMeters = useMemo(
     () => (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.distanceMeters, 0) : 0),
     [route, activeStepIndex]
@@ -5471,6 +5516,16 @@ export function MapScreen() {
         >
           <MapboxLayers
             navRoute={mapboxNavRoute}
+            navAlternatives={
+              route && navAlternatives
+                ? navAlternatives.map((alt, i) => ({
+                    key: `alt-${i}`,
+                    line: detailedRoutePolyline(alt),
+                    label: altDeltaLabel(alt.durationInTrafficSeconds ?? alt.durationSeconds, remainingDurationSeconds),
+                    onPress: () => switchToAlternative(alt),
+                  }))
+                : []
+            }
             remaining={route ? remainingPolyline : []}
             onRoutePress={enterOverviewMode}
             turnCallouts={mapboxTurnCallouts}
@@ -5573,7 +5628,7 @@ export function MapScreen() {
           // Re-centre appears, so the two never share a spot.
           bottom={
             route
-              ? insets.bottom + bottomBarHeight + spacing.sm
+              ? controlsBottom(insets.bottom, bottomBarHeight)
               : whereToHeights.peek + 12 + 58 * uiScale + 8
           }
         />
@@ -5833,7 +5888,7 @@ export function MapScreen() {
           and the "..." options menu (Report/Share ETA/AI Detection/End -- see NavOptionsSheet).
           Hidden while the add-stop search or its green preview is up (both render their own
           bottom bar/confirm bar in this same screen region) to avoid stacking two bars. */}
-      {route && !addingStopDuringNav && !stopPreviewRoute && (
+      {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
         <NavBottomBar
           etaText={formatDurationText(remainingDurationSeconds)}
           arrivalClockText={arrivalClockText}
@@ -5841,13 +5896,19 @@ export function MapScreen() {
           roadName={navRoadName}
           themeKey={settings.navCardTheme}
           hasStop={!!stopLocation}
-          onAddStop={() => setAddingStopDuringNav(true)}
+          onAddStop={() => setSearchAlongOpen(true)}
           onRemoveStop={removeStopDuringNav}
           onOptions={() => navOptionsSheetRef.current?.expand()}
+          onLongPressEnd={() =>
+            Alert.alert("End navigation?", undefined, [
+              { text: "Keep driving", style: "cancel" },
+              { text: "End", style: "destructive", onPress: exitNavigation },
+            ])
+          }
           onHeightChange={setBottomBarHeight}
           isFollowing={followTilt}
           onRecenter={onRecenter}
-          onOverview={showRouteOverview}
+          onOverview={showNavRoutes}
         />
       )}
 
@@ -5906,6 +5967,35 @@ export function MapScreen() {
             navOptionsSheetRef.current?.expand();
           }}
         />
+      )}
+
+      {route && searchAlongOpen && (
+        <SearchAlongRouteSheet
+          route={remainingPolyline}
+          origin={currentLatLng}
+          remainingSeconds={remainingDurationSeconds}
+          unit={settings.distanceUnit}
+          onClose={() => setSearchAlongOpen(false)}
+          onAddStop={(r) => {
+            setSearchAlongOpen(false);
+            onStopSelectedDuringNav({ placeId: r.placeId, name: r.name, address: r.address, location: r.location });
+          }}
+        />
+      )}
+      {route && navAlternatives && navAlternatives.length > 0 && (
+        <View pointerEvents="box-none" style={[styles.altBar, { top: insets.top + instructionCardHeight + spacing.md }]}>
+          <Button variant="secondary" label="Keep current route" onPress={() => setNavAlternatives(null)} testID="nav-keep-route" />
+        </View>
+      )}
+
+      {/* Report while driving: bottom-right, 12pt above the bar (Re-centre sits over it only
+          after panning). See nav/navControlsLayout.ts for the whole column layout. */}
+      {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
+        <View pointerEvents="box-none" style={[styles.navReport, { bottom: controlsBottom(insets.bottom, bottomBarHeight) }]}>
+          <FloatingButton tone="report" shape="menu" size={REPORT_SIZE} onPress={openAlertTypePicker} accessibilityLabel="Report something on the road" testID="nav-report">
+            <ReportIcon size={30} />
+          </FloatingButton>
+        </View>
       )}
 
       {/* Mapbox's junction picture for a complex interchange, until the manoeuvre point. */}
@@ -6869,6 +6959,8 @@ const styles = StyleSheet.create({
   // Deliberately a different color from both OSM markers above (blue, not purple/teal) -- this
   // is a real live NSW government camera feed, an entirely separate dataset from the mapped
   // OSM traffic-light/speed-camera layer, and shouldn't visually read as a third variant of it.
+  navReport: { position: "absolute", right: SIDE_MARGIN },
+  altBar: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   topRightControls: {
     position: "absolute",
     // Hugs the true right edge (rather than floating inward) so this reads as a compact,

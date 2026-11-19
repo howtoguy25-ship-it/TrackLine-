@@ -1,10 +1,13 @@
 import React from "react";
+import { RECENTER_ABOVE_BAR, RECENTER_SIZE, REPORT_SIZE, SIDE_MARGIN } from "@/nav/navControlsLayout";
 import { Icon } from "@/components/ui/Icon";
 import { View, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { colors } from "@/theme/tokens";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 
 interface Props {
   etaText: string;
@@ -24,6 +27,8 @@ interface Props {
   onRecenter: () => void;
   /** The routes button: the whole route on screen (and the other routes). */
   onOverview: () => void;
+  /** Long-press the bar: end navigation (asks first). */
+  onLongPressEnd?: () => void;
 }
 
 export const NAV_BOTTOM_BAR_HEIGHT = 110;
@@ -48,12 +53,19 @@ export function NavBottomBar({
   isFollowing,
   onRecenter,
   onOverview,
+  onLongPressEnd,
 }: Props) {
   const insets = useSafeAreaInsets();
   const theme = NAV_CARD_THEMES[themeKey];
   const bg = theme.bottomBarBackground ?? theme.background;
   const roundBg = theme.actionBg;
   const onLayout = (e: LayoutChangeEvent) => onHeightChange?.(e.nativeEvent.layout.height);
+  // Drag the bar up: the ETA sheet (same as tapping the arrival time), so it's always reachable.
+  const swipeUp = Gesture.Pan()
+    .activeOffsetY(-15)
+    .onEnd((e) => {
+      if (e.translationY < -30) runOnJS(onOptions)();
+    });
 
   return (
     <View style={styles.wrap} pointerEvents="box-none" testID="nav-bottom-bar">
@@ -62,6 +74,7 @@ export function NavBottomBar({
           <Icon name="locate" size={24} color="#FFFFFF" />
         </Pressable>
       ) : null}
+      <GestureDetector gesture={swipeUp}>
       <View style={[styles.bar, { backgroundColor: bg, paddingBottom: insets.bottom + 10, minHeight: NAV_BOTTOM_BAR_HEIGHT + insets.bottom }]} onLayout={onLayout}>
         <Pressable
           onPress={hasStop ? onRemoveStop : onAddStop}
@@ -74,9 +87,12 @@ export function NavBottomBar({
         </Pressable>
         <Pressable
           onPress={onOptions}
+          onLongPress={onLongPressEnd}
+          delayLongPress={600}
           style={styles.centre}
           accessibilityRole="button"
           accessibilityLabel={`Arrive ${arrivalClockText}, ${etaText}, ${distanceRemainingText}. Open trip details.`}
+          accessibilityHint="Swipe up or tap for trip details and Stop. Long-press to end navigation."
           testID="nav-eta"
         >
           <View style={[styles.grabber, { backgroundColor: theme.textSecondary }]} />
@@ -91,6 +107,7 @@ export function NavBottomBar({
           <Icon name="swap-vertical" size={24} color={theme.text} />
         </Pressable>
       </View>
+      </GestureDetector>
     </View>
   );
 }
@@ -111,14 +128,16 @@ const styles = StyleSheet.create({
   grabber: { width: 36, height: 4, borderRadius: 2, opacity: 0.5, marginBottom: 6 },
   arrival: { fontSize: 30, fontWeight: "800" },
   sub: { fontSize: 15, fontWeight: "500", marginTop: 2 },
+  // Bottom-RIGHT, over the Report button (nav/navControlsLayout.ts). It used to sit bottom-left,
+  // exactly on top of the speedometer.
   recenter: {
     position: "absolute",
-    left: 16,
+    right: SIDE_MARGIN + (REPORT_SIZE - RECENTER_SIZE) / 2,
     bottom: "100%",
-    marginBottom: 12,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    marginBottom: RECENTER_ABOVE_BAR,
+    width: RECENTER_SIZE,
+    height: RECENTER_SIZE,
+    borderRadius: RECENTER_SIZE / 2,
     backgroundColor: colors.recenterGrey,
     alignItems: "center",
     justifyContent: "center",

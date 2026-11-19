@@ -71,6 +71,8 @@ interface Props {
   onSelectPresence: (p: PresenceDoc) => void;
   onPresenceCluster: (lat: number, lng: number) => void;
   selection: RouteSelectionDrawing | null;
+  /** While driving, the Routes button's other ways there: line, "+2 min" bubble, tap to switch. */
+  navAlternatives?: { key: string; line: LatLng[]; label: string; onPress: () => void }[];
   /** The destination while navigating. */
   arrival: LatLng | null;
   pins: MapPin[];
@@ -135,6 +137,9 @@ export function MapboxLayers(props: Props) {
       {/* Navigation: ONE purple line with one dark casing, from the arrow onwards (the part
           already driven isn't drawn; it used to sit under the white-cased line ahead and look
           doubled). Wider than in the preview. */}
+      {(props.navAlternatives ?? []).map((a) => (
+        <RouteLine key={a.key} id={`nav-${a.key}`} coordinates={a.line} color={ROUTE_ALT} width={7} hitbox={44} onPress={a.onPress} />
+      ))}
       {props.remaining.length > 1 && (
         <RouteLine
           id="nav-route"
@@ -222,6 +227,14 @@ export function MapboxLayers(props: Props) {
           </View>
         </MarkerPin>
       ))}
+      {(props.navAlternatives ?? []).map((a) => {
+        const at = a.line[Math.floor(a.line.length / 2)];
+        return at ? (
+          <MarkerPin key={`nav-alt-bubble-${a.key}`} coordinate={at} anchor={{ x: 0.5, y: 1 }} onPress={a.onPress}>
+            <RouteTimeBubble timeText={a.label} tag={null} selected={false} />
+          </MarkerPin>
+        ) : null;
+      })}
       {selection?.bubbles.map((b) => (
         <MarkerPin key={`bubble-${b.key}-${b.selected ? "on" : "off"}`} coordinate={b.coordinate} anchor={{ x: 0.5, y: 1 }} onPress={() => selection.onSelect(b.index)}>
           <RouteTimeBubble timeText={b.timeText} tag={b.tag} selected={b.selected} />

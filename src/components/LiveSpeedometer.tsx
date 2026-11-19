@@ -1,4 +1,5 @@
 import type { SignStyle } from "@/speedLimits/resolveLimit";
+import { CONTROL_GAP, SIDE_MARGIN } from "@/nav/navControlsLayout";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { shadow } from "@/theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
@@ -171,12 +172,13 @@ export function LiveSpeedometer({
 // Waze-style dial: an 84pt dark circle with a thin ring, the speed big and bold, "km/h" under it.
 export const DIAL_SIZE = 84;
 export const SIGN_SIZE = 56;
-export const SIGN_GAP = 8;
+/** 12pt between the limit sign and the dial (nav controls column, nav/navControlsLayout.ts). */
+export const SIGN_GAP = CONTROL_GAP;
 
 const styles = StyleSheet.create({
   wrap: {
     position: "absolute",
-    left: 16,
+    left: SIDE_MARGIN,
     bottom: 24,
     flexDirection: "column",
     alignItems: "center",
