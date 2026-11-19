@@ -170,7 +170,6 @@ import {
   routeSeconds,
   routeSummaryLine,
   routeTags,
-  routesBounds,
   trafficLevel,
   routeSummaryParts,
   type RouteSummaryParts,
@@ -224,6 +223,7 @@ import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/serv
 import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
 import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
+import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
@@ -1035,12 +1035,14 @@ export function MapScreen() {
   const [northUp, setNorthUp] = useState(false);
   const northUpRef = useLatest(northUp);
   useEffect(() => {
-    // Not while a place page is up: the camera is showing the place, not the driver.
-    if (!currentLatLng || route || !mapReady || userMovedMapRef.current || placePage) return;
+    // Not while a place page is up (the camera is showing the place), and not while choosing a
+    // route: every GPS fix used to pull the camera back onto the driver at street zoom, undoing
+    // the fit that shows all the routes.
+    if (!currentLatLng || route || !mapReady || userMovedMapRef.current || placePage || pendingDestination) return;
     const bearing = northUpRef.current ? 0 : followHeadingRef.current;
     mapRef.current?.animateCamera({ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 });
     mapBearing.set(bearing);
-  }, [currentLatLng, route, mapReady, mapBearing, placePage, northUpRef]);
+  }, [currentLatLng, route, mapReady, mapBearing, placePage, northUpRef, pendingDestination]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
   // that only appears once the driver has actually panned away, mirroring Waze's own behaviour.
@@ -1270,7 +1272,7 @@ export function MapScreen() {
       ? // The place sits in the middle of the 40% above the place page's sheet.
         { top: insets.top, right: 0, bottom: windowHeight * PLACE_PAGE_SHEET_FRACTION, left: 0 }
       : inRouteSelection
-        ? { top: routeTopCardBottom, right: 0, bottom: routeSheetHeight, left: 0 }
+        ? previewEdgePadding(routeTopCardBottom, routeSheetHeight)
         : isHomeIdle
           ? homePadding
           : { top: 0, right: 0, bottom: 0, left: 0 };
@@ -2602,20 +2604,12 @@ export function MapScreen() {
   // explicit request, instead of every route always starting from the driver's own live position.
   // Fits every shown route into the map between the route-selection card and its sheet (the
   // map's padding is set to exactly that space while route selection is up), over 600ms.
+  // Asks for the preview camera to fit these lines (all routes, or the one just picked) with the
+  // start and destination. The fit itself happens in the effect further down, which also runs
+  // again whenever the top card or the sheet changes size, so it always uses the real space.
+  const [previewFit, setPreviewFit] = useState<{ lines: LatLng[][]; tick: number }>({ lines: [], tick: 0 });
   const fitRoutesOnScreen = useCallback((lines: LatLng[][]) => {
-    const bounds = routesBounds(lines);
-    if (!bounds) return;
-    const latSpan = Math.max(bounds.north - bounds.south, 0.002);
-    const lngSpan = Math.max(bounds.east - bounds.west, 0.002);
-    mapRef.current?.animateToRegion(
-      {
-        latitude: (bounds.north + bounds.south) / 2,
-        longitude: (bounds.east + bounds.west) / 2,
-        latitudeDelta: latSpan * 1.3,
-        longitudeDelta: lngSpan * 1.3,
-      },
-      600
-    );
+    setPreviewFit((f) => ({ lines, tick: f.tick + 1 }));
   }, []);
 
   const fetchRouteOptions = useCallback(
@@ -3810,7 +3804,10 @@ export function MapScreen() {
   // again fits every route back on screen.
   const onSelectChoice = useCallback(
     (index: number) => {
-      if (index === selectedChoiceIndex && routeChoices) fitRoutesOnScreen(routeChoices.map(detailedRoutePolyline));
+      if (!routeChoices) return;
+      // The picked route is fitted (the others stay drawn, faded); picking it again shows them all.
+      if (index === selectedChoiceIndex) fitRoutesOnScreen(routeChoices.map(detailedRoutePolyline));
+      else if (routeChoices[index]) fitRoutesOnScreen([detailedRoutePolyline(routeChoices[index])]);
       setSelectedChoiceIndex(index);
     },
     [routeChoices, selectedChoiceIndex, fitRoutesOnScreen]
@@ -5334,6 +5331,19 @@ export function MapScreen() {
     ]
   );
 
+  // Route preview camera: flat and north-up, fitted to every route (or the picked one) plus the
+  // start and destination, inside the space the top card and the sheet leave (mapPadding). Runs
+  // again when the routes, the mode, Avoid, the top card or the sheet's height change.
+  useEffect(() => {
+    if (!inRouteSelection || !mapReady || previewFit.lines.length === 0) return;
+    const t = setTimeout(() => {
+      const coords = previewFitCoordinates(previewFit.lines, routeOriginLatLng, pendingDestination?.location ?? null);
+      mapRef.current?.fitToCoordinates(coords, { animated: true });
+    }, 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the fit request and the UI sizes
+  }, [previewFit, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight]);
+
   const mapboxNavRoute = useMemo(() => (route ? detailedRoutePolyline(route) : null), [route]);
   const mapboxTurnCallouts = useMemo(
     () =>
@@ -5755,7 +5765,7 @@ export function MapScreen() {
               onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
               onDetails={selectionRoutes[selectionIndex] && (travelMode === "transit" || routeHasFerry(selectionRoutes[selectionIndex])) ? openTripDetails : undefined}
               hasStop={!!stopLocation}
-              onCollapsedHeightChange={setRouteSheetHeight}
+              onHeightChange={setRouteSheetHeight}
             />
           </MapSurface>
           <TripDetailsSheet

@@ -14,20 +14,22 @@ interface Props {
   width: number;
   casingColor?: string;
   casingWidth?: number;
+  /** Tap target size in px (alternatives get a wide one so they're easy to pick). */
+  hitbox?: number;
   opacity?: number;
   /** Draw above this other line layer id (e.g. traffic stretches over the selected route). */
   aboveLayerID?: string;
   onPress?: () => void;
 }
 
-export function RouteLine({ id, coordinates, color, width, casingColor, casingWidth, opacity = 1, aboveLayerID, onPress }: Props) {
+export function RouteLine({ id, coordinates, color, width, casingColor, casingWidth, opacity = 1, aboveLayerID, onPress, hitbox = 24 }: Props) {
   const Mapbox = loadMapbox();
   const shape = useMemo(() => collection([lineFeature(id, coordinates)]), [id, coordinates]);
   if (!Mapbox || !isDrawableLine(coordinates)) return null;
   const { ShapeSource, LineLayer } = Mapbox;
   const placement = aboveLayerID ? { aboveLayerID } : { belowLayerID: LABELS_BOTTOM_LAYER };
   return (
-    <ShapeSource id={`${id}-src`} shape={shape as never} onPress={onPress ? () => onPress() : undefined} hitbox={{ width: 24, height: 24 }}>
+    <ShapeSource id={`${id}-src`} shape={shape as never} onPress={onPress ? () => onPress() : undefined} hitbox={{ width: hitbox, height: hitbox }}>
       {[
         ...(casingColor
           ? [

@@ -179,7 +179,7 @@ export function MapboxLayers(props: Props) {
       {selection?.drawn
         .filter((d) => d.index !== selection.selectedIndex)
         .map((d) => (
-          <RouteLine key={`alt-${d.index}`} id={`route-alt-${d.index}`} coordinates={d.line} color={ROUTE_ALT} width={6} onPress={() => selection.onSelect(d.index)} />
+          <RouteLine key={`alt-${d.index}`} id={`route-alt-${d.index}`} coordinates={d.line} color={ROUTE_ALT} width={6} hitbox={44} onPress={() => selection.onSelect(d.index)} />
         ))}
       {selection?.selectedLine && (
         <RouteLine id="route-selected" coordinates={selection.selectedLine} color={ROUTE_PURPLE} width={8} casingColor={ROUTE_PURPLE_CASING} casingWidth={12} />

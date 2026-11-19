@@ -9,6 +9,7 @@ import { Button, Chip } from "@/components/ui/Button";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
 import { SurfaceScheme, darkText } from "@/components/ui/surfaceScheme";
+import { MAX_SHEET_FRACTION } from "@/nav/previewCamera";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -394,6 +395,8 @@ interface SheetProps {
   onDetails?: () => void;
   /** Height of the collapsed sheet (from the bottom of the screen), for fitting the routes. */
   onCollapsedHeightChange?: (height: number) => void;
+  /** The sheet's height right now (collapsed or pulled up), so the map re-fits above it. */
+  onHeightChange?: (height: number) => void;
 }
 
 export function RouteSelectionSheet({
@@ -413,6 +416,7 @@ export function RouteSelectionSheet({
   hasStop,
   onDetails,
   onCollapsedHeightChange,
+  onHeightChange,
 }: SheetProps) {
   const insets = useSafeAreaInsets();
   const { width, height: windowHeight } = useWindowDimensions();
@@ -432,6 +436,11 @@ export function RouteSelectionSheet({
   }
 
   const collapsedHeight = summaryHeight + footerHeight;
+  const [listHeight, setListHeight] = useState(0);
+  const currentHeight = collapsedHeight + (expanded ? listHeight : 0);
+  useEffect(() => {
+    if (currentHeight > 0) onHeightChange?.(currentHeight);
+  }, [currentHeight, onHeightChange]);
   // Reported only while collapsed: pulling the list up covers the map, it doesn't re-fit it.
   useEffect(() => {
     if (!expanded && collapsedHeight > 0) onCollapsedHeightChange?.(collapsedHeight);
@@ -464,7 +473,8 @@ export function RouteSelectionSheet({
   const fillStyle = useAnimatedStyle(() => ({ width: `${progress.get() * 100}%` }));
 
   const hasRoutes = rows.length > 0 && !loading && !errorText;
-  const listMaxHeight = windowHeight * 0.5;
+  // Pulled up, the sheet stays at most 60% of the screen so the selected route is still visible.
+  const listMaxHeight = Math.max(120, windowHeight * MAX_SHEET_FRACTION - collapsedHeight);
 
   return (
     <View style={[styles.sheet, { borderTopLeftRadius: 28 * k, borderTopRightRadius: 28 * k }]}>
@@ -514,7 +524,13 @@ export function RouteSelectionSheet({
       </GestureDetector>
 
       {hasRoutes && expanded && (
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: listMaxHeight }} bounces={false}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={{ maxHeight: listMaxHeight }}
+          bounces={false}
+          onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+          testID="route-list"
+        >
           {rows.map((row, i) => {
             const isSelected = i === selectedIndex;
             return (

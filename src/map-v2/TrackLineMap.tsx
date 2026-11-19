@@ -5,6 +5,7 @@ import { candidateFromFeature, rankBadges, rankedBadgeCollection, type BadgeCand
 import { cachedPopularity, loadPopularity } from "@/services/poiPopularity";
 import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import type { CameraStop, MapView as MapboxMapView } from "@rnmapbox/maps";
+import { PREVIEW_FIT_MS, PREVIEW_HEADING, PREVIEW_PITCH } from "@/nav/previewCamera";
 import { loadMapbox, mapboxUnavailableReason } from "@/map-v2/mapbox";
 import { recordMapStyle } from "@/diagnostics/diagnostics";
 import { INK, RED_SOFT, RED_TEXT, TRAFFIC, WHITE } from "@/theme/colors";
@@ -190,9 +191,10 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
       cameraRef.current?.setCamera({
         bounds,
         padding: mapboxPadding(options?.edgePadding),
-        heading: 0,
-        pitch: 0,
-        animationDuration: options?.animated === false ? 0 : 600,
+        // A fit is always flat and north-up (route preview, results): no buildings in the way.
+        heading: PREVIEW_HEADING,
+        pitch: PREVIEW_PITCH,
+        animationDuration: options?.animated === false ? 0 : PREVIEW_FIT_MS,
         animationMode: options?.animated === false ? "none" : "easeTo",
       });
     },
