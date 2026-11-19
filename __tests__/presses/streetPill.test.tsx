@@ -112,12 +112,13 @@ describe("what it shows", () => {
 });
 
 describe("lookups", () => {
-  it("only after moving 25 m or turning 30 degrees, and a known stretch costs nothing", () => {
+  it("only after moving a few metres or turning, never while one is running", () => {
     const t = new RoadLookupTracker<string>();
     const at = (dLat: number, heading = 90) => ({ latitude: -33.92 + dLat, longitude: 151.05, heading });
     expect(t.update(at(0))).toBe(true);
+    expect(t.update(at(0.0004))).toBe(false); // in flight
     t.resolve(at(0), "Canterbury Road");
-    expect(t.update(at(0.0001))).toBe(false); // ~11 m
+    expect(t.update(at(0.00005))).toBe(false); // ~6 m
     expect(t.value).toBe("Canterbury Road");
     expect(t.update(at(0.0004))).toBe(true); // ~44 m
   });

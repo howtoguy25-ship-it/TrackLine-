@@ -529,95 +529,54 @@ function cacheEntryMatchesPosition(entry: SpeedLimitCacheEntry, lat: number, lng
  *  -- and the same multi-mirror fetch pattern (see OVERPASS_ENDPOINTS) so one slow/overloaded
  *  Overpass instance doesn't block the reading from updating as the driver moves onto a new
  *  road. */
-// The most recently matched way id, module-scoped (this service is already a de facto app-wide
-// singleton, same as speedLimitCache above) -- checked first on every call so a straight drive
-// down one long road costs exactly one real Overpass fetch, not one per GPS-movement tick.
-let lastMatchedWayId: number | null = null;
+// The roads around the driver from the last Overpass answer: every way within 120 m, with its tags
+// and geometry -- "the scene". Root cause of the sign not changing between two different roads
+// close together (a side street beside the main road, a slip lane, a service road, the cross street
+// at a junction): this used to keep returning the LAST matched road for as long as the driver
+// stayed within 40 m of it, without looking at the other roads at all. Now every fix re-picks the
+// best road from the whole scene by distance and direction (no network), and only leaving the
+// scene fetches again. Pure parts tested in __tests__/speedLimits/roadSwap.test.ts.
+export interface SceneWay {
+  id: number;
+  tags: Record<string, string>;
+  geometry: { lat: number; lon: number }[];
+}
+interface RoadScene {
+  lat: number;
+  lng: number;
+  ways: SceneWay[];
+}
+let lastScene: RoadScene | null = null;
+let lastPickedWayId: number | null = null;
+/** The query asks for roads within 120 m; a fix within this of where it was asked still has all
+ *  the roads that could be within match range (40 m) of it. */
+export const SCENE_REUSE_M = 70;
+/** A different road must fit better by this much (km) to take over -- no flicker at a junction. */
+export const SWITCH_MARGIN_KM = 0.004;
 
-export async function fetchSpeedLimitNear(
-  lat: number,
-  lng: number,
-  headingDeg?: number | null
-): Promise<SpeedLimitResult | null> {
-  await loadSpeedLimitCacheOnce();
+export interface PickedWay {
+  score: number;
+  wayId: number;
+  kmh: number;
+  estimated: boolean;
+  baseKmh: number;
+  baseEstimated: boolean;
+  conditionalRules: ConditionalSpeedRule[];
+  conditionalRaw: string | null;
+  roadName: string | null;
+  geometry: { lat: number; lon: number }[];
+}
 
-  // Real cache hit: still within match range of the same road fetchSpeedLimitNear last matched
-  // -- return it with zero network calls. Only a school-zone conditional limit needs
-  // re-evaluating against the CURRENT time even on a cache hit (the device's clock moved, the
-  // tag didn't), so that check still runs fresh every call.
-  if (lastMatchedWayId != null) {
-    const cached = speedLimitCache.get(lastMatchedWayId);
-    if (cached && cacheEntryMatchesPosition(cached, lat, lng)) {
-      const resolved = resolveCachedSpeed(cached);
-      return { kmh: resolved.kmh, roadName: cached.roadName, wayId: lastMatchedWayId, estimated: resolved.estimated, conditional: cached.conditionalRaw ?? null };
-    }
-  }
-
-  // No `["maxspeed"]` filter here (unlike the old query) -- a road with only maxspeed:conditional,
-  // or no maxspeed tag at all (needing the Australian road-type default below), must still come
-  // back, not just roads with a plain maxspeed tag.
-  const query = `[out:json][timeout:15];way["highway"](around:120,${lat},${lng});out geom tags 60;`;
-  const body = `data=${encodeURIComponent(query)}`;
-
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), SPEED_LIMIT_FETCH_TIMEOUT_MS);
-
-  const requestFrom = async (endpoint: string): Promise<OverpassGeomResponse> => {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      body,
-      // See fetchOsmTrafficData's own comment above -- same real, confirmed requirement.
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "TrackLineApp/1.0 (contact: support@tracklinemaps.com)",
-      },
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`${endpoint} returned ${response.status}`);
-    return response.json();
-  };
-
-  let data: OverpassGeomResponse;
-  try {
-    data = await Promise.any(OVERPASS_ENDPOINTS.map(requestFrom));
-  } catch {
-    // Best-effort -- a missed lookup just means the badge doesn't update this tick, retried
-    // automatically on the next GPS move (see MapScreen.tsx's throttled refetch effect).
-    return null;
-  } finally {
-    clearTimeout(timeoutHandle);
-    controller.abort();
-  }
-
-  let best:
-    | {
-        score: number;
-        wayId: number;
-        kmh: number;
-        estimated: boolean;
-        baseKmh: number;
-        baseEstimated: boolean;
-        conditionalRules: ConditionalSpeedRule[];
-        conditionalRaw: string | null;
-        roadName: string | null;
-        geometry: { lat: number; lon: number }[];
-      }
-    | null = null;
-
-  for (const way of data.elements) {
-    if (way.type !== "way" || !way.geometry || way.geometry.length < 2 || !way.tags?.highway) continue;
-
-    // Real priority order, highest confidence first: an active school-zone/time-conditional
-    // limit (it's genuinely in force right now) > a plain posted maxspeed tag > the Australian
-    // road-type default (an honest estimate, never presented as a confirmed sign -- see
-    // `estimated` below). baseKmh/baseEstimated/conditionalRules are what actually get cached
-    // (see below) -- `kmh`/`estimated` here are just this moment's resolved display value.
+/** The road the driver is on, from the roads around them: nearest, preferring one running the
+ *  driver's way; the current road keeps it unless another is clearly better. */
+export function pickRoadInScene(ways: SceneWay[], lat: number, lng: number, headingDeg: number | null | undefined, currentWayId: number | null = null): PickedWay | null {
+  let best: PickedWay | null = null;
+  let current: PickedWay | null = null;
+  for (const way of ways) {
+    if (!way.geometry || way.geometry.length < 2 || !way.tags?.highway) continue;
     const conditionalRaw = way.tags["maxspeed:conditional"];
     const conditionalRules = conditionalRaw ? parseMaxspeedConditional(conditionalRaw) : [];
-    // Not applied here (see resolveCachedSpeed): only kept so a road with nothing but a
-    // conditional limit still counts as a match.
     const activeConditional = conditionalRules.length > 0 ? 0 : null;
-
     let baseKmh: number | null = way.tags.maxspeed ? parseMaxSpeedKmh(way.tags.maxspeed) : null;
     let baseEstimated = false;
     if (baseKmh === null) {
@@ -628,11 +587,8 @@ export async function fetchSpeedLimitNear(
         baseEstimated = true;
       }
     }
-    // A road with only a conditional limit has no posted limit of its own: 0 + estimated, which
-    // the sign never shows (it's kept for the road name and the conditional check).
     const kmh = baseKmh ?? 0;
     const estimated = baseKmh === null || baseEstimated;
-
     let minDist = Infinity;
     let closestSegmentBearing = 0;
     for (let i = 0; i < way.geometry.length - 1; i++) {
@@ -645,41 +601,108 @@ export async function fetchSpeedLimitNear(
       }
     }
     if (minDist >= MAX_ROAD_MATCH_KM) continue;
+    const headingPenaltyKm = headingDeg != null ? (bearingDiffDeg(closestSegmentBearing, headingDeg) / 90) * HEADING_MISMATCH_PENALTY_KM : 0;
+    const candidate: PickedWay = {
+      score: minDist + headingPenaltyKm,
+      wayId: way.id,
+      kmh,
+      estimated,
+      baseKmh: baseKmh ?? 0,
+      baseEstimated,
+      conditionalRules,
+      conditionalRaw: conditionalRaw ?? null,
+      roadName: way.tags.name ?? null,
+      geometry: way.geometry,
+    };
+    if (way.id === currentWayId) current = candidate;
+    if (!best || candidate.score < best.score) best = candidate;
+  }
+  if (current && best && best.wayId !== current.wayId && best.score > current.score - SWITCH_MARGIN_KM) return current;
+  return best;
+}
 
-    const headingPenaltyKm =
-      headingDeg != null
-        ? (bearingDiffDeg(closestSegmentBearing, headingDeg) / 90) * HEADING_MISMATCH_PENALTY_KM
-        : 0;
-    const score = minDist + headingPenaltyKm;
+/** Whether the roads fetched around `scene` still cover a fix at lat/lng. */
+export function sceneCovers(scene: { lat: number; lng: number } | null, lat: number, lng: number): boolean {
+  return !!scene && pointToSegmentDistanceKm(lat, lng, scene.lat, scene.lng, scene.lat, scene.lng) * 1000 <= SCENE_REUSE_M;
+}
 
-    if (!best || score < best.score) {
-      best = {
-        score,
-        wayId: way.id,
-        kmh,
-        estimated,
-        baseKmh: baseKmh ?? 0,
-        baseEstimated,
-        conditionalRules,
-        conditionalRaw: conditionalRaw ?? null,
-        roadName: way.tags.name ?? null,
-        geometry: way.geometry,
-      };
+/** For tests: forget the scene. */
+export function resetRoadScene(): void {
+  lastScene = null;
+  lastPickedWayId = null;
+}
+
+export async function fetchSpeedLimitNear(
+  lat: number,
+  lng: number,
+  headingDeg?: number | null
+): Promise<SpeedLimitResult | null> {
+  await loadSpeedLimitCacheOnce();
+
+  // Still among the same roads: re-pick from them (this is what lets the sign change between two
+  // different roads close together), no network.
+  let ways: SceneWay[] | null = sceneCovers(lastScene, lat, lng) ? lastScene!.ways : null;
+
+  if (!ways) {
+    // No `["maxspeed"]` filter here (unlike the old query) -- a road with only maxspeed:conditional,
+    // or no maxspeed tag at all (needing the Australian road-type default below), must still come
+    // back, not just roads with a plain maxspeed tag.
+    const query = `[out:json][timeout:15];way["highway"](around:120,${lat},${lng});out geom tags 60;`;
+    const body = `data=${encodeURIComponent(query)}`;
+
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), SPEED_LIMIT_FETCH_TIMEOUT_MS);
+
+    const requestFrom = async (endpoint: string): Promise<OverpassGeomResponse> => {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body,
+        // See fetchOsmTrafficData's own comment above -- same real, confirmed requirement.
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "TrackLineApp/1.0 (contact: support@tracklinemaps.com)",
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`${endpoint} returned ${response.status}`);
+      return response.json();
+    };
+
+    let data: OverpassGeomResponse;
+    try {
+      data = await Promise.any(OVERPASS_ENDPOINTS.map(requestFrom));
+    } catch {
+      // Best-effort -- a missed lookup just means the badge doesn't update this tick, retried
+      // automatically on the next GPS move (see MapScreen.tsx's throttled refetch effect).
+      return null;
+    } finally {
+      clearTimeout(timeoutHandle);
+      controller.abort();
     }
+
+
+    ways = data.elements
+      .filter((w) => w.type === "way" && !!w.geometry && w.geometry.length >= 2 && !!w.tags?.highway)
+      .map((w) => ({ id: w.id, tags: w.tags as Record<string, string>, geometry: w.geometry as { lat: number; lon: number }[] }));
+    lastScene = { lat, lng, ways };
   }
 
-  if (!best) return null;
-
-  lastMatchedWayId = best.wayId;
-  speedLimitCache.set(best.wayId, {
-    baseKmh: best.baseKmh,
-    baseEstimated: best.baseEstimated,
-    conditionalRules: best.conditionalRules,
-    conditionalRaw: best.conditionalRaw,
-    roadName: best.roadName,
-    geometry: best.geometry,
-  });
-  persistSpeedLimitCache();
-
+  const best = pickRoadInScene(ways, lat, lng, headingDeg, lastPickedWayId);
+  if (!best) {
+    lastPickedWayId = null;
+    return null;
+  }
+  lastPickedWayId = best.wayId;
+  if (!speedLimitCache.has(best.wayId)) {
+    speedLimitCache.set(best.wayId, {
+      baseKmh: best.baseKmh,
+      baseEstimated: best.baseEstimated,
+      conditionalRules: best.conditionalRules,
+      conditionalRaw: best.conditionalRaw,
+      roadName: best.roadName,
+      geometry: best.geometry,
+    });
+    persistSpeedLimitCache();
+  }
   return { kmh: best.kmh, roadName: best.roadName, wayId: best.wayId, estimated: best.estimated, conditional: best.conditionalRaw };
 }
