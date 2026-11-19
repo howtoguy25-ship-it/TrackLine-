@@ -10,7 +10,7 @@ import { SchoolZoneLayer, type SchoolZoneDrawing } from "@/map-v2/layers/SchoolZ
 import { MapIcons, type IconExtras } from "@/map-v2/layers/MapIcons";
 import { UserPuck, BLANK_ICON } from "@/map-v2/layers/UserPuck";
 import { PresenceLayerV2, presenceIconName } from "@/map-v2/layers/PresenceLayerV2";
-import { splitRouteAt, turnArrowAt, type LatLng } from "@/map-v2/geo";
+import { turnArrowAt, type LatLng } from "@/map-v2/geo";
 import { iconsUsed, type MapPin } from "@/map-v2/pins";
 import { BADGE_CATEGORIES, badgeIconName } from "@/map/poiBadges";
 import type { PresenceDoc } from "@/services/presence";
@@ -25,6 +25,8 @@ import { GREEN, LAVENDER, PURPLE_BRIGHT, TRAFFIC } from "@/theme/colors";
 
 const ROUTE_PURPLE = colors.routePurple;
 const ROUTE_PURPLE_CASING = colors.routePurpleCasing;
+/** The live route is wider than in the preview so it reads at a glance while driving. */
+export const NAV_ROUTE_WIDTH = 11;
 const ROUTE_ALT = colors.routeAlt;
 // Traffic on a route: slow amber, heavy red (free-flowing stretches aren't coloured). A faster
 // route on offer is "good" green.
@@ -110,10 +112,6 @@ export function MapboxLayers(props: Props) {
     [props.presences]
   );
 
-  const split = useMemo(
-    () => (props.navRoute && user ? splitRouteAt(props.navRoute, user.coordinate) : null),
-    [props.navRoute, user]
-  );
   const turnArrow = useMemo(
     () => (props.nextTurn && props.remaining.length > 1 ? turnArrowAt(props.remaining, props.nextTurn) : []),
     [props.nextTurn, props.remaining]
@@ -134,18 +132,17 @@ export function MapboxLayers(props: Props) {
     <>
       <MapIcons names={iconNames} extras={extras} />
 
-      {/* Navigation: the part already driven fades, the rest is the purple band. */}
-      {split && split.travelled.length > 1 && (
-        <RouteLine id="nav-travelled" coordinates={split.travelled} color={ROUTE_PURPLE} width={8} opacity={0.3} />
-      )}
+      {/* Navigation: ONE purple line with one dark casing, from the arrow onwards (the part
+          already driven isn't drawn; it used to sit under the white-cased line ahead and look
+          doubled). Wider than in the preview. */}
       {props.remaining.length > 1 && (
         <RouteLine
           id="nav-route"
           coordinates={props.remaining}
           color={ROUTE_PURPLE}
-          width={8}
-          casingColor="#FFFFFF"
-          casingWidth={14}
+          width={NAV_ROUTE_WIDTH}
+          casingColor={ROUTE_PURPLE_CASING}
+          casingWidth={NAV_ROUTE_WIDTH + 4}
           onPress={props.onRoutePress}
         />
       )}

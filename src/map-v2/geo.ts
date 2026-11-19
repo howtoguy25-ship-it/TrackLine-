@@ -153,6 +153,29 @@ export function bearingBetween(a: LatLng, b: LatLng): number {
  * Splits a route at the point nearest the car: the part already driven (drawn faded) and the
  * part still ahead.
  */
+/**
+ * The route still ahead of `at`, starting exactly at `at`'s projection onto the nearest stretch
+ * of the route (not at the nearest corner point, which could be a block away), so the line
+ * starts under the arrow and the part already driven isn't drawn.
+ */
+export function routeAheadOf(route: readonly LatLng[], at: LatLng | null): LatLng[] {
+  if (!at || route.length < 2) return route.slice();
+  let best = { i: 0, t: 0, d: Infinity, point: route[0] };
+  for (let i = 0; i < route.length - 1; i++) {
+    const a = route[i];
+    const b = route[i + 1];
+    const kx = Math.cos((a.latitude * Math.PI) / 180);
+    const dx = (b.longitude - a.longitude) * kx;
+    const dy = b.latitude - a.latitude;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((at.longitude - a.longitude) * kx * dx + (at.latitude - a.latitude) * dy) / len2));
+    const point = { latitude: a.latitude + dy * t, longitude: a.longitude + (b.longitude - a.longitude) * t };
+    const d = metersBetween(point, at);
+    if (d < best.d) best = { i, t, d, point };
+  }
+  return [best.point, ...route.slice(best.i + 1)];
+}
+
 export function splitRouteAt(route: readonly LatLng[], at: LatLng | null): { travelled: LatLng[]; ahead: LatLng[] } {
   if (!at || route.length < 2) return { travelled: [], ahead: route.slice() };
   let best = 0;

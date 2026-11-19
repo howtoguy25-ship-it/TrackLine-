@@ -224,6 +224,8 @@ import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } 
 import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
+import { routeAheadOf } from "@/map-v2/geo";
+import { presencesToShow } from "@/map/presenceFilter";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
@@ -2094,16 +2096,11 @@ export function MapScreen() {
   // rather than its last published one (ADD-ON Part B).
   const MAX_VISIBLE_TRACKYS = 50;
   const visiblePresences = useMemo(() => {
-    if (!settings.showTrackysOnMap || presenceList.length === 0 || !currentLatLng) return [];
-    return presenceList
-      .filter((p) => !blockedUids.has(p.uid))
-      .sort(
-        (a, b) =>
-          haversineMeters(currentLatLng, { latitude: a.lat, longitude: a.lng }) -
-          haversineMeters(currentLatLng, { latitude: b.lat, longitude: b.lng })
-      )
-      .slice(0, MAX_VISIBLE_TRACKYS);
-  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap]);
+    if (!settings.showTrackysOnMap || !currentLatLng) return [];
+    // Never the driver's own Tracky / ghost: the server's list includes their own entry, and it
+    // used to be drawn on top of their arrow. Their own visibility shows only in the Menu.
+    return presencesToShow(presenceList, { ownUid: user?.uid ?? null, blocked: blockedUids, here: currentLatLng, max: MAX_VISIBLE_TRACKYS });
+  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap, user?.uid]);
   const presenceCellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
 
   const ownAppearance = useTrackyAppearance(settings.visibility === "ghost");
@@ -4744,22 +4741,10 @@ export function MapScreen() {
     if (!route) return [];
     const stepsAhead = route.steps.slice(activeStepIndex);
     if (stepsAhead.length === 0) return [];
-    const [currentStep, ...restSteps] = stepsAhead;
-    let currentStepPolyline = currentStep.polyline;
-    if (navLat != null && navLng != null && currentStepPolyline.length > 1) {
-      let nearestIdx = 0;
-      let nearestDist = Infinity;
-      for (let i = 0; i < currentStepPolyline.length; i++) {
-        const pt = currentStepPolyline[i];
-        const d = distanceKm(navLat, navLng, pt.latitude, pt.longitude);
-        if (d < nearestDist) {
-          nearestDist = d;
-          nearestIdx = i;
-        }
-      }
-      currentStepPolyline = currentStepPolyline.slice(nearestIdx);
-    }
-    return [...currentStepPolyline, ...restSteps.flatMap((s) => s.polyline)];
+    const ahead = stepsAhead.flatMap((s) => s.polyline);
+    // Starts exactly under the arrow (its projection onto the route), so there's no gap or spur
+    // between the arrow and the line, and the part already driven disappears behind it.
+    return routeAheadOf(ahead, navLat != null && navLng != null ? { latitude: navLat, longitude: navLng } : null);
   }, [route, activeStepIndex, navLat, navLng]);
   // How reports are drawn at the current zoom: grouped into counts when zoomed out, otherwise
   // one pin each, with reports on the active route a step larger.
