@@ -6,6 +6,28 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Nav options, fix pass 4, road signs, nothing-fake audit — 2026-11-22
+
+All in code, typechecked, tested (1090 tests, 76 suites) and merged to `claude/go-session-0d5bup`.
+Everything below NEEDS DEVICE TEST (TEST_ON_PHONE §33-38) and is in TestFlight build 208 onward.
+
+| Item | Status | Evidence |
+|---|---|---|
+| Nav options §1: control layout (compass, audio, sound, voice, info banner), ETA sheet option rows + Stop/Continue, Search along route with Toilets + Go, Routes bubbles | DONE | `__tests__/nav/navControls.test.tsx`, `__tests__/travel/etaSheet.test.tsx` |
+| Nav options §2: one `exitNavigation` for every way a drive ends, arrival card, "stop navigation" voice command, camera back home | DONE | `__tests__/nav/endDrive.test.ts` |
+| Nav options §3: simulated drive frames in `/docs/nav-options` | NOT DONE (no simulator / map tiles here; the layout and reset are covered by the tests above) | -- |
+| Speed-limit sign swaps between two roads in the same scene (root cause: 40 m last-road reuse + 25 m cell cache) | DONE | `__tests__/speedLimits/roadSwap.test.ts` |
+| CI red since ~run 57 (root cause: placeholder secrets in the emulator job) | DONE | workflows `tests.yml`, `firebase-deploy.yml` |
+| Plan a drive: permissions + save (root cause: the Firebase deploy has never run, so live rules lack `plannedDrives`) | DONE in code; **owner must run the Firebase deploy** | `__tests__/travel/planADrive.test.tsx`, emulator rules tests 48/48 |
+| Plan a drive look: segmented From and Arrive by / Leave at, short day pills, no hour chips, Jump to time (phone picker), Show later times, 64pt rows with relative traffic bars, Best time tag, selected outline | DONE (new native module: needs build 208) | `__tests__/travel/planADrive.test.tsx` |
+| Route preview: sheet 55% max, flat, no 3D buildings; starts collapsed; bubbles placed on screen and never overlapping (root cause: kept apart in metres only); every route visible at both sheet heights on 320-430 pt | DONE | `__tests__/nav/previewCamera.test.ts` |
+| Road features are alerts (route-ahead icons, chip countdown, voice at 300 m) | DONE | `__tests__/nav/roadFeatureAlerts.test.ts` |
+| Traffic lights, cameras, government hazards as our own road-sign art; cameras in view from zoom 12, lights at street level; every Live Traffic NSW incident a hazard triangle; tap shows what's happening, delay, impact, advice, source | DONE | `__tests__/map/roadSigns.test.tsx` |
+| Your own Tracky from an old guest/account uid no longer drawn | DONE | `__tests__/presence/ownUids.test.ts` |
+| Ad black bars | NEEDS A SCREENSHOT (not found in code) | -- |
+| `/docs/fix-pass-4` screenshots | NOT POSSIBLE here (no iOS simulator); the tests above are the evidence | -- |
+| Nothing-fake audit: sweep, 4 false "empty" states fixed, ESLint guard in CI | DONE | `REAL_AUDIT.md`, `__tests__/audit/nothingFake.test.tsx` |
+
 ## Nav permanent fix, shortcuts, driving sheets, Dashcam tracker — 2026-11-19
 
 | Section | Status | Evidence |

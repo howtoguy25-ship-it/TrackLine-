@@ -514,6 +514,52 @@ simulation in `docs/nav-fix/` and `__tests__/nav/staceyToBazentin.test.ts` drive
 2. Two cars crossing: each keeps its own box and number (no swapping).
 3. A bus or truck reads further away than a car with the same-size box; a motorbike closer.
 
+## 33. Ending a drive and the driving controls — NEEDS DEVICE TEST
+
+1. While driving: compass top-left; audio, sound and voice buttons top-right; nothing overlaps
+   the speedometer, Report or the bottom bar on your phone.
+2. Tap the time on the bottom bar: option rows (Share drive, Add a stop, Report, Sound & voice,
+   Map view, Dashcam, Avoid, Help), then **Stop** (asks to confirm) and **Continue**.
+3. Say "stop navigation" after tapping the voice button: the drive ends.
+4. Drive to the end: the arrival card (chequered flag) shows; Done (or 5 s) returns to the home
+   map with the camera back on you. Every way of ending leaves no sheet or banner behind.
+
+## 34. Plan a drive — NEEDS DEVICE TEST (and the Firebase deploy first)
+
+1. Owner: run Actions > "Deploy Firebase" once. Until then saving can fail on the live app.
+2. Menu > Plan a drive > pick a place. **From** is a segmented control (Here / Home / Work);
+   days are short pills (Today, Tomorrow, Wed 25); **Arrive by / Leave at** is segmented.
+3. No row of hour chips. The list starts at the next quarter hour (8 am on other days). **Jump to
+   time** opens the phone's own time wheel; Done moves the list there. **Show later times** adds 8.
+4. Each row is tall, with a coloured bar (green quickest, amber, red slowest of the shown times)
+   and **Best time** on the quickest. The chosen row has a blue outline. Save shows "Drive saved".
+
+## 35. Route preview — NEEDS DEVICE TEST
+
+1. Pick a destination: the routes sheet starts small; all routes fit above it, flat, north up.
+2. Pull the sheet up: it stops at about half the screen and the map re-fits so every route
+   still shows. The time bubbles never sit on top of each other (try two near-identical routes).
+
+## 36. Traffic lights, cameras and government hazards — NEEDS DEVICE TEST
+
+1. Home map, zoom in to a few streets: speed / red-light cameras show as a purple camera sign
+   (from suburb zoom); traffic lights as a small three-lamp light (only at street level).
+2. Live Traffic NSW roadworks, crashes, floods, fires, closures show as a coloured warning
+   triangle with a small "i". Tap one: the card shows the type, distance, where, the advice,
+   what's happening, the delay and "Major incident" when the feed says so, and the source.
+3. While driving, only the ones on your route ahead (1 km) show, with the alert chip.
+
+## 37. Speed sign between close roads — NEEDS DEVICE TEST
+
+Drive from a main road into a side street or slip lane next to it: the limit changes to the
+new road's within a few seconds (it used to stick to the first road).
+
+## 38. Nothing fake — NEEDS DEVICE TEST
+
+1. Airplane mode, open Menu: upcoming events show "Couldn't read your calendar, try again" only
+   if the calendar really can't be read; never "No upcoming events" for an error.
+2. Every list that can't load says so and offers Try again; no spinner runs forever.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the
