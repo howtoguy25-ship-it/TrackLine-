@@ -14,7 +14,7 @@ import {
   previewFitCoordinates,
   projectFitted,
 } from "@/nav/previewCamera";
-import { bubbleAnchors } from "@/map/routeChoices";
+import { bubbleAnchors, screenBubbleAnchors } from "@/map/routeChoices";
 
 // 323 Stacey St, Bankstown -> 40 Bazentin St, Belfield: three real-shaped alternatives.
 const START = { latitude: -33.9187, longitude: 151.0349 };
@@ -109,3 +109,66 @@ describe("fix pass 4: preview rules", () => {
     expect(src).toMatch(/show3DBuildings=\{settings\.show3DBuildings && !inRouteSelection\}/);
   });
 });
+
+describe("fix pass 4: every route and every bubble, at both sheet heights", () => {
+  const heights = (vp: { height: number }) => [vp.height * 0.28, vp.height * MAX_SHEET_FRACTION];
+  // Two near-identical routes (a 300 m side-street detour): the case that stacked bubbles.
+  const CLOSE = [
+    via([[-33.917, 151.045], [-33.913, 151.06], [-33.909, 151.074]]),
+    via([[-33.9175, 151.046], [-33.9155, 151.06], [-33.909, 151.075]]),
+    ...ROUTES.slice(1),
+  ];
+
+  it("every point of every route is inside the free area, collapsed and pulled up, on every phone", () => {
+    for (const routes of [ROUTES, CLOSE]) {
+      const coords = previewFitCoordinates(routes, START, END);
+      const fit = boundsOf(coords)!;
+      for (const vp of PHONES) {
+        for (const sheet of heights(vp)) {
+          const pad = previewEdgePadding(140, sheet);
+          expect(allVisible(projectFitted(coords, fit, vp, pad), vp, pad)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("bubbles never overlap and sit fully on screen, on every phone (320 included) at both heights", () => {
+    for (const routes of [ROUTES, CLOSE]) {
+      const coords = previewFitCoordinates(routes, START, END);
+      const fit = boundsOf(coords)!;
+      for (const vp of PHONES) {
+        for (const sheet of heights(vp)) {
+          for (const selected of routes.map((_, i) => i)) {
+            const pad = previewEdgePadding(140, sheet);
+            const anchors = screenBubbleAnchors(routes, selected, coords, vp, pad);
+            // The selected route always has its time.
+            expect(anchors[selected]).not.toBeNull();
+            const placed = anchors.filter((a): a is { latitude: number; longitude: number } => !!a);
+            const screen = projectFitted(placed, fit, vp, pad);
+            expect(bubblesOverlap(screen)).toBe(false);
+            for (const p of screen) {
+              expect(p.x - 42).toBeGreaterThanOrEqual(pad.left - 0.5);
+              expect(p.x + 42).toBeLessThanOrEqual(vp.width - pad.right + 0.5);
+              expect(p.y - 40).toBeGreaterThanOrEqual(pad.top - 0.5);
+              expect(p.y).toBeLessThanOrEqual(vp.height - pad.bottom + 0.5);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("with room, every route gets its bubble (none dropped needlessly)", () => {
+    const coords = previewFitCoordinates(ROUTES, START, END);
+    const vp = PHONES[2];
+    const anchors = screenBubbleAnchors(ROUTES, 0, coords, vp, previewEdgePadding(140, vp.height * 0.28));
+    expect(anchors.every(Boolean)).toBe(true);
+  });
+
+  it("the sheet starts collapsed (the list only shows when pulled up) and MapScreen places bubbles on screen", () => {
+    const sheet = readFileSync("src/components/RouteSelection.tsx", "utf8");
+    expect(sheet).toMatch(/const \[expanded, setExpanded\] = useState\(false\)/);
+    expect(readFileSync("src/screens/MapScreen.tsx", "utf8")).toMatch(/screenBubbleAnchors\(/);
+  });
+});
+

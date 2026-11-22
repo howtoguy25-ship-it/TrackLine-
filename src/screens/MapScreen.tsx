@@ -168,7 +168,7 @@ import {
   avoidPillLabel,
   avoidCount,
   avoidRouteOptions,
-  bubbleAnchors,
+  screenBubbleAnchors,
   distinctRoutes,
   formatRouteDuration,
   routeHasUturn,
@@ -4102,14 +4102,20 @@ export function MapScreen() {
     const indices = selectionRoutes.map((_, i) => i).filter((i) => i < MAX_DRAWN_ROUTES || i === selectionIndex);
     return indices.map((index) => ({ index, line: detailedRoutePolyline(selectionRoutes[index]) }));
   }, [selectionRoutes, selectionIndex]);
-  const selectionBubbleAnchors = useMemo(
-    () =>
-      bubbleAnchors(
-        drawnSelection.map((d) => d.line),
-        Math.max(0, drawnSelection.findIndex((d) => d.index === selectionIndex))
-      ),
-    [drawnSelection, selectionIndex]
-  );
+  // Placed on screen, not just on the ground: inside the area the camera fits the routes into
+  // (the top card and the sheet's current height left out) and never on top of each other.
+  const selectionBubbleAnchors = useMemo(() => {
+    const lines = drawnSelection.map((d) => d.line);
+    const selectedPos = Math.max(0, drawnSelection.findIndex((d) => d.index === selectionIndex));
+    const fitLines = previewFit.lines.length ? previewFit.lines : lines;
+    return screenBubbleAnchors(
+      lines,
+      selectedPos,
+      previewFitCoordinates(fitLines, routeOriginLatLng, pendingDestination?.location ?? null),
+      { width: windowWidth, height: windowHeight },
+      previewEdgePadding(routeTopCardBottom, routeSheetHeight)
+    );
+  }, [drawnSelection, selectionIndex, previewFit, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
   const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
   const selectedTrafficStretches = useMemo(() => {
     const r = selectionRoutes[selectionIndex];

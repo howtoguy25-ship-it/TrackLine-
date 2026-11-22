@@ -3,6 +3,7 @@
 // map. Nothing here fetches or renders -- see services/directions.ts (getRouteChoices) for the
 // request and components/RouteSelection.tsx for the screen. Checked in scripts/test-ui-logic.ts.
 import type { LatLng } from "@/utils/polyline";
+import { BUBBLE_SIZE, boundsOf, projectFitted, type EdgePadding } from "@/nav/previewCamera";
 
 /** The parts of a route these rules look at -- a services/directions.ts Route satisfies it. */
 export interface ChoiceRoute {
@@ -392,6 +393,68 @@ export function bubbleAnchors(polylines: LatLng[][], selectedIndex: number): (La
     }
     placed.push(best);
     result[i] = best;
+  }
+  return result;
+}
+
+/**
+ * Time-bubble points that are also right ON SCREEN, after the preview camera has fitted every
+ * route into the space the top card and sheet leave: each bubble (84 x 40, pointer at the bottom
+ * centre) lies fully inside that free area and never overlaps another bubble (6pt apart at least).
+ * Root cause of bubbles stacking on top of each other: bubbleAnchors only kept them apart in
+ * metres, and two routes 300 m apart are a few points apart on a small phone. Among the points that
+ * fit, the one furthest from the other routes still wins. The selected route always gets a bubble;
+ * another route whose bubble can't fit anywhere without overlapping gets none (it's still drawn,
+ * tappable and in the list) rather than one on top of another.
+ */
+export function screenBubbleAnchors(
+  polylines: LatLng[][],
+  selectedIndex: number,
+  fitPoints: LatLng[],
+  viewport: { width: number; height: number },
+  padding: EdgePadding,
+  size: { width: number; height: number } = BUBBLE_SIZE,
+  gap = 6
+): (LatLng | null)[] {
+  const fit = boundsOf(fitPoints);
+  const result: (LatLng | null)[] = polylines.map(() => null);
+  if (!fit) return result;
+  const order = [selectedIndex, ...polylines.map((_, i) => i).filter((i) => i !== selectedIndex)];
+  const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
+  const boxAt = (s: { x: number; y: number }) => ({ x0: s.x - size.width / 2, x1: s.x + size.width / 2, y0: s.y - size.height, y1: s.y });
+  const inside = (b: { x0: number; x1: number; y0: number; y1: number }) =>
+    b.x0 >= padding.left && b.x1 <= viewport.width - padding.right && b.y0 >= padding.top && b.y1 <= viewport.height - padding.bottom;
+  const clear = (b: { x0: number; x1: number; y0: number; y1: number }) =>
+    boxes.every((o) => b.x1 + gap <= o.x0 || o.x1 + gap <= b.x0 || b.y1 + gap <= o.y0 || o.y1 + gap <= b.y0);
+  for (const i of order) {
+    const line = polylines[i];
+    if (!line || line.length === 0) continue;
+    const samples = samplePolyline(line, 61).slice(3, -3);
+    const candidates = samples.length > 0 ? samples : [line[Math.floor(line.length / 2)]];
+    const screen = projectFitted(candidates, fit, viewport, padding);
+    const others = polylines.filter((_, j) => j !== i);
+    let best = -1;
+    let bestScore = -Infinity;
+    for (let k = 0; k < candidates.length; k++) {
+      const box = boxAt(screen[k]);
+      if (!inside(box) || !clear(box)) continue;
+      // Prefer where this line is clearly its own; then the middle of the route.
+      const apart = others.length ? Math.min(...others.map((o) => distanceToPolylineMeters(candidates[k], o))) : 0;
+      const middle = -Math.abs(k - candidates.length / 2);
+      const score = Math.min(apart, 400) * 1000 + middle;
+      if (score > bestScore) {
+        bestScore = score;
+        best = k;
+      }
+    }
+    if (best < 0 && i === selectedIndex) {
+      // The selected route always shows its time: the least-bad clear spot, else its middle.
+      best = screen.findIndex((s) => clear(boxAt(s)));
+      if (best < 0) best = Math.floor(candidates.length / 2);
+    }
+    if (best < 0) continue;
+    boxes.push(boxAt(screen[best]));
+    result[i] = candidates[best];
   }
   return result;
 }
