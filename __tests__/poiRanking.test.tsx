@@ -12,7 +12,6 @@ import {
   popularityKey,
   popularityScore,
   rankBadges,
-  rankedBadgeCollection,
   visibleAtZoom,
   type BadgeCandidate,
 } from "@/map/poiRanking";

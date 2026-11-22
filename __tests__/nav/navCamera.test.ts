@@ -28,7 +28,7 @@ describe("navigation camera", () => {
   });
 
   it("building extrusions are off by default while driving", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { DEFAULT_SETTINGS } = require("@/services/settings");
     expect(navBuildingsRaised(DEFAULT_SETTINGS.show3DBuildings)).toBe(false);
   });

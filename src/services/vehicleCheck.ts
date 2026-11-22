@@ -55,11 +55,11 @@ export async function retrySection(reportId: string, section: SectionKey): Promi
   return res.data as { outcome: string; message?: string };
 }
 
-export function subscribeReport(uid: string, reportId: string, onChange: (r: VehicleReport | null) => void): Unsubscribe {
+export function subscribeReport(uid: string, reportId: string, onChange: (r: VehicleReport | null) => void, onError?: () => void): Unsubscribe {
   return onSnapshot(
     doc(db, "users", uid, "vehicleChecks", reportId),
     (snap) => onChange(snap.exists() ? ({ id: snap.id, ...snap.data() } as VehicleReport) : null),
-    () => onChange(null)
+    () => (onError ? onError() : onChange(null))
   );
 }
 

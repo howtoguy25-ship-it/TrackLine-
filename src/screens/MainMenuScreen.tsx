@@ -91,27 +91,29 @@ export function MainMenuScreen() {
   const [calendarStatus, setCalendarStatus] = useState<"granted" | "denied" | "undetermined" | null>(null);
   const [events, setEvents] = useState<UpcomingDriveEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  // A calendar that couldn't be read says so; it never shows as "no events".
+  const [eventsError, setEventsError] = useState(false);
+  const loadEvents = () => {
+    setEventsLoading(true);
+    setEventsError(false);
+    getUpcomingEventsWithLocation()
+      .then(setEvents)
+      .catch(() => setEventsError(true))
+      .finally(() => setEventsLoading(false));
+  };
   useEffect(() => {
-    getCalendarPermissionStatus().then((status) => {
-      setCalendarStatus(status);
-      if (status === "granted") {
-        setEventsLoading(true);
-        getUpcomingEventsWithLocation()
-          .then(setEvents)
-          .finally(() => setEventsLoading(false));
-      }
-    });
+    getCalendarPermissionStatus()
+      .then((status) => {
+        setCalendarStatus(status);
+        if (status === "granted") loadEvents();
+      })
+      .catch(() => setCalendarStatus("undetermined"));
   }, []);
 
   const onConnectCalendar = async () => {
     const granted = await requestCalendarAccess();
     setCalendarStatus(granted ? "granted" : "denied");
-    if (granted) {
-      setEventsLoading(true);
-      getUpcomingEventsWithLocation()
-        .then(setEvents)
-        .finally(() => setEventsLoading(false));
-    }
+    if (granted) loadEvents();
   };
 
   const [drivingToEventId, setDrivingToEventId] = useState<string | null>(null);
@@ -244,6 +246,8 @@ export function MainMenuScreen() {
           </Pressable>
         ) : eventsLoading ? (
           <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.sm }} />
+        ) : eventsError ? (
+          <Button variant="ghost" icon="refresh" label="Couldn't read your calendar, try again" onPress={loadEvents} testID="menu-events-retry" />
         ) : events.length === 0 ? (
           <Text style={styles.emptyEventsText}>No upcoming events with a location in the next 7 days.</Text>
         ) : (

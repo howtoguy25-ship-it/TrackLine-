@@ -1,6 +1,6 @@
 // The build-time Mapbox token check: a placeholder, a secret token or junk fails an EAS build.
 import { describe, expect, it } from "@jest/globals";
-/* eslint-disable @typescript-eslint/no-require-imports */
+ 
 const { mapboxTokenProblem } = require("../scripts/mapboxTokenCheck");
 
 describe("Mapbox token build check", () => {

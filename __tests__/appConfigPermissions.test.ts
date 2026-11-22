@@ -1,7 +1,7 @@
 // Apple rejects an upload whose binary uses the camera, microphone, photos or speech without the
 // matching Info.plist text -- the build is accepted by EAS but never appears in TestFlight
 // (builds 189-201: expo-image-picker's `cameraPermission: false` deleted NSCameraUsageDescription).
-/* eslint-disable @typescript-eslint/no-require-imports */
+ 
 import { describe, expect, test } from "@jest/globals";
 const config = require("../app.config.js").expo;
 

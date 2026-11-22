@@ -16,6 +16,30 @@ module.exports = defineConfig([
     rules: { "react-hooks/preserve-manual-memoization": "off" },
   },
   {
+    // Nothing fake in the shipped app (REAL_AUDIT.md): production code can't import test
+    // fixtures, mocks, stubs or the test support folder, and can't name a value MOCK_/FAKE_/DUMMY_.
+    // Dev-only tools live in src/dev and are only reachable behind __DEV__.
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["**/__tests__/**", "**/__mocks__/**", "**/fixtures/**", "**/support/stubs*"], message: "Production code must not use test fixtures or mocks." },
+            { group: ["**/*mock*", "**/*Mock*", "**/*fake*", "**/*Fake*"], message: "Production code must not import mocks or fakes." },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "VariableDeclarator[id.name=/^(MOCK|FAKE|DUMMY)_|^SAMPLE_(REPORT|DATA|RESULT)|^(mock|fake|dummy)[A-Z]/]",
+          message: "No mock, fake or dummy data in production code: use the real source, or an honest 'not available' state.",
+        },
+      ],
+    },
+  },
+  {
     // Jest tests: jest.mock() calls must come before the imports they replace, and a mock
     // factory can only reach outside values through require().
     files: ["__tests__/**/*.{ts,tsx}", "jest.setup.js"],

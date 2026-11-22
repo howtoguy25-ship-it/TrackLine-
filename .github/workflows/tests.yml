@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit -p .
+      - name: Lint the app (includes the no-mocks / no-fakes guard, REAL_AUDIT.md)
+        run: npx eslint src __tests__ jest.setup.js --max-warnings 0
       - name: App tests
         run: npx jest --ci
       - name: Script tests (scripts/test-*.ts)

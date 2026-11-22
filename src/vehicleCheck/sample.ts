@@ -4,6 +4,7 @@
 // placeholder pattern, so it can never be mistaken for a real check.
 import type { VehicleReport } from "@/vehicleCheck/model";
 
+// eslint-disable-next-line no-restricted-syntax -- the one labelled example (banner "Sample report: example data, not a real vehicle"), shown only when the buyer taps "See a sample report"; REAL_AUDIT.md
 export const SAMPLE_REPORT: VehicleReport = {
   id: "sample",
   sample: true,
