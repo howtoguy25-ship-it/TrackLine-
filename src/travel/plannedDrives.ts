@@ -79,6 +79,67 @@ export function timeSlots(dayStartMs: number, hour: number, nowMs: number, count
   return out;
 }
 
+/** Short day pill text: "Today", "Tomorrow", then "Wed 25". */
+export function dayPillLabel(dayStartMs: number, nowMs: number): string {
+  const long = dayLabel(dayStartMs, nowMs);
+  if (long === "Today" || long === "Tomorrow") return long;
+  const d = new Date(dayStartMs);
+  return `${d.toLocaleDateString([], { weekday: "short" })} ${d.getDate()}`;
+}
+
+const QUARTER_MS = SLOT_MINUTES * 60_000;
+const ceilQuarter = (ms: number) => Math.ceil(ms / QUARTER_MS) * QUARTER_MS;
+
+/**
+ * Where the list of times starts for a day: a planned time an hour before it (so it's in the
+ * list with earlier options above), today the next quarter hour, any other day 8 am.
+ */
+export function defaultWindowStart(dayStartMs: number, nowMs: number, targetMs: number | null = null): number {
+  const dayEnd = addDays(dayStartMs, 1);
+  if (targetMs != null && targetMs >= dayStartMs && targetMs < dayEnd) return Math.max(ceilQuarter(nowMs), ceilQuarter(targetMs) - 60 * 60_000);
+  if (dayStartMs === startOfDay(nowMs)) return ceilQuarter(nowMs);
+  const d = new Date(dayStartMs);
+  d.setHours(8, 0, 0, 0);
+  return d.getTime();
+}
+
+/** `count` quarter-hour times from `startMs` (rounded up), never in the past, never past the day. */
+export function windowSlots(startMs: number, nowMs: number, count = SLOTS_SHOWN): number[] {
+  const dayEnd = addDays(startOfDay(startMs), 1);
+  const out: number[] = [];
+  for (let t = ceilQuarter(startMs); out.length < count && t < dayEnd; t += QUARTER_MS) if (t > nowMs) out.push(t);
+  return out;
+}
+
+/** "Jump to time": the picked clock time on the chosen day, as the new start of the list. */
+export function jumpTo(dayStartMs: number, picked: Date): number {
+  const d = new Date(dayStartMs);
+  d.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+  return Math.floor(d.getTime() / QUARTER_MS) * QUARTER_MS;
+}
+
+export type TrafficLevel = "best" | "light" | "moderate" | "heavy";
+
+/**
+ * Each row's traffic bar, relative to the other times shown (so the difference is visible even
+ * when every time is close): the quickest is the shortest bar, the slowest fills the row. The
+ * level is how much slower than the quickest: within 5% light, within 20% moderate, else heavy.
+ */
+export function trafficBars(durations: Record<number, number>): Record<number, { fraction: number; level: TrafficLevel }> {
+  const values = Object.values(durations);
+  const out: Record<number, { fraction: number; level: TrafficLevel }> = {};
+  if (!values.length) return out;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  for (const [k, d] of Object.entries(durations)) {
+    const fraction = max === min ? 0.35 : 0.25 + (0.75 * (d - min)) / (max - min);
+    const over = (d - min) / Math.max(1, min);
+    const level: TrafficLevel = d === min ? "best" : over <= 0.05 ? "light" : over <= 0.2 ? "moderate" : "heavy";
+    out[Number(k)] = { fraction, level };
+  }
+  return out;
+}
+
 export type Predict = (departMs: number) => Promise<number>;
 
 /**

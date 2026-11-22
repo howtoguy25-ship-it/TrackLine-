@@ -4,6 +4,13 @@
 require("react-native-gesture-handler/jestSetup");
 jest.mock("react-native-worklets", () => require("react-native-worklets/src/mock"));
 jest.mock("react-native-reanimated", () => require("react-native-reanimated/mock"));
+// The platform time picker is native; tests get a plain view that reports its props.
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  const Picker = (props) => React.createElement(View, { testID: "native-time-picker", ...props });
+  return { __esModule: true, default: Picker, DateTimePickerAndroid: { open: jest.fn(), dismiss: jest.fn() } };
+});
 // Native-only SDKs pulled in by config/env.ts and services/sentry.ts.
 jest.mock("react-native-google-mobile-ads", () => ({
   TestIds: { BANNER: "test-banner", APP_OPEN: "test-app-open", INTERSTITIAL: "test-interstitial" },

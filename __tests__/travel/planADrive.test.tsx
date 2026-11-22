@@ -206,3 +206,76 @@ describe("Plan a drive screen", () => {
     expect(screen.getByTestId("plan-save").props.accessibilityState?.disabled).toBe(true);
   });
 });
+
+describe("fix pass 4: the Plan a drive look", () => {
+  const t = require("@/travel/plannedDrives") as typeof import("@/travel/plannedDrives");
+  const Q = 15 * 60_000;
+
+  it("short day pills, and the list window: next quarter hour today, 8 am other days, an hour before a planned time", () => {
+    expect(t.dayPillLabel(dayStart(NOW), NOW)).toBe("Today");
+    expect(t.dayPillLabel(dayChoices(NOW)[1].dayStartMs, NOW)).toBe("Tomorrow");
+    expect(t.dayPillLabel(dayChoices(NOW)[3].dayStartMs, NOW)).toMatch(/^\w{2,4}\.? \d{1,2}$/);
+    expect(t.defaultWindowStart(dayStart(NOW), NOW)).toBe(new Date(2026, 10, 17, 7, 45).getTime());
+    const tomorrow = dayChoices(NOW)[1].dayStartMs;
+    expect(new Date(t.defaultWindowStart(tomorrow, NOW)).getHours()).toBe(8);
+    const planned = new Date(2026, 10, 18, 9, 10).getTime();
+    expect(t.defaultWindowStart(tomorrow, NOW, planned)).toBe(new Date(2026, 10, 18, 8, 15).getTime());
+  });
+
+  it("quarter-hour times from the window start, never past or past midnight; Jump to time lands on a quarter hour", () => {
+    const slots = t.windowSlots(new Date(2026, 10, 17, 7, 31).getTime(), NOW, 8);
+    expect(slots).toHaveLength(8);
+    expect(slots[0]).toBe(new Date(2026, 10, 17, 7, 45).getTime());
+    for (let i = 1; i < slots.length; i++) expect(slots[i] - slots[i - 1]).toBe(Q);
+    expect(t.windowSlots(new Date(2026, 10, 17, 23, 30).getTime(), NOW, 8)).toHaveLength(2);
+    expect(t.jumpTo(dayStart(NOW), new Date(2000, 0, 1, 17, 52))).toBe(new Date(2026, 10, 17, 17, 45).getTime());
+  });
+
+  it("traffic bars are relative to the times shown: quickest shortest and 'best', slowest full and 'heavy'", () => {
+    const bars = t.trafficBars({ 1: 1200, 2: 1250, 3: 1400, 4: 1800 });
+    expect(bars[1]).toEqual({ fraction: 0.25, level: "best" });
+    expect(bars[2].level).toBe("light");
+    expect(bars[3].level).toBe("moderate");
+    expect(bars[4]).toEqual({ fraction: 1, level: "heavy" });
+    expect(t.trafficBars({})).toEqual({});
+  });
+
+  it("From and Arrive by / Leave at are segmented controls; no hour chips; 64pt rows with a bar, Best time and a selected outline", async () => {
+    mockParams.current = { initialDestination: { placeId: "p9", name: "Office", address: "", location: { latitude: -33.87, longitude: 151.21 } } };
+    let n = 0;
+    mockDirections.mockImplementation(() => Promise.resolve({ durationSeconds: 1200 + (n++ % 4) * 120 }));
+    await render(<PlanADriveScreen />);
+    expect(screen.getByTestId("plan-from-here").props.accessibilityRole).toBe("tab");
+    expect(screen.getByTestId("plan-mode-arrive").props.accessibilityRole).toBe("tab");
+    expect(screen.getByTestId("plan-days")).toBeTruthy();
+    // The old hour-chip row is gone: no chip reads like a bare hour ("8:00 am").
+    expect(screen.queryAllByRole("button", { name: /^\d{1,2}:00\s?(am|pm)$/i })).toHaveLength(0);
+    await fireEvent.press(screen.getByTestId("plan-mode-leave"));
+    await waitFor(() => expect(screen.getByTestId("plan-best")).toBeTruthy());
+    expect(screen.getAllByTestId(/^plan-bar-/).length).toBeGreaterThan(1);
+    const row = screen.getAllByTestId(/^plan-slot-/)[0];
+    const flat = (el: { props: Record<string, any> }) => Object.assign({}, ...[typeof el.props.style === "function" ? el.props.style({ pressed: false }) : el.props.style].flat(5).filter(Boolean));
+    expect(flat(row).minHeight).toBe(64);
+    await fireEvent.press(row);
+    const selected = screen.getAllByTestId(/^plan-slot-/)[0];
+    expect(flat(selected)).toMatchObject({ borderWidth: 2 });
+    expect(selected.props.accessibilityState).toMatchObject({ selected: true });
+  });
+
+  it("Jump to time opens the phone's time picker; Done moves the list there", async () => {
+    mockParams.current = { initialDestination: { placeId: "p10", name: "Office", address: "", location: { latitude: -33.87, longitude: 151.21 } } };
+    mockDirections.mockResolvedValue({ durationSeconds: 1500 });
+    await render(<PlanADriveScreen />);
+    // Tomorrow, so 10 pm is always in the future whatever the real clock says.
+    await fireEvent.press(screen.getByTestId("plan-day-Tomorrow"));
+    await fireEvent.press(screen.getByTestId("plan-jump"));
+    const picker = screen.getByTestId("native-time-picker");
+    expect(picker.props).toMatchObject({ mode: "time", minuteInterval: 15 });
+    const target = new Date();
+    target.setHours(22, 0, 0, 0);
+    await act(async () => picker.props.onChange({ type: "set" }, target));
+    await fireEvent.press(screen.getByTestId("plan-jump-done"));
+    const first = screen.getAllByTestId(/^plan-slot-/)[0].props.testID as string;
+    expect(new Date(Number(first.replace("plan-slot-", ""))).getHours()).toBe(22);
+  });
+});

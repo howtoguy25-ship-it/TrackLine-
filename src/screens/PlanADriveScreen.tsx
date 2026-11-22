@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Pressable, StyleSheet, FlatList, ScrollView, SectionList, ActivityIndicator, Keyboard, Alert, Share, Switch } from "react-native";
+import { View, Pressable, StyleSheet, FlatList, ScrollView, SectionList, ActivityIndicator, Keyboard, Alert, Share, Switch, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -22,16 +22,24 @@ import { syncLeaveReminders } from "@/services/plannedDriveReminders";
 import { getCalendarPermissionStatus, getUpcomingEventsWithLocation, requestCalendarAccess, type UpcomingDriveEvent } from "@/services/calendarEvents";
 import { distanceKm } from "@/utils/geo";
 import {
+  SLOTS_SHOWN,
   dayChoices,
+  dayPillLabel,
+  defaultWindowStart,
   groupDrives,
-  hourChoices,
+  jumpTo,
   planFor,
-  timeSlots,
+  trafficBars,
+  windowSlots,
   type PlannedDrive,
+  type TrafficLevel,
   type PlannedPlace,
 } from "@/travel/plannedDrives";
 import { formatArrivalClock, formatDistance, formatDurationText } from "@/utils/navFormat";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { GREEN, TRAFFIC } from "@/theme/colors";
+import { Segmented } from "@/components/ui/Segmented";
+import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 
 // Plan a drive (main menu): your planned drives grouped by day, or Tracky's empty state; then
 // pick where to, from where, which day, and arrive by / leave at one of the 15-minute times,
@@ -540,6 +548,41 @@ function DestinationSearch({ onPick }: { onPick: (p: PlaceDetails) => void }) {
 
 // ---- When ------------------------------------------------------------------------------------
 
+/** Each time row is 64pt tall, with a bar showing its drive time against the others. */
+export const SLOT_ROW_HEIGHT = 64;
+const BAR_COLOUR: Record<TrafficLevel, string> = { best: GREEN, light: GREEN, moderate: TRAFFIC.slow, heavy: TRAFFIC.heavy };
+
+/**
+ * "Jump to time": the phone's own time picker, in quarter hours. Android shows its clock dialog;
+ * iOS shows the wheel inline with a Done button.
+ */
+function JumpToTime({ initial, onDone }: { initial: number; onDone: (picked: Date | null) => void }) {
+  const [value, setValue] = useState(() => new Date(initial));
+  const doneRef = useRef(onDone);
+  useEffect(() => {
+    doneRef.current = onDone;
+  });
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    DateTimePickerAndroid.open({
+      value: new Date(initial),
+      mode: "time",
+      minuteInterval: 15,
+      onChange: (event, date) => doneRef.current(event.type === "set" && date ? date : null),
+    });
+  }, [initial]);
+  if (Platform.OS === "android") return null;
+  return (
+    <View style={styles.jumpCard} testID="plan-jump-picker">
+      <DateTimePicker value={value} mode="time" display="spinner" minuteInterval={15} onChange={(_, date) => date && setValue(date)} />
+      <View style={styles.jumpActions}>
+        <Button variant="ghost" label="Cancel" onPress={() => onDone(null)} testID="plan-jump-cancel" />
+        <Button variant="primary" label="Done" onPress={() => onDone(value)} testID="plan-jump-done" />
+      </View>
+    </View>
+  );
+}
+
 type SlotResult = { status: "ok"; leaveAtMs: number; durationSeconds: number } | { status: "error"; message: string };
 
 // Predictions already asked for in the last 10 minutes, so going back to an hour doesn't ask again.
@@ -572,9 +615,22 @@ function TimePicker({
   const [fromKey, setFromKey] = useState<"here" | "home" | "work">("here");
   const initialDay = initialTime ? new Date(new Date(initialTime.targetMs).setHours(0, 0, 0, 0)).getTime() : null;
   const [dayStartMs, setDayStartMs] = useState(initialDay && days.some((d) => d.dayStartMs === initialDay) ? initialDay : days[0].dayStartMs);
-  const hours = useMemo(() => hourChoices(dayStartMs, now), [dayStartMs, now]);
-  const [pickedHour, setPickedHour] = useState<number | null>(initialTime ? new Date(initialTime.targetMs).getHours() : null);
-  const hour = pickedHour != null && hours.includes(pickedHour) ? pickedHour : hours[0] ?? 8;
+  // The list of times: 8 quarter hours from windowStart, "Show later times" adds 8 more, and
+  // "Jump to time" moves the start (the platform's own time picker). No hour-chip row.
+  const [windowStart, setWindowStart] = useState(() => defaultWindowStart(dayStartMs, now, initialTime?.targetMs ?? null));
+  const [slotCount, setSlotCount] = useState(SLOTS_SHOWN);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const pickDay = (day: number) => {
+    setDayStartMs(day);
+    setWindowStart(defaultWindowStart(day, now));
+    setSlotCount(SLOTS_SHOWN);
+  };
+  const onJump = (picked: Date | null) => {
+    setJumpOpen(false);
+    if (!picked) return;
+    setWindowStart(jumpTo(dayStartMs, picked));
+    setSlotCount(SLOTS_SHOWN);
+  };
   const [mode, setMode] = useState<PlannedDrive["mode"]>(initialTime?.mode ?? "arrive");
   // A calendar event's start isn't always on a quarter hour: round up to the next one shown.
   const [selected, setSelected] = useState<number | null>(initialTime ? Math.ceil(initialTime.targetMs / 900_000) * 900_000 : null);
@@ -587,7 +643,8 @@ function TimePicker({
   ];
   const from = fromOptions.find((o) => o.key === fromKey)?.place ?? null;
 
-  const slots = useMemo(() => (hours.length ? timeSlots(dayStartMs, hour, now) : []), [dayStartMs, hour, now, hours.length]);
+  const slots = useMemo(() => windowSlots(windowStart, now, slotCount), [windowStart, now, slotCount]);
+  const moreLater = windowSlots(windowStart, now, slotCount + 1).length > slots.length;
   const key = from ? `${from.lat},${from.lng}|${destination.placeId}|${mode}|${slots.join(",")}` : null;
   const [results, setResults] = useState<{ key: string; bySlot: Record<number, SlotResult> } | null>(null);
   const bySlot = useMemo<Record<number, SlotResult>>(() => (results && results.key === key ? results.bySlot : {}), [results, key]);
@@ -635,7 +692,14 @@ function TimePicker({
     return best;
   }, [slots, bySlot]);
 
-  const longest = Math.max(1, ...slots.map((sl) => (bySlot[sl]?.status === "ok" ? (bySlot[sl] as { durationSeconds: number }).durationSeconds : 0)));
+  const bars = useMemo(() => {
+    const durations: Record<number, number> = {};
+    for (const sl of slots) {
+      const r = bySlot[sl];
+      if (r?.status === "ok") durations[sl] = r.durationSeconds;
+    }
+    return trafficBars(durations);
+  }, [slots, bySlot]);
   const chosen = selected != null && slots.includes(selected) ? bySlot[selected] : undefined;
 
   const save = async () => {
@@ -661,15 +725,13 @@ function TimePicker({
   return (
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={styles.timeContent} keyboardShouldPersistTaps="handled">
+        <Segmented
+          options={fromOptions.map((o) => ({ key: o.key, label: o.key === "here" ? "Here" : o.label, disabled: !o.place }))}
+          value={fromKey}
+          onChange={setFromKey}
+          testID="plan-from"
+        />
         <View style={styles.card}>
-          <View style={styles.fromToRow}>
-            <Text style={styles.fromToLabel}>From</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {fromOptions.map((o) => (
-                <Chip key={o.key} label={o.label} selected={fromKey === o.key} onPress={() => setFromKey(o.key)} disabled={!o.place} testID={`plan-from-${o.key}`} />
-              ))}
-            </ScrollView>
-          </View>
           <Pressable style={styles.fromToRow} onPress={onChangeDestination} accessibilityRole="button" accessibilityLabel={`To ${destination.name}. Change`}>
             <Text style={styles.fromToLabel}>To</Text>
             <Text style={styles.toName} numberOfLines={1} testID="plan-to">
@@ -679,26 +741,28 @@ function TimePicker({
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} testID="plan-days">
           {days.map((d) => (
-            <Chip key={d.dayStartMs} label={d.label} selected={dayStartMs === d.dayStartMs} onPress={() => setDayStartMs(d.dayStartMs)} testID={`plan-day-${d.label}`} />
+            <Chip key={d.dayStartMs} label={dayPillLabel(d.dayStartMs, now)} selected={dayStartMs === d.dayStartMs} onPress={() => pickDay(d.dayStartMs)} testID={`plan-day-${d.label}`} />
           ))}
         </ScrollView>
 
-        <View style={styles.chipRow}>
-          <Chip label="Arrive by" selected={mode === "arrive"} onPress={() => setMode("arrive")} testID="plan-mode-arrive" />
-          <Chip label="Leave at" selected={mode === "leave"} onPress={() => setMode("leave")} testID="plan-mode-leave" />
-        </View>
+        <Segmented
+          options={[
+            { key: "arrive", label: "Arrive by" },
+            { key: "leave", label: "Leave at" },
+          ]}
+          value={mode}
+          onChange={setMode}
+          testID="plan-mode"
+        />
 
-        {hours.length ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {hours.map((h) => (
-              <Chip key={h} label={formatArrivalClock(new Date(dayStartMs).setHours(h, 0, 0, 0))} selected={hour === h} onPress={() => setPickedHour(h)} />
-            ))}
-          </ScrollView>
-        ) : (
-          <Text style={styles.quiet}>No times left today. Pick another day.</Text>
-        )}
+        <View style={styles.listHeader}>
+          <Text style={styles.listHeaderText}>{mode === "arrive" ? "Arrive by" : "Leave at"}</Text>
+          <Button variant="ghost" size="medium" icon="time" label="Jump to time" onPress={() => setJumpOpen(true)} testID="plan-jump" />
+        </View>
+        {jumpOpen ? <JumpToTime initial={slots[0] ?? windowStart} onDone={onJump} /> : null}
+        {slots.length === 0 ? <Text style={styles.quiet}>No times left today. Pick another day.</Text> : null}
 
         {!from ? <Text style={styles.errorText}>Turn on location, or pick Home or Work, to plan from there.</Text> : null}
 
@@ -728,19 +792,33 @@ function TimePicker({
               <Text style={styles.slotClock}>{clock}</Text>
               {label ? (
                 <View style={styles.flex}>
-                  <Text style={[styles.slotDetail, r?.status === "error" && styles.slotError]} numberOfLines={2}>
-                    {label}
-                  </Text>
-                  {r?.status === "ok" ? <View style={[styles.slotBar, { width: `${Math.round((r.durationSeconds / longest) * 100)}%` }]} /> : null}
+                  <View style={styles.slotTop}>
+                    <Text style={[styles.slotDetail, r?.status === "error" && styles.slotError]} numberOfLines={2}>
+                      {label}
+                    </Text>
+                    {quickest === slot ? (
+                      <View style={styles.bestTag} testID="plan-best">
+                        <Text style={styles.bestTagText}>Best time</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {r?.status === "ok" && bars[slot] ? (
+                    <View style={styles.slotTrack}>
+                      <View
+                        style={[styles.slotBar, { width: `${Math.round(bars[slot].fraction * 100)}%`, backgroundColor: BAR_COLOUR[bars[slot].level] }]}
+                        testID={`plan-bar-${bars[slot].level}`}
+                      />
+                    </View>
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.slotSkeleton} />
               )}
-              {quickest === slot ? <Text style={styles.quickTag}>Best time</Text> : null}
               {isSel ? <Icon name="checkmark" size={20} color={colors.accent} /> : null}
             </Pressable>
           );
         })}
+        {moreLater ? <Button variant="secondary" label="Show later times" onPress={() => setSlotCount((n) => n + SLOTS_SHOWN)} testID="plan-more" /> : null}
         <Text style={styles.quiet}>Drive times are Google&apos;s traffic predictions for each time. We&apos;ll re-check 30 minutes before you leave.</Text>
         {saving.error ? <Text style={styles.errorText}>{saving.error}</Text> : null}
       </ScrollView>
@@ -787,7 +865,7 @@ const styles = StyleSheet.create({
   calendarList: { alignSelf: "stretch" },
   placeAway: { fontSize: 13, color: colors.textMuted },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 36 },
-  slotBar: { height: 4, borderRadius: 2, backgroundColor: colors.routePurple, marginTop: 4 },
+  slotBar: { height: 6, borderRadius: 3 },
   driveTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
   driveSub: { fontSize: 14, color: colors.text, marginTop: 2 },
   driveFrom: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
@@ -803,11 +881,18 @@ const styles = StyleSheet.create({
   fromToLabel: { width: 40, fontSize: 13, fontWeight: "700", color: colors.textMuted },
   toName: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.text },
   chipRow: { flexDirection: "row", gap: spacing.sm, paddingVertical: 2 },
-  slotRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, minHeight: 56, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
-  slotRowSelected: { borderColor: colors.accent, borderWidth: 2, backgroundColor: colors.accentSoft },
+  slotRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, minHeight: SLOT_ROW_HEIGHT, paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 2, borderColor: colors.border },
+  slotRowSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  jumpCard: { borderRadius: radius.lg, backgroundColor: colors.surfaceMuted, paddingVertical: spacing.sm },
+  jumpActions: { flexDirection: "row", justifyContent: "flex-end", gap: spacing.sm, paddingHorizontal: spacing.md },
+  slotTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  slotTrack: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceMuted, marginTop: 6, overflow: "hidden" },
+  bestTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: colors.goodText },
+  bestTagText: { fontSize: 12, fontWeight: "800", color: colors.surface },
+  listHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xs },
+  listHeaderText: { fontSize: 13, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.4 },
   slotClock: { width: 72, fontSize: 16, fontWeight: "800", color: colors.text },
   slotDetail: { flex: 1, fontSize: 14, color: colors.text },
   slotError: { color: colors.danger },
   slotSkeleton: { flex: 1, height: 12, borderRadius: 6, backgroundColor: colors.surfaceMuted },
-  quickTag: { fontSize: 12, fontWeight: "800", color: colors.goodText },
 });
