@@ -478,11 +478,6 @@ interface SpeedLimitCacheEntry {
   geometry: { lat: number; lon: number }[];
 }
 
-// The road's own limit only. A conditional (school-zone) limit is NOT applied here: whether it's
-// in force depends on school days and holidays, which only the school-zone code knows.
-function resolveCachedSpeed(entry: SpeedLimitCacheEntry): { kmh: number; estimated: boolean } {
-  return { kmh: entry.baseKmh, estimated: entry.baseEstimated };
-}
 const speedLimitCache = new Map<number, SpeedLimitCacheEntry>();
 const SPEED_LIMIT_CACHE_STORAGE_KEY = "@trackline/speedLimitCache";
 // Real cap on how many roads' worth of geometry sit in memory/AsyncStorage at once -- unbounded
@@ -508,15 +503,6 @@ async function loadSpeedLimitCacheOnce(): Promise<void> {
 function persistSpeedLimitCache(): void {
   const entries = Array.from(speedLimitCache.entries()).slice(-SPEED_LIMIT_CACHE_MAX_ENTRIES);
   AsyncStorage.setItem(SPEED_LIMIT_CACHE_STORAGE_KEY, JSON.stringify(entries)).catch(() => {});
-}
-
-function cacheEntryMatchesPosition(entry: SpeedLimitCacheEntry, lat: number, lng: number): boolean {
-  for (let i = 0; i < entry.geometry.length - 1; i++) {
-    const a = entry.geometry[i];
-    const b = entry.geometry[i + 1];
-    if (pointToSegmentDistanceKm(lat, lng, a.lat, a.lon, b.lat, b.lon) < MAX_ROAD_MATCH_KM) return true;
-  }
-  return false;
 }
 
 /** Finds the real, OSM-tagged posted speed limit for whichever road the driver is actually on,
