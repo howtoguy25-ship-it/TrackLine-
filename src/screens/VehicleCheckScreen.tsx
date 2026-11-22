@@ -113,7 +113,23 @@ export function VehicleCheckScreen() {
   }, [activeId]);
 
   useEffect(() => (user ? subscribeMyChecks(user.uid, setMyChecks) : undefined), [user]);
-  useEffect(() => (user && activeId ? subscribeReport(user.uid, activeId, setActive) : undefined), [user, activeId]);
+  // A report that can't be loaded says so (a paid report must never just vanish).
+  const [activeError, setActiveError] = useState<string | null>(null);
+  useEffect(
+    () =>
+      user && activeId
+        ? subscribeReport(
+            user.uid,
+            activeId,
+            (r) => {
+              setActiveError(null);
+              setActive(r);
+            },
+            () => setActiveError(activeId)
+          )
+        : undefined,
+    [user, activeId]
+  );
 
   // ---- what's being asked for ----------------------------------------------------------------
   const problem = mode === "vin" ? vinProblem(vin) : plateProblem(plate, stateCode);
@@ -319,6 +335,11 @@ export function VehicleCheckScreen() {
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" testID="vehicle-check-form">
       <Text style={styles.heading}>Vehicle check</Text>
       <Text style={styles.blurb} testID="vehicle-check-blurb">{FULL_CHECK_BLURB}</Text>
+      {activeError && activeError === activeId ? (
+        <Text style={styles.loadError} testID="vehicle-report-load-error">
+          Couldn&apos;t load your report. Check your connection; it&apos;s saved and will show here once it loads.
+        </Text>
+      ) : null}
 
       {notInCountry ? (
         <Text style={styles.message} testID="vehicle-check-country">Full check not available in your country yet.</Text>
@@ -432,6 +453,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 24, fontWeight: "700", color: colors.text },
   subheading: { fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: spacing.xs },
   blurb: { fontSize: 15, color: colors.textMuted },
+  loadError: { fontSize: 15, color: colors.danger, fontWeight: "600" },
   tabs: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   states: { gap: spacing.xs, paddingVertical: spacing.xs },
   input: {

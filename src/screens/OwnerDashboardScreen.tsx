@@ -48,6 +48,7 @@ export function OwnerDashboardScreen() {
   const [stats, setStats] = useState<OwnerStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [history, setHistory] = useState<BroadcastHistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -66,9 +67,14 @@ export function OwnerDashboardScreen() {
 
   const reloadHistory = useCallback(() => {
     if (!isOwner) return;
+    setHistoryError(null);
     fetchBroadcastHistory()
       .then(setHistory)
-      .catch(() => setHistory([]));
+      .catch((err) => {
+        // Not "No broadcasts sent yet": that would be a false claim.
+        setHistory(null);
+        setHistoryError(err instanceof Error ? err.message : "Couldn't load recent sends.");
+      });
   }, [isOwner]);
 
   // Refreshes the moment this screen is opened/returned to, then keeps refreshing on a real
@@ -201,7 +207,8 @@ export function OwnerDashboardScreen() {
       )}
 
       <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Recent sends</Text>
-      {history === null && <ActivityIndicator color={TEXT_MUTED} style={{ marginTop: spacing.sm }} />}
+      {history === null && !historyError && <ActivityIndicator color={TEXT_MUTED} style={{ marginTop: spacing.sm }} />}
+      {historyError && <Text style={styles.errorText} testID="history-error">{`Couldn't load recent sends: ${historyError}`}</Text>}
       {history !== null && history.length === 0 && (
         <Text style={styles.helperText}>No broadcasts sent yet.</Text>
       )}

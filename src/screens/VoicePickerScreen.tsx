@@ -104,15 +104,27 @@ export function VoicePickerScreen() {
   const personasAvailable = personasReady && characterVoicesOn;
   const [recordedVoice, setRecordedVoice] = useState<{ name: string; recordedCount: number } | null>(null);
 
+  // The phone's voices; if they can't be read the screen says so (never an empty list).
+  const [voicesError, setVoicesError] = useState(false);
+  const readDeviceVoices = useCallback(
+    () =>
+      getAllDeviceVoices()
+        .then(setDeviceVoices)
+        .catch(() => setVoicesError(true))
+        .finally(() => setLoaded(true)),
+    []
+  );
+  const retryDeviceVoices = () => {
+    setVoicesError(false);
+    setLoaded(false);
+    readDeviceVoices();
+  };
   useEffect(() => {
-    getAllDeviceVoices()
-      .then(setDeviceVoices)
-      .catch(() => {})
-      .finally(() => setLoaded(true));
+    readDeviceVoices();
     getPersonaVoicesAvailable()
       .then(setPersonasAvailable)
       .catch(() => {});
-  }, []);
+  }, [readDeviceVoices]);
 
   // Re-read every time this screen comes back into view -- the driver may have just recorded
   // (or deleted) clips on the "Record your own" screen.
@@ -315,6 +327,8 @@ export function VoicePickerScreen() {
 
         {!loaded ? (
           <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.accent} />
+        ) : voicesError ? (
+          <Button variant="secondary" icon="refresh" label="Couldn't read this phone's voices, try again" onPress={retryDeviceVoices} testID="voices-retry" />
         ) : (
           <SectionList keyboardShouldPersistTaps="handled"
             sections={sections}

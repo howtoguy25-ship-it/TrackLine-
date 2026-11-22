@@ -160,7 +160,7 @@ describe("map style", () => {
   });
 
   it("Map labels: local by default; my app language; both (app language underneath where different)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { labelText, mapboxNameField } = require("../src/map-v2/styles/buildStyle");
     expect(mapboxNameField("en-AU")).toBe("name_en");
     expect(mapboxNameField("ar-SA")).toBe("name_ar");
@@ -337,7 +337,7 @@ describe("pin clustering", () => {
 });
 
 describe("simulate drive", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { routeToReplayPoints } = require("../src/dev/simulateDrive") as typeof import("../src/dev/simulateDrive");
   // ~1 km straight east.
   const line = [
@@ -362,15 +362,15 @@ describe("simulate drive", () => {
 
 describe("Waze-style look (Pass 3 §4)", () => {
   it("dark style: navy-grey roads on a dark background", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { DARK_PALETTE } = require("../src/map-v2/styles/buildStyle");
     expect(DARK_PALETTE.road).toBe("#36435A");
     expect(DARK_PALETTE.land).toBe("#161B24");
   });
   it("3D buildings: off by default; when on, low and see-through", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { BUILDING_EXTRUSION_STYLE } = require("../src/map-v2/styles/buildStyle");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     expect(require("../src/services/settings").DEFAULT_SETTINGS.show3DBuildings).toBe(false);
     expect(BUILDING_EXTRUSION_STYLE.opacity).toBeLessThanOrEqual(0.5);
     expect(BUILDING_EXTRUSION_STYLE.maxHeightM).toBeLessThanOrEqual(40);

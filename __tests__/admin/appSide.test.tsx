@@ -2,7 +2,7 @@
 // messages (inbox / banner / full screen) and Help requests.
 import React from "react";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const mockCallable = jest.fn<(name: string, data: Record<string, unknown>) => Promise<{ data: unknown }>>();
@@ -284,7 +284,7 @@ describe("Help > Contact support", () => {
 });
 
 describe("legal: accept a major change once", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { pendingAcceptance } = require("@/components/LegalGate") as typeof import("@/components/LegalGate");
   it("asks only for a major version newer than the one accepted", () => {
     const docs = { privacy: { version: 3, lastMajorVersion: 2, text: "t" } };
@@ -295,9 +295,9 @@ describe("legal: accept a major change once", () => {
 });
 
 describe("phone number sign-in (Firebase SMS)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { parsePhoneReturn, verifyPageUrl, phoneErrorText } = jest.requireActual("@/account/phoneAuth") as typeof import("@/account/phoneAuth");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+   
   const { PhoneSignInScreen } = require("@/screens/PhoneSignInScreen") as typeof import("@/screens/PhoneSignInScreen");
   it("the hosted page is on the project's own site and only returns to the app", () => {
     expect(verifyPageUrl("+61412345678", "demo-proj")).toBe("https://demo-proj.web.app/phone-verify.html?phone=%2B61412345678&return=trackline%3A%2F%2Fphone-auth");
