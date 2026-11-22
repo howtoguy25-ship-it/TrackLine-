@@ -36,6 +36,23 @@ export interface AlertCardModel {
   own: boolean;
   /** Where it comes from: "Source: Live Traffic NSW (official)", "Source: TrackLine drivers · confirmed by 3". */
   sourceLine: string;
+  /** Official alerts: the rest of what the government feed says, one short line each. */
+  facts?: { label: string; value: string }[];
+}
+
+/** "CRASH Punchbowl" -> "Crash Punchbowl": the feed shouts its first word; the card doesn't. */
+export function tidyHeadline(text: string): string {
+  return text.replace(/\b([A-Z]{3,})\b/g, (w) => w[0] + w.slice(1).toLowerCase()).trim();
+}
+
+/** What's happening, the delay and how big it is: only what the feed actually gave. */
+export function officialFacts(incident: Pick<TrafficIncident, "headline" | "delay" | "major" | "category">, note: string | null): { label: string; value: string }[] {
+  const facts: { label: string; value: string }[] = [];
+  const headline = tidyHeadline(incident.headline || "");
+  if (headline && headline !== note && headline.toLowerCase() !== incident.category.toLowerCase()) facts.push({ label: "What's happening", value: headline });
+  if (incident.delay.trim()) facts.push({ label: "Delay", value: incident.delay.trim() });
+  if (incident.major) facts.push({ label: "Impact", value: "Major incident" });
+  return facts;
 }
 
 /** The source line for a driver report. */
@@ -83,6 +100,7 @@ export function cardForOfficial(incident: TrafficIncident): AlertCardModel {
     thanks: 0,
     own: false,
     sourceLine: "Source: Live Traffic NSW (official)",
+    facts: officialFacts(incident, note || null),
   };
 }
 

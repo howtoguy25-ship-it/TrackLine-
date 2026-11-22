@@ -5,6 +5,7 @@ import { View } from "@/components/ui/Surface";
 import { Text } from "@/components/AppText";
 import { Icon } from "@/components/ui/Icon";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
+import { HazardTriangleArt } from "@/components/art/RoadSignArt";
 import { ALERT_PIN } from "@/types/alert";
 import { BLUE } from "@/theme/colors";
 import { incidentStyle, type TrafficIncident } from "@/services/trafficNswModel";
@@ -147,6 +148,17 @@ export function AlertCard(props: Props) {
           </Text>
         )}
 
+        {!compact && card.facts && card.facts.length > 0 && (
+          <View style={{ marginTop: s(10), gap: s(4) }} testID="alert-card-facts">
+            {card.facts.map((f) => (
+              <Text key={f.label} style={[styles.fact, { fontSize: s(15) }]} numberOfLines={2}>
+                <Text style={styles.factLabel}>{`${f.label}: `}</Text>
+                {f.value}
+              </Text>
+            ))}
+          </View>
+        )}
+
         <View style={[styles.footer, { marginTop: s(compact ? 8 : 14) }]}>
           <View style={{ flexShrink: 1 }}>
             <Text style={[styles.byline, { fontSize: s(compact ? 13 : 15) }]} numberOfLines={1} testID="alert-card-byline">
@@ -199,7 +211,15 @@ function RoundIcon({
   ring: number;
 }) {
   const official = card.alertType ? null : incident ? incidentStyle(incident) : null;
-  const fill = card.alertType ? ALERT_PIN[card.alertType].fill : official?.color ?? "#5F6368";
+  if (official) {
+    // Official hazards are the warning triangle, as on the map.
+    return (
+      <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }} testID="alert-card-icon">
+        <HazardTriangleArt size={size} fill={official.color} glyphColor={official.glyph} glyph={official.icon} />
+      </View>
+    );
+  }
+  const fill = card.alertType ? ALERT_PIN[card.alertType].fill : "#5F6368";
   return (
     <View
       style={{
@@ -217,7 +237,7 @@ function RoundIcon({
       {card.alertType ? (
         <AlertTypeGlyph type={card.alertType} size={size * 0.5} color={ALERT_PIN[card.alertType].glyph} />
       ) : (
-        <Icon name={official?.icon ?? "warning"} size={size * 0.48} color={official?.glyph ?? "#FFFFFF"} />
+        <Icon name="warning" size={size * 0.48} color="#FFFFFF" />
       )}
     </View>
   );
@@ -236,6 +256,8 @@ const styles = StyleSheet.create({
   place: { color: "#FFFFFF", fontWeight: "500", marginTop: 2 },
   note: { color: "#E8EAED", fontWeight: "400", fontStyle: "italic" },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  fact: { color: "#E8EAED", fontWeight: "400" },
+  factLabel: { color: "#BDC1C6", fontWeight: "500" },
   byline: { color: "#BDC1C6", fontWeight: "400", flexShrink: 1 },
   thanks: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: THANKS_BLUE },
   thanksDone: { opacity: 0.75 },

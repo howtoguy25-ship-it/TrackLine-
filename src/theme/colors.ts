@@ -169,6 +169,21 @@ export const REPORTS: Record<ReportKind, ReportColour> = {
   chat: { fill: "#14B8C8", glyph: INK, shape: "circle" },
 };
 
+/**
+ * Our own road-sign art on the map (components/art/RoadSignArt.tsx): a little traffic light
+ * (dark housing, red / amber / green lamps), a speed camera (report-camera purple badge with a
+ * white camera), and the official hazard triangle (the incident type's colour, white rim).
+ */
+export const ROAD_SIGN_ART = {
+  housing: INK,
+  rim: WHITE,
+  lampRed: "#FF453A",
+  lampAmber: "#FFB020",
+  lampGreen: "#30D158",
+  camera: "#8B5CF6",
+  cameraLens: INK,
+} as const;
+
 /** Live Traffic NSW incidents use their type's colour plus this white "i" badge. */
 export const LIVE_TRAFFIC_BADGE = { fill: WHITE, glyph: "#2F6FED" } as const;
 

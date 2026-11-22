@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
+import { HazardTriangleArt } from "@/components/art/RoadSignArt";
+import { tidyHeadline } from "@/map/alertCard";
 import { Modal, View, Pressable, StyleSheet } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,9 +33,7 @@ export function TrafficIncidentCard({ incident, onRoute, distanceText, openedAtM
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable style={[styles.card, { marginBottom: insets.bottom + spacing.lg }]} onPress={() => {}}>
           <View style={styles.header}>
-            <View style={[styles.icon, { backgroundColor: style.color }]}>
-              <Icon name={style.icon} size={20} color="#FFFFFF" />
-            </View>
+            <HazardTriangleArt size={40} fill={style.color} glyphColor={style.glyph} glyph={style.icon} />
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>
                 {style.label}
@@ -58,7 +57,7 @@ export function TrafficIncidentCard({ incident, onRoute, distanceText, openedAtM
           </View>
 
           {!!incident.headline && incident.headline !== incident.category && (
-            <Text style={styles.headline}>{incident.headline}</Text>
+            <Text style={styles.headline}>{tidyHeadline(incident.headline)}</Text>
           )}
           {!!incident.advice && <Text style={styles.advice}>{incident.advice}</Text>}
 
@@ -75,7 +74,6 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)", justifyContent: "flex-end", paddingHorizontal: spacing.lg },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm, ...shadow.high },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  icon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 16, fontWeight: "800", color: colors.text },
   where: { fontSize: 13, color: colors.textMuted, marginTop: 1 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
