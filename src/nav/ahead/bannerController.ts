@@ -78,6 +78,11 @@ export class AheadBannerController {
 
   getState = (): BannerState => this.state;
 
+  /** What to do when a banner appears (speak, chime); replaceable at any time. */
+  setOnShow(fn: (alert: AheadAlert, reminder: boolean) => void): void {
+    this.hooks = { ...this.hooks, onShow: fn };
+  }
+
   subscribe = (listener: (s: BannerState) => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

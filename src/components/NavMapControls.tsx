@@ -34,6 +34,9 @@ interface Props {
   streetName: string | null;
   banner: InfoBanner | null;
   onBanner: () => void;
+  /** The ahead banner raising the bottom controls (pt, animated) and its full height (for the layout). */
+  raise?: SharedValue<number>;
+  raiseBy?: number;
 }
 
 const at = (f: Frame) => ({ position: "absolute" as const, left: f.x, top: f.y, width: f.width, height: f.height });
@@ -55,8 +58,13 @@ export function NavMapControls(p: Props) {
     showVoice: !!p.onVoice,
     showStreetChip: !!p.streetName,
     showInfoBanner: !!p.banner,
+    raiseBy: p.raiseBy ?? 0,
   };
   const f = navControlFrames(input);
+  // The street chip sits on the bottom row: drawn at its resting place and lifted by the animated
+  // raise (so it moves with the speedometer and Report, on the UI thread).
+  const rest = navControlFrames({ ...input, raiseBy: 0 });
+  const lift = useAnimatedStyle(() => ({ transform: [{ translateY: -(p.raise?.get() ?? 0) }] }));
   const needle = useAnimatedStyle(() => ({ transform: [{ rotate: `${-p.bearing.value}deg` }] }));
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill} testID="nav-map-controls">
@@ -104,15 +112,15 @@ export function NavMapControls(p: Props) {
           />
         </View>
       ) : null}
-      {f.streetChip && p.streetName ? (
-        <View pointerEvents="none" style={[at(f.streetChip), styles.chipWrap]} testID="nav-street-chip">
+      {f.streetChip && rest.streetChip && p.streetName ? (
+        <Animated.View pointerEvents="none" style={[at({ ...rest.streetChip, x: f.streetChip.x, width: f.streetChip.width }), styles.chipWrap, lift]} testID="nav-street-chip">
           <View style={styles.chip}>
             <Icon name="navigate" size={11} color={WHITE} />
             <Text style={styles.chipText} numberOfLines={1}>
               {p.streetName}
             </Text>
           </View>
-        </View>
+        </Animated.View>
       ) : null}
       {f.infoBanner && p.banner ? (
         <View style={at(f.infoBanner)}>

@@ -43,6 +43,8 @@ interface Props {
   onPressSign?: () => void;
   /** Settings > Speedometer > Speed limit: whether the sign is drawn right now (the chime doesn't depend on it). */
   showLimit?: boolean;
+  /** A banner has raised the controls on a short phone: the sign sits beside the dial (nav/navControlsLayout.ts). */
+  signBeside?: boolean;
 }
 
 const CHIME_TRIGGER_OVER_KMH = 3;
@@ -66,6 +68,7 @@ export function LiveSpeedometer({
   bottom,
   onPressSign,
   showLimit = true,
+  signBeside = false,
 }: Props) {
   const overBy = speedLimitKmh != null ? speedKmh - speedLimitKmh : 0;
   const shownSpeed = unit === "mph" ? Math.round(speedKmh / 1.609344) : Math.round(speedKmh);
@@ -143,7 +146,7 @@ export function LiveSpeedometer({
   return (
     <Animated.View
       pointerEvents={onPressSign && visible ? "box-none" : "none"}
-      style={[styles.wrap, { opacity }, bottom != null && { bottom }]}
+      style={[styles.wrap, signBeside && styles.wrapBeside, { opacity }, bottom != null && { bottom }]}
       accessibilityLabel={`Current speed ${shownSpeed} ${unit === "mph" ? "miles" : "kilometers"} per hour`}
     >
       {/* The limit sign sits ABOVE the dial with an 8pt gap, never touching it. */}
@@ -184,6 +187,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SIGN_GAP,
   },
+  // Dial on the left, the sign to its right, bottoms aligned.
+  wrapBeside: { flexDirection: "row-reverse", alignItems: "flex-end" },
   signBox: { width: SIGN_SIZE, height: SIGN_SIZE, alignItems: "center", justifyContent: "center" },
   signScale: { transform: [{ scale: SIGN_SIZE / 64 }] },
   dial: {

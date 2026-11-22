@@ -18,6 +18,15 @@ export const SOUND_SIZE = 52;
 export const COMPASS_SIZE = 52;
 export const STREET_CHIP_HEIGHT = 28;
 export const INFO_BANNER_HEIGHT = 44;
+/** The ahead-alert banner: 12pt side margins, its usual height, and how far it slides up. */
+export const AHEAD_BANNER_MARGIN = 12;
+export const AHEAD_BANNER_HEIGHT = 88;
+export const AHEAD_BANNER_SLIDE = 12;
+
+/** How far the bottom controls rise to make room for a banner of this height. */
+export function aheadRoom(bannerHeight: number): number {
+  return bannerHeight + CONTROL_GAP;
+}
 
 export interface Frame {
   x: number;
@@ -43,6 +52,14 @@ export interface NavLayoutInput {
   showVoice?: boolean;
   showStreetChip?: boolean;
   showInfoBanner?: boolean;
+  /**
+   * The ahead-alert banner (above the bottom bar, full width minus 12): the bottom controls first
+   * rise by `raiseBy` (0 up to the banner's height + 12), and only once they're all the way up does
+   * the banner slide in (`aheadBanner.progress` 0..1, the last 12pt of travel + fade). So nothing
+   * overlaps at any frame of the animation (checked frame by frame in the tests).
+   */
+  raiseBy?: number;
+  aheadBanner?: { height: number; progress: number } | null;
 }
 
 export type NavControl =
@@ -56,6 +73,7 @@ export type NavControl =
   | "voice"
   | "streetChip"
   | "infoBanner"
+  | "aheadBanner"
   | "bottomBar"
   | "topBar";
 
@@ -77,18 +95,37 @@ export function topColumnTop(safeTop: number, topBarHeight: number): number {
 }
 
 export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, Frame>> {
-  const base = i.height - controlsBottom(i.safeBottom, i.bottomBarHeight);
+  const base = i.height - controlsBottom(i.safeBottom, i.bottomBarHeight) - (i.raiseBy ?? 0);
   const out: Partial<Record<NavControl, Frame>> = {};
+  if (i.aheadBanner && i.aheadBanner.progress > 0) {
+    const barTop = i.height - i.safeBottom - i.bottomBarHeight;
+    const p = Math.min(1, i.aheadBanner.progress);
+    out.aheadBanner = {
+      x: AHEAD_BANNER_MARGIN,
+      y: barTop - CONTROL_GAP - i.aheadBanner.height + (1 - p) * AHEAD_BANNER_SLIDE,
+      width: i.width - AHEAD_BANNER_MARGIN * 2,
+      height: i.aheadBanner.height,
+    };
+  }
   out.bottomBar = { x: 0, y: i.height - i.safeBottom - i.bottomBarHeight, width: i.width, height: i.bottomBarHeight + i.safeBottom };
   out.topBar = { x: 0, y: 0, width: i.width, height: i.safeTop + i.topBarHeight };
   out.speedometer = { x: SIDE_MARGIN, y: base - SPEEDOMETER_SIZE, width: SPEEDOMETER_SIZE, height: SPEEDOMETER_SIZE };
+  const top = topColumnTop(i.safeTop, i.topBarHeight);
+  const topBarBottom = i.safeTop + i.topBarHeight;
+  // While a banner has pushed everything up on a short phone, the sign goes beside the
+  // speedometer instead of on top of it when stacking would reach the compass / top bar.
+  const stackedSignTop = base - SPEEDOMETER_SIZE - CONTROL_GAP - SPEED_SIGN_SIZE;
+  const compassWanted = i.showCompass !== false;
+  const signBeside = !!i.showSpeedLimit && (i.raiseBy ?? 0) > 0 && stackedSignTop - CONTROL_GAP < (compassWanted ? top + COMPASS_SIZE : topBarBottom);
   if (i.showSpeedLimit) {
-    out.speedLimit = {
-      x: SIDE_MARGIN + (SPEEDOMETER_SIZE - SPEED_SIGN_SIZE) / 2,
-      y: base - SPEEDOMETER_SIZE - CONTROL_GAP - SPEED_SIGN_SIZE,
-      width: SPEED_SIGN_SIZE,
-      height: SPEED_SIGN_SIZE,
-    };
+    out.speedLimit = signBeside
+      ? { x: SIDE_MARGIN + SPEEDOMETER_SIZE + CONTROL_GAP, y: base - SPEED_SIGN_SIZE, width: SPEED_SIGN_SIZE, height: SPEED_SIGN_SIZE }
+      : {
+          x: SIDE_MARGIN + (SPEEDOMETER_SIZE - SPEED_SIGN_SIZE) / 2,
+          y: stackedSignTop,
+          width: SPEED_SIGN_SIZE,
+          height: SPEED_SIGN_SIZE,
+        };
   }
   out.report = { x: i.width - SIDE_MARGIN - REPORT_SIZE, y: base - REPORT_SIZE, width: REPORT_SIZE, height: REPORT_SIZE };
   if (i.showRecenter) {
@@ -99,13 +136,16 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
       height: RECENTER_SIZE,
     };
   }
-  const top = topColumnTop(i.safeTop, i.topBarHeight);
-  if (i.showCompass !== false) out.compass = { x: SIDE_MARGIN, y: top, width: COMPASS_SIZE, height: COMPASS_SIZE };
+  // The left column's highest point (the stacked sign, or the speedometer).
+  const leftTop = out.speedLimit && !signBeside ? out.speedLimit.y : out.speedometer.y;
+  // The compass keeps its place unless a raised column leaves no room (a 4-inch phone with a
+  // banner up): then it steps aside until the banner has gone.
+  if (compassWanted && top + COMPASS_SIZE + CONTROL_GAP <= leftTop) out.compass = { x: SIDE_MARGIN, y: top, width: COMPASS_SIZE, height: COMPASS_SIZE };
   // Top-right column, top to bottom: audio player, sound, voice command (each only when shown).
   // On a short phone they don't all fit above the space Re-centre needs (kept free even before
   // it shows, so nothing jumps), so the rest continue down the left column under the compass.
   const rightLimit = base - REPORT_SIZE - CONTROL_GAP - RECENTER_SIZE - CONTROL_GAP;
-  const leftLimit = base - SPEEDOMETER_SIZE - CONTROL_GAP - (i.showSpeedLimit ? SPEED_SIGN_SIZE + CONTROL_GAP : 0);
+  const leftLimit = leftTop - CONTROL_GAP;
   let yRight = top;
   let yLeft = out.compass ? top + COMPASS_SIZE + CONTROL_GAP : top;
   const right = i.width - SIDE_MARGIN - SOUND_SIZE;
@@ -122,6 +162,7 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
     // Neither fits (not possible on any phone we support; checked in the tests): left out.
   }
   const lane = centreLane(i.width);
+  if (signBeside) lane.left += SPEED_SIGN_SIZE + CONTROL_GAP;
   const chipBottom = base;
   if (i.showStreetChip) out.streetChip = { x: lane.left, y: chipBottom - STREET_CHIP_HEIGHT, width: lane.right - lane.left, height: STREET_CHIP_HEIGHT };
   if (i.showInfoBanner) {

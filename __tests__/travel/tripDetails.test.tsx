@@ -96,7 +96,9 @@ describe("per-mode navigation (step 5)", () => {
   });
   it("bike / walk / transit: no camera alerts (MapScreen runs approach alerts only when driving)", () => {
     const src = fs.readFileSync(path.join(__dirname, "../../src/screens/MapScreen.tsx"), "utf8");
-    expect(src).toMatch(/if \(!currentLatLng \|\| travelMode !== "driving" \|\| approachFeatures\.length === 0\) return;/);
+    expect(src).toMatch(/if \(route \|\| !currentLatLng \|\| travelMode !== "driving" \|\| approachFeatures\.length === 0\) return;/);
+    // Navigating: the ahead alerts are for driving only too.
+    expect(src).toMatch(/if \(!route \|\| travelMode !== "driving"\) return \[\];/);
     // and the features exist for drivers
     expect(collectApproachFeatures(DEFAULT_SETTINGS, { osm: { trafficLights: [], speedCameras: [{ id: 1, lat: 0, lng: 0 }], features: {} }, alerts: [], incidents: [] })).toHaveLength(1);
   });

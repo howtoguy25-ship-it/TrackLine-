@@ -11,9 +11,11 @@ import type { TrackyCustomization } from "@/components/trackys/customization";
 import { ALERT_PIN, type AlertType } from "@/types/alert";
 import { SPEED_CAMERA_MARKER, TRAFFIC_LIGHT_MARKER } from "@/utils/osmMarkerStyle";
 import { HazardTriangleArt, SpeedCameraArt, TrafficLightArt } from "@/components/art/RoadSignArt";
+import { AheadGlyph } from "@/components/art/AheadGlyph";
+import type { AheadKind } from "@/nav/ahead/aheadKinds";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors } from "@/theme/tokens";
-import { LIVE_TRAFFIC_BADGE } from "@/theme/colors";
+import { AHEAD_COLOURS, LIVE_TRAFFIC_BADGE } from "@/theme/colors";
 import { Icon, isIconName } from "@/components/ui/Icon";
 import { Text } from "@/components/AppText";
 import { BADGE_COLOURS, type BadgeCategory } from "@/map/poiBadges";
@@ -153,6 +155,22 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
         </View>
       );
     }
+    case "ahead": {
+      // An ahead alert at its exact spot on the route (nav/ahead): a raised pin -- round icon in
+      // the kind's meaning colour with a white ring, a pointer, and a small shadow base.
+      const kind = rest[0] as AheadKind;
+      const c = AHEAD_COLOURS[kind];
+      if (!c) return null;
+      return (
+        <View style={styles.column} testID={`ahead-pin-${kind}`}>
+          <View style={[styles.aheadPin, { backgroundColor: c.fill }]}>
+            <AheadGlyph kind={kind} size={20} color={c.glyph} />
+          </View>
+          <View style={[styles.pointer, { borderTopColor: c.fill }]} />
+          <View style={styles.aheadBase} />
+        </View>
+      );
+    }
     case "place-page":
       return (
         <View style={styles.placePin}>
@@ -255,6 +273,8 @@ const styles = StyleSheet.create({
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
   },
+  aheadPin: { width: 34, height: 34, borderRadius: 17, borderWidth: 3, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
+  aheadBase: { width: 12, height: 4, borderRadius: 2, marginTop: 1, backgroundColor: "rgba(16,24,40,0.35)" },
   cameraWrap: { width: 36, height: 36, alignItems: "flex-start", justifyContent: "flex-end" },
   cameraBadge: {
     position: "absolute",

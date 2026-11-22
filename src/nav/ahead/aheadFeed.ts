@@ -103,6 +103,29 @@ export function buildAheadFeed(
   carAlongM: number,
   log: (msg: string, key: string) => void = () => {}
 ): AheadAlert[] {
+  return aheadOf(projectFeed(sources, polyline, log), carAlongM);
+}
+
+/** The part that changes on every GPS fix: what's still ahead, and how far. Cheap. */
+export function aheadOf(projected: readonly AheadAlert[], carAlongM: number): AheadAlert[] {
+  const out: AheadAlert[] = [];
+  for (const a of projected) {
+    const aheadM = a.alongM - carAlongM;
+    if (aheadM > 0) out.push({ ...a, aheadM });
+  }
+  return out;
+}
+
+/**
+ * The part that only changes with the sources or the route: every source projected onto the
+ * route (corridor + direction), de-duplicated and merged, in route order (aheadM = alongM).
+ */
+export function projectFeed(
+  sources: readonly AheadSource[],
+  polyline: { latitude: number; longitude: number }[],
+  log: (msg: string, key: string) => void = () => {}
+): AheadAlert[] {
+  const carAlongM = 0;
   if (polyline.length < 2) return [];
   const onRoute: AheadAlert[] = [];
   for (const s of sources) {
@@ -113,7 +136,7 @@ export function buildAheadFeed(
     const p = projectOnPolyline(polyline, { latitude: s.lat, longitude: s.lng });
     if (!p || p.offM > CORRIDOR_M) continue;
     const aheadM = p.alongM - carAlongM;
-    if (aheadM <= 0) continue;
+    if (aheadM < 0) continue;
     if (s.bearingDeg != null && Number.isFinite(s.bearingDeg)) {
       const routeBearing = routeBearingAt(polyline, p.alongM);
       if (routeBearing != null && angleOff(routeBearing, s.bearingDeg) > HEADING_TOLERANCE_DEG) continue;
@@ -166,7 +189,7 @@ export function buildAheadFeed(
     }
   }
   for (const a of kept) if (!absorbed.has(a)) out.push(a);
-  return out.sort((a, b) => a.aheadM - b.aheadM);
+  return out.sort((a, b) => a.alongM - b.alongM);
 }
 
 /** Live traffic along the route as sources: each slow / stopped stretch from its start. */
