@@ -243,6 +243,7 @@ import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
 import { presencesToShow } from "@/map/presenceFilter";
 import { rememberOwnUid } from "@/services/ownUids";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
+import { homeRoadSigns, signIcon, signKind, type SignPoint } from "@/map/roadSignVisibility";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
   earlyAnnouncementThresholds,
@@ -627,6 +628,8 @@ export function MapScreen() {
   // clustering grid below -- bigger delta (zoomed out) means bigger cluster cells, so a huge
   // real-world cluster of signals stays a handful of markers until you actually zoom in on it.
   const [osmZoomDelta, setOsmZoomDelta] = useState(0.05);
+  // The map's centre, for the road signs drawn in view (map/roadSignVisibility.ts).
+  const [viewCentre, setViewCentre] = useState<LatLng | null>(null);
   const osmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Same debounce pattern as osmDebounceRef, for the fuel/restaurant/hotel viewport pin layer
   // below -- kept separate so panning while only one kind of layer is on doesn't cancel/reset
@@ -3052,6 +3055,8 @@ export function MapScreen() {
         .catch(() => {});
 
       setOsmZoomDelta(region.latitudeDelta);
+      // Only off a drive (the signs in view are a home-map thing); no extra renders while driving.
+      if (!route) setViewCentre({ latitude: region.latitude, longitude: region.longitude });
 
       // Manual alert placement uses a fixed pin at the center of the screen and moves the map
       // underneath it instead of a draggable Marker (see onAlertTypeSelected above) -- so the
@@ -5389,6 +5394,19 @@ export function MapScreen() {
     [route, navMatch, roadFeatureList]
   );
   const routeFeatureIconList = useMemo(() => routeFeatureIcons(routeFeaturesNow, (item) => isShown(settings, item)), [routeFeaturesNow, settings]);
+  // Off a drive: cameras (and, at street level, traffic lights) in view as road-sign icons.
+  const homeRoadSignList = useMemo(() => {
+    const points: SignPoint[] = [];
+    for (const p of osmData?.trafficLights ?? []) points.push({ key: `tl:${p.id}`, item: "trafficLights", lat: p.lat, lng: p.lng });
+    for (const p of osmData?.speedCameras ?? []) points.push({ key: `sc:${p.id}`, item: "speedCamera", lat: p.lat, lng: p.lng });
+    for (const p of osmFeaturePins({ ...settings, reportPrefs: settings.reportPrefs }, osmData, nearbyAlerts)) {
+      if (signKind(p.kind as ReportItemId) === "camera") points.push({ key: p.id, item: p.kind as ReportItemId, lat: p.lat, lng: p.lng });
+    }
+    // Before the map first reports where it's looking, it's looking at you.
+    const centre = viewCentre ?? currentLatLng;
+    const view = centre ? { latitude: centre.latitude, longitude: centre.longitude, latitudeDelta: osmZoomDelta, zoom: zoomFromLatitudeDelta(osmZoomDelta) } : null;
+    return homeRoadSigns(points, view, { navigating: !!route, shown: (item) => isShown(settings, item) });
+  }, [osmData, settings, nearbyAlerts, viewCentre, currentLatLng, osmZoomDelta, route]);
 
   // ---- What the Mapbox map draws (map-v2/MapboxLayers.tsx) ----
   // Every icon pin with what tapping it does, keyed by the pin's id.
@@ -5420,8 +5438,18 @@ export function MapScreen() {
     }
     // Road features are alerts, not dots (nav/roadFeatureAlerts.ts): nothing on the home map or
     // the route preview; while driving, at most three on the route ahead within 1 km.
+    for (const f of homeRoadSignList) {
+      add(
+        { id: `road-sign:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon: signIcon(f.item), priority: 6 },
+        {
+          kind: "osm",
+          osm: f.item === "trafficLights" ? "traffic_light" : f.item === "speedCamera" ? "speed_camera" : (f.item as OsmFeatureKind),
+          at: { latitude: f.lat, longitude: f.lng },
+        }
+      );
+    }
     for (const f of routeFeatureIconList) {
-      const icon = f.item === "trafficLights" ? "traffic-light" : f.item === "speedCamera" ? "speed-camera" : `feature:${f.item}`;
+      const icon = signIcon(f.item);
       const pin = { id: `route-feature:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon, priority: 7 };
       // Lane endings come from the route itself: nothing to open.
       if (f.item === "laneEnding") add(pin);
@@ -5504,6 +5532,7 @@ export function MapScreen() {
     // Settings > Reports switches, live traffic and camera layers all decide which pins show.
     settings,
     routeFeatureIconList,
+    homeRoadSignList,
     fuelStationsSheetOpen,
     fuelStationPins,
     nearbyPins,

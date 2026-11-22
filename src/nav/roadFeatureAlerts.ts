@@ -1,6 +1,7 @@
 // Road features (speed bumps, crossings, railway crossings, school zones, sharp bends, cameras,
 // traffic lights...) are alerts, not map clutter:
-//   * no dots on the home map or the route preview at all
+//   * no dots on the home map or the route preview; the exceptions are traffic lights and cameras,
+//     drawn there as our own road-sign icons (map/roadSignVisibility.ts)
 //   * while navigating, only features ON the route still ahead, within ROUTE_FEATURE_AHEAD_M, get
 //     a small icon on the route -- at most MAX_ROUTE_FEATURE_ICONS, nearest first -- and only the
 //     ones whose "Show on map" switch is on (it now means "show its icon on the route")

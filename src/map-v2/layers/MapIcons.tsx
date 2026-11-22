@@ -10,6 +10,7 @@ import type { TrackyMoodKey } from "@/components/trackys/moods";
 import type { TrackyCustomization } from "@/components/trackys/customization";
 import { ALERT_PIN, type AlertType } from "@/types/alert";
 import { SPEED_CAMERA_MARKER, TRAFFIC_LIGHT_MARKER } from "@/utils/osmMarkerStyle";
+import { HazardTriangleArt, SpeedCameraArt, TrafficLightArt } from "@/components/art/RoadSignArt";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors } from "@/theme/tokens";
 import { LIVE_TRAFFIC_BADGE } from "@/theme/colors";
@@ -61,17 +62,10 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
       );
     }
     case "traffic-light":
-      return (
-        <Badge color={TRAFFIC_LIGHT_MARKER.color} size={TRAFFIC_LIGHT_MARKER.badgeSize} border={1.5}>
-          <MaterialCommunityIcons name={TRAFFIC_LIGHT_MARKER.icon} size={TRAFFIC_LIGHT_MARKER.glyphSize} color="#FFFFFF" />
-        </Badge>
-      );
+      // Our own little traffic light (components/art/RoadSignArt.tsx).
+      return <TrafficLightArt height={30} />;
     case "speed-camera":
-      return (
-        <Badge color={SPEED_CAMERA_MARKER.color} size={SPEED_CAMERA_MARKER.badgeSize}>
-          <MaterialCommunityIcons name={SPEED_CAMERA_MARKER.icon} size={SPEED_CAMERA_MARKER.glyphSize} color="#FFFFFF" />
-        </Badge>
-      );
+      return <SpeedCameraArt size={30} />;
     case "fuel":
       return (
         <Badge color="#16A34A" size={30}>
@@ -95,6 +89,21 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
       // crossing, a red light camera ...): that item's own colour and glyph, small.
       const item = REPORT_ITEM_BY_ID[rest[0] as ReportItemId];
       if (!item) return null;
+      if (item.id === "trafficLights") return <TrafficLightArt height={30} />;
+      if (item.section === "speedCameras" || item.section === "laneCameras" || item.section === "behaviourCameras") {
+        // Every camera is the camera sign, with what it checks in a small corner badge.
+        const badge = item.icon.badge;
+        return (
+          <View style={styles.cameraWrap}>
+            <SpeedCameraArt size={30} />
+            {badge && (
+              <View style={styles.cameraBadge}>
+                <MaterialCommunityIcons name={badge as never} size={10} color={item.icon.colour} />
+              </View>
+            )}
+          </View>
+        );
+      }
       return (
         <Badge color={item.icon.colour} size={24} border={1.5}>
           <MaterialCommunityIcons name={item.icon.glyph as never} size={14} color="#FFFFFF" />
@@ -130,26 +139,14 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
         </Badge>
       );
     case "incident": {
-      // A Live Traffic NSW report: its type's colour and shape (roadwork is a diamond, the rest
-      // circles) with a small white "i" badge saying where it came from.
-      const [color, glyph, shape, icon, major] = rest;
-      const big = major === "1";
-      const size = big ? 32 : 26;
-      const diamond = shape === "diamond";
+      // An official NSW / Australian government hazard, roadwork, closure or crash: a warning
+      // triangle in its type's colour with its glyph, and a small white "i" saying it's official.
+      const [color, glyph, , icon, major] = rest;
+      const size = major === "1" ? 36 : 30;
       const name = isIconName(icon) ? icon : "warning";
       return (
-        <View style={{ width: size + 8, height: size + 8, alignItems: "center", justifyContent: "center" }}>
-          <View
-            style={[
-              styles.incident,
-              { width: size, height: size, backgroundColor: color, borderRadius: diamond ? 6 : size / 2 },
-              diamond && styles.diamond,
-            ]}
-          >
-            <View style={diamond ? styles.unrotate : undefined}>
-              <Icon name={name} size={big ? 17 : 14} color={glyph} strokeWidth={2.25} />
-            </View>
-          </View>
+        <View style={{ width: size + 6, height: size + 4, alignItems: "center", justifyContent: "flex-end" }}>
+          <HazardTriangleArt size={size} fill={color} glyphColor={glyph} glyph={name} />
           <View style={styles.infoBadge}>
             <Text style={styles.infoBadgeText}>i</Text>
           </View>
@@ -258,9 +255,18 @@ const styles = StyleSheet.create({
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
   },
-  incident: { borderWidth: 2, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
-  diamond: { transform: [{ rotate: "45deg" }] },
-  unrotate: { transform: [{ rotate: "-45deg" }] },
+  cameraWrap: { width: 36, height: 36, alignItems: "flex-start", justifyContent: "flex-end" },
+  cameraBadge: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   infoBadge: {
     position: "absolute",
     top: 0,
