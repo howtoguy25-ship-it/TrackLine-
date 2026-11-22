@@ -241,6 +241,7 @@ import { ReportIcon } from "@/components/icons/MapControlIcons";
 import { SearchAlongRouteSheet } from "@/components/SearchAlongRouteSheet";
 import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
 import { presencesToShow } from "@/map/presenceFilter";
+import { rememberOwnUid } from "@/services/ownUids";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
 import {
@@ -2120,12 +2121,22 @@ export function MapScreen() {
   // clustering itself now happens inside PresenceLayer, on each Tracky's ANIMATED position
   // rather than its last published one (ADD-ON Part B).
   const MAX_VISIBLE_TRACKYS = 50;
+  // Every account id this phone has used (services/ownUids.ts): none of them is drawn.
+  const [ownUidList, setOwnUidList] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    rememberOwnUid(user?.uid).then((list) => !cancelled && setOwnUidList(list));
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+  const ownUidSet = useMemo(() => new Set(ownUidList), [ownUidList]);
   const visiblePresences = useMemo(() => {
     if (!settings.showTrackysOnMap || !currentLatLng) return [];
     // Never the driver's own Tracky / ghost: the server's list includes their own entry, and it
     // used to be drawn on top of their arrow. Their own visibility shows only in the Menu.
-    return presencesToShow(presenceList, { ownUid: user?.uid ?? null, blocked: blockedUids, here: currentLatLng, max: MAX_VISIBLE_TRACKYS });
-  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap, user?.uid]);
+    return presencesToShow(presenceList, { ownUid: user?.uid ?? null, ownUids: ownUidSet, blocked: blockedUids, here: currentLatLng, max: MAX_VISIBLE_TRACKYS });
+  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap, user?.uid, ownUidSet]);
   const presenceCellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
 
   const ownAppearance = useTrackyAppearance(settings.visibility === "ghost");
