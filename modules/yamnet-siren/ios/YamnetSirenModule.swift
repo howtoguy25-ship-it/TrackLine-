@@ -16,6 +16,19 @@ public class YamnetSirenModule: Module {
   private var interpreter: Interpreter?
   private var labels: [String] = []
 
+  // Live stream (siren radar): the microphone through AVAudioEngine, converted to 16 kHz mono in
+  // memory, kept in a short ring buffer; every HOP new samples (0.48 s) the last WINDOW samples
+  // (0.975 s) are classified -- windows overlap by half. Nothing is written to disk.
+  private static let window = 15600
+  private static let hop = 7680
+  private let engine = AVAudioEngine()
+  private var streaming = false
+  private var converter: AVAudioConverter?
+  private var ring: [Float] = []
+  private var sinceLast = 0
+  private let streamQueue = DispatchQueue(label: "trackline.yamnet.stream")
+  private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+
   public func definition() -> ModuleDefinition {
     Name("YamnetSiren")
 
@@ -40,6 +53,99 @@ public class YamnetSirenModule: Module {
       let samples = self.decodeToMono16kPcm(fileURL: url)
       return self.runClassification(samples)
     }
+
+    // Live, half-overlapping windows (see the stream fields above). Each window is sent as an
+    // "onWindow" event: { scores: [{label, confidence}] (top 10), rmsDb, at (ms since 1970) }.
+    Events("onWindow")
+
+    AsyncFunction("startStream") { () -> Bool in
+      return self.startStream()
+    }
+
+    AsyncFunction("stopStream") { () -> Bool in
+      self.stopStream()
+      return true
+    }
+
+    // False once iOS stopped the engine (a phone call, another app taking the microphone).
+    Function("isStreaming") { () -> Bool in
+      return self.streaming && self.engine.isRunning
+    }
+  }
+
+  private func startStream() -> Bool {
+    if streaming && engine.isRunning { return true }
+    if streaming { stopStream() }
+    if interpreter == nil && !loadModelAndLabels() { return false }
+    let input = engine.inputNode
+    let inFormat = input.outputFormat(forBus: 0)
+    guard inFormat.sampleRate > 0, inFormat.channelCount > 0, let conv = AVAudioConverter(from: inFormat, to: targetFormat) else {
+      return false
+    }
+    converter = conv
+    input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
+      self?.handleTap(buffer)
+    }
+    do {
+      engine.prepare()
+      try engine.start()
+    } catch {
+      input.removeTap(onBus: 0)
+      converter = nil
+      return false
+    }
+    streaming = true
+    return true
+  }
+
+  private func stopStream() {
+    if streaming {
+      engine.inputNode.removeTap(onBus: 0)
+      engine.stop()
+    }
+    streaming = false
+    converter = nil
+    streamQueue.async {
+      self.ring.removeAll()
+      self.sinceLast = 0
+    }
+  }
+
+  private func handleTap(_ buffer: AVAudioPCMBuffer) {
+    guard let conv = converter, buffer.frameLength > 0 else { return }
+    let ratio = targetFormat.sampleRate / buffer.format.sampleRate
+    let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
+    guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
+    var supplied = false
+    var error: NSError?
+    _ = conv.convert(to: out, error: &error) { _, status in
+      if supplied {
+        status.pointee = .noDataNow
+        return nil
+      }
+      supplied = true
+      status.pointee = .haveData
+      return buffer
+    }
+    guard error == nil, out.frameLength > 0, let channel = out.floatChannelData else { return }
+    let samples = Array(UnsafeBufferPointer(start: channel[0], count: Int(out.frameLength)))
+    streamQueue.async { self.appendAndClassify(samples) }
+  }
+
+  private func appendAndClassify(_ samples: [Float]) {
+    ring.append(contentsOf: samples)
+    let keep = Self.window * 2
+    if ring.count > keep { ring.removeFirst(ring.count - keep) }
+    sinceLast += samples.count
+    guard ring.count >= Self.window, sinceLast >= Self.hop else { return }
+    sinceLast = 0
+    let win = Array(ring.suffix(Self.window))
+    var sum: Float = 0
+    for v in win { sum += v * v }
+    let rms = (sum / Float(win.count)).squareRoot()
+    let db = rms > 0 ? 20 * log10(Double(rms)) : -160.0
+    let scores = runClassification(win)
+    sendEvent("onWindow", ["scores": scores, "rmsDb": db, "at": Date().timeIntervalSince1970 * 1000])
   }
 
   private func loadModelAndLabels() -> Bool {
