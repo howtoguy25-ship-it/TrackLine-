@@ -73,6 +73,10 @@ function releasePlayer(): void {
 // call-out about a report from a minute ago isn't worth saying late.
 let waiting: { plan: SpeechPlan; options: SpeakOptions } | null = null;
 let speaking = false;
+/** True while the app itself is talking (the siren radar ignores what it hears then). */
+export function isNavSpeaking(): boolean {
+  return speaking;
+}
 
 export function stopNavSpeech(): void {
   generation++;

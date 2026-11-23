@@ -94,7 +94,7 @@ export function spokenLine(kind: AheadKind, title: string, delayMin: number | nu
     case "carOnShoulder":
       return `${title} reported ahead`;
     case "emergency":
-      return "Emergency vehicle ahead, move aside safely";
+      return "Emergency vehicle reported ahead, make way when safe";
     case "closure":
       return "Road closed ahead";
     default:

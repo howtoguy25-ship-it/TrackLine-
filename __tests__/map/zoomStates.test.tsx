@@ -49,7 +49,6 @@ describe("zoom states", () => {
 
 describe("live traffic lines (map polish §4)", () => {
   it("thin, coloured amber / red / dark red, only on roads with real congestion data", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const src = require("fs").readFileSync("src/map-v2/TrackLineMap.tsx", "utf8") as string;
     expect(src).toMatch(/filter=\{\["match", \["get", "congestion"\], \["moderate", "heavy", "severe"\], true, false\]\}/);
     expect(src).toMatch(/"moderate", TRAFFIC\.slow, "heavy", TRAFFIC\.heavy, "severe", TRAFFIC\.standstill/);

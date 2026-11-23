@@ -560,6 +560,27 @@ new road's within a few seconds (it used to stick to the first road).
    if the calendar really can't be read; never "No upcoming events" for an error.
 2. Every list that can't load says so and offers Try again; no spinner runs forever.
 
+## 39. Siren radar — NEEDS DEVICE TEST
+
+1. Settings › Vehicle & AI tools › Emergency vehicle radar: turn **Siren radar** on (it starts off).
+   Read the footer: "Driver assistance only — always watch and listen for emergency vehicles yourself."
+2. Parked (not navigating): play a siren video on another device near the phone. Nothing happens
+   (it only listens while driving: over 10 km/h, 2 min after, or navigating).
+3. Start navigating anywhere, stay parked, play the siren for ~5 s: the red/blue "Emergency vehicle
+   nearby" banner appears at the top under the turn card, with the type ("Police", "Ambulance",
+   "Fire truck" or "Emergency vehicle") and "Getting closer" / "Nearby" / "Moving away"; the voice
+   says "Emergency vehicle nearby, make way when safe." Walk the playing device towards the phone:
+   it should say "Getting closer". Any ahead banner steps aside while it shows.
+4. Stop the siren: the banner goes ~8 s later and, as you're stopped, "Did you see an emergency
+   vehicle or incident?" appears. Leave it: it goes after 10 s and nothing is posted.
+5. Do 3-4 again and tap **Yes**: the report sheet opens with the pin where it was loudest. Try
+   Ahead of me / Behind me / Where I heard it, pick a vehicle and "Passing through", add a title,
+   tap Report: the 3 s Undo shows; the report is on the map and disappears after 15 minutes.
+6. With "Hey TrackLine" on, answer the question by saying "no": it closes.
+7. Music: play music loudly on the phone's speaker (no siren): no banner. While TrackLine speaks
+   a direction, a siren isn't counted for that second.
+8. Turn Siren radar off mid-drive: the microphone indicator (orange dot) goes away.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

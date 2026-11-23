@@ -75,12 +75,15 @@ describe("siren episode", () => {
     jest.useRealTimers();
   });
 
-  it("MapScreen: only while driving a route; ends on its own; spoken line; kept off the map and the list", () => {
+  // Moved: the siren radar now has its own top banner (components/EmergencyVehicleBanner.tsx,
+  // __tests__/siren/sirenRadar.test.tsx), so MapScreen no longer puts a siren into the ahead feed
+  // (that would be two banners for one siren). The ahead banner waits while it's up.
+  it("MapScreen: a siren gets the radar banner, not a second ahead banner; the ahead banner waits", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
-    expect(src).toMatch(/if \(drivingRouteRef\.current && heardAt\) \{\s*setSirenEpisode\(\(prev\) => noteSiren\(prev, Date\.now\(\), heardAt\)\);\s*\} else \{\s*setBannerMessage\("Emergency vehicle detected nearby"\);/);
-    expect(src).toMatch(/setTimeout\(\(\) => setSirenEpisode\(null\), Math\.max\(0, sirenEpisode\.lastAt \+ SIREN_HOLD_MS - Date\.now\(\)\)\)/);
-    expect(src).toMatch(/a\.source === "siren" \? SIREN_SPOKEN :/);
-    expect(src).toMatch(/aheadFeedNow\.filter\(\(a\) => a\.source !== "siren"\)/);
+    expect(src).not.toMatch(/sirenAheadAlert\(/);
+    expect(src).toMatch(/setRadarBanner\(\{ type: ev\.type, closeness: ev\.closeness \}\)/);
+    expect(src).toMatch(/state=\{navOptionsSheetOpen \|\| radarBanner \? \{ \.\.\.aheadState, alert: null \} : aheadState\}/);
+    expect(src).toMatch(/announcePhraseRef\.current\(\{ kind: "said", text: RADAR_SPOKEN \}\)/);
     expect(src).toMatch(/aheadFeedNow\.filter\(\(x\) => \(x\.source === "map" \|\| x\.source === "traffic"\)/);
   });
 });

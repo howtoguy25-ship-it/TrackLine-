@@ -256,7 +256,7 @@ import { presencesToShow } from "@/map/presenceFilter";
 import { rememberOwnUid } from "@/services/ownUids";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { homeRoadSigns, signIcon, signKind, type SignPoint } from "@/map/roadSignVisibility";
-import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech } from "@/services/navSpeech";
+import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech, isNavSpeaking } from "@/services/navSpeech";
 import {
   earlyAnnouncementThresholds,
   planStepAnnouncement,
@@ -280,7 +280,29 @@ import {
 } from "@/services/alerts";
 import { classifyAuRegion } from "@/utils/auStates";
 import { sirenDetection } from "@/services/sirenDetection";
-import { noteSiren, sirenAheadAlert, SIREN_HOLD_MS, SIREN_SPOKEN, type SirenEpisode } from "@/nav/ahead/sirenAhead";
+import { SIREN_SPOKEN } from "@/nav/ahead/sirenAhead";
+import { shouldListen } from "@/services/sirenTracker";
+import {
+  PASSING_TTL_MS,
+  PositionTrail,
+  RADAR_SPOKEN,
+  isDriving,
+  noteMoving,
+  questionExpired,
+  quickPin,
+  shouldAsk,
+  showRadarBanner,
+  sirenReport,
+  titleProblem,
+  vehicleFromType,
+  yesNo,
+  type PendingQuestion,
+  type RadarBanner,
+  type SirenDraft,
+} from "@/nav/sirenRadar";
+import { EmergencyVehicleBanner } from "@/components/EmergencyVehicleBanner";
+import { SirenQuestionCard } from "@/components/SirenQuestionCard";
+import { SirenReportPicker, type QuickPinSpot } from "@/components/SirenReportPicker";
 import { containsBlockedLanguage, clampToWordLimit, MAX_ALERT_COMMENT_WORDS } from "@/utils/commentFilter";
 import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmFeatureKind, type OsmTrafficData } from "@/services/osmTrafficData";
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
@@ -2645,44 +2667,97 @@ export function MapScreen() {
   const currentLatLngRef = useLatest(currentLatLng);
   const userRef = useLatest(user);
   const autoShareDetectionsRef = useLatest(settings.autoShareDetections);
-  const alertExpiryMsRef = useLatest(settings.alertExpiryMs);
-  // While driving a route, a siren is an ahead alert (nav/ahead/sirenAhead.ts); otherwise the info banner.
-  const drivingRouteRef = useLatest(!!route && travelMode === "driving");
-  const [sirenEpisode, setSirenEpisode] = useState<SirenEpisode | null>(null);
+  // Siren radar (nav/sirenRadar.ts): opt-in, listens only while driving (over 10 km/h, within
+  // 2 min of it, or navigating). A heard siren gets its own banner at the top (one banner at a
+  // time: the ahead banner waits) and the spoken line; once it's over and you've stopped, the
+  // "Did you see an emergency vehicle or incident?" question.
+  const [radarBanner, setRadarBanner] = useState<RadarBanner | null>(null);
+  const [sirenQuestion, setSirenQuestion] = useState<PendingQuestion | null>(null);
+  const [sirenAsking, setSirenAsking] = useState(false);
+  const [sirenDraft, setSirenDraft] = useState<SirenDraft | null>(null);
+  const [sirenLoudest, setSirenLoudest] = useState<LatLng | null>(null);
+  const [radarBannerHeight, setRadarBannerHeight] = useState(0);
+  const sirenTrailRef = useRef(new PositionTrail());
+  const lastMovingAtRef = useRef<number | null>(null);
+  const radarListeningRef = useRef(false);
+  const announcePhraseRef = useLatest(announcePhrase);
+
+  // Each fix: the trail (where was it loudest?) and whether we're still "driving".
   useEffect(() => {
-    if (!sirenEpisode) return;
-    const t = setTimeout(() => setSirenEpisode(null), Math.max(0, sirenEpisode.lastAt + SIREN_HOLD_MS - Date.now()));
-    return () => clearTimeout(t);
-  }, [sirenEpisode]);
+    if (!currentLatLng) return;
+    const now = location?.timestamp ?? Date.now();
+    sirenTrailRef.current.push(now, currentLatLng);
+    lastMovingAtRef.current = noteMoving(lastMovingAtRef.current, currentSpeedKmh, now);
+    const listen = shouldListen({
+      settingOn: settings.sirenRadar,
+      speedKmh: currentSpeedKmh,
+      navigating: isDriving(lastMovingAtRef.current, now, !!route && travelMode === "driving"),
+      // iOS hands the microphone to a phone call, so nothing is heard during one.
+      onCall: false,
+      ownAudioLoud: false,
+    });
+    if (listen !== radarListeningRef.current) {
+      radarListeningRef.current = listen;
+      if (listen) sirenDetection.start();
+      else sirenDetection.stop();
+    }
+    // Recomputed on each fix; the values above are read for this fix only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location?.timestamp, settings.sirenRadar, route, travelMode]);
+  // Turned off in Settings: stop at once (there may be no new fix to notice it).
+  useEffect(() => {
+    if (settings.sirenRadar || !radarListeningRef.current) return;
+    radarListeningRef.current = false;
+    sirenDetection.stop();
+  }, [settings.sirenRadar]);
 
   useEffect(() => {
-    sirenDetection.start();
-
-    const unsubscribe = sirenDetection.onDetection(async ({ label }) => {
-      const heardAt = currentLatLngRef.current;
-      if (drivingRouteRef.current && heardAt) {
-        setSirenEpisode((prev) => noteSiren(prev, Date.now(), heardAt));
+    sirenDetection.setOwnAudioCheck(isNavSpeaking);
+    const offEvents = sirenDetection.onEvent((ev) => {
+      if (ev.kind === "start" || ev.kind === "update") {
+        setRadarBanner({ type: ev.type, closeness: ev.closeness });
+        if (ev.kind === "start") announcePhraseRef.current({ kind: "said", text: RADAR_SPOKEN });
       } else {
-        setBannerMessage("Emergency vehicle detected nearby");
-        setBannerVisible(true);
+        setRadarBanner(null);
+        setSirenQuestion({ endedAt: ev.at, type: ev.type, loudest: sirenTrailRef.current.at(ev.loudestAt) });
       }
-
+    });
+    // Auto-share (Settings, off by default) still files a report the moment a siren starts.
+    const offDetect = sirenDetection.onDetection(async () => {
       const latLng = currentLatLngRef.current;
       const currentUser = userRef.current;
       if (autoShareDetectionsRef.current && latLng && currentUser) {
         try {
-          await submitReport("emergency_vehicle", latLng, latLng, currentUser.uid, { customTtlMs: alertExpiryMsRef.current, item: "emergencyVehicles" });
+          await submitReport("emergency_vehicle", latLng, latLng, currentUser.uid, { customTtlMs: PASSING_TTL_MS, item: "emergencyVehicles" });
         } catch (err) {
           console.warn("[siren] auto-share detection failed", err);
         }
       }
     });
-
     return () => {
-      unsubscribe();
+      offEvents();
+      offDetect();
+      radarListeningRef.current = false;
       sirenDetection.stop();
     };
-  }, [alertExpiryMsRef, autoShareDetectionsRef, currentLatLngRef, userRef, drivingRouteRef]);
+  }, [announcePhraseRef, autoShareDetectionsRef, currentLatLngRef, userRef]);
+
+  // The question: asked once you're under 10 km/h, within 10 min of the siren ending.
+  useEffect(() => {
+    if (!sirenQuestion || sirenAsking) return;
+    const now = location?.timestamp ?? Date.now();
+    if (questionExpired(sirenQuestion, now)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the question's 10 minutes ran out on this fix
+      setSirenQuestion(null);
+      return;
+    }
+    if (shouldAsk(sirenQuestion, now, currentSpeedKmh, false) && !placingAlert) setSirenAsking(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location?.timestamp, sirenQuestion, sirenAsking]);
+  const onSirenNo = useCallback(() => {
+    setSirenAsking(false);
+    setSirenQuestion(null);
+  }, []);
 
   // Sensitivity is the one siren setting that genuinely should apply immediately without a
   // full restart -- kept as its own small effect, separate from the mount-once one above.
@@ -4597,9 +4672,12 @@ export function MapScreen() {
     // whenever the typed comment contains a not-allowed word (see commentFilter.ts), same check
     // reportAlert itself repeats server-side-equivalent (belt and braces, not relying on either
     // check alone).
-    if (containsBlockedLanguage(alertComment)) return;
-    const type = pendingAlertTypeRef.current;
-    const item = pendingReportItemRef.current;
+    // A siren radar "Yes" report: what happened decides the item (nav/sirenRadar.ts).
+    const sirenPlan = sirenDraft ? sirenReport(sirenDraft) : null;
+    if (sirenDraft && titleProblem(sirenDraft.title)) return;
+    if (!sirenPlan && containsBlockedLanguage(alertComment)) return;
+    const type = sirenPlan ? baseTypeOf(sirenPlan.item) : pendingAlertTypeRef.current;
+    const item = sirenPlan ? sirenPlan.item : pendingReportItemRef.current;
     const location = overrideLocation ?? alertPlacementLatLng;
     // A map chat is its message: it needs a few words.
     if (item && needsComment(item) && !alertComment.trim()) {
@@ -4627,11 +4705,17 @@ export function MapScreen() {
     setSubmittingAlert(true);
     try {
       const result = await submitReport(type, location, currentLatLng, user.uid, {
-        customTtlMs: settings.alertExpiryMs,
-        comment: alertComment,
+        customTtlMs: sirenPlan?.ttlMs ?? settings.alertExpiryMs,
+        comment: sirenPlan ? sirenPlan.comment : alertComment,
         reporterName: settings.showNameOnReports ? user.displayName : null,
         item,
-        closure: item === "closures" ? closureForReport(closureDraft, headingTrack.filter.shown ?? null) : null,
+        closure: sirenPlan
+          ? sirenPlan.closure
+            ? closureForReport(sirenPlan.closure, headingTrack.filter.shown ?? null)
+            : null
+          : item === "closures"
+            ? closureForReport(closureDraft, headingTrack.filter.shown ?? null)
+            : null,
       });
       if (result.kind === "merged") {
         setBannerMessage(`${item ? itemLabel(item) : ALERT_LABELS[type]} was already reported here — you've confirmed it.`);
@@ -4645,6 +4729,7 @@ export function MapScreen() {
       setPlacingAlert(false);
       setAlertPlacementLatLng(null);
       setAlertComment("");
+      setSirenDraft(null);
     } catch (err) {
       if (err instanceof ReportRefused) {
         setBannerMessage(err.message);
@@ -4663,7 +4748,7 @@ export function MapScreen() {
       submittingAlertRef.current = false;
       setSubmittingAlert(false);
     }
-  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment, currentLatLng, closureDraft, headingTrack.filter.shown]);
+  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment, currentLatLng, closureDraft, headingTrack.filter.shown, sirenDraft]);
 
   // A report said out loud (nav/voiceReport.ts): where you are now, the same server rules (rate
   // limits, trust) as a tapped one, said back to you, with the same 3 s Undo.
@@ -4732,7 +4817,58 @@ export function MapScreen() {
     setPlacingAlert(false);
     setAlertPlacementLatLng(null);
     setAlertComment("");
+    setSirenDraft(null);
   }, []);
+
+  // Siren radar "Yes": the report sheet, the pin starting where the siren was loudest.
+  const onSirenYes = useCallback(() => {
+    const q = sirenQuestion;
+    setSirenAsking(false);
+    setSirenQuestion(null);
+    if (!q || !currentLatLng) return;
+    setSirenDraft({ vehicle: vehicleFromType(q.type), what: "passing", title: "" });
+    setSirenLoudest(q.loudest);
+    onReportItemSelected("emergencyVehicles");
+    const at = q.loudest ?? initialAlertPlacement(currentLatLng);
+    setAlertPlacementLatLng(at);
+    mapRef.current?.animateCamera({ center: at }, { duration: 300 });
+  }, [sirenQuestion, currentLatLng, onReportItemSelected, initialAlertPlacement]);
+  const onSirenQuickPin = useCallback(
+    (spot: QuickPinSpot) => {
+      if (!currentLatLng) return;
+      const at = quickPin(spot, currentLatLng, headingTrack.filter.shown ?? null, sirenLoudest);
+      setAlertPlacementLatLng(at);
+      mapRef.current?.animateCamera({ center: at }, { duration: 300 });
+    },
+    [currentLatLng, headingTrack.filter.shown, sirenLoudest]
+  );
+  // Voice on ("Hey TrackLine" turned on): a spoken "yes" or "no" answers the question too.
+  const sirenVoice = sirenAsking && settings.wakePhrase;
+  const onSirenYesRef = useLatest(onSirenYes);
+  const onSirenNoRef = useLatest(onSirenNo);
+  useEffect(() => {
+    if (!sirenVoice) return;
+    let session: { stop: () => void } | null = null;
+    let cancelled = false;
+    let answered = false;
+    const hear = (text: string) => {
+      const a = yesNo(text);
+      if (!a || answered) return;
+      answered = true;
+      session?.stop();
+      if (a === "yes") onSirenYesRef.current();
+      else onSirenNoRef.current();
+    };
+    startVoiceSearch(navLanguage, { onPartial: hear, onFinal: hear, onEnd: () => {}, onError: () => {} }).then((s) => {
+      if (cancelled) s?.stop();
+      else session = s;
+    });
+    return () => {
+      cancelled = true;
+      session?.stop();
+    };
+  }, [sirenVoice, navLanguage, onSirenYesRef, onSirenNoRef]);
+
 
   // Tilts (or flattens) the camera for the "2 views" alert-placement switcher -- deliberately
   // omits `center` from animateCamera (only pitch/heading are given) so the fixed-center pin's
@@ -5143,10 +5279,8 @@ export function MapScreen() {
     if (!navMatch?.onRoute) return [];
     const feed = aheadOf([...aheadProjected, ...aheadSlowdown], navMatch.along);
     // The episode clears itself when the hold ends (effect above), so non-null means heard recently.
-    const siren = travelMode === "driving" ? sirenAheadAlert(sirenEpisode, navMatch.along, sirenEpisode?.lastAt ?? 0) : null;
-    if (siren) feed.push(siren);
     return feed.sort((a, b) => a.aheadM - b.aheadM);
-  }, [aheadProjected, aheadSlowdown, navMatch, sirenEpisode, travelMode]);
+  }, [aheadProjected, aheadSlowdown, navMatch]);
   // Closures on the route ahead: drawn closed on the map, and a full one routed around once.
   const closedStretches = useMemo(
     () => (route ? aheadFeedNow.filter((a) => a.kind === "closure").map((a) => closedStretch(route.polyline, a.alongM)).filter((l) => l.length > 1) : []),
@@ -6684,14 +6818,34 @@ export function MapScreen() {
           streetName={navRoadName}
           banner={null}
           onBanner={() => navOptionsSheetRef.current?.expand()}
-          dropBy={aheadBannerUp ? aheadRoomFor(aheadBannerHeight) : 0}
+          dropBy={radarBanner && radarBannerHeight ? aheadRoomFor(radarBannerHeight) : aheadBannerUp ? aheadRoomFor(aheadBannerHeight) : 0}
+        />
+      )}
+
+      {/* Siren radar: its own banner at the top (one banner at a time, so the ahead banner waits). */}
+      {showRadarBanner(radarBanner, exitZoomActive) && radarBanner && !placingAlert && (
+        <EmergencyVehicleBanner
+          top={insets.top + (route ? instructionCardHeight + 12 : 12)}
+          type={radarBanner.type}
+          closeness={radarBanner.closeness}
+          dark={mapScheme === "dark"}
+          onHeight={setRadarBannerHeight}
+        />
+      )}
+      {sirenAsking && !radarBanner && !placingAlert && (
+        <SirenQuestionCard
+          top={insets.top + (route ? instructionCardHeight + 12 : 12)}
+          dark={mapScheme === "dark"}
+          onYes={onSirenYes}
+          onNo={onSirenNo}
+          listening={sirenVoice}
         />
       )}
 
       {/* The ahead-alert banner (nav/ahead): just above the ETA bar; the controls above rise first. */}
       {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
         <AheadBanner
-          state={navOptionsSheetOpen ? { ...aheadState, alert: null } : aheadState}
+          state={navOptionsSheetOpen || radarBanner ? { ...aheadState, alert: null } : aheadState}
           unit={settings.distanceUnit}
           dark={mapScheme === "dark"}
           road={aheadRoad}
@@ -7111,8 +7265,12 @@ export function MapScreen() {
 
       {placingAlert && (
         <View style={[styles.placementBar, { bottom: insets.bottom + spacing.xl }]}>
-          <Text style={styles.placementBarText}>Move the map to place the pin</Text>
-          {placingItem === "closures" ? <ClosureDetailsPicker value={closureDraft} onChange={setClosureDraft} /> : null}
+          <Text style={styles.placementBarText}>{sirenDraft ? "Drag the map to where it was" : "Move the map to place the pin"}</Text>
+          {placingItem === "closures" && !sirenDraft ? <ClosureDetailsPicker value={closureDraft} onChange={setClosureDraft} /> : null}
+          {sirenDraft ? (
+            <SirenReportPicker value={sirenDraft} onChange={setSirenDraft} stopped={(currentSpeedKmh ?? 0) < 10} onQuickPin={onSirenQuickPin} />
+          ) : (
+            <>
           {/* Optional "up to 7 words" comment, per explicit request -- clamped live to that
               word cap on every keystroke (onChangeAlertComment) so it's never possible to type
               past it, and re-checked for blocked language here (inline error, blocks Set) as
@@ -7137,6 +7295,8 @@ export function MapScreen() {
               {alertComment.trim() ? alertComment.trim().split(/\s+/).length : 0}/{MAX_ALERT_COMMENT_WORDS} words
             </Text>
           </View>
+            </>
+          )}
           <View style={styles.placementBarButtons}>
             <Button
               variant="secondary"
@@ -7182,11 +7342,12 @@ export function MapScreen() {
             <Button
               variant="primary"
               icon="checkmark"
-              label="Set"
+              label={sirenDraft ? "Report" : "Set"}
               onPress={() => confirmAlertPlacement()}
-              disabled={submittingAlert || alertCommentBlocked}
-              accessibilityLabel="Set alert location"
+              disabled={submittingAlert || (sirenDraft ? !!titleProblem(sirenDraft.title) : alertCommentBlocked)}
+              accessibilityLabel={sirenDraft ? "Report the emergency vehicle" : "Set alert location"}
               loading={submittingAlert}
+              testID={sirenDraft ? "siren-report-send" : undefined}
             />
           </View>
         </View>

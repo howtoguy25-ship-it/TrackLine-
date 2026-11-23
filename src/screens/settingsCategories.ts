@@ -66,10 +66,11 @@ export const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   // Reports (every camera, road feature and report type), the speedometer, and the map's buttons.
   mapInfo: ["Reports", "Mapped road features", "Live traffic (NSW)", "Speedometer", "Speed limit sign", "Map shortcuts"],
   navigationVoice: ["Voice guidance", "Spoken directions", "Units", "Public transport"],
-  alertsCommunity: ["Live alerts", "Alert regions", "Emergency vehicle radar"],
+  alertsCommunity: ["Live alerts", "Alert regions"],
   notifications: ["Messages from TrackLine"],
   plannedDrives: ["Planned drives"],
-  vehicleAI: ["AI vehicle detection", "Vehicle checks", "Owner tools"],
+  // Siren radar lives with the other on-device AI tools (it was under Live alerts).
+  vehicleAI: ["Emergency vehicle radar", "AI vehicle detection", "Vehicle checks", "Owner tools"],
   about: ["About"],
   developer: ["Touch debugger (dev only)", "GPS replay (dev only)"],
 };

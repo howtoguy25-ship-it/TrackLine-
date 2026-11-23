@@ -91,6 +91,15 @@ user's own data; S = static app content (settings, help, licences).
 | OwnerDashboardScreen / ModerationScreen | stats, broadcasts, moderation | Firestore aggregates + callables | R; K #1 (fixed #3) |
 | SmokeTestScreen | press-through test | dev only (`__DEV__`) | — |
 
+### Added 2026-11-23: siren radar
+
+| Where | Shows | Source | Status |
+|---|---|---|---|
+| EmergencyVehicleBanner | siren heard, type, closer / nearby / away | the phone's microphone → YAMNet on the phone (`services/sirenTracker.ts`); nothing shown without 3 real windows over 0.6 | R |
+| SirenQuestionCard | the question | only after a real siren ended, only when your GPS speed is under 10 km/h | R |
+| SirenReportPicker / placement bar | report | the normal report pipeline (server rules, undo, anti-spam) | R |
+| Settings › Siren radar | on / off | local setting; off = the microphone loop is stopped | S |
+
 ## 5. The guard (so it stays this way)
 
 - `eslint.config.js`, files `src/**`: `no-restricted-imports` blocks `__tests__`, `__mocks__`,
