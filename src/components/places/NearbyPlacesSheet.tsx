@@ -18,6 +18,7 @@ import {
   searchNearbyNew,
   searchTextNew,
   updatedAgo,
+  evText,
   type AreaKey,
   type FuelPrice,
   type FuelTypeKey,
@@ -26,6 +27,8 @@ import {
   type SortKey,
 } from "@/places/nearbyNew";
 import { fetchFuelCheck, pricesFor } from "@/places/fuelPrices";
+import { fetchDriverPrices, stationHere, withDriverPrices } from "@/places/driverFuelPrices";
+import { FuelPriceReport } from "@/components/places/FuelPriceReport";
 import { driveTimesTo } from "@/places/driveTimes";
 import { priceLevelText } from "@/services/places";
 import { formatDistance, formatDurationText } from "@/utils/navFormat";
@@ -137,8 +140,13 @@ export const NearbyPlacesSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
             fetchFuelCheck(here, fuelType, Math.max(1, Math.round(radiusM / 1000)))
               .then((fc) => {
                 if (cancelled) return;
-                setPrices(pricesFor(r, fuelType, fc.stations));
+                const official = pricesFor(r, fuelType, fc.stations);
+                setPrices(official);
                 setPriceNote(!fc.configured ? "Live NSW prices aren't set up yet." : fc.error ? `Live prices: ${fc.error}` : null);
+                // Gaps filled with prices 3+ drivers agreed on (gap 18); never over an official one.
+                fetchDriverPrices(r.filter((x) => !official.has(x.placeId)).map((x) => x.placeId), fuelType)
+                  .then((drivers) => !cancelled && drivers.size > 0 && setPrices(withDriverPrices(official, drivers)))
+                  .catch(() => {});
               })
               .catch((err) => {
                 if (cancelled) return;
@@ -254,6 +262,7 @@ export const NearbyPlacesSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
           </ScrollView>
         ) : null}
         {priceNote ? <Text style={styles.note}>{priceNote}</Text> : null}
+        {category === "fuel" && location && load.status === "ok" && stationHere(results) ? <FuelPriceReport station={stationHere(results)!} fuelType={fuelType} me={location} /> : null}
 
         {!location ? (
           <Text style={styles.empty}>Waiting for your location to find {meta.noun} near you.</Text>
@@ -336,6 +345,7 @@ function ResultRow({
     r.openNow === true ? "Open" : r.openNow === false ? "Closed" : null,
     r.rating != null ? `rated ${r.rating.toFixed(1)}` : null,
     price ? `${formatFuelPrice(price.centsPerLitre)} a litre` : null,
+    r.ev ? evText(r.ev) : null,
     formatDistance(r.distanceMeters, unit),
     driveSeconds != null ? `${formatDurationText(driveSeconds)} drive` : null,
   ]
@@ -367,11 +377,19 @@ function ResultRow({
           ) : null}
           {level ? <Text style={styles.meta}>{level}</Text> : null}
         </View>
+        {/* Gap 18: live charger availability from Google (only when the network reports it). */}
+        {r.ev ? (
+          <Text style={[styles.meta, r.ev.available === 0 ? { color: colors.danger } : r.ev.available ? { color: colors.goodText } : null]} numberOfLines={1} testID={`nearby-ev-${r.placeId}`}>
+            {evText(r.ev)}
+            {r.ev.available != null && updatedAgo(r.ev.updatedMs) ? ` · ${updatedAgo(r.ev.updatedMs)}` : ""}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.right}>
         {price ? (
           <>
             <Text style={styles.price}>{formatFuelPrice(price.centsPerLitre)}</Text>
+            {price.source === "Drivers" ? <Text style={styles.small}>{`${price.drivers ?? 3} drivers`}</Text> : null}
             {updatedAgo(price.updatedMs) ? <Text style={styles.small}>{updatedAgo(price.updatedMs)}</Text> : null}
           </>
         ) : null}

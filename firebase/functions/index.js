@@ -1301,6 +1301,29 @@ exports.fuelPricesNearby = onCall({ secrets: [FUELCHECK_API_KEY, FUELCHECK_API_S
   }
 });
 
+// ---- Driver-reported fuel prices (gap item 18) ----
+// A driver at a station reports what the sign says. Shown in the app only once 3 different drivers
+// agree within 2 cents in 24 h (fuelUserPricesCore.js). Only this function writes fuelUserPrices.
+const fuelUserPricesCore = require("./fuelUserPricesCore");
+exports.reportFuelPrice = onCall({ timeoutSeconds: 20 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const r = fuelUserPricesCore.parseReport(request.data);
+  if (r.error) throw new HttpsError("invalid-argument", r.error);
+  const ref = getFirestore().collection("fuelUserPrices").doc(fuelUserPricesCore.docId(r.placeId, r.fuelType));
+  try {
+    const out = await getFirestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const next = fuelUserPricesCore.applyReport(snap.exists ? snap.data() : null, { uid: request.auth.uid, cents: r.cents }, Date.now());
+      tx.set(ref, { ...next, placeId: r.placeId, fuelType: r.fuelType, name: r.name, lat: r.stationLat, lng: r.stationLng });
+      return next;
+    });
+    return { confirmed: out.confirmed, reports: out.reports.length, needed: fuelUserPricesCore.CONFIRMATIONS };
+  } catch (err) {
+    if (err && err.code === "resource-exhausted") throw new HttpsError("resource-exhausted", err.message);
+    throw err;
+  }
+});
+
 // ---- Planned drives (Plan a drive) ----
 // Every 5 minutes: drives due within 30 minutes that haven't had their reminder get one traffic
 // re-check (Google Routes API, the same server key as badge popularity) and one push with the

@@ -8,6 +8,7 @@ export const NAV: { href: string; label: string; roles: Role[] }[] = [
   { href: "/messages/", label: "Messages", roles: ["owner", "admin", "viewer"] },
   { href: "/config/", label: "App control", roles: ["owner", "admin", "viewer"] },
   { href: "/moderation/", label: "Moderation", roles: ["owner", "admin", "moderator", "viewer"] },
+  { href: "/map-editor/", label: "Map editor", roles: ["owner", "admin", "moderator", "viewer"] },
   { href: "/support/", label: "Support", roles: ["owner", "admin", "support", "viewer"] },
   { href: "/money/", label: "Money + providers", roles: ["owner", "admin", "viewer"] },
   { href: "/health/", label: "System health", roles: ["owner", "admin", "viewer"] },

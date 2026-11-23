@@ -15,7 +15,7 @@ describe("sidebar and buttons by role (the server enforces the same rules)", () 
   it("viewer reads but can't act; moderator sees moderation only; only the owner grants roles", () => {
     expect(navFor("viewer").map((n) => n.label)).not.toContain("Staff roles");
     expect(canDo("viewer", "users.act")).toBe(false);
-    expect(navFor("moderator").map((n) => n.label)).toEqual(["Overview", "Users", "Moderation"]);
+    expect(navFor("moderator").map((n) => n.label)).toEqual(["Overview", "Users", "Moderation", "Map editor"]);
     expect(canDo("support", "users.billing")).toBe(false);
     expect(canDo("admin", "roles.grant")).toBe(false);
     expect(canDo("owner", "roles.grant")).toBe(true);
