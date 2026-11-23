@@ -243,6 +243,7 @@ import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadR
 import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
+import { parseVoiceReport, type VoiceReport } from "@/nav/voiceReport";
 import { startVoiceSearch, VOICE_SEARCH_MESSAGES, type VoiceSearchSession } from "@/services/voiceSearch";
 import { pickShortcut, shortcutText, slowTrafficAhead, throughPointsAhead, withSideStreets, type ShortcutKind } from "@/nav/shortcuts";
 import { ReportIcon } from "@/components/icons/MapControlIcons";
@@ -4588,6 +4589,38 @@ export function MapScreen() {
     }
   }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment, currentLatLng]);
 
+  // A report said out loud (nav/voiceReport.ts): where you are now, the same server rules (rate
+  // limits, trust) as a tapped one, said back to you, with the same 3 s Undo.
+  const sendVoiceReport = useCallback(
+    async (r: VoiceReport) => {
+      if (!user || !currentLatLng) {
+        setBannerMessage(!user ? "Still signing you in — try again in a moment." : "Waiting for your location — reports need it.");
+        setBannerVisible(true);
+        return;
+      }
+      try {
+        const result = await submitReport(r.type, currentLatLng, currentLatLng, user.uid, {
+          customTtlMs: settings.alertExpiryMs,
+          comment: r.note,
+          reporterName: settings.showNameOnReports ? user.displayName : null,
+          item: r.item,
+        });
+        announcePhrase({ kind: "said", text: result.kind === "merged" ? `${r.label} confirmed` : r.spoken });
+        if (result.kind === "merged") {
+          setBannerMessage(`${r.label} was already reported here — you've confirmed it.`);
+          setBannerVisible(true);
+        } else {
+          setPendingReport({ result, type: r.type, label: r.label, untilMs: result.kind === "pending" ? result.publishAtMs : Date.now() + UNDO_MS });
+        }
+      } catch (err) {
+        setBannerMessage(err instanceof ReportRefused ? err.message : "Couldn't send that report — check your connection and try again.");
+        setBannerVisible(true);
+        if (!(err instanceof ReportRefused)) Sentry.logger.error("map: voice report failed", { error: String(err) });
+      }
+    },
+    [user, currentLatLng, settings.alertExpiryMs, settings.showNameOnReports, announcePhrase]
+  );
+
   // The 3 s Undo after sending a report (held on the server until then).
   const clearPendingReport = useCallback(() => setPendingReport(null), []);
   const onUndoReport = useCallback(() => {
@@ -5489,6 +5522,9 @@ export function MapScreen() {
 
   useEffect(() => {
     navCommandRef.current = (text: string) => {
+      // "Crash ahead", "police on the left": a report, sent from here (nav/voiceReport.ts).
+      const spokenReport = parseVoiceReport(text);
+      if (spokenReport) return void sendVoiceReport(spokenReport);
       const cmd = parseNavVoiceCommand(text);
       if (cmd === "stop") exitNavigation("voice");
       else if (cmd === "report") openAlertTypePicker();
@@ -5496,7 +5532,7 @@ export function MapScreen() {
       else if (cmd === "unmute") updateSettings({ spokenDirections: "normal" });
       else if (cmd === "routes") showNavRoutes();
       else if (cmd === "search") setSearchAlongOpen(true);
-      else Alert.alert("Voice command", `Didn't catch a command in "${text}". Try "stop navigation", "report" or "mute".`);
+      else Alert.alert("Voice command", `Didn't catch a command in "${text}". Try "crash ahead", "police on the left", "stop navigation" or "mute".`);
     };
   });
 
