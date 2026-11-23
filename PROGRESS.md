@@ -6,6 +6,20 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Permanent fix: location marker, camera control, route fit, nav orientation, 3D, controls — 2026-11-23
+
+All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §45).
+
+| § | Root cause | Fix (one place) | Regression test |
+|---|---|---|---|
+| 1 One marker | A second renderer (Mapbox puck / platform dot) and a dot fallback drew the driver alongside our arrow; a stale fix could jump it back | Only `map-v2/layers/UserArrow.tsx` (native SymbolLayer, our arrow image, with or without heading), `userMotion.ts` 60fps ease that drops stale / out-of-order fixes; own uid never drawn as a Tracky; lint bans puck props | `__tests__/map/oneUserMarker.test.tsx`, `userArrow.test.ts` |
+| 2 Camera | ~45 camera calls in MapScreen, each with its own flag. The home 3D effect re-zoomed to 18.5 / pitch 65 on every GPS fix, ignoring a pinch; a 100 km "sanity recentre" and a foreground reset also undid pans; the nav timer recentred after 10 s at any speed | `map-v2/cameraController.ts`: FOLLOW / FREE / ROUTE_PREVIEW / OVERVIEW / NAV_FOLLOW. Any gesture → FREE; only Recentre or start/end of a drive leave it. Every move carries a source and is refused outside its state. Lint bans camera calls anywhere else. Nav auto-recentre: 15 s untouched, > 10 km/h, driving only, Settings › Recentre automatically | `__tests__/map/cameraController.test.ts`, `cameraOwnership.test.ts` (pinch held 60 s, Recentre, no camera call outside the controller) |
+| 3 Route preview | (Fit was right; location updates and leftover follow could still move it) | ROUTE_PREVIEW refuses follow moves; explicit fits (routes, pick, mode, Avoid) re-enter it; sheet/top-card size changes refit only while in it | `cameraOwnership.test.ts` (both sheet heights, 4 phone sizes), `previewCamera.test.ts` |
+| 4 Nav camera | Go now used the filtered heading — meaningless while parked | Bearing = the matched route segment (first segment before moving); north-up only with Settings › Keep map north up or the view menu; pitch 45, arrow at 70% | `cameraOwnership.test.ts` (first segment ±10°, arrow 70%), `navCamera.test.ts` |
+| 5 Controls | Home Re-centre sat bottom-left | Bottom-right column: Re-centre above Report, 12 pt gap, only in FREE; one pure layout (`homeControlFrames`) | `__tests__/map/controlsLayout.test.ts` (320/375/390/430, every state, banner down) |
+| 6 3D / ad | Raised buildings were light grey in dark mode, 50% height, from z14; approach close-up at 60°; a fixed 320-wide ad left strips either side | Theme colours, 40% height (≤ 40 m), fade in from z16, more see-through with a route, labels on top; approach pitch 45; ad full-width inline adaptive, 50 pt | `__tests__/mapV2.test.ts`, `presses/homeScreen.test.tsx` |
+| 7 Proof | — | `docs/permanent-fix` (rendered frames + pinch clip, measured numbers) | — |
+
 ## Siren radar, map polish, ahead banner at the top, closures by direction — 2026-11-23
 
 All in code, typechecked, tested and merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST.

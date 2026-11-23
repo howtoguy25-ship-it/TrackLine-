@@ -15,7 +15,7 @@ jest.mock("@react-native-community/datetimepicker", () => {
 jest.mock("react-native-google-mobile-ads", () => ({
   TestIds: { BANNER: "test-banner", APP_OPEN: "test-app-open", INTERSTITIAL: "test-interstitial" },
   BannerAd: () => null,
-  BannerAdSize: { BANNER: "BANNER" },
+  BannerAdSize: { BANNER: "BANNER", INLINE_ADAPTIVE_BANNER: "INLINE_ADAPTIVE_BANNER" },
 }));
 jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock")

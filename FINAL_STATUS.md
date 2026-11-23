@@ -4,20 +4,31 @@ One row per requirement. DONE = in code with a passing test. Nothing has been ru
 me; "needs deploy" means the Cloud Functions / rules have never been deployed (BLOCKED.md #1).
 Everything that needs a key, a console setting or a decision from you is in BLOCKED.md.
 
-## Final checks (2026-11-23, branch claude/go-session-0d5bup, real output)
+## Final checks (2026-11-23, after the permanent fix, branch claude/go-session-0d5bup, real output)
 
 | Check | Result |
 |---|---|
 | `npx tsc --noEmit -p .` | exit 0, no errors |
-| `npx eslint src __tests__ jest.setup.js --max-warnings 0` | exit 0, 0 problems |
-| `npx jest` | Test Suites: 104 passed, 104 total · Tests: 1344 passed, 1344 total |
-| Server pure tests (`firebase/tests`, no emulator) | all non-emulator suites pass (fuelUserPrices 5, mapEditor 3, scores, reports, admin…) |
-| Emulator suite (`firebase emulators:exec … npm --prefix firebase/tests test`, isolated copy without local secrets) | EMULATOR_RESULT |
-| `npx expo export --platform ios` | exit 0 · iOS bundle 3136 modules |
-| Admin site (`/admin`) | `tsc` 0 errors · vitest 4/4 · `next build` OK (new `/map-editor` page, 211 kB) |
+| `npx eslint src __tests__ jest.setup.js --max-warnings 0` | exit 0, 0 problems (now also refuses any camera call outside `cameraController.ts` / `TrackLineMap.tsx`, and any second driver marker) |
+| `npx jest` | Test Suites: 109 passed, 109 total · Tests: 1389 passed, 1389 total |
+| Emulator suite (`firebase emulators:exec … npm --prefix firebase/tests test`, isolated copy with the CI's placeholder secrets, no local keys) | Test Suites: 16 passed, 16 total · Tests: 297 passed, 297 total (exit 0). An earlier run without the placeholder file failed 2 character-voice tests only because the key was missing, not "unset"; CI writes the same placeholder file |
+| `npx expo export --platform ios` | exit 0 · iOS bundle 3139 modules. (It first FAILED on `require("…user-arrow@3x.png")` — jest can't see that; fixed with 1x/2x/3x files + base-name require and a guard test) |
+| Admin site (`/admin`) | `tsc` 0 errors · vitest 4/4 · `next build` OK (unchanged since) |
 | Map styles | open style-spec validator: 0 errors on light / dark / satellite (`__tests__/map/styleValid.test.ts`) |
 | Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
-| TestFlight | build 212 (ce48702) map polish + siren radar · 213 (ace575b) live road view · 214 (4633690) native siren stream · **215 (a9b1f86) gaps 15-18 + everything above** — all FINISHED and on TestFlight (not submitted for review) |
+| TestFlight | 212 (ce48702) · 213 (ace575b) · 214 (4633690) · 215 (a9b1f86) gaps 15-18 · **PERMANENT_FIX_BUILD** — all on TestFlight only (not submitted for review) |
+
+## 2026-11-23: permanent fix — marker, camera, route fit, nav orientation, 3D, controls
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| §1 One location marker (our arrow only, with or without heading, 60fps, stale fixes dropped, own Tracky never drawn; puck props banned by lint) | DONE | `__tests__/map/oneUserMarker.test.tsx`, `userArrow.test.ts` | TEST_ON_PHONE §45.1 |
+| §2 CameraController FOLLOW / FREE / ROUTE_PREVIEW / OVERVIEW / NAV_FOLLOW; any gesture → FREE; only Recentre / start / end leave it; lint rule; nav auto-recentre 15 s, > 10 km/h, setting (default on), never at home | DONE | `__tests__/map/cameraController.test.ts`, `cameraOwnership.test.ts`, `docs/permanent-fix/pinch-out-*.png` (0 camera moves in 60 s) | §45.2-3, §45.7 |
+| §3 Route preview fitted (measured top card + 24, sheet + 24, sides 32, 600 ms), refit on route / mode / Avoid / sheet, never on location; flat, north-up, no 3D | DONE | `cameraOwnership.test.ts`, `previewCamera.test.ts`, `docs/permanent-fix/route-preview-*.png` (all points inside at both sheet heights) | §45.5 |
+| §4 Nav camera faces the road from the first second (first route segment), pitch 45, arrow at 70 %, zoom by speed; north-up only with the new setting | DONE | `cameraOwnership.test.ts` (±10°, 70 %), `docs/permanent-fix/nav-facing-road-*.png` (measured 0.700) | §45.6 |
+| §5 Controls: Re-centre above Report (FREE only), speed sign above speedometer, mic + sound top-right, banner never overlaps; 320/375/390/430 | DONE (on a 320 × 568 phone the mic / sound step aside while the ahead banner is down) | `__tests__/map/controlsLayout.test.ts`, `docs/permanent-fix/controls-banner*.png` | §45.8 |
+| §6 3D: flat footprints by default; when on: 40 % height ≤ 40 m, theme colours, fade in from z16, see-through near a route, labels on top; pitch ≤ 45 everywhere; satellite never default; ad bar black side strips gone (full-width) | DONE | `__tests__/mapV2.test.ts`, `presses/homeScreen.test.tsx` | §45.4, §45.9 |
+| §7 Proof | DONE as rendered frames (no iOS simulator on Linux — BLOCKED #28) | `docs/permanent-fix/README.md`, `shots.json`, `pinch-out-then-recentre.mp4` | Phone test §45 |
 
 ## 2026-11-23: banner, map polish, siren radar, live road view, gaps 4-18
 

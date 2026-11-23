@@ -6346,6 +6346,7 @@ export function MapScreen() {
           satellite={mapType === "hybrid"}
           dimmed={isPickingRoute}
           show3DBuildings={settings.show3DBuildings && !inRouteSelection}
+          routeShown={!!route || inRouteSelection}
           showTraffic={showsTrafficLayer}
           padding={mapPadding}
           initialCenter={currentLatLng ?? { latitude: -33.8688, longitude: 151.2093 }}

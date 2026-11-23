@@ -8,13 +8,13 @@ import { MotionSmoother, type Pose } from "@/map-v2/userMotion";
 // native LocationPuck, whose arrow was an image MapIcons snapshots from a React view
 // asynchronously; until that snapshot registered, Mapbox drew its own default blue dot, and the
 // puck ran its own interpolation separate from what the camera followed. Now: our arrow is a
-// bundled PNG (assets/map/user-arrow@3x.png, registered with the style, never missing), drawn by
+// bundled PNG (assets/map/user-arrow.png, @2x, @3x, registered with the style, never missing), drawn by
 // a SymbolLayer from one position stream, eased between fixes at display rate (userMotion.ts).
 // Nothing else may draw the user: eslint.config.js bans LocationPuck / UserLocation /
 // showsUserLocation in src, and __tests__/map/userArrow.test.tsx checks there's exactly one.
 
 export const USER_ARROW_ICON = "user-arrow";
-const USER_ARROW_PNG = require("../../../assets/map/user-arrow@3x.png");
+const USER_ARROW_PNG = require("../../../assets/map/user-arrow.png");
 
 /** A little smaller zoomed out, full size at street level. */
 export const ARROW_SCALE = ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 0.8, 17, 1.0, 20, 1.15];

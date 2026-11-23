@@ -625,6 +625,34 @@ new road's within a few seconds (it used to stick to the first road).
 2. As a moderator, drag a pin a little: asked for a reason, then it stays there (and on phones).
    Dragging more than 2 km is refused. Click a pin: Approve / Remove. Audit log shows each change.
 
+## 45. Permanent fix: one marker, camera control, route fit, nav facing the road, controls — NEEDS DEVICE TEST
+
+1. **One marker.** Open the app outside: only the teal arrow. No blue dot or ball, before or after
+   the first fix. Stand still: it's the same arrow, not a dot. Your own Tracky never appears on
+   top of you.
+2. **Pinch stays.** On the home map, pinch out to see the suburb. Wait a full minute (walk or drive
+   a little if you can). The map must not zoom back in or move. Re-centre appears bottom-right,
+   above the yellow Report.
+3. **Re-centre.** Tap it: the map flies back to you at street zoom and follows again. The button goes.
+4. **3D on.** Settings › Map view › 3D buildings on. The home map tilts once, to at most 45°. Pinch
+   out: it stays out (it used to snap back to a close-up on every GPS fix). Buildings appear from
+   street zoom, low and see-through. In dark mode they're slate, not white.
+5. **Route preview.** Search a place → routes. Every route, the start and the destination are
+   visible between the top card and the sheet. Pull the sheet up: it refits. Change the mode or
+   Avoid: it refits. Walk around: it doesn't move. Pinch: it stays where you put it until you pick
+   a route or change an option.
+6. **Go now while parked.** The map turns to face the road you're about to drive, even before you
+   move. It's tilted (45°), with the arrow about 70% down the screen and the purple line starting
+   at the arrow. It's never north-up unless Settings › Map view › Keep map north up is on.
+7. **Drag while driving.** Drag the map: Re-centre appears above Report. Keep driving over 10 km/h
+   without touching it: after 15 s it follows again (Settings › Map view › Recentre automatically
+   turns this off). Stopped at the lights, it doesn't snap back.
+8. **Controls.** While driving with an ahead banner showing, nothing overlaps. The speed sign is
+   above the speedometer (bottom-left), mic and sound are top-right, and Re-centre is above Report.
+   On a small phone (SE) the mic/sound may step aside while the banner shows.
+9. **Ad bar.** On the home map the ad fills the full width under the sheet. No black strips at
+   its sides, in light or dark.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

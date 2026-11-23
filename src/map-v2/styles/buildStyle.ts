@@ -63,8 +63,33 @@ export const LABEL_PRIORITY: Record<RoadClass, number> = {
 };
 /** Above this camera pitch the buildings are raised (handled by TrackLineMap, not the style). */
 export const BUILDING_EXTRUSION_MIN_PITCH = 30;
-/** Raised buildings (only when the driver turns 3D buildings on): low and see-through. */
-export const BUILDING_EXTRUSION_STYLE = { color: "#E6E8EA", opacity: 0.45, heightScale: 0.5, maxHeightM: 40 } as const;
+/**
+ * Raised buildings (only when the driver turns 3D buildings on), permanent fix §6: 40% of their
+ * real height (capped at 40 m), a soft colour for the theme (light grey / slate, never white towers
+ * on a dark map), fading in from z16, and more see-through while a route is drawn so the line
+ * always reads. Labels stay on top (the layer goes under the road labels).
+ */
+export const BUILDING_EXTRUSION_STYLE = {
+  color: { light: "#DCDFE4", dark: "#3A4558" },
+  opacity: 0.45,
+  opacityNearRoute: 0.28,
+  heightScale: 0.4,
+  maxHeightM: 40,
+  fadeInFromZoom: 16,
+  fullFromZoom: 17,
+} as const;
+
+/** The extrusion paint for a theme, and whether a route is on the map. */
+export function buildingExtrusionPaint(dark: boolean, routeShown: boolean) {
+  const s = BUILDING_EXTRUSION_STYLE;
+  const opacity = routeShown ? s.opacityNearRoute : s.opacity;
+  return {
+    fillExtrusionColor: dark ? s.color.dark : s.color.light,
+    fillExtrusionOpacity: ["interpolate", ["linear"], ["zoom"], s.fadeInFromZoom, 0, s.fullFromZoom, opacity],
+    fillExtrusionHeight: ["min", ["*", ["get", "height"], s.heightScale], s.maxHeightM],
+    fillExtrusionBase: ["min", ["*", ["get", "min_height"], s.heightScale], s.maxHeightM],
+  };
+}
 
 // Mapbox-hosted fonts. Rubik isn't on Mapbox's glyph server (uploading it needs a Mapbox
 // Studio account step), so labels use the closest geometric sans Mapbox hosts, with a

@@ -12,7 +12,7 @@ import { INK, RED_SOFT, RED_TEXT, TRAFFIC, WHITE } from "@/theme/colors";
 import { GestureTracker } from "@/map-v2/gestures";
 import {
   BUILDING_EXTRUSION_MIN_PITCH,
-  BUILDING_EXTRUSION_STYLE,
+  buildingExtrusionPaint,
   ROAD_SCALES,
   SATELLITE_LABEL_PALETTE,
   SHIELD_IMAGE,
@@ -77,6 +77,8 @@ interface Props {
   /** Fades the base map while routes are being chosen. */
   dimmed: boolean;
   show3DBuildings: boolean;
+  /** A route is drawn (preview or driving): raised buildings get more see-through (§6). */
+  routeShown?: boolean;
   showTraffic: boolean;
   /** Space covered by the app's cards and sheets; the camera centres in what's left. */
   padding: EdgePadding;
@@ -357,16 +359,11 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
           sourceLayerID="building"
           belowLayerID="road-label-service"
           filter={["==", ["get", "extrude"], "true"]}
-          minZoomLevel={14}
+          minZoomLevel={16}
           maxZoomLevel={22}
-          // Only when 3D buildings are switched on, and then low and see-through so the route
-          // is never hidden behind a tower.
-          style={{
-            fillExtrusionColor: BUILDING_EXTRUSION_STYLE.color,
-            fillExtrusionOpacity: BUILDING_EXTRUSION_STYLE.opacity,
-            fillExtrusionHeight: ["min", ["*", ["get", "height"], BUILDING_EXTRUSION_STYLE.heightScale], BUILDING_EXTRUSION_STYLE.maxHeightM],
-            fillExtrusionBase: ["min", ["*", ["get", "min_height"], BUILDING_EXTRUSION_STYLE.heightScale], BUILDING_EXTRUSION_STYLE.maxHeightM],
-          }}
+          // Only when 3D buildings are switched on, and then low, soft and see-through (more so
+          // with a route drawn) so the route is never hidden behind a tower (permanent fix §6).
+          style={buildingExtrusionPaint(props.theme === "dark" || props.satellite, !!props.routeShown) as never}
         />
       )}
       {/* Brand / popular-place badges: the ranked top ones, drawn by us (at most ~12 a screen). */}

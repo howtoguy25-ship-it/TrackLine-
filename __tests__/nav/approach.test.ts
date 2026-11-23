@@ -184,7 +184,7 @@ describe("real drive: M4 eastbound, Silverwater Road exit", () => {
   });
 
   it("the approach view is z18 (Mapbox), 60° pitch, 1.2 s", () => {
-    expect(APPROACH_CAMERA).toEqual({ zoom: 19, pitch: 60, durationMs: 1200 });
+    expect(APPROACH_CAMERA).toEqual({ zoom: 19, pitch: 45, durationMs: 1200 });
   });
 
   it("the highlight covers the road through the split and the start of the exit", () => {
