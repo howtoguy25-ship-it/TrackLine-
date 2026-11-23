@@ -116,3 +116,40 @@ export function HazardTriangleArt({
     </View>
   );
 }
+
+/**
+ * A road feature at street zoom (z >= 16, map/roadSignVisibility.ts): a small grey rounded tile on
+ * the road, ~18pt. A speed bump is our own hump drawing; every other feature its own glyph.
+ */
+export function RoadFeatureArt({ glyph, speedBump = false, size = 18 }: { glyph?: React.ReactNode; speedBump?: boolean; size?: number }) {
+  return (
+    <View {...hidden} style={{ width: size, height: size }} testID={speedBump ? "road-feature-speed-bump" : "road-feature-icon"}>
+      {speedBump ? (
+        <Svg width={size} height={size} viewBox="0 0 18 18">
+          <Rect x={0.75} y={0.75} width={16.5} height={16.5} rx={4.5} fill={A.feature} stroke={A.rim} strokeWidth={1.5} />
+          <Path d="M3 12.5 C5 12.5 6 7 9 7 C12 7 13 12.5 15 12.5" fill="none" stroke={A.featureGlyph} strokeWidth={2} strokeLinecap="round" />
+          <Path d="M3 14 L15 14" stroke={A.featureGlyph} strokeWidth={1.2} strokeLinecap="round" />
+        </Svg>
+      ) : (
+        <View style={{ width: size, height: size, borderRadius: size * 0.25, backgroundColor: A.feature, borderWidth: 1.5, borderColor: A.rim, alignItems: "center", justifyContent: "center" }}>
+          {glyph}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** A road feature at mid zoom (z 14-16): a tiny black-and-white checker mark on the road, 7pt. */
+export function RoadMarkArt({ size = 7 }: { size?: number }) {
+  const h = size / 2;
+  return (
+    <View {...hidden} style={{ width: size, height: size }} testID="road-feature-mark">
+      <Svg width={size} height={size}>
+        <Rect x={0} y={0} width={h} height={h} fill={A.housing} />
+        <Rect x={h} y={0} width={h} height={h} fill={A.rim} />
+        <Rect x={0} y={h} width={h} height={h} fill={A.rim} />
+        <Rect x={h} y={h} width={h} height={h} fill={A.housing} />
+      </Svg>
+    </View>
+  );
+}

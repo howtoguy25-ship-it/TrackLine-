@@ -182,6 +182,9 @@ export const ROAD_SIGN_ART = {
   lampGreen: "#30D158",
   camera: "#8B5CF6",
   cameraLens: INK,
+  /** Road features (speed bumps, crossings, bends) at street zoom: small, grey, never a coloured dot. */
+  feature: "#5F6368",
+  featureGlyph: WHITE,
 } as const;
 
 /**

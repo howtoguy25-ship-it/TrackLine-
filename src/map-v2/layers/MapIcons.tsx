@@ -10,12 +10,12 @@ import type { TrackyMoodKey } from "@/components/trackys/moods";
 import type { TrackyCustomization } from "@/components/trackys/customization";
 import { ALERT_PIN, type AlertType } from "@/types/alert";
 import { SPEED_CAMERA_MARKER, TRAFFIC_LIGHT_MARKER } from "@/utils/osmMarkerStyle";
-import { HazardTriangleArt, SpeedCameraArt, TrafficLightArt } from "@/components/art/RoadSignArt";
+import { HazardTriangleArt, RoadFeatureArt, RoadMarkArt, SpeedCameraArt, TrafficLightArt } from "@/components/art/RoadSignArt";
 import { AheadGlyph } from "@/components/art/AheadGlyph";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors } from "@/theme/tokens";
-import { AHEAD_COLOURS, LIVE_TRAFFIC_BADGE } from "@/theme/colors";
+import { AHEAD_COLOURS, LIVE_TRAFFIC_BADGE, ROAD_SIGN_ART } from "@/theme/colors";
 import { Icon, isIconName } from "@/components/ui/Icon";
 import { Text } from "@/components/AppText";
 import { BADGE_COLOURS, type BadgeCategory } from "@/map/poiBadges";
@@ -112,6 +112,19 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
         </Badge>
       );
     }
+    case "road-feature": {
+      // A road feature at street zoom: small, grey, its own drawing (map/roadSignVisibility.ts).
+      const item = REPORT_ITEM_BY_ID[rest[0] as ReportItemId];
+      if (!item) return null;
+      return (
+        <RoadFeatureArt
+          speedBump={item.id === "speedBump"}
+          glyph={<MaterialCommunityIcons name={item.icon.glyph as never} size={11} color={ROAD_SIGN_ART.featureGlyph} />}
+        />
+      );
+    }
+    case "road-mark":
+      return <RoadMarkArt />;
     case "saved": {
       // "saved:home|work|custom" -- your own saved places.
       const name = rest[0] === "home" ? "home" : rest[0] === "work" ? "briefcase" : "star";

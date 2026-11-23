@@ -10,6 +10,8 @@ import { iconView } from "@/map-v2/layers/MapIcons";
 import {
   CAMERA_MIN_ZOOM,
   MAX_SIGNS_PER_KIND,
+  ROAD_FEATURE_MARK_ZOOM,
+  roadFeatureState,
   TRAFFIC_LIGHT_MIN_ZOOM,
   homeRoadSigns,
   signIcon,
@@ -71,17 +73,30 @@ describe("road-sign art on the map", () => {
 describe("where traffic lights and cameras show off a drive", () => {
   const points = [light("a"), camera("b"), { key: "bump", item: "speedBump", lat: CENTRE.latitude, lng: CENTRE.longitude } as SignPoint];
 
-  it("street level: both; bumps and other features stay alerts only", () => {
-    expect(homeRoadSigns(points, view(16), { navigating: false, shown: all }).map((p) => p.key)).toEqual(["sc:b", "tl:a"]);
+  it("street level: cameras, lights and road features (speed bump as its small grey icon)", () => {
+    expect(homeRoadSigns(points, view(16), { navigating: false, shown: all }).map((p) => p.key)).toEqual(["sc:b", "tl:a", "bump"]);
+    expect(signIcon("speedBump", 16)).toBe("road-feature:speedBump");
   });
 
-  it("cameras from zoom 12, traffic lights only from street level", () => {
-    expect(homeRoadSigns(points, view(TRAFFIC_LIGHT_MIN_ZOOM - 0.5), { navigating: false, shown: all }).map((p) => p.key)).toEqual(["sc:b"]);
+  it("cameras from zoom 12, traffic lights from street level; road features as a checker mark at 14-16, hidden below 14", () => {
+    expect(homeRoadSigns(points, view(TRAFFIC_LIGHT_MIN_ZOOM - 0.5), { navigating: false, shown: all }).map((p) => p.key)).toEqual(["sc:b", "bump"]);
+    expect(signIcon("speedBump", 15)).toBe("road-mark");
+    expect(homeRoadSigns(points, view(ROAD_FEATURE_MARK_ZOOM - 0.5), { navigating: false, shown: all }).map((p) => p.key)).toEqual(["sc:b"]);
     expect(homeRoadSigns(points, view(CAMERA_MIN_ZOOM - 0.5), { navigating: false, shown: all })).toEqual([]);
+    expect([roadFeatureState(17), roadFeatureState(16), roadFeatureState(15), roadFeatureState(13.9)]).toEqual(["icon", "icon", "mark", "hidden"]);
   });
 
   it("the item's Show on map switch decides", () => {
-    expect(homeRoadSigns(points, view(16), { navigating: false, shown: (i) => i !== "speedCamera" }).map((p) => p.key)).toEqual(["tl:a"]);
+    expect(homeRoadSigns(points, view(16), { navigating: false, shown: (i) => i !== "speedCamera" && i !== "speedBump" }).map((p) => p.key)).toEqual(["tl:a"]);
+  });
+
+  it("no road feature is ever a coloured dot: our grey icon at street zoom, a 7pt checker below", async () => {
+    await render(<>{iconView("road-feature:speedBump")}</>);
+    expect(screen.getByTestId("road-feature-speed-bump", { includeHiddenElements: true })).toBeTruthy();
+    await render(<>{iconView("road-feature:raisedCrossing")}</>);
+    expect(screen.getByTestId("road-feature-icon", { includeHiddenElements: true })).toBeTruthy();
+    await render(<>{iconView("road-mark")}</>);
+    expect(screen.getByTestId("road-feature-mark", { includeHiddenElements: true })).toHaveStyle({ width: 7, height: 7 });
   });
 
   it("nothing while navigating (the route-ahead icons take over) and nothing before the map has a view", () => {

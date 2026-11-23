@@ -5895,7 +5895,8 @@ export function MapScreen() {
     for (const p of osmData?.trafficLights ?? []) points.push({ key: `tl:${p.id}`, item: "trafficLights", lat: p.lat, lng: p.lng });
     for (const p of osmData?.speedCameras ?? []) points.push({ key: `sc:${p.id}`, item: "speedCamera", lat: p.lat, lng: p.lng });
     for (const p of osmFeaturePins({ ...settings, reportPrefs: settings.reportPrefs }, osmData, nearbyAlerts)) {
-      if (signKind(p.kind as ReportItemId) === "camera") points.push({ key: p.id, item: p.kind as ReportItemId, lat: p.lat, lng: p.lng });
+      // Cameras as road signs; every other road feature by zoom (roadFeatureState): icon / mark / hidden.
+      points.push({ key: p.id, item: p.kind as ReportItemId, lat: p.lat, lng: p.lng });
     }
     // Before the map first reports where it's looking, it's looking at you.
     const centre = viewCentre ?? currentLatLng;
@@ -5934,7 +5935,7 @@ export function MapScreen() {
     // Off a drive: cameras (and traffic lights at street level) in view, as road-sign icons.
     for (const f of homeRoadSignList) {
       add(
-        { id: `road-sign:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon: signIcon(f.item), priority: 6 },
+        { id: `road-sign:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon: signIcon(f.item, mapZoom), priority: signKind(f.item) === "other" ? 3 : 6 },
         {
           kind: "osm",
           osm: f.item === "trafficLights" ? "traffic_light" : f.item === "speedCamera" ? "speed_camera" : (f.item as OsmFeatureKind),
@@ -6028,6 +6029,7 @@ export function MapScreen() {
     settings,
     aheadFeedNow,
     homeRoadSignList,
+    mapZoom,
     fuelStationsSheetOpen,
     fuelStationPins,
     nearbyPins,
