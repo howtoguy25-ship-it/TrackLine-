@@ -99,6 +99,9 @@ module.exports = {
       // Required by @bacons/apple-targets (see the targets/liveActivity plugin below) to
       // resolve code signing for the new widget-extension target during prebuild/EAS Build.
       appleTeamId: "9C85Z8Z8BD",
+      // Shared with the widget extension: the home-screen widget's drive times
+      // (services/homeWidget.ts -> modules/liveActivity setWidgetSnapshot -> TrackLineHomeWidget.swift).
+      entitlements: { "com.apple.security.application-groups": ["group.com.trackline.navigate"] },
       infoPlist: {
         // The home map's optional "Audio player" button opens the driver's music app. iOS only
         // answers "is this app installed?" for URL schemes listed here.

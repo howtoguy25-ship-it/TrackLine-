@@ -27,6 +27,8 @@ interface NativeLiveActivityModule {
     speedLimitKmh: number | null
   ): Promise<void>;
   endActivity(): Promise<void>;
+  /** Home-screen widget: stores the JSON snapshot in the shared App Group and reloads the widgets. */
+  setWidgetSnapshot?(json: string): Promise<void>;
 }
 
 let native: NativeLiveActivityModule | null = null;
@@ -127,4 +129,15 @@ export async function endLiveActivity(): Promise<void> {
   try {
     await native.endActivity();
   } catch {}
+}
+
+/** The home-screen widget's data (services/homeWidget.ts). No-op off iOS or in an older build. */
+export async function setWidgetSnapshot(json: string): Promise<boolean> {
+  if (!native?.setWidgetSnapshot) return false;
+  try {
+    await native.setWidgetSnapshot(json);
+    return true;
+  } catch {
+    return false;
+  }
 }

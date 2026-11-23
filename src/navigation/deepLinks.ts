@@ -25,6 +25,8 @@ export function deepLinkTarget(link: string): Target | null {
       return { screen: "TrackyProfile" };
     case "trackline://help":
       return { screen: "Help" };
+    case "trackline://plan":
+      return { screen: "PlanADrive" };
     case "trackline://travel":
       return { screen: "Map" as keyof RootStackParamList };
     case "trackline://update":

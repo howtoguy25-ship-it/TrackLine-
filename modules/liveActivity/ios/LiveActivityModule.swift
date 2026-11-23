@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import ActivityKit
+import WidgetKit
 
 // Real ActivityKit bridge for TrackLine's background navigation Live Activity -- per explicit
 // request, built with real native Swift (this file + TrackLineActivityAttributes.swift +
@@ -12,6 +13,17 @@ import ActivityKit
 public class LiveActivityModule: Module {
   public func definition() -> ModuleDefinition {
     Name("LiveActivity")
+
+    // Home-screen widget (targets/liveActivity/TrackLineHomeWidget.swift): the app writes the
+    // latest snapshot (ETA home/work with live traffic, next planned drive) into the shared App
+    // Group, and the widget reads it. Reloads the widget timelines so it shows straight away.
+    AsyncFunction("setWidgetSnapshot") { (json: String) in
+      guard let defaults = UserDefaults(suiteName: "group.com.trackline.navigate") else { return }
+      defaults.set(json, forKey: "homeWidget")
+      if #available(iOS 14.0, *) {
+        WidgetCenter.shared.reloadAllTimelines()
+      }
+    }
 
     // Real, honest capability check -- false whenever Live Activities are unavailable (OS too
     // old, or the user has actually turned them off in Settings > Face ID & Passcode > Live

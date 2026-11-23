@@ -12,6 +12,7 @@ import { SettingsProvider } from "@/context/SettingsContext";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { AppOpenAdManager } from "@/components/AppOpenAdManager";
 import { AppGates } from "@/components/AppGates";
+import { HomeWidgetSync } from "@/components/HomeWidgetSync";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import { LegalGate } from "@/components/LegalGate";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
@@ -135,6 +136,7 @@ function App() {
                 <RootNavigator />
                 <AppGates />
                 <BackgroundSync />
+                <HomeWidgetSync />
                 <LegalGate />
               </TouchDebugRoot>
             </LocationProvider>

@@ -20,4 +20,6 @@ module.exports = {
   // it) is untouched; the native bridge module guards every call with `if #available(iOS 16.1)`
   // so older devices simply never start an activity instead of crashing.
   deploymentTarget: "16.1",
+  // The home-screen widget (TrackLineHomeWidget.swift) reads what the app shares here.
+  entitlements: { "com.apple.security.application-groups": ["group.com.trackline.navigate"] },
 };

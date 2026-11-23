@@ -128,5 +128,6 @@ struct TrackLineLiveActivity: Widget {
 struct TrackLineLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         TrackLineLiveActivity()
+        TrackLineHomeWidget()
     }
 }
