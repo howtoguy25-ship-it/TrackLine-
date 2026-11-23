@@ -277,3 +277,18 @@ describe("lifecycle: nothing stuck, nothing leaked", () => {
     expect(c.activeTimers()).toBe(0);
   });
 });
+
+describe("MapScreen wires every reset", () => {
+   
+  const src = (require("fs") as typeof import("fs")).readFileSync("src/screens/MapScreen.tsx", "utf8");
+  it("end, reroute, background and unmount each clear the controller", () => {
+    expect(src).toMatch(/if \(prev && !route\) aheadCtl\.reset\("end"\);/);
+    expect(src).toMatch(/else if \(prev && route && prev !== route\) aheadCtl\.reset\("reroute"\);/);
+    expect(src).toMatch(/if \(next !== "active"\) aheadCtl\.reset\("background"\);/);
+    expect(src).toMatch(/useEffect\(\(\) => \(\) => aheadCtl\.reset\("unmount"\), \[aheadCtl\]\);/);
+  });
+  it("one controller per screen, created once; manoeuvre close-ups hold new banners", () => {
+    expect(src.match(/new AheadBannerController\(/g)).toHaveLength(1);
+    expect(src).toMatch(/manoeuvreBusy: exitZoomActive/);
+  });
+});
