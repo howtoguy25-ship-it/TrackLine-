@@ -209,7 +209,7 @@ import {
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
 import { buildDriveLink, parseDriveLink } from "@/services/driveLink";
-import Reanimated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Reanimated, { useSharedValue } from "react-native-reanimated";
 import { AheadBanner } from "@/components/AheadBanner";
 import { AheadBannerController } from "@/nav/ahead/bannerController";
 import { aheadOf, projectFeed, trafficSources, type AheadAlert } from "@/nav/ahead/aheadFeed";
@@ -5214,9 +5214,9 @@ export function MapScreen() {
     return () => sub.remove();
   }, [aheadCtl]);
   useEffect(() => () => aheadCtl.reset("unmount"), [aheadCtl]);
-  // The bottom controls rise to make room (UI thread), then the banner slides in.
+  // The banner sits under the turn instruction: the compass / sound / voice move down out of its
+  // way first (NavMapControls dropBy), then it slides in. The bottom controls never move.
   const aheadRoomPx = useSharedValue(0);
-  const aheadRaiseStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -aheadRoomPx.get() }] }));
   const [aheadBannerHeight, setAheadBannerHeight] = useState(AHEAD_BANNER_HEIGHT);
   const aheadBannerUp = !!aheadState.alert;
   const mapScheme = useMapScheme();
@@ -5232,7 +5232,7 @@ export function MapScreen() {
       topBarHeight: instructionCardHeight,
       showSpeedLimit: !!speedLimitKmh,
       showRecenter: false,
-      raiseBy: aheadRoomFor(aheadBannerHeight),
+      dropBy: aheadRoomFor(aheadBannerHeight),
     });
     return !!f.speedLimit && f.speedLimit.x > SIDE_MARGIN + SPEEDOMETER_SIZE / 2;
   }, [route, aheadBannerUp, windowWidth, windowHeight, insets.top, insets.bottom, bottomBarHeight, instructionCardHeight, speedLimitKmh, aheadBannerHeight]);
@@ -6334,7 +6334,7 @@ export function MapScreen() {
         // On the home map the dial is only shown with the sheet at its peek: it's fixed to the
         // map, and a raised sheet would otherwise slide up over it.
         (!!route || whereToSheetIndex === 0) && (
-        <Reanimated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, route ? aheadRaiseStyle : null]}>
+        <Reanimated.View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
         <LiveSpeedometer
           signBeside={aheadSignBeside}
           speedKmh={liveSpeed.speedKmh}
@@ -6645,7 +6645,6 @@ export function MapScreen() {
             ])
           }
           onHeightChange={setBottomBarHeight}
-          raise={aheadRoomPx}
           isFollowing={followTilt}
           onRecenter={onRecenter}
           onOverview={showNavRoutes}
@@ -6674,8 +6673,7 @@ export function MapScreen() {
           streetName={navRoadName}
           banner={null}
           onBanner={() => navOptionsSheetRef.current?.expand()}
-          raise={aheadRoomPx}
-          raiseBy={aheadBannerUp ? aheadRoomFor(aheadBannerHeight) : 0}
+          dropBy={aheadBannerUp ? aheadRoomFor(aheadBannerHeight) : 0}
         />
       )}
 
@@ -6689,7 +6687,7 @@ export function MapScreen() {
           warnM={aheadState.alert ? warnDistanceM(aheadState.alert, (currentSpeedKmh ?? 0) / 3.6) : 1}
           speedKmh={currentSpeedKmh}
           nowMs={location?.timestamp ?? 0}
-          barTop={insets.bottom + bottomBarHeight}
+          top={insets.top + instructionCardHeight}
           room={aheadRoomPx}
           onHeight={setAheadBannerHeight}
           onTap={() => aheadCtl.tap()}
@@ -6799,7 +6797,7 @@ export function MapScreen() {
       {/* Report while driving: bottom-right, 12pt above the bar (Re-centre sits over it only
           after panning). See nav/navControlsLayout.ts for the whole column layout. */}
       {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
-        <Reanimated.View pointerEvents="box-none" style={[styles.navReport, { bottom: controlsBottom(insets.bottom, bottomBarHeight) }, aheadRaiseStyle]}>
+        <Reanimated.View pointerEvents="box-none" style={[styles.navReport, { bottom: controlsBottom(insets.bottom, bottomBarHeight) }]}>
           <FloatingButton tone="report" shape="menu" size={REPORT_SIZE} onPress={openAlertTypePicker} accessibilityLabel="Report something on the road" testID="nav-report">
             <ReportIcon size={30} />
           </FloatingButton>
@@ -6807,7 +6805,7 @@ export function MapScreen() {
       )}
 
       {/* Mapbox's junction picture for a complex interchange, until the manoeuvre point. */}
-      {route && activeStep?.guidanceViewUrl && metersToManoeuvre !== null && metersToManoeuvre <= 1000 && !addingStopDuringNav && (
+      {route && activeStep?.guidanceViewUrl && metersToManoeuvre !== null && metersToManoeuvre <= 1000 && !addingStopDuringNav && !aheadBannerUp && (
         <JunctionViewCard url={activeStep.guidanceViewUrl} token={usableMapboxToken()} top={insets.top + instructionCardHeight + 8} />
       )}
 

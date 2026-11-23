@@ -1,5 +1,5 @@
 // The ahead banner as drawn: title, real detail, source, live distance ("Now" under 30 m); tap
-// pauses while moving and opens the card when stopped; swipe down dismisses; Still there /
+// pauses while moving and opens the card when stopped; swipe up dismisses; Still there /
 // Not there only for a passed (or crawled-past) driver report; the jam's faster-route offer;
 // every meaning colour readable; the spoken line respects Less chatty; the ETA sheet's list.
 import React, { createRef } from "react";
@@ -52,7 +52,7 @@ function show(s: BannerState, overrides: Record<string, unknown> = {}) {
     warnM: 600,
     speedKmh: 50,
     nowMs: NOW,
-    barTop: 120,
+    top: 120,
     room: (() => {
       let v = 0;
       return { value: 0, get: () => v, set: (n: unknown) => void (v = typeof n === "number" ? n : v) };
@@ -94,7 +94,7 @@ describe("the banner", () => {
     expect(JSON.stringify(screen.toJSON())).not.toMatch(/undefined|NaN/);
   });
 
-  it("tap while moving pauses; tap while stopped opens the full card; swipe down dismisses", async () => {
+  it("tap while moving pauses; tap while stopped opens the full card; swipe up dismisses", async () => {
     const moving = show(state(alert("camera", { title: "Speed camera" })));
     await render(moving.el);
     await fireEvent.press(screen.getByTestId("ahead-banner-camera"));
@@ -109,8 +109,8 @@ describe("the banner", () => {
     const swipe = show(state(alert("camera", { title: "Speed camera" })));
     await render(swipe.el);
     const card = screen.getByTestId("ahead-banner-camera");
-    await fireEvent(card, "touchStart", { nativeEvent: { pageY: 600 } });
-    await fireEvent(card, "touchEnd", { nativeEvent: { pageY: 660 } });
+    await fireEvent(card, "touchStart", { nativeEvent: { pageY: 660 } });
+    await fireEvent(card, "touchEnd", { nativeEvent: { pageY: 600 } });
     expect(swipe.props.onSwipe).toHaveBeenCalledTimes(1);
   });
 

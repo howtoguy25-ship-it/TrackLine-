@@ -18,12 +18,12 @@ export const SOUND_SIZE = 52;
 export const COMPASS_SIZE = 52;
 export const STREET_CHIP_HEIGHT = 28;
 export const INFO_BANNER_HEIGHT = 44;
-/** The ahead-alert banner: 12pt side margins, its usual height, and how far it slides up. */
+/** The ahead-alert banner (under the turn instruction): 12pt side margins, its usual height, how far it slides down. */
 export const AHEAD_BANNER_MARGIN = 12;
 export const AHEAD_BANNER_HEIGHT = 88;
 export const AHEAD_BANNER_SLIDE = 12;
 
-/** How far the bottom controls rise to make room for a banner of this height. */
+/** How far the top controls (compass, sound, voice) move down to make room for a banner of this height. */
 export function aheadRoom(bannerHeight: number): number {
   return bannerHeight + CONTROL_GAP;
 }
@@ -59,6 +59,8 @@ export interface NavLayoutInput {
    * overlaps at any frame of the animation (checked frame by frame in the tests).
    */
   raiseBy?: number;
+  /** The ahead banner under the turn instruction: the top controls move down by this (its height + 12). */
+  dropBy?: number;
   aheadBanner?: { height: number; progress: number } | null;
 }
 
@@ -98,11 +100,11 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
   const base = i.height - controlsBottom(i.safeBottom, i.bottomBarHeight) - (i.raiseBy ?? 0);
   const out: Partial<Record<NavControl, Frame>> = {};
   if (i.aheadBanner && i.aheadBanner.progress > 0) {
-    const barTop = i.height - i.safeBottom - i.bottomBarHeight;
+    // Just under the turn instruction; slides down its last 12pt as it fades in.
     const p = Math.min(1, i.aheadBanner.progress);
     out.aheadBanner = {
       x: AHEAD_BANNER_MARGIN,
-      y: barTop - CONTROL_GAP - i.aheadBanner.height + (1 - p) * AHEAD_BANNER_SLIDE,
+      y: i.safeTop + i.topBarHeight + CONTROL_GAP - (1 - p) * AHEAD_BANNER_SLIDE,
       width: i.width - AHEAD_BANNER_MARGIN * 2,
       height: i.aheadBanner.height,
     };
@@ -110,13 +112,16 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
   out.bottomBar = { x: 0, y: i.height - i.safeBottom - i.bottomBarHeight, width: i.width, height: i.bottomBarHeight + i.safeBottom };
   out.topBar = { x: 0, y: 0, width: i.width, height: i.safeTop + i.topBarHeight };
   out.speedometer = { x: SIDE_MARGIN, y: base - SPEEDOMETER_SIZE, width: SPEEDOMETER_SIZE, height: SPEEDOMETER_SIZE };
-  const top = topColumnTop(i.safeTop, i.topBarHeight);
+  const top = topColumnTop(i.safeTop, i.topBarHeight) + (i.dropBy ?? 0);
   const topBarBottom = i.safeTop + i.topBarHeight;
   // While a banner has pushed everything up on a short phone, the sign goes beside the
   // speedometer instead of on top of it when stacking would reach the compass / top bar.
   const stackedSignTop = base - SPEEDOMETER_SIZE - CONTROL_GAP - SPEED_SIGN_SIZE;
   const compassWanted = i.showCompass !== false;
-  const signBeside = !!i.showSpeedLimit && (i.raiseBy ?? 0) > 0 && stackedSignTop - CONTROL_GAP < (compassWanted ? top + COMPASS_SIZE : topBarBottom);
+  const raisedIntoTop = (i.raiseBy ?? 0) > 0 && stackedSignTop - CONTROL_GAP < (compassWanted ? top + COMPASS_SIZE : topBarBottom);
+  // The ahead banner under the top bar reaching down to the stacked sign (a 4-inch phone).
+  const bannerReaches = (i.dropBy ?? 0) > 0 && stackedSignTop - CONTROL_GAP < topBarBottom + (i.dropBy ?? 0);
+  const signBeside = !!i.showSpeedLimit && (raisedIntoTop || bannerReaches);
   if (i.showSpeedLimit) {
     out.speedLimit = signBeside
       ? { x: SIDE_MARGIN + SPEEDOMETER_SIZE + CONTROL_GAP, y: base - SPEED_SIGN_SIZE, width: SPEED_SIGN_SIZE, height: SPEED_SIGN_SIZE }

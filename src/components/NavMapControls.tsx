@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
-import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
+import Animated, { LinearTransition, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { Text } from "@/components/AppText";
 import { Button, FloatingButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -34,10 +34,12 @@ interface Props {
   streetName: string | null;
   banner: InfoBanner | null;
   onBanner: () => void;
-  /** The ahead banner raising the bottom controls (pt, animated) and its full height (for the layout). */
-  raise?: SharedValue<number>;
-  raiseBy?: number;
+  /** The ahead banner under the turn instruction: the top controls move down by this (pt). */
+  dropBy?: number;
 }
+
+// The top controls glide to their new place when the ahead banner comes or goes (160 ms, as the banner waits).
+const MOVE = LinearTransition.duration(160);
 
 const at = (f: Frame) => ({ position: "absolute" as const, left: f.x, top: f.y, width: f.width, height: f.height });
 
@@ -58,18 +60,14 @@ export function NavMapControls(p: Props) {
     showVoice: !!p.onVoice,
     showStreetChip: !!p.streetName,
     showInfoBanner: !!p.banner,
-    raiseBy: p.raiseBy ?? 0,
+    dropBy: p.dropBy ?? 0,
   };
   const f = navControlFrames(input);
-  // The street chip sits on the bottom row: drawn at its resting place and lifted by the animated
-  // raise (so it moves with the speedometer and Report, on the UI thread).
-  const rest = navControlFrames({ ...input, raiseBy: 0 });
-  const lift = useAnimatedStyle(() => ({ transform: [{ translateY: -(p.raise?.get() ?? 0) }] }));
   const needle = useAnimatedStyle(() => ({ transform: [{ rotate: `${-p.bearing.value}deg` }] }));
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill} testID="nav-map-controls">
       {f.compass ? (
-        <View style={at(f.compass)}>
+        <Animated.View layout={MOVE} style={at(f.compass)}>
           <FloatingButton
             tone="map"
             size={f.compass.width}
@@ -81,15 +79,15 @@ export function NavMapControls(p: Props) {
               <CompassNeedle size={30} />
             </Animated.View>
           </FloatingButton>
-        </View>
+        </Animated.View>
       ) : null}
       {f.audioPlayer ? (
-        <View style={at(f.audioPlayer)}>
+        <Animated.View layout={MOVE} style={at(f.audioPlayer)}>
           <FloatingButton tone="map" size={f.audioPlayer.width} icon="musical-notes" onPress={p.onAudioPlayer} accessibilityLabel="Audio player" testID="nav-audio" />
-        </View>
+        </Animated.View>
       ) : null}
       {f.sound ? (
-        <View style={at(f.sound)}>
+        <Animated.View layout={MOVE} style={at(f.sound)}>
           <FloatingButton
             tone="map"
             size={f.sound.width}
@@ -98,10 +96,10 @@ export function NavMapControls(p: Props) {
             accessibilityLabel={p.soundOff ? "Sound: off" : "Sound"}
             testID="nav-sound"
           />
-        </View>
+        </Animated.View>
       ) : null}
       {f.voice && p.onVoice ? (
-        <View style={at(f.voice)}>
+        <Animated.View layout={MOVE} style={at(f.voice)}>
           <FloatingButton
             tone="map"
             size={f.voice.width}
@@ -110,10 +108,10 @@ export function NavMapControls(p: Props) {
             accessibilityLabel={p.listening ? "Listening for a command" : "Voice command, for example: stop navigation"}
             testID="nav-voice"
           />
-        </View>
+        </Animated.View>
       ) : null}
-      {f.streetChip && rest.streetChip && p.streetName ? (
-        <Animated.View pointerEvents="none" style={[at({ ...rest.streetChip, x: f.streetChip.x, width: f.streetChip.width }), styles.chipWrap, lift]} testID="nav-street-chip">
+      {f.streetChip && p.streetName ? (
+        <Animated.View pointerEvents="none" style={[at(f.streetChip), styles.chipWrap]} testID="nav-street-chip">
           <View style={styles.chip}>
             <Icon name="navigate" size={11} color={WHITE} />
             <Text style={styles.chipText} numberOfLines={1}>

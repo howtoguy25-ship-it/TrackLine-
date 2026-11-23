@@ -12,20 +12,21 @@ import { AHEAD_COLOURS, SURFACES } from "@/theme/colors";
 import { shadow } from "@/theme/tokens";
 import type { DistanceUnit } from "@/utils/navFormat";
 
-// The "ahead" banner while driving (nav/ahead): just above the ETA bar, full width minus 12pt.
-// A rounded card (20) with a stripe and a big round icon in the alert's meaning colour, the title,
-// a grey line of real detail, the source, and the live distance counting down ("Now" under 30 m),
-// with a bar along the bottom edge closing as the spot nears.
+// The "ahead" banner while driving (nav/ahead): just under the turn instruction, full width minus
+// 12pt, so the bottom of the screen (speedometer, Report, ETA bar) stays clear. A rounded card (20)
+// with a stripe and a round icon in the alert's meaning colour, the title (up to 2 lines, never
+// running into anything), the live distance in its own pill ("Now" under 30 m), a grey line of real
+// detail, the source, and a bar along the bottom edge closing as the spot nears.
 //
-// Motion runs on the UI thread (Reanimated): first `room` raises the bottom controls (160 ms), then
-// the banner slides up 12pt and fades in (220 ms); leaving is the reverse. So it never overlaps
-// anything at any frame (nav/navControlsLayout.ts, __tests__/nav/aheadLayout.test.ts).
+// Motion runs on the UI thread (Reanimated): first the compass / sound / voice move down out of its
+// way (160 ms, `room`), then it slides down 12pt and fades in (220 ms); leaving is the reverse. It
+// never overlaps anything at any frame (nav/navControlsLayout.ts, __tests__/nav/aheadLayout.test.ts).
 //
 // The controller (nav/ahead/bannerController.ts) owns all timing; this only draws its state.
-// Tap: pause / resume (or, when stopped, open the full card). Swipe down: away for good.
+// Tap: pause / resume (or, when stopped, open the full card). Swipe up: away for good.
 
 export const ROOM_MS = 160;
-const SWIPE_DOWN_PX = 30;
+const SWIPE_UP_PX = 30;
 const STOPPED_KMH = 10;
 
 interface Props {
@@ -38,9 +39,9 @@ interface Props {
   warnM: number;
   speedKmh: number | null;
   nowMs: number;
-  /** Distance from the screen bottom to the ETA bar's top. */
-  barTop: number;
-  /** Shared with the bottom controls: how far they've risen (pt). */
+  /** Distance from the screen top to the bottom of the turn instruction. */
+  top: number;
+  /** Shared with the top controls: how far they've moved down (pt). */
   room: SharedValue<number>;
   onHeight: (h: number) => void;
   onTap: () => void;
@@ -81,7 +82,7 @@ export function AheadBanner(p: Props) {
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: shown.get(),
-    transform: [{ translateY: (1 - shown.get()) * AHEAD_BANNER_SLIDE }],
+    transform: [{ translateY: -(1 - shown.get()) * AHEAD_BANNER_SLIDE }],
   }));
   const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.get() }] }));
 
@@ -109,7 +110,7 @@ export function AheadBanner(p: Props) {
   return (
     <Animated.View
       pointerEvents={state.phase === "leaving" ? "none" : "box-none"}
-      style={[styles.wrap, { bottom: p.barTop + CONTROL_GAP }, cardStyle]}
+      style={[styles.wrap, { top: p.top + CONTROL_GAP }, cardStyle]}
       onLayout={(e) => {
         height.current = e.nativeEvent.layout.height;
         p.onHeight(e.nativeEvent.layout.height);
@@ -124,7 +125,7 @@ export function AheadBanner(p: Props) {
         onTouchEnd={(e) => {
           const start = touchY.current;
           touchY.current = null;
-          if (start !== null && e.nativeEvent.pageY - start > SWIPE_DOWN_PX) {
+          if (start !== null && start - e.nativeEvent.pageY > SWIPE_UP_PX) {
             swiped.current = true;
             p.onSwipe();
           }
@@ -136,19 +137,26 @@ export function AheadBanner(p: Props) {
         }}
         accessibilityRole="button"
         accessibilityLabel={[a.title, dist, subtitle].filter(Boolean).join(", ")}
-        accessibilityHint={stopped ? "Opens the full details. Swipe down to close." : "Tap to keep it open. Swipe down to close."}
+        accessibilityHint={stopped ? "Opens the full details. Swipe up to close." : "Tap to keep it open. Swipe up to close."}
         style={[styles.card, { backgroundColor: surface.raised }]}
         testID={`ahead-banner-${a.kind}`}
       >
         <View style={[styles.stripe, { backgroundColor: colour.fill }]} />
         <View style={styles.row}>
           <Animated.View style={[styles.icon, { backgroundColor: colour.fill }, iconStyle]}>
-            <AheadGlyph kind={a.kind} size={30} color={colour.glyph} />
+            <AheadGlyph kind={a.kind} size={26} color={colour.glyph} />
           </Animated.View>
           <View style={styles.textCol}>
-            <Text style={[styles.title, { color: surface.text }]} numberOfLines={1} testID="ahead-title">
-              {a.title}
-            </Text>
+            <View style={styles.titleRow}>
+              <Text style={[styles.title, { color: surface.text }]} numberOfLines={2} testID="ahead-title">
+                {a.title}
+              </Text>
+              <View style={[styles.distPill, { backgroundColor: surface.muted }]}>
+                <Text style={[styles.distance, { color: surface.text }]} numberOfLines={1} testID="ahead-distance">
+                  {dist}
+                </Text>
+              </View>
+            </View>
             {subtitle ? (
               <Text style={[styles.subtitle, { color: surface.textMuted }]} numberOfLines={1} testID="ahead-subtitle">
                 {subtitle}
@@ -159,9 +167,6 @@ export function AheadBanner(p: Props) {
               {state.paused ? " · kept open" : ""}
             </Text>
           </View>
-          <Text style={[styles.distance, { color: surface.text }]} testID="ahead-distance">
-            {dist}
-          </Text>
         </View>
         {askStillThere ? (
           <View style={styles.actions}>
@@ -187,13 +192,15 @@ const styles = StyleSheet.create({
   wrap: { position: "absolute", left: AHEAD_BANNER_MARGIN, right: AHEAD_BANNER_MARGIN },
   card: { borderRadius: 20, overflow: "hidden", paddingLeft: 14, paddingRight: 14, paddingTop: 12, paddingBottom: 14, ...shadow.floating },
   stripe: { position: "absolute", left: 0, top: 0, bottom: 0, width: 6 },
-  row: { flexDirection: "row", alignItems: "center", gap: 12 },
-  icon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  textCol: { flex: 1, minWidth: 0 },
-  title: { fontSize: 20, fontWeight: "700", lineHeight: 24 },
-  subtitle: { fontSize: 15, lineHeight: 19 },
-  source: { fontSize: 12, lineHeight: 15, marginTop: 1 },
-  distance: { fontSize: 22, fontWeight: "700", minWidth: 64, textAlign: "right" },
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  icon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", marginTop: 2 },
+  textCol: { flex: 1, minWidth: 0, gap: 2 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  title: { flex: 1, minWidth: 0, fontSize: 18, fontWeight: "700", lineHeight: 22 },
+  distPill: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3, flexShrink: 0 },
+  subtitle: { fontSize: 14, lineHeight: 18 },
+  source: { fontSize: 12, lineHeight: 15 },
+  distance: { fontSize: 17, fontWeight: "700", textAlign: "center" },
   actions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
   action: { flex: 1 },
   offer: { flex: 1, fontSize: 15, fontWeight: "600" },

@@ -23,7 +23,7 @@ import { aheadOf, projectFeed, trafficSources, type AheadAlert } from "../src/na
 import { AheadBannerController, type BannerState } from "../src/nav/ahead/bannerController";
 import { aheadSourceLine, aheadSubtitle, roadAtAlong } from "../src/nav/ahead/aheadText";
 import { distanceText } from "../src/nav/ahead/aheadTiming";
-import { AHEAD_BANNER_HEIGHT, aheadRoom, navControlFrames, overlaps, type Frame } from "../src/nav/navControlsLayout";
+import { aheadRoom, navControlFrames, overlaps, type Frame } from "../src/nav/navControlsLayout";
 import { AHEAD_COLOURS } from "../src/theme/colors";
 import type { LatLng } from "../src/utils/polyline";
 
@@ -34,6 +34,9 @@ const TOP_BAR = 120;
 const ROOM_MS = 160;
 const ENTER_MS = 220;
 const LEAVE_MS = 220;
+
+// The banner's height with a 2-line title (the app measures its real height; the sim uses this).
+const SIM_BANNER_HEIGHT = 112;
 
 test("render the ahead-alerts drive", () => {
   mkdirSync(OUT, { recursive: true });
@@ -135,6 +138,19 @@ test("render the ahead-alerts drive", () => {
   // ---- draw ----
   // One line each, as the app draws them (numberOfLines={1}).
   const clip = (x: string, n: number) => (x.length > n ? `${x.slice(0, n - 1)}…` : x);
+  const wrap = (text: string, max: number): string[] => {
+    const out: string[] = [];
+    let line = "";
+    for (const w of text.split(" ")) {
+      if ((line + " " + w).trim().length > max && line) {
+        out.push(line);
+        line = w;
+      } else line = (line + " " + w).trim();
+    }
+    if (line) out.push(line);
+    if (out.length > 2) out[1] = clip(out.slice(1).join(" "), max);
+    return out;
+  };
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const box = (f: Frame | undefined, fill: string, label: string, r = 12) =>
     f ? `<rect x="${f.x}" y="${f.y}" width="${f.width}" height="${f.height}" rx="${r}" fill="${fill}" opacity="0.95"/><text x="${f.x + f.width / 2}" y="${f.y + f.height / 2 + 4}" font-size="11" text-anchor="middle" fill="#fff" font-family="sans-serif">${label}</text>` : "";
@@ -151,8 +167,8 @@ test("render the ahead-alerts drive", () => {
       showSound: true,
       showVoice: true,
       showStreetChip: true,
-      raiseBy: m.room * aheadRoom(AHEAD_BANNER_HEIGHT),
-      aheadBanner: s.alert ? { height: AHEAD_BANNER_HEIGHT, progress: m.banner } : null,
+      dropBy: m.room * aheadRoom(SIM_BANNER_HEIGHT),
+      aheadBanner: s.alert ? { height: SIM_BANNER_HEIGHT, progress: m.banner } : null,
     });
     expect(overlaps(f)).toEqual([]);
     // The map: route ahead, heading-up, car at 70% of the height; ahead pins within 1.5 km.
@@ -184,12 +200,17 @@ test("render the ahead-alerts drive", () => {
       const a: AheadAlert = s.alert;
       const c = AHEAD_COLOURS[a.kind];
       const sub = aheadSubtitle(a, roadAtAlong(route.steps, a.alongM), "km", NOW) ?? "";
-      bannerSvg = `<g opacity="${m.banner.toFixed(2)}"><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" rx="20" fill="#26282C"/><rect x="${b.x}" y="${b.y}" width="6" height="${b.height}" fill="${c.fill}"/>
-<circle cx="${b.x + 42}" cy="${b.y + 40}" r="28" fill="${c.fill}"/><text x="${b.x + 42}" y="${b.y + 44}" font-size="11" text-anchor="middle" fill="${c.glyph}" font-family="sans-serif">${a.kind}</text>
-<text x="${b.x + 82}" y="${b.y + 30}" font-size="20" font-weight="700" fill="#fff" font-family="sans-serif">${esc(clip(a.title, 20))}</text>
-<text x="${b.x + 82}" y="${b.y + 52}" font-size="14" fill="#BDC1C6" font-family="sans-serif">${esc(clip(sub, 30))}</text>
-<text x="${b.x + 82}" y="${b.y + 70}" font-size="12" fill="#BDC1C6" font-family="sans-serif">${esc(aheadSourceLine(a))}${s.reminder ? " · reminder" : ""}</text>
-<text x="${b.x + b.width - 14}" y="${b.y + 46}" font-size="22" font-weight="700" text-anchor="end" fill="#fff" font-family="sans-serif">${distanceText(Math.max(0, s.aheadM), "km")}</text></g>`;
+      // As drawn in the app: title up to 2 lines beside the distance pill, never under it.
+      const lines = wrap(a.title, 22).slice(0, 2);
+      const dist = distanceText(Math.max(0, s.aheadM), "km");
+      const pillW = 16 + dist.length * 10;
+      const yText = b.y + 28 + (lines.length - 1) * 22;
+      bannerSvg = `<g opacity="${m.banner.toFixed(2)}"><clipPath id="card"><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" rx="20"/></clipPath><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" rx="20" fill="#26282C"/><rect x="${b.x}" y="${b.y}" width="6" height="${b.height}" fill="${c.fill}" clip-path="url(#card)"/>
+<circle cx="${b.x + 38}" cy="${b.y + 38}" r="24" fill="${c.fill}"/><text x="${b.x + 38}" y="${b.y + 42}" font-size="10" text-anchor="middle" fill="${c.glyph}" font-family="sans-serif">${a.kind.slice(0, 7)}</text>
+${lines.map((l, i) => `<text x="${b.x + 74}" y="${b.y + 28 + i * 22}" font-size="18" font-weight="700" fill="#fff" font-family="sans-serif">${esc(l)}</text>`).join("")}
+<rect x="${b.x + b.width - 14 - pillW}" y="${b.y + 12}" width="${pillW}" height="26" rx="12" fill="#33363B"/><text x="${b.x + b.width - 14 - pillW / 2}" y="${b.y + 30}" font-size="16" font-weight="700" text-anchor="middle" fill="#fff" font-family="sans-serif">${dist}</text>
+<text x="${b.x + 74}" y="${yText + 21}" font-size="14" fill="#BDC1C6" font-family="sans-serif">${esc(clip(sub, 34))}</text>
+<text x="${b.x + 74}" y="${yText + 38}" font-size="12" fill="#BDC1C6" font-family="sans-serif">${esc(aheadSourceLine(a))}${s.reminder ? " · reminder" : ""}</text></g>`;
     }
     const body = `<polyline points="${ahead.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}" fill="none" stroke="#6A1FD1" stroke-width="11" stroke-linejoin="round"/>
 ${pinSvg}<polygon points="${cx},${cy - 16} ${cx - 11},${cy + 10} ${cx},${cy + 4} ${cx + 11},${cy + 10}" fill="#14B8C8" stroke="#fff" stroke-width="2"/>
