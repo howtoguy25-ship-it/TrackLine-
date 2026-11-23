@@ -23,3 +23,10 @@ EXISTS = built and tested; PARTIAL = part of it built; MISSING = nothing yet.
 | 16 | Web map editor | MISSING | — | everything (admin site + moderation queue) |
 | 17 | Trip history + stats | MISSING | — | everything |
 | 18 | User fuel prices + EV availability | MISSING | FuelCheck (official) prices only | user prices confirmed by 3; EV availability (provider) |
+
+## Step 2 progress
+
+| # | Done in this pass | Tests | Still to do / blocked |
+|---|---|---|---|
+| 1 | Android ongoing navigation notification (silent, sticky, updated with the Live Activity, removed at the end) | `__tests__/gap/navNotification.test.ts` | — |
+| 2 | iOS home-screen widget "Drive times" (small + medium): live minutes to Home/Work (amber when 10%+ slower), next planned drive + leave time, "as of" time; rows open the route / Plan a drive. App refreshes it on open, on return and every 15 min. App Group `group.com.trackline.navigate` added to the app and the extension; incoming `trackline://` links now handled | `__tests__/gap/homeWidget.test.ts` | Android home-screen widget not built yet (needs the `react-native-android-widget` native module). The widget Swift compiles only in the EAS build (no Swift compiler here): build 209 is the check |
