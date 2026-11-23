@@ -80,6 +80,8 @@ interface Props {
   selectedComment: { coordinate: LatLng; text: string } | null;
   /** During the approach view: the road through the manoeuvre, the road taken, and the label. */
   manoeuvre?: { through: LatLng[]; exitSide: LatLng[]; callout: { coordinate: LatLng; text: string } | null } | null;
+  /** While driving: live traffic on the route still ahead (slow amber, stopped red, over its length). */
+  navTraffic?: { coordinates: LatLng[]; speed: "SLOW" | "TRAFFIC_JAM" }[];
   /** Official school zones nearby (Settings > Road features > School zones > Show on map). */
   schoolZones?: SchoolZoneDrawing[];
 }
@@ -151,6 +153,19 @@ export function MapboxLayers(props: Props) {
           onPress={props.onRoutePress}
         />
       )}
+      {props.remaining.length > 1 &&
+        (props.navTraffic ?? []).map((t, i) =>
+          t.coordinates.length > 1 ? (
+            <RouteLine
+              key={`nav-traffic-${i}`}
+              id={`nav-traffic-${i}`}
+              coordinates={t.coordinates}
+              color={t.speed === "TRAFFIC_JAM" ? TRAFFIC_JAM : TRAFFIC_SLOW}
+              width={NAV_ROUTE_WIDTH - 3}
+              aboveLayerID="nav-route-line"
+            />
+          ) : null
+        )}
       {turnArrow.length > 1 && (
         <RouteLine id="nav-turn-arrow" coordinates={turnArrow} color="#FFFFFF" width={5} casingColor={ROUTE_PURPLE_CASING} casingWidth={9} aboveLayerID="nav-route-line" />
       )}

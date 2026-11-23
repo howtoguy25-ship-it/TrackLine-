@@ -233,7 +233,8 @@ export interface NavPhraseOptions extends SpeakOptions {
 export async function speakNavPhrase(phrase: NavPhrase, options: NavPhraseOptions): Promise<void> {
   if (!options.enabled || !shouldSpeakPhrase(options.mode, phrase)) return;
   const voice = parseVoiceIdentifier(options.voiceIdentifier);
-  const isCallOut = phrase.kind === "report" || phrase.kind === "heavyTraffic";
+  // Call-outs wait for a turn instruction being spoken to finish (never talk over it).
+  const isCallOut = phrase.kind === "report" || phrase.kind === "heavyTraffic" || phrase.kind === "ahead";
 
   let plan: SpeechPlan;
   if (voice.kind === "recorded") {

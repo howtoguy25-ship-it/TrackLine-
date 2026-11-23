@@ -184,6 +184,36 @@ export const ROAD_SIGN_ART = {
   cameraLens: INK,
 } as const;
 
+/**
+ * Ahead alerts (components/AheadBanner.tsx): each kind's meaning colour for its stripe and big
+ * round icon, with the glyph colour that reads on it (3:1 or better, checked in
+ * __tests__/design/colours.test.ts): police blue, crash red-orange, hazard amber, roadwork orange,
+ * jam deep red, camera purple, broken lights amber-red, road features grey-blue.
+ */
+export const AHEAD_COLOURS: Record<string, { fill: string; glyph: string }> = {
+  closure: { fill: "#B3261E", glyph: WHITE },
+  crash: { fill: "#E5481F", glyph: WHITE },
+  standstill: { fill: "#B3261E", glyph: WHITE },
+  heavyTraffic: { fill: "#D7263D", glyph: WHITE },
+  slowdown: { fill: "#D7263D", glyph: WHITE },
+  police: { fill: "#2F6FED", glyph: WHITE },
+  hazard: { fill: "#F5A623", glyph: INK },
+  object: { fill: "#F5A623", glyph: INK },
+  carOnShoulder: { fill: "#F5A623", glyph: INK },
+  weather: { fill: "#F5A623", glyph: INK },
+  emergency: { fill: "#C62828", glyph: WHITE },
+  brokenLight: { fill: "#D9480F", glyph: WHITE },
+  camera: { fill: "#7C4DDB", glyph: WHITE },
+  schoolZone: { fill: "#F2C200", glyph: INK },
+  roadwork: { fill: "#FF8A00", glyph: INK },
+  hump: { fill: "#4E6478", glyph: WHITE },
+  crossing: { fill: "#4E6478", glyph: WHITE },
+  curve: { fill: "#4E6478", glyph: WHITE },
+  toll: { fill: "#4E6478", glyph: WHITE },
+  signal: { fill: "#4E6478", glyph: WHITE },
+  roadFeature: { fill: "#4E6478", glyph: WHITE },
+};
+
 /** Live Traffic NSW incidents use their type's colour plus this white "i" badge. */
 export const LIVE_TRAFFIC_BADGE = { fill: WHITE, glyph: "#2F6FED" } as const;
 

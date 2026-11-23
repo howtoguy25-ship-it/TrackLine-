@@ -11,6 +11,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { formatArrivalClock, formatDistance, formatDurationText, type DistanceUnit } from "@/utils/navFormat";
 import { quickestSlot, type LeavePrediction, type RouteEvent } from "@/travel/etaSheet";
+import { AheadGlyph } from "@/components/art/AheadGlyph";
+import { AHEAD_COLOURS } from "@/theme/colors";
+import type { AheadKind } from "@/nav/ahead/aheadKinds";
+
+export interface AheadRow {
+  key: string;
+  kind: AheadKind;
+  title: string;
+  road: string | null;
+  aheadM: number;
+  /** Seconds to reach it at the route's own pace; null when unknown. */
+  etaSeconds: number | null;
+}
 
 interface Props {
   arrivalClockText: string;
@@ -24,6 +37,12 @@ interface Props {
   viaText?: string;
   /** Reports and live incidents on the road still ahead, in driving order. */
   events: RouteEvent[];
+  /**
+   * Everything on the route ahead (nav/ahead), nearest first: icon, type, road, distance and the
+   * time to reach it. Tap one: the map shows it. Replaces the events list when given.
+   */
+  ahead?: AheadRow[];
+  onAheadPress?: (key: string) => void;
   /** Asked once each time the sheet opens: predicted drive times for leaving now and later. */
   loadLeaveTimes: () => Promise<LeavePrediction[]>;
   /** "Show more": the full Plan a drive time list for this destination. */
@@ -70,6 +89,8 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     destinationAddress,
     viaText,
     events,
+    ahead,
+    onAheadPress,
     loadLeaveTimes,
     onShowMoreTimes,
     onOpenSettings,
@@ -159,7 +180,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         </View>
 
         <Text style={styles.sectionLabel}>On your route</Text>
-        <RouteEventsBar events={events} unit={distanceUnit} />
+        {ahead ? <AheadList rows={ahead} unit={distanceUnit} onPress={onAheadPress} /> : <RouteEventsBar events={events} unit={distanceUnit} />}
 
         <Text style={styles.sectionLabel}>Find the best time to leave</Text>
         <LeaveTimesChart state={leave} onRetry={fetchLeaveTimes} />
@@ -196,6 +217,50 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
 });
 
 const SNAP_POINTS = ["72%"];
+
+function AheadList({ rows, unit, onPress }: { rows: AheadRow[]; unit: DistanceUnit; onPress?: (key: string) => void }) {
+  if (rows.length === 0) {
+    return (
+      <Text style={styles.quiet} testID="eta-sheet-no-ahead">
+        Nothing reported on your route
+      </Text>
+    );
+  }
+  return (
+    <View testID="eta-sheet-ahead">
+      {rows.map((r) => {
+        const c = AHEAD_COLOURS[r.kind] ?? AHEAD_COLOURS.roadFeature;
+        const when = r.etaSeconds != null ? ` · in ${formatDurationText(Math.max(60, r.etaSeconds))}` : "";
+        return (
+          <Pressable
+            key={r.key}
+            onPress={onPress ? () => onPress(r.key) : undefined}
+            disabled={!onPress}
+            accessibilityRole="button"
+            accessibilityLabel={`${r.title}${r.road ? ` on ${r.road}` : ""}, ${formatDistance(r.aheadM, unit)}${when}. Show on the map`}
+            style={styles.aheadRow}
+            testID={`eta-sheet-ahead-${r.key}`}
+          >
+            <View style={[styles.aheadIcon, { backgroundColor: c.fill }]}>
+              <AheadGlyph kind={r.kind} size={20} color={c.glyph} />
+            </View>
+            <View style={styles.aheadText}>
+              <Text style={styles.eventLabel} numberOfLines={1}>
+                {r.title}
+              </Text>
+              {r.road ? (
+                <Text style={styles.quiet} numberOfLines={1}>
+                  {r.road}
+                </Text>
+              ) : null}
+            </View>
+            <Text style={styles.eventDist}>{`${formatDistance(r.aheadM, unit)}${when}`}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 function RouteEventsBar({ events, unit }: { events: RouteEvent[]; unit: DistanceUnit }) {
   if (events.length === 0) {
@@ -352,6 +417,9 @@ function OptionRow({
 }
 
 const styles = StyleSheet.create({
+  aheadRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 52 },
+  aheadIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  aheadText: { flex: 1, minWidth: 0 },
   // Dark while driving, like the bottom bar it opens from (the sheet's own background isn't a
   // Surface view, so it's set here; everything inside follows SurfaceScheme dark).
   sheetBackground: { backgroundColor: SURFACES.dark.sheet, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },

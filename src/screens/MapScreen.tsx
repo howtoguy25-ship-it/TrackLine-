@@ -42,7 +42,7 @@ import { approachTick } from "@/nav/navPipeline";
 import { INITIAL_REROUTE_TRIGGER, rerouteTrigger } from "@/nav/rerouteTrigger";
 import { useAudioPlayer } from "expo-audio";
 import { env } from "@/config/env";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button, Chip, FloatingButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import {
@@ -137,7 +137,7 @@ import { recordArrival } from "@/services/poiPopularity";
 import { popularityKey } from "@/map/poiRanking";
 import { crashHistorySpots, laneEndingFeatures, trackySlowdownAhead } from "@/alerts/derivedFeatures";
 import { fetchCrashRecordsNear, type CrashRecord } from "@/services/crashRecords";
-import { nextApproachAlert, projectOnPolyline, type ApproachMemory } from "@/alerts/approachAlerts";
+import { nextApproachAlert, type ApproachMemory } from "@/alerts/approachAlerts";
 import { INITIAL_LIMIT_CHANGE, stepLimitChange, type LimitChangeState } from "@/alerts/speedLimitChange";
 import { ReportItemIcon } from "@/components/settings/ReportItemIcon";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
@@ -207,7 +207,16 @@ import {
 import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
 import { buildDriveLink, parseDriveLink } from "@/services/driveLink";
-import { useSharedValue } from "react-native-reanimated";
+import Reanimated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import { AheadBanner } from "@/components/AheadBanner";
+import { AheadBannerController } from "@/nav/ahead/bannerController";
+import { aheadOf, projectFeed, trafficSources, type AheadAlert } from "@/nav/ahead/aheadFeed";
+import { aheadSourcesFrom } from "@/nav/ahead/aheadSources";
+import { aheadClipKey, roadAtAlong } from "@/nav/ahead/aheadText";
+import type { AheadRow } from "@/screens/NavOptionsSheet";
+import { spokenLine } from "@/nav/ahead/aheadKinds";
+import { MAP_ICONS_AHEAD_M, MAX_MAP_ICONS, warnDistanceM } from "@/nav/ahead/aheadTiming";
+import { useMapScheme } from "@/components/ui/uiScheme";
 import { HomeMapControls } from "@/components/HomeMapControls";
 import {
   HOME_FOLLOW_ZOOM,
@@ -230,9 +239,8 @@ import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
-import { REPORT_SIZE, SIDE_MARGIN, controlsBottom } from "@/nav/navControlsLayout";
-import { infoBannerFor } from "@/nav/infoBanner";
-import { chipRemainingM, featureChipText, routeFeatureIcons, routeFeaturesAhead, shouldSpeakFeature, type RouteFeature } from "@/nav/roadFeatureAlerts";
+import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
+import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
 import { startVoiceSearch, VOICE_SEARCH_MESSAGES, type VoiceSearchSession } from "@/services/voiceSearch";
@@ -305,6 +313,8 @@ const DIAGNOSTIC_DISABLE_MAPVIEW = false;
 // re-check, how long to stay quiet after a decline, the minimum genuine time savings worth
 // interrupting for, and how close to the destination it stops bothering to check at all.
 const TRAFFIC_CHECK_INTERVAL_MS = 90_000;
+/** Ahead alerts: live traffic on your road re-read this often while driving. */
+const AHEAD_TRAFFIC_REFRESH_MS = 30_000;
 /** The camera eases to a tapped pin, and back, over this long. */
 const ALERT_CARD_CAMERA_MS = 600;
 /** The alert card that's up: a community report or an official Live Traffic NSW incident. */
@@ -3719,6 +3729,35 @@ export function MapScreen() {
     return () => clearInterval(interval);
   }, [route, destinationLatLng, travelMode, announcePhrase, currentLatLngRef, reportSettingsRef, routeAvoidRef]);
 
+  // Ahead alerts' live traffic (nav/ahead): your own road re-timed every 30 s (one request), so
+  // "Heavy traffic ahead" follows conditions; the speeds come from that fresh route, projected onto
+  // the route being driven. Also keeps the live ETA fresh.
+  const [aheadLiveTraffic, setAheadLiveTraffic] = useState<{ forRoute: Route; polyline: LatLng[]; intervals: Route["speedIntervals"] } | null>(null);
+  useEffect(() => {
+    if (!route || !destinationLatLng || travelMode !== "driving") return;
+    const line = detailedRoutePolyline(route);
+    let cancelled = false;
+    const refresh = async () => {
+      const latLng = currentLatLngRef.current;
+      if (!latLng || trafficCheckInFlightRef.current) return;
+      try {
+        const yours = await getRouteThrough(latLng, destinationLatLng, throughPointsAhead(line, latLng, stopLocationRef.current));
+        if (cancelled) return;
+        setAheadLiveTraffic({ forRoute: route, polyline: yours.polyline, intervals: yours.speedIntervals });
+        setLiveEtaSeconds(routeSeconds(yours));
+        yourRoadEtaAtRef.current = Date.now();
+      } catch (err) {
+        // The route's own traffic stays in use; nothing is guessed.
+        Sentry.logger.warn("ahead: live traffic refresh failed", { error: String(err) });
+      }
+    };
+    const interval = setInterval(refresh, AHEAD_TRAFFIC_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [route, destinationLatLng, travelMode, currentLatLngRef]);
+
   // Clears any stale suggestion the moment the underlying route is replaced for any other
   // reason (a real reroute, an add-stop confirm, exiting navigation) -- a suggestion computed
   // against the old route's remaining path would no longer mean anything once route changes.
@@ -4918,22 +4957,14 @@ export function MapScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
   }, [ride]);
 
-  // Sudden slowdown from TrackLine drivers crawling just ahead on the route (rising edge only).
-  const trackySlowRef = useRef(false);
-  useEffect(() => {
-    if (!route || !navMatch?.onRoute || !alertsWhileDriving(settings, "suddenSlowdown")) {
-      trackySlowRef.current = false;
-      return;
-    }
-    const at = trackySlowdownAhead(presenceList, { polyline: route.polyline, alongM: navMatch.along }, location?.timestamp ?? 0);
-    if (at && !trackySlowRef.current) {
-      setApproachChip({ item: "suddenSlowdown", distanceM: Math.round(haversineMeters(currentLatLng ?? at, at)) });
-      announcePhrase({ kind: "slowdown" });
-    }
-    trackySlowRef.current = !!at;
-    // Each matched fix and each presence update re-checks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navMatch, presenceList]);
+  // Sudden slowdown from TrackLine drivers crawling just ahead on the route: an ahead alert.
+  const trackySlowdownAt = useMemo(
+    () =>
+      route && navMatch?.onRoute && alertsWhileDriving(settings, "suddenSlowdown")
+        ? trackySlowdownAhead(presenceList, { polyline: route.polyline, alongM: navMatch.along }, location?.timestamp ?? 0)
+        : null,
+    [route, navMatch, settings, presenceList, location?.timestamp]
+  );
   useEffect(() => {
     // An on-route chip stays until the feature is passed; any other goes after 6 s.
     if (!approachChip || approachChip.alongM != null) return;
@@ -4954,25 +4985,149 @@ export function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chipAheadM]);
   useEffect(() => {
-    if (!currentLatLng || travelMode !== "driving" || approachFeatures.length === 0) return;
-    const onRoute = route && navMatch?.onRoute ? { polyline: route.polyline, alongM: navMatch.along } : null;
+    // While navigating, the ahead banner (nav/ahead) does this job; this chip is for free driving.
+    if (route || !currentLatLng || travelMode !== "driving" || approachFeatures.length === 0) return;
     const { alert, memory } = nextApproachAlert(
       approachFeatures,
-      { nowMs: location?.timestamp ?? 0, position: currentLatLng, headingDeg: heading, speedKmh: currentSpeedKmh, route: onRoute },
+      { nowMs: location?.timestamp ?? 0, position: currentLatLng, headingDeg: heading, speedKmh: currentSpeedKmh, route: null },
       approachMemoryRef.current
     );
     approachMemoryRef.current = memory;
     if (!alert) return;
-    // While navigating, a feature on the route gets a counting-down chip and is spoken at ~300 m.
-    const feature = approachFeatures.find((f) => f.key === alert.key);
-    const onLine = onRoute && feature ? projectOnPolyline(onRoute.polyline, { latitude: feature.lat, longitude: feature.lng }) : null;
-    const alongM = onLine && onLine.offM <= 35 && onLine.alongM > onRoute!.alongM ? onLine.alongM : null;
-    setApproachChip({ item: alert.item, distanceM: alert.distanceM, key: alert.key, alongM });
-    if (alongM == null) announcePhrase({ kind: "feature", item: alert.item });
+    setApproachChip({ item: alert.item, distanceM: alert.distanceM, key: alert.key, alongM: null });
+    announcePhrase({ kind: "feature", item: alert.item });
     // Only a new fix (or a newly loaded feature list) runs this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLatLng, approachFeatures]);
 
+  // ---- Ahead alerts while navigating (nav/ahead): ONE feed, ONE controller, ONE banner ----
+  // Projection onto the route only when the sources or the route change; per fix only "ahead of".
+  const aheadProjected = useMemo(() => {
+    if (!route || travelMode !== "driving") return [];
+    const sources = [
+      ...aheadSourcesFrom(approachFeatures, nearbyAlerts, settings.showLiveTraffic ? nearbyTrafficIncidents : []),
+      ...(alertsWhileDriving(settings, "traffic")
+        ? aheadLiveTraffic && aheadLiveTraffic.forRoute === route
+          ? trafficSources(aheadLiveTraffic.polyline, aheadLiveTraffic.intervals)
+          : trafficSources(route.polyline, route.speedIntervals)
+        : []),
+    ];
+    return projectFeed(sources, route.polyline, (msg, key) => Sentry.logger.warn(msg, { key }));
+  }, [route, travelMode, approachFeatures, nearbyAlerts, nearbyTrafficIncidents, settings, aheadLiveTraffic]);
+  const aheadSlowdown = useMemo(
+    () =>
+      route && trackySlowdownAt
+        ? projectFeed([{ key: `slowdown:${trackySlowdownAt.latitude.toFixed(4)},${trackySlowdownAt.longitude.toFixed(4)}`, kind: "slowdown", item: "suddenSlowdown", source: "community", lat: trackySlowdownAt.latitude, lng: trackySlowdownAt.longitude }], route.polyline)
+        : [],
+    [route, trackySlowdownAt]
+  );
+  const aheadFeedNow = useMemo(
+    () => (navMatch?.onRoute ? aheadOf([...aheadProjected, ...aheadSlowdown], navMatch.along).sort((a, b) => a.aheadM - b.aheadM) : []),
+    [aheadProjected, aheadSlowdown, navMatch]
+  );
+  const [aheadCtl] = useState(
+    () => new AheadBannerController({ setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, Date.now)
+  );
+  const aheadState = useSyncExternalStore(aheadCtl.subscribe, aheadCtl.getState);
+  useEffect(() => {
+    aheadCtl.setOnShow((a: AheadAlert, reminder: boolean) => {
+      if (reminder) return;
+      if (a.critical) {
+        try {
+          chimePlayer.seekTo(0);
+          chimePlayer.play();
+        } catch {
+          // No chime is no reason to miss the warning.
+        }
+      }
+      const delayMin = a.delaySeconds && a.delaySeconds >= 60 ? Math.round(a.delaySeconds / 60) : null;
+      announcePhrase({ kind: "ahead", text: spokenLine(a.mergedTraffic ? "crash" : a.kind, a.title, delayMin), critical: a.critical, clipKey: aheadClipKey(a) });
+    });
+  });
+  useEffect(() => {
+    if (!route || travelMode !== "driving") return;
+    aheadCtl.update({ feed: aheadFeedNow, carAlongM: navMatch?.along ?? 0, speedMps: (currentSpeedKmh ?? 0) / 3.6, manoeuvreBusy: exitZoomActive });
+  }, [aheadCtl, aheadFeedNow, navMatch, currentSpeedKmh, exitZoomActive, route, travelMode]);
+  // Every timer is cleared on a reroute, the end of the drive, going to the background, unmount.
+  const aheadRouteRef = useRef<typeof route>(null);
+  useEffect(() => {
+    const prev = aheadRouteRef.current;
+    aheadRouteRef.current = route;
+    if (prev && !route) aheadCtl.reset("end");
+    else if (prev && route && prev !== route) aheadCtl.reset("reroute");
+  }, [route, aheadCtl]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next !== "active") aheadCtl.reset("background");
+    });
+    return () => sub.remove();
+  }, [aheadCtl]);
+  useEffect(() => () => aheadCtl.reset("unmount"), [aheadCtl]);
+  // The bottom controls rise to make room (UI thread), then the banner slides in.
+  const aheadRoomPx = useSharedValue(0);
+  const aheadRaiseStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -aheadRoomPx.get() }] }));
+  const [aheadBannerHeight, setAheadBannerHeight] = useState(AHEAD_BANNER_HEIGHT);
+  const aheadBannerUp = !!aheadState.alert;
+  const mapScheme = useMapScheme();
+  // On a short phone the raised column puts the sign beside the dial (same maths as the layout test).
+  const aheadSignBeside = useMemo(() => {
+    if (!route || !aheadBannerUp) return false;
+    const f = navControlFrames({
+      width: windowWidth,
+      height: windowHeight,
+      safeTop: insets.top,
+      safeBottom: insets.bottom,
+      bottomBarHeight,
+      topBarHeight: instructionCardHeight,
+      showSpeedLimit: !!speedLimitKmh,
+      showRecenter: false,
+      raiseBy: aheadRoomFor(aheadBannerHeight),
+    });
+    return !!f.speedLimit && f.speedLimit.x > SIDE_MARGIN + SPEEDOMETER_SIZE / 2;
+  }, [route, aheadBannerUp, windowWidth, windowHeight, insets.top, insets.bottom, bottomBarHeight, instructionCardHeight, speedLimitKmh, aheadBannerHeight]);
+  /** Tap while stopped: the full card for a report or an official incident (else it just stays). */
+  const openAheadCard = useCallback(() => {
+    const a = aheadState.alert;
+    if (!a) return;
+    const report = a.alertId ? nearbyAlerts.find((x) => x.id === a.alertId) : undefined;
+    const incident = a.incidentId ? nearbyTrafficIncidents.find((x) => x.id === a.incidentId) : undefined;
+    if (report) onMarkerPress(report);
+    else if (incident) onOfficialPinPress(incident);
+    else {
+      aheadCtl.tap();
+      return;
+    }
+    aheadCtl.swipe();
+  }, [aheadState.alert, nearbyAlerts, nearbyTrafficIncidents, onMarkerPress, onOfficialPinPress, aheadCtl]);
+  /** Still there / Not there on a driver report: one tap, then the banner closes. */
+  const voteOnAhead = useCallback(
+    (still: boolean) => {
+      const a = aheadState.alert;
+      if (!a?.alertId || !user) return;
+      (still ? confirmAlert(a.alertId, user.uid) : denyAlert(a.alertId, user.uid)).catch((err) => Sentry.logger.warn("ahead: vote failed", { error: String(err) }));
+      aheadCtl.swipe();
+    },
+    [aheadState.alert, user, aheadCtl]
+  );
+  // Live traffic tinted on the route still ahead while driving: slow amber, stopped red, over their length.
+  const navTrafficAll = useMemo(() => {
+    if (!route || !route.speedIntervals || route.polyline.length < 2) return [];
+    const cum = [0];
+    for (let i = 1; i < route.polyline.length; i++) cum.push(cum[i - 1] + haversineMeters(route.polyline[i - 1], route.polyline[i]));
+    return route.speedIntervals
+      .filter((iv) => (iv.speed === "SLOW" || iv.speed === "TRAFFIC_JAM") && iv.endIndex > iv.startIndex)
+      .map((iv) => ({
+        coordinates: route.polyline.slice(Math.max(0, iv.startIndex), Math.min(route.polyline.length - 1, iv.endIndex) + 1),
+        speed: iv.speed as "SLOW" | "TRAFFIC_JAM",
+        endAlong: cum[Math.min(cum.length - 1, iv.endIndex)],
+      }));
+  }, [route]);
+  const navTraffic = useMemo(
+    () => (alertsWhileDriving(settings, "traffic") || isShown(settings, "traffic") ? navTrafficAll.filter((t) => t.endAlong > (navMatch?.along ?? 0)) : []),
+    [navTrafficAll, navMatch, settings]
+  );
+  /** The road an alert is on: the route step it falls in. */
+  const aheadRoad = useMemo(() => (aheadState.alert && route ? roadAtAlong(route.steps, aheadState.alert.alongM) : null), [aheadState.alert, route]);
   // "On your route" on the incident card: within 80m of the road still to be driven.
   const selectedIncidentOnRoute = useMemo(
     () =>
@@ -5332,6 +5487,30 @@ export function MapScreen() {
 
   // The ETA sheet's "On your route" list: reports and live incidents within reach of the road
   // still ahead. Only worked out while the sheet is open.
+  // The ETA sheet's "On your route": every ahead alert in order, with road, distance and time.
+  const aheadRows = useMemo<AheadRow[]>(() => {
+    if (!route) return [];
+    const pace = remainingDistanceMeters > 0 ? remainingDurationSeconds / remainingDistanceMeters : null;
+    return aheadFeedNow.map((a) => ({
+      key: a.key,
+      kind: a.kind,
+      title: a.title,
+      road: roadAtAlong(route.steps, a.alongM),
+      aheadM: a.aheadM,
+      etaSeconds: pace != null ? Math.round(a.aheadM * pace) : null,
+    }));
+  }, [route, aheadFeedNow, remainingDistanceMeters, remainingDurationSeconds]);
+  const onAheadRowPress = useCallback(
+    (key: string) => {
+      const a = aheadFeedNow.find((x) => x.key === key);
+      if (!a) return;
+      navOptionsSheetRef.current?.close();
+      // Off the follow camera (Re-centre comes back), and over to the spot.
+      setFollowTilt(false);
+      mapRef.current?.animateCamera({ center: { latitude: a.lat, longitude: a.lng }, zoom: 16, pitch: 0 }, { duration: 600 });
+    },
+    [aheadFeedNow]
+  );
   const etaSheetEvents = useMemo(() => {
     if (!route || remainingPolyline.length < 2) return [];
     const points: RoutePoint[] = [
@@ -5340,8 +5519,6 @@ export function MapScreen() {
     ];
     return eventsAlongRoute(remainingPolyline, points);
   }, [route, remainingPolyline, nearbyAlerts, trafficIncidents]);
-  // The info banner above the bottom bar: the nearest real report or incident ahead.
-  const navInfoBanner = useMemo(() => infoBannerFor(etaSheetEvents, settings.distanceUnit), [etaSheetEvents, settings.distanceUnit]);
   // Only name the place if it's still where this trip ends (a later dropped-pin trip has none).
   const etaSheetPlace =
     navDestinationPlace &&
@@ -5385,21 +5562,7 @@ export function MapScreen() {
     return () => clearInterval(interval);
   }, [route, heading, arrivalClockText, remainingDurationSeconds, currentLatLngRef]);
 
-  // Every road feature around (OpenStreetMap, lane endings), for the on-route icons and chip.
-  const roadFeatureList = useMemo<RouteFeature[]>(() => {
-    if (!route) return [];
-    const list: RouteFeature[] = [];
-    for (const p of osmData?.trafficLights ?? []) list.push({ key: `tl:${p.id}`, item: "trafficLights", lat: p.lat, lng: p.lng });
-    for (const p of osmData?.speedCameras ?? []) list.push({ key: `sc:${p.id}`, item: "speedCamera", lat: p.lat, lng: p.lng });
-    for (const p of osmFeaturePins({ ...settings, reportPrefs: settings.reportPrefs }, osmData, nearbyAlerts)) list.push({ key: p.id, item: p.kind as ReportItemId, lat: p.lat, lng: p.lng });
-    for (const f of laneEndingFeatures(route.steps)) list.push({ key: `lane:${f.key}`, item: "laneEnding", lat: f.lat, lng: f.lng });
-    return list;
-  }, [route, osmData, settings, nearbyAlerts]);
-  const routeFeaturesNow = useMemo(
-    () => (route && navMatch?.onRoute ? routeFeaturesAhead(roadFeatureList, route.polyline, navMatch.along) : []),
-    [route, navMatch, roadFeatureList]
-  );
-  const routeFeatureIconList = useMemo(() => routeFeatureIcons(routeFeaturesNow, (item) => isShown(settings, item)), [routeFeaturesNow, settings]);
+  // Road features on the route while driving are ahead alerts now (nav/ahead: banner + pins).
   // Off a drive: cameras (and, at street level, traffic lights) in view as road-sign icons.
   const homeRoadSignList = useMemo(() => {
     const points: SignPoint[] = [];
@@ -5442,8 +5605,7 @@ export function MapScreen() {
         { kind: "alert", alert }
       );
     }
-    // Road features are alerts, not dots (nav/roadFeatureAlerts.ts): nothing on the home map or
-    // the route preview; while driving, at most three on the route ahead within 1 km.
+    // Off a drive: cameras (and traffic lights at street level) in view, as road-sign icons.
     for (const f of homeRoadSignList) {
       add(
         { id: `road-sign:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon: signIcon(f.item), priority: 6 },
@@ -5454,16 +5616,17 @@ export function MapScreen() {
         }
       );
     }
-    for (const f of routeFeatureIconList) {
-      const icon = signIcon(f.item);
-      const pin = { id: `route-feature:${f.key}`, coordinate: { latitude: f.lat, longitude: f.lng }, icon, priority: 7 };
-      // Lane endings come from the route itself: nothing to open.
-      if (f.item === "laneEnding") add(pin);
+    // Ahead (nav/ahead): the next things on the route within 1.5 km, at most three, as raised
+    // pins at their exact spot. Reports and Live Traffic NSW already have their own pins; these
+    // are the mapped road features and live traffic, which have none.
+    for (const a of aheadFeedNow.filter((x) => (x.source === "map" || x.source === "traffic") && x.aheadM <= MAP_ICONS_AHEAD_M).slice(0, MAX_MAP_ICONS)) {
+      const pin = { id: `ahead:${a.key}`, coordinate: { latitude: a.lat, longitude: a.lng }, icon: `ahead:${a.kind}`, anchor: "bottom" as const, priority: 7 };
+      if (a.source === "traffic" || !a.item) add(pin);
       else
         add(pin, {
           kind: "osm",
-          osm: f.item === "trafficLights" ? "traffic_light" : f.item === "speedCamera" ? "speed_camera" : (f.item as OsmFeatureKind),
-          at: { latitude: f.lat, longitude: f.lng },
+          osm: a.item === "trafficLights" ? "traffic_light" : a.item === "speedCamera" ? "speed_camera" : (a.item as OsmFeatureKind),
+          at: { latitude: a.lat, longitude: a.lng },
         });
     }
     const venueLayer = (
@@ -5537,7 +5700,7 @@ export function MapScreen() {
     selectedAlert?.id,
     // Settings > Reports switches, live traffic and camera layers all decide which pins show.
     settings,
-    routeFeatureIconList,
+    aheadFeedNow,
     homeRoadSignList,
     fuelStationsSheetOpen,
     fuelStationPins,
@@ -5755,6 +5918,7 @@ export function MapScreen() {
         >
           <MapboxLayers
             navRoute={mapboxNavRoute}
+            navTraffic={route ? navTraffic : []}
             navAlternatives={
               route && navAlternatives
                 ? navAlternatives.map((alt, i) => ({
@@ -5843,7 +6007,9 @@ export function MapScreen() {
         // On the home map the dial is only shown with the sheet at its peek: it's fixed to the
         // map, and a raised sheet would otherwise slide up over it.
         (!!route || whereToSheetIndex === 0) && (
+        <Reanimated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, route ? aheadRaiseStyle : null]}>
         <LiveSpeedometer
+          signBeside={aheadSignBeside}
           speedKmh={liveSpeed.speedKmh}
           speedLimitKmh={resolvedLimit?.kmh ?? null}
           unit={signUnit}
@@ -5871,6 +6037,7 @@ export function MapScreen() {
               : whereToHeights.peek + 12 + 58 * uiScale + 8
           }
         />
+        </Reanimated.View>
       )}
       <RoadReportSheet
         visible={roadReportOpen}
@@ -6145,6 +6312,7 @@ export function MapScreen() {
             ])
           }
           onHeightChange={setBottomBarHeight}
+          raise={aheadRoomPx}
           isFollowing={followTilt}
           onRecenter={onRecenter}
           onOverview={showNavRoutes}
@@ -6171,8 +6339,37 @@ export function MapScreen() {
           onVoice={listenForNavCommand}
           listening={navListening}
           streetName={navRoadName}
-          banner={navOptionsSheetOpen ? null : navInfoBanner}
+          banner={null}
           onBanner={() => navOptionsSheetRef.current?.expand()}
+          raise={aheadRoomPx}
+          raiseBy={aheadBannerUp ? aheadRoomFor(aheadBannerHeight) : 0}
+        />
+      )}
+
+      {/* The ahead-alert banner (nav/ahead): just above the ETA bar; the controls above rise first. */}
+      {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
+        <AheadBanner
+          state={navOptionsSheetOpen ? { ...aheadState, alert: null } : aheadState}
+          unit={settings.distanceUnit}
+          dark={mapScheme === "dark"}
+          road={aheadRoad}
+          warnM={aheadState.alert ? warnDistanceM(aheadState.alert, (currentSpeedKmh ?? 0) / 3.6) : 1}
+          speedKmh={currentSpeedKmh}
+          nowMs={location?.timestamp ?? 0}
+          barTop={insets.bottom + bottomBarHeight}
+          room={aheadRoomPx}
+          onHeight={setAheadBannerHeight}
+          onTap={() => aheadCtl.tap()}
+          onSwipe={() => aheadCtl.swipe()}
+          onOpenCard={openAheadCard}
+          canVote={!!user}
+          onStillThere={() => voteOnAhead(true)}
+          onNotThere={() => voteOnAhead(false)}
+          fasterRoute={
+            trafficSuggestionRoute && trafficSuggestionSavedSeconds >= 60
+              ? { savesMin: Math.round(trafficSuggestionSavedSeconds / 60), onSwitch: acceptTrafficSuggestion, onKeep: () => aheadCtl.swipe() }
+              : null
+          }
         />
       )}
 
@@ -6258,11 +6455,11 @@ export function MapScreen() {
       {/* Report while driving: bottom-right, 12pt above the bar (Re-centre sits over it only
           after panning). See nav/navControlsLayout.ts for the whole column layout. */}
       {route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && (
-        <View pointerEvents="box-none" style={[styles.navReport, { bottom: controlsBottom(insets.bottom, bottomBarHeight) }]}>
+        <Reanimated.View pointerEvents="box-none" style={[styles.navReport, { bottom: controlsBottom(insets.bottom, bottomBarHeight) }, aheadRaiseStyle]}>
           <FloatingButton tone="report" shape="menu" size={REPORT_SIZE} onPress={openAlertTypePicker} accessibilityLabel="Report something on the road" testID="nav-report">
             <ReportIcon size={30} />
           </FloatingButton>
-        </View>
+        </Reanimated.View>
       )}
 
       {/* Mapbox's junction picture for a complex interchange, until the manoeuvre point. */}
@@ -6848,6 +7045,8 @@ export function MapScreen() {
         destinationAddress={etaSheetPlace?.address ?? null}
         viaText={route?.summary}
         events={etaSheetEvents}
+        ahead={aheadRows}
+        onAheadPress={onAheadRowPress}
         loadLeaveTimes={loadLeaveTimes}
         onShowMoreTimes={() => {
           navOptionsSheetRef.current?.close();

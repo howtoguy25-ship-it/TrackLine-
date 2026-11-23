@@ -286,7 +286,12 @@ export type NavPhrase =
   /** The posted limit just changed (Settings > Reports > Speed limit changes). */
   | { kind: "speedLimit"; limit: number }
   /** A jam just ahead on the route (Settings > Reports > Sudden slowdown). */
-  | { kind: "slowdown" };
+  | { kind: "slowdown" }
+  /**
+   * An ahead-alert banner appearing (nav/ahead): its own line ("Speed hump ahead"); critical
+   * ones are still spoken on "Less chatty". `clipKey` is the driver's recording to use, if any.
+   */
+  | { kind: "ahead"; text: string; critical: boolean; clipKey?: string };
 
 const REPORT_SEGMENTS: Record<AlertType, SpeechSegment> = {
   police: { clipKey: "report_police", text: "Police reported" },
@@ -315,6 +320,11 @@ export interface PhraseContext {
 
 export function planPhrase(phrase: NavPhrase, context: PhraseContext = {}): SpeechPlan {
   const language = context.language ?? "en";
+  if (phrase.kind === "ahead") {
+    // The driver's own recording when they made one for this kind of report, else spoken.
+    const clip = phrase.clipKey && context.recordedKeys?.has(phrase.clipKey) ? phrase.clipKey : undefined;
+    return { segments: [{ text: phrase.text, ...(clip ? { clipKey: clip } : {}) }], fullText: phrase.text };
+  }
   if (phrase.kind === "feature" || phrase.kind === "speedLimit" || phrase.kind === "slowdown") {
     // Always spoken (no recorded clips for these), in the guidance language.
     const text =
@@ -373,6 +383,8 @@ export function shouldSpeakStep(
 
 export function shouldSpeakPhrase(mode: SpokenDirectionsMode, phrase: NavPhrase): boolean {
   if (mode === "off") return false;
+  // Ahead alerts: always on Normal and Only alerts; on Less chatty only the critical ones.
+  if (phrase.kind === "ahead") return mode !== "lessChatty" || phrase.critical;
   const isAlert =
     phrase.kind === "report" ||
     phrase.kind === "heavyTraffic" ||

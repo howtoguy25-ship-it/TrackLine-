@@ -67,13 +67,14 @@ describe("MapScreen uses it", () => {
     expect(src).not.toMatch(/showsTrafficLightPins\(settings\)/);
     expect(src).not.toMatch(/showsSpeedCameraPins\(settings\)/);
     expect(src).not.toMatch(/for \(const p of osmFeaturePins\(settings, osmData, nearbyAlerts\)\) \{\n\s*add\(/);
-    // The list the icons come from is empty unless there's a route.
-    expect(src).toMatch(/const roadFeatureList = useMemo<RouteFeature\[\]>\(\(\) => \{\n\s*if \(!route\) return \[\];/);
-    expect(src).toMatch(/for \(const f of routeFeatureIconList\)/);
+    // While driving, the route icons are the ahead alerts (nav/ahead): only with a route, within
+    // 1.5 km, at most three.
+    expect(src).toMatch(/if \(!route \|\| travelMode !== "driving"\) return \[\];/);
+    expect(src).toMatch(/aheadFeedNow\.filter\(\(x\) => \(x\.source === "map" \|\| x\.source === "traffic"\) && x\.aheadM <= MAP_ICONS_AHEAD_M\)\.slice\(0, MAX_MAP_ICONS\)/);
   });
-  it("the chip shows the live distance and the voice waits for ~300 m on the route", () => {
+  it("navigating: the ahead banner warns; free driving: the chip and its voice", () => {
+    expect(src).toMatch(/<AheadBanner/);
+    expect(src).toMatch(/if \(route \|\| !currentLatLng \|\| travelMode !== "driving" \|\| approachFeatures\.length === 0\) return;/);
     expect(src).toMatch(/featureChipText\(approachChip\.item, chipAheadM \?\? approachChip\.distanceM/);
-    expect(src).toMatch(/shouldSpeakFeature\(chipAheadM, featureSpokenRef\.current\.has\(key\)\)/);
-    expect(src).toMatch(/if \(alongM == null\) announcePhrase\(\{ kind: "feature", item: alert\.item \}\)/);
   });
 });

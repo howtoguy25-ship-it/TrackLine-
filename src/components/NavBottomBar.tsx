@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { colors } from "@/theme/tokens";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 
 interface Props {
   etaText: string;
@@ -29,6 +29,8 @@ interface Props {
   onOverview: () => void;
   /** Long-press the bar: end navigation (asks first). */
   onLongPressEnd?: () => void;
+  /** The ahead banner raising the controls above the bar (pt, animated): Re-centre rises with them. */
+  raise?: SharedValue<number>;
 }
 
 export const NAV_BOTTOM_BAR_HEIGHT = 110;
@@ -54,11 +56,13 @@ export function NavBottomBar({
   onRecenter,
   onOverview,
   onLongPressEnd,
+  raise,
 }: Props) {
   const insets = useSafeAreaInsets();
   const theme = NAV_CARD_THEMES[themeKey];
   const bg = theme.bottomBarBackground ?? theme.background;
   const roundBg = theme.actionBg;
+  const lift = useAnimatedStyle(() => ({ transform: [{ translateY: -(raise?.get() ?? 0) }] }));
   const onLayout = (e: LayoutChangeEvent) => onHeightChange?.(e.nativeEvent.layout.height);
   // Drag the bar up: the ETA sheet (same as tapping the arrival time), so it's always reachable.
   const swipeUp = Gesture.Pan()
@@ -70,9 +74,11 @@ export function NavBottomBar({
   return (
     <View style={styles.wrap} pointerEvents="box-none" testID="nav-bottom-bar">
       {!isFollowing ? (
-        <Pressable onPress={onRecenter} style={styles.recenter} accessibilityRole="button" accessibilityLabel="Re-centre on my location" testID="nav-recenter">
-          <Icon name="locate" size={24} color="#FFFFFF" />
-        </Pressable>
+        <Animated.View style={lift} pointerEvents="box-none">
+          <Pressable onPress={onRecenter} style={styles.recenter} accessibilityRole="button" accessibilityLabel="Re-centre on my location" testID="nav-recenter">
+            <Icon name="locate" size={24} color="#FFFFFF" />
+          </Pressable>
+        </Animated.View>
       ) : null}
       <GestureDetector gesture={swipeUp}>
       <View style={[styles.bar, { backgroundColor: bg, paddingBottom: insets.bottom + 10, minHeight: NAV_BOTTOM_BAR_HEIGHT + insets.bottom }]} onLayout={onLayout}>
