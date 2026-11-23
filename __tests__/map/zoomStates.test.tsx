@@ -1,7 +1,7 @@
 // Map polish §2: three zoom states for every report -- full pin (z >= 15), 60% icon + count badges
 // for overlaps (z 12-15), coloured dot (z < 12, max 60, most important first).
 import React from "react";
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import { render, screen } from "@testing-library/react-native";
 import { dotColour, layoutPins, midPinIcon, pinState, MAX_DOTS, MID_SCALE } from "@/map/zoomStates";
 import { iconView } from "@/map-v2/layers/MapIcons";
@@ -44,5 +44,16 @@ describe("zoom states", () => {
     await render(<>{iconView("dot:police")}</>);
     expect(screen.getByTestId("map-dot-police")).toHaveStyle({ backgroundColor: MAP_DOT.police, width: 10 });
     expect(iconView("alert-mid:crash")).not.toBeNull();
+  });
+});
+
+describe("live traffic lines (map polish §4)", () => {
+  it("thin, coloured amber / red / dark red, only on roads with real congestion data", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const src = require("fs").readFileSync("src/map-v2/TrackLineMap.tsx", "utf8") as string;
+    expect(src).toMatch(/filter=\{\["match", \["get", "congestion"\], \["moderate", "heavy", "severe"\], true, false\]\}/);
+    expect(src).toMatch(/"moderate", TRAFFIC\.slow, "heavy", TRAFFIC\.heavy, "severe", TRAFFIC\.standstill/);
+    const { TRAFFIC_LINE_WIDTH } = jest.requireActual<typeof import("@/map-v2/TrackLineMap")>("@/map-v2/TrackLineMap");
+    expect(Math.max(...(TRAFFIC_LINE_WIDTH.slice(3) as number[]).filter((_, i) => i % 2 === 1))).toBeLessThanOrEqual(4.5);
   });
 });

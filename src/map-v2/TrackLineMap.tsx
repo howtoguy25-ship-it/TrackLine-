@@ -401,7 +401,8 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
             filter={["match", ["get", "congestion"], ["moderate", "heavy", "severe"], true, false]}
             style={{
               lineColor: ["match", ["get", "congestion"], "moderate", TRAFFIC.slow, "heavy", TRAFFIC.heavy, "severe", TRAFFIC.standstill, "#00000000"],
-              lineWidth: ["interpolate", ["exponential", 1.5], ["zoom"], 10, 1.5, 14, 3, 18, 8],
+              // Thin lines along the road, not a fill over it (map polish §4).
+              lineWidth: TRAFFIC_LINE_WIDTH as never,
               lineCap: "round",
               lineJoin: "round",
             }}
@@ -413,6 +414,9 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
     </MapView>
   );
 });
+
+/** Live traffic line width by zoom: thin (1-4.5 px), so the road and its name still read. */
+export const TRAFFIC_LINE_WIDTH = ["interpolate", ["exponential", 1.5], ["zoom"], 10, 1, 14, 2, 18, 4.5];
 
 /**
  * Which Mapbox loading errors mean the map can't draw, and in what words. A 401 anywhere (style,
