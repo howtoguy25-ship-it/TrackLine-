@@ -43,7 +43,7 @@ function register(deps) {
   out.adminUsers = section(usersOps({ FieldValue, POLICY, deliverToUser }));
   out.adminMessages = section(messagesOps(), { timeoutSeconds: 300 });
   out.adminConfig = section(configOps());
-  out.adminModeration = section(moderationOps({ reportStore, POLICY }));
+  out.adminModeration = section(moderationOps({ reportStore, POLICY, encodeGeohash: require("../reports/core").encodeGeohash }));
   out.adminSupport = section(
     supportOps({
       anthropicKey: () => ANTHROPIC_API_KEY.value(),

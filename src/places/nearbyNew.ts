@@ -49,7 +49,9 @@ export interface FuelPrice {
   centsPerLitre: number;
   /** When the station last reported it. */
   updatedMs: number | null;
-  source: "FuelCheck" | "Google";
+  source: "FuelCheck" | "Google" | "Drivers";
+  /** Drivers who agreed (driver-reported prices only, gap 18). */
+  drivers?: number;
 }
 
 export interface NearbyResult {
@@ -69,6 +71,55 @@ export interface NearbyResult {
   photoName: string | null;
   /** Prices Google returned for this station (fuelOptions), keyed by our fuel type. */
   googleFuel: Partial<Record<FuelTypeKey, FuelPrice>>;
+  /** EV chargers here (Google evChargeOptions), null when it isn't a charging site or wasn't given. */
+  ev?: EvAvailability | null;
+}
+
+/** Gap 18: a charging site's connectors and, when its network reports it, how many are free now. */
+export interface EvAvailability {
+  connectors: number;
+  /** Free right now; null when the network doesn't report live availability. */
+  available: number | null;
+  outOfService: number | null;
+  maxKw: number | null;
+  types: string[];
+  updatedMs: number | null;
+}
+
+const CONNECTOR_NAMES: Record<string, string> = {
+  EV_CONNECTOR_TYPE_CCS_COMBO_2: "CCS2",
+  EV_CONNECTOR_TYPE_CCS_COMBO_1: "CCS1",
+  EV_CONNECTOR_TYPE_CHADEMO: "CHAdeMO",
+  EV_CONNECTOR_TYPE_TYPE_2: "Type 2",
+  EV_CONNECTOR_TYPE_J1772: "Type 1",
+  EV_CONNECTOR_TYPE_TESLA: "Tesla",
+  EV_CONNECTOR_TYPE_NACS: "NACS",
+  EV_CONNECTOR_TYPE_UNSPECIFIED_WALL_OUTLET: "Wall socket",
+};
+
+/** Google's evChargeOptions -> what we show. Live counts only when every connector group reports them. */
+export function parseEv(o: any): EvAvailability | null {
+  const groups: any[] = Array.isArray(o?.connectorAggregation) ? o.connectorAggregation : [];
+  const connectors = typeof o?.connectorCount === "number" ? o.connectorCount : groups.reduce((a, g) => a + (Number(g.count) || 0), 0);
+  if (!(connectors > 0)) return null;
+  const live = groups.length > 0 && groups.every((g) => typeof g.availableCount === "number");
+  const kws = groups.map((g) => Number(g.maxChargeRateKw)).filter((k) => Number.isFinite(k) && k > 0);
+  const times = groups.map((g) => (g.availabilityLastUpdateTime ? Date.parse(g.availabilityLastUpdateTime) : NaN)).filter((t) => Number.isFinite(t));
+  return {
+    connectors,
+    available: live ? groups.reduce((a, g) => a + g.availableCount, 0) : null,
+    outOfService: live && groups.some((g) => typeof g.outOfServiceCount === "number") ? groups.reduce((a, g) => a + (g.outOfServiceCount || 0), 0) : null,
+    maxKw: kws.length ? Math.max(...kws) : null,
+    types: [...new Set(groups.map((g) => CONNECTOR_NAMES[g.type]).filter((x): x is string => !!x))],
+    updatedMs: times.length ? Math.max(...times) : null,
+  };
+}
+
+/** "3 of 6 free · up to 50 kW" or "6 connectors · up to 50 kW · live availability not reported". */
+export function evText(ev: EvAvailability): string {
+  const kw = ev.maxKw ? ` · up to ${Math.round(ev.maxKw)} kW` : "";
+  if (ev.available == null) return `${ev.connectors} connector${ev.connectors === 1 ? "" : "s"}${kw} · live availability not reported`;
+  return `${ev.available} of ${ev.connectors} free${kw}`;
 }
 
 const PRICE_LEVELS: Record<string, number> = {
@@ -92,6 +143,7 @@ export const FIELD_MASK = [
   "places.currentOpeningHours.openNow",
   "places.photos",
   "places.fuelOptions",
+  "places.evChargeOptions",
 ].join(",");
 
 function moneyToCents(m: { units?: string | number; nanos?: number } | undefined): number | null {
@@ -125,6 +177,7 @@ export function parsePlace(p: any, from: LatLng): NearbyResult | null {
     openNow: typeof p.currentOpeningHours?.openNow === "boolean" ? p.currentOpeningHours.openNow : null,
     photoName: p.photos?.[0]?.name ?? null,
     googleFuel,
+    ev: parseEv(p.evChargeOptions),
   };
 }
 

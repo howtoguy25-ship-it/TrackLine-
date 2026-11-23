@@ -90,6 +90,13 @@ service cloud.firestore {
     // Points, levels, badges and the weekly leaderboard (gap item 15): written only by the report
     // functions (reports/scores.js); readable by signed-in drivers. A name is there only when its
     // driver chose to show their name on reports.
+    // Driver-reported fuel prices (gap item 18): written only by the reportFuelPrice function.
+    // Readable by signed-in drivers (the app shows a price only once 3 drivers agree).
+    match /fuelUserPrices/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /scores/{uid} {
       allow read: if isSignedIn();
       allow write: if false;

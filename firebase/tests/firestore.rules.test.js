@@ -478,6 +478,19 @@ describe("alerts/{alertId} (votes, thanks, byline -- once per user)", () => {
     await assertSucceeds(getDoc(doc(testEnv.authenticatedContext("owner", { email: "howtoguy25@gmail.com" }).firestore(), "moderationLog/m1")));
   });
 
+  test("driver fuel prices and scores: signed-in drivers read, only the server writes (gaps 15, 18)", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "fuelUserPrices/ChIJabc__E10"), { confirmed: { cents: 189.9, drivers: 3, atMs: 1 } });
+      await setDoc(doc(ctx.firestore(), "scores/d"), { points: 5 });
+    });
+    const d = testEnv.authenticatedContext("d").firestore();
+    await assertSucceeds(getDoc(doc(d, "fuelUserPrices/ChIJabc__E10")));
+    await assertFails(setDoc(doc(d, "fuelUserPrices/ChIJabc__E10"), { confirmed: { cents: 1, drivers: 9, atMs: 1 } }));
+    await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "fuelUserPrices/ChIJabc__E10")));
+    await assertSucceeds(getDoc(doc(d, "scores/d")));
+    await assertFails(setDoc(doc(d, "scores/d"), { points: 9999 }));
+  });
+
   test("pending reports and reporter limits are server only (owner may read their own limits)", async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), "pendingReports/p1"), { uid: "d", type: "police" });
