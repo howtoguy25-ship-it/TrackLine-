@@ -105,7 +105,31 @@ async function callable<T>(name: string, data: unknown): Promise<T> {
   return res.data as T;
 }
 
+/**
+ * Items added after the last server deploy (motorbike hazards). A server that doesn't know one yet
+ * refuses it as "bad-type"; then the report goes up as "Other hazard" with what it is in the note,
+ * so nothing is lost before the owner runs the Firebase deploy.
+ */
+export const NEWER_HAZARD_ITEMS: Readonly<Record<string, string>> = { pothole: "Pothole", looseGravel: "Loose gravel", tramTracks: "Tram tracks" };
+
 export async function submitReport(
+  type: AlertType,
+  location: { latitude: number; longitude: number },
+  from: { latitude: number; longitude: number },
+  uid: string,
+  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null; item?: string | null } = {}
+): Promise<ReportResult> {
+  try {
+    return await submitReportOnce(type, location, from, uid, options);
+  } catch (err) {
+    const label = options.item ? NEWER_HAZARD_ITEMS[options.item] : undefined;
+    if (!(err instanceof ReportRefused) || err.reason !== "bad-type" || !label) throw err;
+    const comment = [label, options.comment?.trim()].filter(Boolean).join(" · ");
+    return submitReportOnce(type, location, from, uid, { ...options, item: "otherHazards", comment });
+  }
+}
+
+async function submitReportOnce(
   type: AlertType,
   location: { latitude: number; longitude: number },
   from: { latitude: number; longitude: number },

@@ -149,6 +149,9 @@ export function kindOfItem(item: ReportItemId, fromDriverReport: boolean): Ahead
       return "weather";
     case "animals":
     case "otherHazards":
+    case "pothole":
+    case "looseGravel":
+    case "tramTracks":
     case "trackyNeedsHelp":
     case "crashHistory":
       return "hazard";
@@ -169,5 +172,6 @@ export function titleFor(kind: AheadKind, item: ReportItemId | null): string {
   if (kind === "hazard" && item === "animals") return "Animal on road";
   if (kind === "hazard" && item === "trackyNeedsHelp") return "Driver needs help";
   if (kind === "hazard" && item === "crashHistory") return "Crash-prone spot";
+  if (kind === "hazard" && (item === "pothole" || item === "looseGravel" || item === "tramTracks")) return REPORT_ITEM_BY_ID[item].title;
   return KIND_TITLE[kind];
 }

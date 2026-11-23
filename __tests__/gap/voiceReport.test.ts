@@ -16,7 +16,7 @@ describe("spoken reports", () => {
     ["traffic light's not working", "trafficLights", "Traffic light not working reported"],
     ["the traffic lights are out", "trafficLights", "Traffic light not working reported"],
     ["something on the road in the right lane", "otherHazards", "Object on road reported"],
-    ["pothole", "otherHazards", "Pothole reported"],
+    ["pothole", "pothole", "Pothole reported"],
     ["road closed", "closures", "Road closed reported"],
     ["heavy traffic", "traffic", "Heavy traffic reported"],
     ["car broken down on the shoulder", "carOnShoulder", "Car on shoulder reported"],

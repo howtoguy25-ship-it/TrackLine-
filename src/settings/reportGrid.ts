@@ -28,7 +28,7 @@ export const REPORT_CATEGORIES: readonly ReportCategory[] = [
     iconItem: "speedCamera",
     items: ["speedCamera", "redLightCamera", "redLightSpeedCamera", "stopSignCamera", "mobilePoliceCamera", "transitLaneCamera", "carpoolLaneCamera", "busLaneCamera", "mobilePhoneCamera", "noiseCamera", "safeDistanceCamera", "seatBeltCamera"],
   },
-  { id: "hazard", title: "Hazard", iconItem: "otherHazards", items: ["otherHazards", "carOnShoulder", "blockedLane", "badWeather", "animals", "roadwork", "closures"] },
+  { id: "hazard", title: "Hazard", iconItem: "otherHazards", items: ["otherHazards", "pothole", "looseGravel", "tramTracks", "carOnShoulder", "blockedLane", "badWeather", "animals", "roadwork", "closures"] },
   {
     id: "roadFeature",
     title: "Road feature",

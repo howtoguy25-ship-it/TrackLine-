@@ -225,6 +225,24 @@
     "otherHazards": {
       "type": "hazard"
     },
+    "pothole": {
+      "type": "hazard",
+      "lifetimeMinutes": 10080,
+      "askAfterMinutes": 1440,
+      "extendMinutes": 4320,
+      "maxLifeMinutes": 43200
+    },
+    "looseGravel": {
+      "type": "hazard",
+      "lifetimeMinutes": 1440,
+      "askAfterMinutes": 240,
+      "extendMinutes": 720,
+      "maxLifeMinutes": 4320
+    },
+    "tramTracks": {
+      "type": "hazard",
+      "fixed": true
+    },
     "mapChats": {
       "type": "hazard",
       "lifetimeMinutes": 120,

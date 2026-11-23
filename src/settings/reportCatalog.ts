@@ -47,6 +47,10 @@ export type ReportItemId =
   | "suddenSlowdown"
   | "carOnShoulder"
   | "otherHazards"
+  // motorbike hazards (also reported by car drivers)
+  | "pothole"
+  | "looseGravel"
+  | "tramTracks"
   | "badWeather"
   | "blockedLane"
   | "trackyNeedsHelp"
@@ -187,6 +191,9 @@ export const REPORT_ITEMS: readonly ReportItem[] = [
   // ---- hazards
   { id: "carOnShoulder", section: "hazards", title: "Car on shoulder", description: "Broken-down vehicles", explanation: "Shows broken-down vehicles from Live Traffic NSW, and warns you as you approach.", icon: { glyph: "car-side", badge: "alert", colour: AMBER }, show: true, alert: true, sources: ["liveTrafficNsw", "community"] },
   { id: "otherHazards", section: "hazards", title: "Other hazards", description: "Hazards reported by drivers and Live Traffic NSW", explanation: "Warns you as you approach hazards reported by drivers or by Live Traffic NSW (fires, debris and more).", icon: { glyph: "alert", colour: AMBER }, show: false, alert: true, sources: ["liveTrafficNsw", "community"] },
+  { id: "pothole", section: "hazards", title: "Pothole", description: "Potholes reported by drivers and riders", explanation: "Warns you as you approach a pothole other drivers and riders reported. Kept for a week unless drivers say it's gone.", icon: { glyph: "alert-circle", badge: "road-variant", colour: AMBER }, show: true, alert: true, sources: ["community"] },
+  { id: "looseGravel", section: "hazards", title: "Loose gravel", description: "Gravel or loose stones on the road", explanation: "Warns you as you approach loose gravel or stones reported by drivers and riders. Kept for a day unless drivers say it's gone.", icon: { glyph: "grain", colour: AMBER }, show: true, alert: true, sources: ["community"] },
+  { id: "tramTracks", section: "hazards", title: "Tram tracks", description: "Tram tracks across or along the road", explanation: "Warns riders of tram tracks reported by drivers and riders. Stays once three people confirm it.", icon: { glyph: "tram", badge: "alert", colour: AMBER }, show: true, alert: true, sources: ["community"] },
   { id: "badWeather", section: "hazards", title: "Bad weather", description: "Flooding and weather hazards", explanation: "Warns you as you approach flooding and weather hazards from Live Traffic NSW.", icon: { glyph: "weather-pouring", colour: BLUE }, show: false, alert: true, sources: ["liveTrafficNsw", "community"] },
   { id: "blockedLane", section: "hazards", title: "Blocked lane", description: "Lanes closed or blocked", explanation: "Shows lane closures from Live Traffic NSW, and warns you as you approach.", icon: { glyph: "road-variant", badge: "minus-circle", colour: AMBER }, show: true, alert: true, sources: ["liveTrafficNsw", "community"] },
   { id: "trackyNeedsHelp", section: "hazards", title: "Tracky needs help", description: "Drivers asking for help", explanation: "A warning when a nearby TrackLine driver asks for help (broken down, out of fuel...).", icon: { glyph: "hand-back-right", colour: RED }, show: false, alert: true, sources: ["community"] },
