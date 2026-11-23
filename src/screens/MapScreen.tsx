@@ -313,6 +313,8 @@ const DIAGNOSTIC_DISABLE_MAPVIEW = false;
 // re-check, how long to stay quiet after a decline, the minimum genuine time savings worth
 // interrupting for, and how close to the destination it stops bothering to check at all.
 const TRAFFIC_CHECK_INTERVAL_MS = 90_000;
+/** Ahead alerts: live traffic on your road re-read this often while driving. */
+const AHEAD_TRAFFIC_REFRESH_MS = 30_000;
 /** The camera eases to a tapped pin, and back, over this long. */
 const ALERT_CARD_CAMERA_MS = 600;
 /** The alert card that's up: a community report or an official Live Traffic NSW incident. */
@@ -3727,6 +3729,35 @@ export function MapScreen() {
     return () => clearInterval(interval);
   }, [route, destinationLatLng, travelMode, announcePhrase, currentLatLngRef, reportSettingsRef, routeAvoidRef]);
 
+  // Ahead alerts' live traffic (nav/ahead): your own road re-timed every 30 s (one request), so
+  // "Heavy traffic ahead" follows conditions; the speeds come from that fresh route, projected onto
+  // the route being driven. Also keeps the live ETA fresh.
+  const [aheadLiveTraffic, setAheadLiveTraffic] = useState<{ forRoute: Route; polyline: LatLng[]; intervals: Route["speedIntervals"] } | null>(null);
+  useEffect(() => {
+    if (!route || !destinationLatLng || travelMode !== "driving") return;
+    const line = detailedRoutePolyline(route);
+    let cancelled = false;
+    const refresh = async () => {
+      const latLng = currentLatLngRef.current;
+      if (!latLng || trafficCheckInFlightRef.current) return;
+      try {
+        const yours = await getRouteThrough(latLng, destinationLatLng, throughPointsAhead(line, latLng, stopLocationRef.current));
+        if (cancelled) return;
+        setAheadLiveTraffic({ forRoute: route, polyline: yours.polyline, intervals: yours.speedIntervals });
+        setLiveEtaSeconds(routeSeconds(yours));
+        yourRoadEtaAtRef.current = Date.now();
+      } catch (err) {
+        // The route's own traffic stays in use; nothing is guessed.
+        Sentry.logger.warn("ahead: live traffic refresh failed", { error: String(err) });
+      }
+    };
+    const interval = setInterval(refresh, AHEAD_TRAFFIC_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [route, destinationLatLng, travelMode, currentLatLngRef]);
+
   // Clears any stale suggestion the moment the underlying route is replaced for any other
   // reason (a real reroute, an add-stop confirm, exiting navigation) -- a suggestion computed
   // against the old route's remaining path would no longer mean anything once route changes.
@@ -4975,10 +5006,14 @@ export function MapScreen() {
     if (!route || travelMode !== "driving") return [];
     const sources = [
       ...aheadSourcesFrom(approachFeatures, nearbyAlerts, settings.showLiveTraffic ? nearbyTrafficIncidents : []),
-      ...(alertsWhileDriving(settings, "traffic") ? trafficSources(route.polyline, route.speedIntervals) : []),
+      ...(alertsWhileDriving(settings, "traffic")
+        ? aheadLiveTraffic && aheadLiveTraffic.forRoute === route
+          ? trafficSources(aheadLiveTraffic.polyline, aheadLiveTraffic.intervals)
+          : trafficSources(route.polyline, route.speedIntervals)
+        : []),
     ];
     return projectFeed(sources, route.polyline, (msg, key) => Sentry.logger.warn(msg, { key }));
-  }, [route, travelMode, approachFeatures, nearbyAlerts, nearbyTrafficIncidents, settings]);
+  }, [route, travelMode, approachFeatures, nearbyAlerts, nearbyTrafficIncidents, settings, aheadLiveTraffic]);
   const aheadSlowdown = useMemo(
     () =>
       route && trackySlowdownAt
