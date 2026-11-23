@@ -569,6 +569,13 @@ export function SettingsScreen() {
 
       <Section title="Reports and places" visible={shouldShow("Reports and places")}>
         <SettingsRow
+          icon="time"
+          meaning="privacy"
+          title="Keep trip history"
+          subtitle="Each navigated trip's distance, time and speeds, on this phone only (Menu › Trip history)"
+          toggle={{ value: settings.tripHistory, onValueChange: (v: boolean) => updateSettings({ tripHistory: v }), testID: "settings-trip-history" }}
+        />
+        <SettingsRow
           icon="person"
           meaning="privacy"
           title="Show my name on reports"

@@ -302,6 +302,7 @@ import {
 } from "@/nav/sirenRadar";
 import { EmergencyVehicleBanner } from "@/components/EmergencyVehicleBanner";
 import { LiveRoadView } from "@/components/LiveRoadView";
+import { TripRecorder, saveTrip } from "@/trips/tripLog";
 import { LiveCameraSlot } from "@/components/LiveCameraSlot";
 import { liveViewHeight, liveViewShown, routeAhead, sceneFromTracks, type CameraTrack, type LiveStatus, type SceneVehicle } from "@/nav/liveScene";
 import { SirenQuestionCard } from "@/components/SirenQuestionCard";
@@ -1119,6 +1120,8 @@ export function MapScreen() {
   const [navNorthUp, setNavNorthUp] = useState(false);
   // The "You've arrived" card (nav/endDrive.ts); the drive ends when it goes.
   const [arrival, setArrival] = useState<ArrivalInfo | null>(null);
+  // Trip history: set when this trip reaches its destination (read when the trip is saved).
+  const tripArrivedRef = useRef(false);
   // Arrival flow (nav/arrivalFlow.ts): car parks near the destination from 1 km out, and the
   // place you were going to after you chose to park at one (for "Walk 180 m" on arrival).
   const [arrivalParking, setArrivalParking] = useState<
@@ -2464,6 +2467,7 @@ export function MapScreen() {
       const arrivedAt = navDestinationPlaceRef.current;
       setArrival((a) => a ?? { name: arrivedAt?.name ?? "Your destination", address: arrivedAt?.address ?? null, location: destinationLatLng, arrivedAtMs: Date.now() });
       recordTripEnd().catch(() => {});
+      tripArrivedRef.current = true;
       // Settings > Privacy > Share arrivals (opt-in): an anonymous +1 for a named place.
       const place = lastDestinationPlaceRef.current;
       if (shareArrivalsRef.current && place && place.name) {
@@ -2675,6 +2679,38 @@ export function MapScreen() {
   const currentLatLngRef = useLatest(currentLatLng);
   const userRef = useLatest(user);
   const autoShareDetectionsRef = useLatest(settings.autoShareDetections);
+  // Trip history (trips/tripLog.ts, gap 17): a navigated trip is measured from the real GPS fixes
+  // while it runs and saved on the phone when it ends (arrived or stopped). Off in Settings.
+  const tripRecRef = useRef<TripRecorder | null>(null);
+  const tripActive = !!route;
+  const tripStartInfoRef = useLatest({ mode: travelMode as string, from: liveAddress, to: navDestinationPlace?.name ?? null, on: settings.tripHistory });
+  useEffect(() => {
+    if (tripActive && !tripRecRef.current) {
+      const info = tripStartInfoRef.current;
+      if (info.on) tripRecRef.current = new TripRecorder(Date.now(), { mode: info.mode, from: info.from, to: info.to });
+    } else if (!tripActive && tripRecRef.current) {
+      const trip = tripRecRef.current.finish(Date.now(), tripArrivedRef.current);
+      tripRecRef.current = null;
+      // Ready for the next trip.
+      tripArrivedRef.current = false;
+      if (trip) saveTrip(trip).catch((err) => console.warn("[trips] save failed", err));
+    }
+  }, [tripActive, tripStartInfoRef]);
+  useEffect(() => {
+    const rec = tripRecRef.current;
+    if (!rec || !location) return;
+    rec.onFix({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      timeMs: location.timestamp,
+      speedKmh: currentSpeedKmh,
+      accuracyM: location.coords.accuracy ?? null,
+      limitKmh: speedLimitKmh,
+    });
+    // One step per GPS fix; the other values are read for this fix.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location?.timestamp]);
+
   // Siren radar (nav/sirenRadar.ts): opt-in, listens only while driving (over 10 km/h, within
   // 2 min of it, or navigating). A heard siren gets its own banner at the top (one banner at a
   // time: the ahead banner waits) and the spoken line; once it's over and you've stopped, the
