@@ -29,7 +29,13 @@ function loadModule(): SpeechModule | null {
   return cachedModule;
 }
 
-const RECOGNITION_LOCALE: Record<NavLanguage, string> = {
+// A search session is using the recogniser: the "Hey TrackLine" listener stays out of its way.
+let searchActive = false;
+export function isVoiceSearchActive(): boolean {
+  return searchActive;
+}
+
+export const RECOGNITION_LOCALES: Record<NavLanguage, string> = {
   en: "en-AU",
   ar: "ar-SA",
   ru: "ru-RU",
@@ -118,12 +124,14 @@ export async function startVoiceSearch(
   await sirenDetection.suspend();
 
   let finished = false;
+  searchActive = true;
   let deliveredFinal = false;
   let latest = "";
   const subscriptions: { remove: () => void }[] = [];
   const finish = () => {
     if (finished) return;
     finished = true;
+    searchActive = false;
     subscriptions.forEach((subscription) => subscription.remove());
     sirenDetection.resume().catch(() => {});
     // Some recognizers end without ever marking a result final; what was heard still counts.
@@ -157,7 +165,7 @@ export async function startVoiceSearch(
 
   try {
     recognizer.start({
-      lang: RECOGNITION_LOCALE[language],
+      lang: RECOGNITION_LOCALES[language],
       interimResults: true,
       continuous: false,
       // A place name, not a sentence: no punctuation wanted, and iOS tunes for short queries.

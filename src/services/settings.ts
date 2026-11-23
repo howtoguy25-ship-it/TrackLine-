@@ -94,6 +94,8 @@ export interface AppSettings {
   // the posted limit by 3+ km/h, at most once every 30s (see LiveSpeedometer.tsx). Default ON,
   // same as every other audible-alert setting in this app.
   speedWarningChimeEnabled: boolean;
+  /** "Hey TrackLine": listen on the phone for the wake phrase while the map is open (off by default). */
+  wakePhrase: boolean;
   /** Warn (chime/colour) this many km/h over the limit -- school-zone limits included. 1-10. */
   speedingThresholdKmh: number;
   /** Travel mode last picked (Drive by default): drive, motorbike, bike, walk, transit, ferry. */
@@ -210,6 +212,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertIconTheme: "default",
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
+  wakePhrase: false,
   speedingThresholdKmh: 5,
   lastTravelMode: "drive",
   mapLabels: "local",

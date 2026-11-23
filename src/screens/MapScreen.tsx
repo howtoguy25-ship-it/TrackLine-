@@ -244,6 +244,8 @@ import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadF
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
 import { parseVoiceReport, type VoiceReport } from "@/nav/voiceReport";
+import { startWakeListener, type WakeIntent } from "@/services/wakePhrase";
+import { RECOGNITION_LOCALES } from "@/services/voiceSearch";
 import { startVoiceSearch, VOICE_SEARCH_MESSAGES, type VoiceSearchSession } from "@/services/voiceSearch";
 import { pickShortcut, shortcutText, slowTrafficAhead, throughPointsAhead, withSideStreets, type ShortcutKind } from "@/nav/shortcuts";
 import { ReportIcon } from "@/components/icons/MapControlIcons";
@@ -5535,6 +5537,58 @@ export function MapScreen() {
       else Alert.alert("Voice command", `Didn't catch a command in "${text}". Try "crash ahead", "police on the left", "stop navigation" or "mute".`);
     };
   });
+
+  // "Hey TrackLine" (Settings > Voice guidance, opt-in): on the phone, while this screen is open
+  // and the app is in front; off while the mic button is listening (one microphone).
+  const wakeIntentRef = useRef<(i: WakeIntent) => void>(() => {});
+  useEffect(() => {
+    wakeIntentRef.current = (i: WakeIntent) => {
+      if (i.kind === "report") void sendVoiceReport(i.report);
+      else if (i.kind === "mute") updateSettings({ spokenDirections: "off" });
+      else if (i.kind === "unmute") updateSettings({ spokenDirections: "normal" });
+      else if (i.kind === "stop") {
+        if (route) exitNavigation("voice");
+      } else if (i.kind === "eta") {
+        announcePhrase({ kind: "said", text: route ? `You'll arrive at ${arrivalClockText}, in ${formatDurationText(remainingDurationSeconds)}` : "You're not navigating" });
+      } else if (i.kind === "drive") {
+        getSavedPlaces()
+          .then((saved) => {
+            const place = saved[i.to];
+            if (place) onDestinationSelected(place);
+            else announcePhrase({ kind: "said", text: `Save your ${i.to} address first` });
+          })
+          .catch(() => {});
+      } else announcePhrase({ kind: "said", text: "Sorry, I didn't catch that" });
+    };
+  });
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => setAppActive(s === "active"));
+    return () => sub.remove();
+  }, []);
+  const wakeOn = settings.wakePhrase && appActive && isFocused && !navListening;
+  useEffect(() => {
+    if (!wakeOn) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    startWakeListener(
+      RECOGNITION_LOCALES[navLanguage] ?? "en-AU",
+      (i) => wakeIntentRef.current(i),
+      (status) => {
+        if (status === "denied" || status === "unavailable") {
+          setBannerMessage(status === "denied" ? "“Hey TrackLine” needs microphone and speech access in your phone's Settings." : "“Hey TrackLine” needs on-device speech recognition, which this phone doesn't have.");
+          setBannerVisible(true);
+        }
+      }
+    ).then((s) => {
+      if (cancelled) s();
+      else stop = s;
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [wakeOn, navLanguage]);
 
   // The ETA sheet's "On your route" list: reports and live incidents within reach of the road
   // still ahead. Only worked out while the sheet is open.

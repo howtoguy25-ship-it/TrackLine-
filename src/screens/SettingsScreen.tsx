@@ -845,6 +845,13 @@ export function SettingsScreen() {
           toggle={{ value: settings.defaultVoiceEnabled, onValueChange: onDefaultVoiceToggle }}
         />
         <SettingsRow icon="mic" meaning="sound" title="Current voice" subtitle="Pick, preview or record a voice" value={voiceName} onPress={() => navigation.navigate("VoicePicker")} testID="current-voice" />
+        <SettingsRow
+          icon="mic"
+          meaning="sound"
+          title="Hey TrackLine"
+          subtitle="While the map is open, say “Hey TrackLine, crash ahead”, “navigate home”, “mute” or “what's my ETA”. Listens on your phone only; the siren radar pauses while it's on."
+          toggle={{ value: settings.wakePhrase, onValueChange: (v: boolean) => updateSettings({ wakePhrase: v }), testID: "wake-phrase-switch" }}
+        />
       </Section>
 
       <Section title="Spoken directions" visible={shouldShow("Spoken directions")}>
