@@ -46,6 +46,8 @@ export interface AppSettings {
   autoShareDetections: boolean; // default false (opt-in)
   /** Siren radar (services/sirenTracker.ts): listens for sirens while driving. Off until turned on. */
   sirenRadar: boolean;
+  /** Live road view (nav/liveScene.ts): while navigating, the vehicles the camera sees, drawn live around your route. Off until turned on. */
+  liveRoadView: boolean;
   sirenSensitivity: number; // confidence threshold 0-1, default 0.6
   defaultVoiceEnabled: boolean; // initial voiceEnabled value on launch
   // Static, permanently-mapped OSM infrastructure layer (every known traffic light / speed
@@ -199,6 +201,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visibleAlertTypes: ALL_ALERT_TYPES,
   autoShareDetections: false,
   sirenRadar: false,
+  liveRoadView: false,
   sirenSensitivity: 0.6,
   defaultVoiceEnabled: true,
   showTrafficLights: true,
