@@ -226,11 +226,14 @@ function plateExpression(): unknown[] {
 }
 
 function shieldTextExpression(): unknown[] {
-  const fromData = ["match", ["get", "shield_text_color"], ...Object.entries(SHIELD_TEXT_COLOURS).flat(), "none"];
   const byPlate = ["match", ["get", "shield"], ...Object.entries(SHIELD_PLATE_FOR).flatMap(([shield, plate]) => [shield, PLATE_TEXT[plate]]), PLATE_TEXT.white];
+  // The tile's own text colour when it gives one, else the plate's. (Root cause of a rejected
+  // style: this used to fall back to the string "none" inside a colour expression, which Mapbox
+  // can't parse as a colour, so the whole road-shields layer -- or in GL JS the whole style -- failed.)
+  const fromData = ["match", ["get", "shield_text_color"], ...Object.entries(SHIELD_TEXT_COLOURS).flat(), byPlate];
   // Australia's green route plates (M5, M8, A1, A3) always carry bold yellow numbers.
   const australian = ["match", ["get", "shield"], ...AU_YELLOW_TEXT_SHIELDS.flatMap((v) => [v, true]), false];
-  return ["case", australian, AU_SHIELD_TEXT, ["case", ["!=", fromData, "none"], fromData, byPlate]];
+  return ["case", australian, AU_SHIELD_TEXT, fromData];
 }
 
 /** Australia's green-plate shields: yellow route numbers (map polish §1). */
