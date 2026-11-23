@@ -6,6 +6,22 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Siren radar, map polish, ahead banner at the top, closures by direction — 2026-11-23
+
+All in code, typechecked, tested and merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST.
+
+| Item | Status | Evidence |
+|---|---|---|
+| Ahead banner moved to the top under the turn card, controls shift down, swipe up to dismiss | DONE | `docs/ahead-alerts/*.png`, `__tests__/nav/aheadAlerts.test.ts` |
+| Closures naming one direction: only rerouted when that direction is resolved to yours | DONE | `__tests__/gap/closures.test.tsx` |
+| Map polish §1 style, §2 zoom states / clusters / far dots, §3 road features, §4 thin traffic lines, §5 controls | DONE | `__tests__/map/zoomStates.test.tsx`, `__tests__/map/roadSigns.test.tsx`, `docs/map-polish/README.md` |
+| Map polish §6 screenshots z11-17 | BLOCKED (no Mapbox token in this environment) | `docs/map-polish/README.md` |
+| Siren radar §1 detection (YAMNet, 0.6, 3 of 5, type, closeness, driving-only, opt-in, own voice skipped, audio deleted) | DONE (windows back to back, not 50 % overlapped: BLOCKED #26) | `__tests__/siren/sirenTracker.test.ts`, `__tests__/siren/sirenEngine.test.ts` |
+| Siren radar §2 banner, §3 question + report, §4 privacy policy + permission text + disclaimer | DONE | `__tests__/siren/sirenRadar.test.tsx`, `web/public/privacy.html`, `app.config.js` |
+| Siren radar §5 accuracy on sample clips | DONE: 28/40 siren clips (28/33 with ≥ 3 s of siren), 0/180 false alarms, 0 in 15 min of non-siren audio | `docs/siren-radar/README.md`, `scripts/eval-yamnet-sirens.py` |
+| Siren radar frames light + dark | DONE (drawn from the components, not device screenshots) | `docs/siren-radar/*.png` |
+| Tesla-style live view toggle | NOT STARTED yet | -- |
+
 ## Nav options, fix pass 4, road signs, nothing-fake audit — 2026-11-22
 
 All in code, typechecked, tested (1090 tests, 76 suites) and merged to `claude/go-session-0d5bup`.

@@ -943,7 +943,18 @@ export function SettingsScreen() {
         ))}
       </Section>
 
-      <Section title="Emergency vehicle radar" visible={shouldShow("Emergency vehicle radar")} footer="Siren detection runs on your phone. Nothing is shared unless Auto-share is on.">
+      <Section
+        title="Emergency vehicle radar"
+        visible={shouldShow("Emergency vehicle radar")}
+        footer="Driver assistance only — always watch and listen for emergency vehicles yourself. Siren detection runs on your phone: each second of sound is checked and deleted at once, never recorded or uploaded. Only the result (siren heard, type) is used."
+      >
+        <SettingsRow
+          icon="radio"
+          meaning="safety"
+          title="Siren radar"
+          subtitle="Listens with the microphone while you drive (over 10 km/h or navigating) and warns you when an emergency vehicle is near"
+          toggle={{ value: settings.sirenRadar, onValueChange: (v: boolean) => updateSettings({ sirenRadar: v }), testID: "siren-radar-switch" }}
+        />
         <SettingsRow
           icon="radio"
           meaning="safety"

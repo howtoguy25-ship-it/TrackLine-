@@ -84,8 +84,8 @@ describe("while driving", () => {
   });
   it("MapScreen: picker on a closure report, details sent, stretch drawn, routed around once", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
-    expect(src).toMatch(/\{placingItem === "closures" \? <ClosureDetailsPicker value=\{closureDraft\} onChange=\{setClosureDraft\} \/> : null\}/);
-    expect(src).toMatch(/closure: item === "closures" \? closureForReport\(closureDraft, headingTrack\.filter\.shown \?\? null\) : null/);
+    expect(src).toMatch(/\{placingItem === "closures" && !sirenDraft \? <ClosureDetailsPicker value=\{closureDraft\} onChange=\{setClosureDraft\} \/> : null\}/);
+    expect(src).toMatch(/: item === "closures"\s*\?\s*closureForReport\(closureDraft, headingTrack\.filter\.shown \?\? null\)\s*:\s*null/);
     expect(src).toMatch(/closedStretches=\{closedStretches\}/);
     expect(src).toMatch(/closuresTriedRef\.current\.add\(c\.key\)/);
     expect(src).toMatch(/if \(near && near\.offM < 40\) return;/);

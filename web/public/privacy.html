@@ -135,12 +135,26 @@
         disappears the moment it leaves.
       </p>
 
-      <h3>Microphone — EV Radar (mobile app)</h3>
+      <h3>Microphone — Siren radar (mobile app)</h3>
       <p>
-        On the mobile app, EV Radar listens for emergency-vehicle sirens using your microphone.
-        Audio is analyzed on-device in short windows and then discarded immediately — it is never
-        recorded, saved, or sent anywhere. A detected siren only posts your location as a
-        community alert if you've explicitly turned on "auto-share" in Settings (off by default).
+        Siren radar is off until you turn it on (Settings &gt; Vehicle &amp; AI tools &gt; Siren radar).
+        When it's on, it listens with your microphone only while you're driving (over 10 km/h, for
+        two minutes after you slow down, or while you're navigating). Each second of sound is checked
+        on your phone by an on-device sound model (YAMNet) and the audio is deleted straight away —
+        it is never recorded, saved, or uploaded. While TrackLine itself is speaking, what the
+        microphone hears is skipped. During a phone call your phone gives the microphone to the call,
+        so nothing is heard. Only the result is used: that a siren was heard, a guess at its type, and
+        whether it seemed to be getting closer or moving away.
+      </p>
+      <p>
+        After a siren you may be asked "Did you see an emergency vehicle or incident?" once you've
+        stopped. Answering "No", or not answering, sends nothing. Answering "Yes" lets you post a normal
+        community report (what you saw, an optional title, where, and what happened), exactly like
+        any other report you make. "Auto-share" (off by default) posts an emergency vehicle report at
+        your location as soon as a siren is heard.
+      </p>
+      <p>
+        Siren radar is driver assistance only. Always watch and listen for emergency vehicles yourself.
       </p>
 
       <h3>Microphone — voice search and your own recorded voice (mobile app)</h3>

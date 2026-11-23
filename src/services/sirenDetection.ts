@@ -1,18 +1,22 @@
 import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
 import { YamnetSiren, isYamnetAvailable } from "@/native/yamnetNative";
 import { setMicInUse } from "@/services/audioSession";
+import { SirenTracker, type SirenEvent } from "@/services/sirenTracker";
+import { File } from "expo-file-system";
 
 const WINDOW_MS = 1000;
-const CONSECUTIVE_WINDOWS_REQUIRED = 2;
-const SIREN_LABELS = new Set(["Siren", "Emergency vehicle", "Police car (siren)", "Ambulance (siren)", "Fire engine, fire truck (siren)"]);
 
 export type SirenDetectionListener = (event: { confidence: number; label: string }) => void;
+export type SirenEventListener = (event: SirenEvent) => void;
 
 class SirenDetectionEngine {
   private recorder: InstanceType<typeof AudioModule.AudioRecorder> | null = null;
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private consecutiveHits = 0;
   private listeners = new Set<SirenDetectionListener>();
+  private eventListeners = new Set<SirenEventListener>();
+  private tracker = new SirenTracker();
+  private tickHandle: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private sensitivity = 0.6;
   // True while something else needs the microphone to itself for a moment (voice search). The
@@ -20,8 +24,16 @@ class SirenDetectionEngine {
   // no start-up cost -- and no window is ever recorded while it's set.
   private suspended = false;
 
+  // The app's own voice: windows heard while it's talking are skipped (MapScreen passes
+  // navSpeech's isNavSpeaking). A phone call needs no check: iOS gives the call the microphone.
+  private ownAudio: () => boolean = () => false;
+  setOwnAudioCheck(fn: () => boolean) {
+    this.ownAudio = fn;
+  }
+
   setSensitivity(threshold: number) {
     this.sensitivity = threshold;
+    this.tracker.threshold = threshold;
   }
 
   onDetection(listener: SirenDetectionListener): () => void {
@@ -29,9 +41,36 @@ class SirenDetectionEngine {
     return () => this.listeners.delete(listener);
   }
 
-  async start(): Promise<void> {
-    if (this.running) return;
+  /** Start / closer-or-away / end of a siren (services/sirenTracker.ts: 3 of 5 windows, 8 s end). */
+  onEvent(listener: SirenEventListener): () => void {
+    this.eventListeners.add(listener);
+    return () => this.eventListeners.delete(listener);
+  }
 
+  private emit(events: SirenEvent[]) {
+    for (const ev of events) {
+      this.eventListeners.forEach((l) => l(ev));
+      if (ev.kind === "start") this.listeners.forEach((l) => l({ confidence: 1, label: ev.type }));
+    }
+  }
+
+  // The radar starts and stops as you drive (MapScreen): a stop() that lands while start() is
+  // still waiting on the permission or the model wins, and two starts never overlap.
+  private wanted = false;
+  private starting = false;
+
+  async start(): Promise<void> {
+    this.wanted = true;
+    if (this.running || this.starting) return;
+    this.starting = true;
+    try {
+      await this.startNow();
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private async startNow(): Promise<void> {
     const { status } = await requestRecordingPermissionsAsync();
     if (status !== "granted") {
       console.warn("[siren] Microphone permission denied; EV Radar disabled.");
@@ -58,6 +97,7 @@ class SirenDetectionEngine {
       console.warn("[siren] Model failed to load; EV Radar disabled for this session.");
       return;
     }
+    if (!this.wanted) return;
 
     setMicInUse(true);
     await setAudioModeAsync({
@@ -81,8 +121,10 @@ class SirenDetectionEngine {
     // object) instead of a fresh one each time, cuts that per-second allocation/session churn
     // down to what's structurally unavoidable for capturing a real, distinct 1s window --
     // functionally identical output, meaningfully less native audio-session thrashing.
+    // Metering on: each window's loudness drives "Getting closer" / "Moving away".
     // eslint-disable-next-line import/namespace -- AudioRecorder is a native class on expo-audio's AudioModule (typed, checked by tsc); the import plugin can't see native exports
-    this.recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+    this.recorder = new AudioModule.AudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
+    this.tickHandle = setInterval(() => this.emit(this.tracker.tick(Date.now())), 1000);
 
     this.running = true;
     this.consecutiveHits = 0;
@@ -121,12 +163,20 @@ class SirenDetectionEngine {
   }
 
   async stop(): Promise<void> {
+    this.wanted = false;
     this.running = false;
     setMicInUse(false);
     if (this.pollHandle) {
       clearInterval(this.pollHandle);
       this.pollHandle = null;
     }
+    if (this.tickHandle) {
+      clearInterval(this.tickHandle);
+      this.tickHandle = null;
+    }
+    // A siren being heard when the radar stops still ends properly.
+    if (this.tracker.isActive) this.emit(this.tracker.tick(Date.now() + 60_000));
+    this.tracker.reset();
     if (this.recorder) {
       try {
         await this.recorder.stop();
@@ -150,32 +200,48 @@ class SirenDetectionEngine {
     if (!recorder || this.suspended) return;
     await recorder.prepareToRecordAsync();
     recorder.record();
+    const ownAudio = this.ownAudio();
     await new Promise((resolve) => setTimeout(resolve, WINDOW_MS));
+    let rmsDb: number | null = null;
+    try {
+      const m = recorder.getStatus().metering;
+      rmsDb = typeof m === "number" && Number.isFinite(m) ? m : null;
+    } catch {
+      // No metering on this device: closeness stays "Nearby".
+    }
     await recorder.stop();
-    // Suspended part-way through this window: what was captured is discarded unread.
-    if (this.suspended) return;
-
     const uri = recorder.uri;
-    if (!uri) return;
-
-    const results = await YamnetSiren.classifyFile(uri);
-
-    const sirenResult = results.find((r) => SIREN_LABELS.has(r.label));
-    const confidence = sirenResult?.confidence ?? 0;
-
-    if (confidence >= this.sensitivity) {
-      this.consecutiveHits += 1;
-    } else {
-      this.consecutiveHits = 0;
+    // Suspended part-way through this window: what was captured is discarded unread.
+    if (this.suspended || !uri) {
+      deleteWindow(uri);
+      return;
     }
-
-    if (this.consecutiveHits >= CONSECUTIVE_WINDOWS_REQUIRED) {
-      this.consecutiveHits = 0;
-      this.listeners.forEach((listener) =>
-        listener({ confidence, label: sirenResult?.label ?? "Siren" })
-      );
+    // Our own voice was playing: this window says nothing either way (not even classified).
+    if (ownAudio || this.ownAudio()) {
+      deleteWindow(uri);
+      this.emit(this.tracker.tick(Date.now()));
+      return;
     }
+    let results: Awaited<ReturnType<typeof YamnetSiren.classifyFile>>;
+    try {
+      results = await YamnetSiren.classifyFile(uri);
+    } finally {
+      // No audio is kept: each window is deleted as soon as it's classified.
+      deleteWindow(uri);
+    }
+    // services/sirenTracker.ts decides: 3 of the last 5 windows at >= 0.6, type, closeness, end.
+    this.emit(this.tracker.push({ at: Date.now(), scores: Object.fromEntries(results.map((r) => [r.label, r.confidence])), rmsDb }));
   }
 }
 
 export const sirenDetection = new SirenDetectionEngine();
+
+function deleteWindow(uri: string | null | undefined): void {
+  if (!uri) return;
+  try {
+    const f = new File(uri);
+    if (f.exists) f.delete();
+  } catch {
+    // Already gone.
+  }
+}

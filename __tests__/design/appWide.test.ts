@@ -92,9 +92,10 @@ describe("one shadow", () => {
 });
 
 describe("motion", () => {
-  it("nothing loops except the Go now fill (a one-shot timing) and Tracky's idle bob", () => {
+  it("nothing loops except the Go now fill (a one-shot timing), Tracky's idle bob and the siren banner's pulse", () => {
     const loops = sourceFiles().filter((f) => /withRepeat\(|Animated\.loop\(/.test(read(f)));
-    expect(loops).toEqual([path.join("src", "components", "trackys", "Tracky.tsx")]);
+    expect(loops.sort()).toEqual([path.join("src", "components", "EmergencyVehicleBanner.tsx"), path.join("src", "components", "trackys", "Tracky.tsx")]);
+    expect(read("src/components/EmergencyVehicleBanner.tsx")).toMatch(/const pulsing = !reduceMotion/);
   });
 
   it("Tracky's bob and the Go now countdown both stop with Reduce Motion", () => {
