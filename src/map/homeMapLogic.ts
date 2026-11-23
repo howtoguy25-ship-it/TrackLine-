@@ -264,3 +264,64 @@ export class StreetNameTracker extends RoadLookupTracker<string> {
     return this.value;
   }
 }
+
+// ---- Permanent fix §5: where every home-map control sits (one definition, overlap-tested) ----
+//   top-left      Menu, Compass under it
+//   top-right     Audio player (optional), Sound under it
+//   bottom-right  Report on the sheet's top edge; Re-centre ABOVE it (12pt gap), only in FREE
+//   bottom-centre the street pill on Report's baseline, never wider than the gap between them
+// HomeMapControls renders exactly these frames; __tests__/map/controlsLayout.test.ts checks no two
+// intersect on 320 / 375 / 390 / 430 pt phones in every state.
+export interface HomeFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export type HomeControl = "menu" | "compass" | "audioPlayer" | "sound" | "report" | "recenter" | "streetPill";
+
+export function homeControlSizes(scale: number) {
+  return { round: 56 * scale, recenter: 56 * scale, side: 16 * scale, gap: 8 * scale, column: FLOATING_GAP * scale };
+}
+
+/** Bottom offset (from the screen bottom) of Re-centre: one Report and a 12pt gap above the sheet edge. */
+export function recenterBottom(sheetEdgeBottom: number, scale: number): number {
+  const s = homeControlSizes(scale);
+  return sheetEdgeBottom + s.round + s.column;
+}
+
+export function homeControlFrames(o: {
+  width: number;
+  height: number;
+  topInset: number;
+  scale: number;
+  /** How much of the sheet is showing + what sits under it. */
+  sheetVisibleHeight: number;
+  bottomInset: number;
+  showCompass: boolean;
+  showAudioPlayer: boolean;
+  showSound: boolean;
+  showRecenter: boolean;
+  showStreetPill: boolean;
+}): Partial<Record<HomeControl, HomeFrame>> {
+  const s = homeControlSizes(o.scale);
+  const top = o.topInset + 8 * o.scale;
+  const f: Partial<Record<HomeControl, HomeFrame>> = {};
+  f.menu = { x: s.side, y: top, width: s.round, height: s.round };
+  if (o.showCompass) f.compass = { x: s.side, y: top + s.round + s.gap, width: s.round, height: s.round };
+  let y = top;
+  const right = o.width - s.side - s.round;
+  if (o.showAudioPlayer) {
+    f.audioPlayer = { x: right, y, width: s.round, height: s.round };
+    y += s.round + s.gap;
+  }
+  if (o.showSound) f.sound = { x: right, y, width: s.round, height: s.round };
+  const edge = o.sheetVisibleHeight + o.bottomInset + FLOATING_GAP;
+  f.report = { x: right, y: o.height - edge - s.round, width: s.round, height: s.round };
+  if (o.showRecenter) f.recenter = { x: o.width - s.side - s.recenter, y: o.height - recenterBottom(edge, o.scale) - s.recenter, width: s.recenter, height: s.recenter };
+  if (o.showStreetPill) {
+    const w = Math.min(streetPillMaxWidth(o.width, s.round, s.side), 260 * o.scale);
+    f.streetPill = { x: (o.width - w) / 2, y: o.height - edge - STREET_PILL_HEIGHT * o.scale, width: w, height: STREET_PILL_HEIGHT * o.scale };
+  }
+  return f;
+}

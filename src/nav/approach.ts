@@ -98,7 +98,8 @@ export const APPROACH_GIVE_UP_MS = 180_000;
 export const APPROACH_CAMERA = {
   /** Mapbox z18 (the camera calls take the Google scale, one higher; see map-v2/geo.ts). */
   zoom: 19,
-  pitch: 60,
+  /** Permanent fix §6: never past 45° (it was 60: a steep look that buried the road in buildings). */
+  pitch: 45,
   durationMs: 1200,
 };
 export const RESTORE_MS = 1500;

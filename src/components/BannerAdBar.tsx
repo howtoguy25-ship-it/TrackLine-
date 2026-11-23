@@ -1,4 +1,4 @@
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
 import { useMapScheme } from "@/components/ui/uiScheme";
@@ -17,8 +17,10 @@ import { Sentry } from "@/services/sentry";
 // formula (height = 50-90dp scaled off device width, same math the SDK itself uses to compute
 // this exact banner size) -- means the row already has its final height on the very first
 // frame, so there's nothing left to jump when the ad content actually arrives.
-// A standard 320x50 banner: the one size every ad network fills and the least intrusive on a
-// map. (This used to be a "large anchored adaptive" banner, which grew to 90pt+ on wide phones.)
+// 50pt tall, the full width of the phone: an inline adaptive banner capped at 50pt. Permanent fix
+// §6 root cause of the "black bars": a fixed 320-wide banner on a 375-430pt phone left 27-55pt
+// strips either side of the ad, which read as black bars on the dark sheet. Full width, there's no
+// strip. (Not "large anchored adaptive": that one grew to 90pt+ on wide phones.)
 export const BANNER_HEIGHT = 50;
 
 /**
@@ -32,6 +34,7 @@ export function shouldShowBanner(state: { navigating: boolean; choosingRoute: bo
 
 export function BannerAdBar() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   // Same colour as the sheet above it, light or dark, so there's never a band around the ad.
   const sheet = SURFACES[useMapScheme()].sheet;
   return (
@@ -44,7 +47,9 @@ export function BannerAdBar() {
       <View style={styles.slot}>
         <BannerAd
           unitId={env.ads.bannerUnitId}
-          size={BannerAdSize.BANNER}
+          size={BannerAdSize.INLINE_ADAPTIVE_BANNER}
+          width={Math.floor(width)}
+          maxHeight={BANNER_HEIGHT}
           onAdLoaded={() => Sentry.logger.info("ads: banner loaded")}
           onAdFailedToLoad={(error) => {
             Sentry.logger.error("ads: banner failed to load", { error: String(error) });
@@ -60,5 +65,5 @@ const styles = StyleSheet.create({
   container: { width: "100%", alignItems: "center" },
   // The slot keeps its 50pt whether or not an ad has loaded, so the layout above it (the sheet,
   // the floating buttons, the map padding) never jumps when one arrives.
-  slot: { width: 320, height: BANNER_HEIGHT, alignItems: "center", justifyContent: "center" },
+  slot: { width: "100%", height: BANNER_HEIGHT, alignItems: "center", justifyContent: "center" },
 });

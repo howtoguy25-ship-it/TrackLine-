@@ -246,7 +246,7 @@ describe("dark map theme", () => {
 });
 
 describe("ad bar", () => {
-  it("is a 320x50 banner sitting on the safe-area edge: padding is exactly the safe area, white, no extra height", async () => {
+  it("is a 50pt banner sitting on the safe-area edge: padding is exactly the safe area, white, no extra height", async () => {
     await render(<BannerAdBar />);
     const style = Object.assign({}, ...[screen.getByTestId("ad-bar").props.style].flat(Infinity).filter(Boolean));
     expect(style.paddingBottom).toBe(mockSafeArea.bottom);
@@ -257,6 +257,13 @@ describe("ad bar", () => {
     expect([SURFACES.light.sheet, SURFACES.dark.sheet]).toContain(style.backgroundColor);
     expect(style.backgroundColor).toBe(SURFACES[mockSettingsRef.current.mapTheme === "dark" ? "dark" : "light"].sheet);
     expect(BANNER_HEIGHT).toBe(50);
+  });
+
+  it("spans the full width (no side strips -- the 'black bars'), capped at 50pt tall", () => {
+    const src = require("fs").readFileSync("src/components/BannerAdBar.tsx", "utf8");
+    expect(src).toMatch(/size=\{BannerAdSize\.INLINE_ADAPTIVE_BANNER\}\s+width=\{Math\.floor\(width\)\}\s+maxHeight=\{BANNER_HEIGHT\}/);
+    expect(src).toMatch(/slot: \{ width: "100%", height: BANNER_HEIGHT/);
+    expect(src).not.toMatch(/width: 320/);
   });
 
   it("shows on the plain home map", async () => {

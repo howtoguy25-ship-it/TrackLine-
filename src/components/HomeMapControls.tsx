@@ -10,7 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { FloatingButton } from "@/components/ui/Button";
 import { CompassNeedle, ReportIcon } from "@/components/icons/MapControlIcons";
-import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity, streetPillMaxWidth } from "@/map/homeMapLogic";
+import { FLOATING_GAP, floatingButtonsInteractive, floatingButtonsOpacity, homeControlSizes, streetPillMaxWidth } from "@/map/homeMapLogic";
 import { colors, scaleFor } from "@/theme/tokens";
 import { StreetPill } from "@/components/StreetPill";
 
@@ -18,8 +18,10 @@ import { StreetPill } from "@/components/StreetPill";
 //
 //   top-left      Menu (red dot when the Inbox has unread items), Compass under it
 //   top-right     Audio player (only when switched on in Settings), Sound under it
-//   bottom-right  Report      } these two ride on the top edge of the "Where to?" sheet,
-//   bottom-left   Re-centre   } 12pt above it, and move up and down with it
+//   bottom-right  Report on the top edge of the "Where to?" sheet (12pt above it), and Re-centre
+//                 ABOVE Report with a 12pt gap -- only once you've moved the map (FREE). Both
+//                 move up and down with the sheet. (Frames: map/homeMapLogic.ts homeControlFrames,
+//                 overlap-tested on 320 / 375 / 390 / 430 pt.)
 //
 // All of them fade out once the sheet rises past its half height, so nothing ever floats on top
 // of the sheet. Position and fade are driven by the sheet's own shared value on the UI thread --
@@ -64,13 +66,8 @@ interface Props {
 export function HomeMapControls(props: Props) {
   const { width } = useWindowDimensions();
   const k = scaleFor(width);
-  // Floating buttons are 56pt (the Menu one a rounded square); re-centre is 58pt.
-  const size = {
-    round: 56 * k,
-    recenter: 58 * k,
-    side: 16 * k,
-    gap: 8 * k,
-  };
+  // Floating buttons are 56pt (the Menu one a rounded square), Re-centre too, so the right column lines up.
+  const size = homeControlSizes(k);
   const { sheetVisibleHeight, sheetHalfHeight, bottomInset } = props;
 
   const opacity = useDerivedValue(() => floatingButtonsOpacity(sheetVisibleHeight.value, sheetHalfHeight));
@@ -96,6 +93,8 @@ export function HomeMapControls(props: Props) {
   // Re-centre fades in when the driver pans away and out again once they're back.
   const recenterStyle = useAnimatedStyle(() => ({
     opacity: withTiming(props.showRecenter ? 1 : 0, { duration: 220 }),
+    // = recenterBottom(sheet edge): one Report and a 12pt gap above it (plain numbers: UI thread).
+    bottom: sheetVisibleHeight.value + bottomInset + FLOATING_GAP + size.round + size.column,
   }));
 
   const top = props.topInset + 8 * k;
@@ -164,10 +163,11 @@ export function HomeMapControls(props: Props) {
         </Animated.View>
       )}
 
-      {/* Bottom-left, riding on the sheet: Re-centre -- only after panning away */}
+      {/* Bottom-right, above Report (12pt gap): Re-centre -- only after you moved the map */}
       <Animated.View
         pointerEvents={props.showRecenter ? "box-none" : "none"}
-        style={[styles.anchored, { left: size.side }, aboveSheetStyle, recenterStyle]}
+        style={[styles.anchored, { right: size.side }, recenterStyle]}
+        testID="recenter-anchor"
       >
         <FloatingButton tone="recenter" size={size.recenter} icon="locate" onPress={props.onRecenter} accessibilityLabel="Re-centre on my location" />
       </Animated.View>

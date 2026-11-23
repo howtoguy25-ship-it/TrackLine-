@@ -388,5 +388,19 @@ describe("Waze-style look (Pass 3 §4)", () => {
     expect(require("../src/services/settings").DEFAULT_SETTINGS.show3DBuildings).toBe(false);
     expect(BUILDING_EXTRUSION_STYLE.opacity).toBeLessThanOrEqual(0.5);
     expect(BUILDING_EXTRUSION_STYLE.maxHeightM).toBeLessThanOrEqual(40);
+    // Permanent fix §6: ~40% height, fade in from z16, more see-through with a route, theme colours.
+    expect(BUILDING_EXTRUSION_STYLE.heightScale).toBeLessThanOrEqual(0.4);
+    const { buildingExtrusionPaint } = require("../src/map-v2/styles/buildStyle");
+    const light = buildingExtrusionPaint(false, false);
+    const dark = buildingExtrusionPaint(true, true);
+    expect(light.fillExtrusionOpacity).toEqual(["interpolate", ["linear"], ["zoom"], 16, 0, 17, 0.45]);
+    expect(dark.fillExtrusionOpacity[6]).toBeLessThan(light.fillExtrusionOpacity[6]);
+    expect(light.fillExtrusionColor).not.toBe(dark.fillExtrusionColor);
+    // No white towers on the dark map: the dark colour is darker than mid-grey.
+    const lum = (hex: string) => parseInt(hex.slice(1, 3), 16) * 0.299 + parseInt(hex.slice(3, 5), 16) * 0.587 + parseInt(hex.slice(5, 7), 16) * 0.114;
+    expect(lum(dark.fillExtrusionColor)).toBeLessThan(128);
+    expect(lum(light.fillExtrusionColor)).toBeGreaterThan(200);
+    const src = require("fs").readFileSync("src/map-v2/TrackLineMap.tsx", "utf8");
+    expect(src).toMatch(/belowLayerID="road-label-service"\s+filter=\{\["==", \["get", "extrude"\], "true"\]\}\s+minZoomLevel=\{16\}/);
   });
 });
