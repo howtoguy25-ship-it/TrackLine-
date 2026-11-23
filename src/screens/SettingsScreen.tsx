@@ -1008,6 +1008,13 @@ export function SettingsScreen() {
       {/* ---------------- Vehicle & AI tools ---------------- */}
       <Section title="AI vehicle detection" visible={shouldShow("AI vehicle detection")}>
         <SettingsRow
+          icon="car"
+          meaning="account"
+          title="Live road view"
+          subtitle="While you navigate, shows the vehicles your camera sees around you, live, on your route. Mount the phone with the back camera facing the road. Runs on your phone; nothing is recorded."
+          toggle={{ value: settings.liveRoadView, onValueChange: (v: boolean) => updateSettings({ liveRoadView: v }), testID: "live-road-view-switch" }}
+        />
+        <SettingsRow
           icon={batteryLow ? "battery-alert" : "battery-heart-variant"}
           meaning={batteryLow ? "safety" : "account"}
           title="Battery"

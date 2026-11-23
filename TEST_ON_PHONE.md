@@ -581,6 +581,21 @@ new road's within a few seconds (it used to stick to the first road).
    a direction, a siren isn't counted for that second.
 8. Turn Siren radar off mid-drive: the microphone indicator (orange dot) goes away.
 
+## 40. Live road view — NEEDS DEVICE TEST
+
+1. Settings › Vehicle & AI tools › AI vehicle detection: turn **Live road view** on (it starts off).
+2. Mount the phone upright on the dashboard, back camera facing the road. Start a drive.
+3. A panel appears above the ETA bar: "Starting the camera…", then "Live view · N vehicles" with a
+   3D road, your purple route line bending with the real route, your car in blue, and a small
+   live camera thumbnail in the corner. The map's arrow sits above the panel; the speedometer and
+   buttons are above it too.
+4. Vehicles ahead appear as boxes (cars, trucks/buses bigger, motorbikes narrow) at about the
+   right distance and side; one close ahead in your lane turns amber. When nothing's in front:
+   "no vehicles in view" and an empty road — never made-up cars.
+5. Deny camera access (Settings app) and start again: it says why and "Open settings" opens it.
+6. Tap ✕: the view turns off (the setting goes off). Open AI vehicle detection while driving:
+   the live view's camera pauses and comes back after.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

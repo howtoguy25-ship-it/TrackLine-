@@ -301,6 +301,9 @@ import {
   type SirenDraft,
 } from "@/nav/sirenRadar";
 import { EmergencyVehicleBanner } from "@/components/EmergencyVehicleBanner";
+import { LiveRoadView } from "@/components/LiveRoadView";
+import { LiveCameraSlot } from "@/components/LiveCameraSlot";
+import { liveViewHeight, liveViewShown, routeAhead, sceneFromTracks, type CameraTrack, type LiveStatus, type SceneVehicle } from "@/nav/liveScene";
 import { SirenQuestionCard } from "@/components/SirenQuestionCard";
 import { SirenReportPicker, type QuickPinSpot } from "@/components/SirenReportPicker";
 import { containsBlockedLanguage, clampToWordLimit, MAX_ALERT_COMMENT_WORDS } from "@/utils/commentFilter";
@@ -1356,8 +1359,13 @@ export function MapScreen() {
   // logo clear of it) and the arrow sits at 62% of the screen -- see homeMapPadding.
   // The arrow sits directly above the street pill, which rides the sheet's peek edge.
   const homePadding = homeMapPadding(mapAreaHeight, whereToHeights.peek, windowHeight, homeArrowTargetY(mapAreaHeight, whereToHeights.peek, scaleFor(windowWidth)));
+  // Live road view (nav/liveScene.ts): a panel above the ETA bar while navigating, toggle in
+  // Settings › Vehicle & AI tools. The map's arrow moves up so it stays above the panel.
+  const liveViewOn = liveViewShown(settings.liveRoadView, !!route, travelMode === "driving") && !detectionOpen;
+  const liveViewH = liveViewHeight(windowHeight);
+  const liveViewReserved = liveViewOn ? liveViewH + 8 + bottomBarHeight + insets.bottom : 0;
   const mapPadding = isNavChaseView
-    ? navFollowPadding(windowHeight)
+    ? navFollowPadding(windowHeight, liveViewReserved)
     : placePage
       ? // The place sits in the middle of the 40% above the place page's sheet.
         { top: insets.top, right: 0, bottom: windowHeight * PLACE_PAGE_SHEET_FRACTION, left: 0 }
@@ -2758,6 +2766,16 @@ export function MapScreen() {
     setSirenAsking(false);
     setSirenQuestion(null);
   }, []);
+
+  // Live road view: what the camera is tracking right now, and your route ahead in the car's frame.
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>("starting");
+  const [liveVehicles, setLiveVehicles] = useState<SceneVehicle[]>([]);
+  const [liveAttempt, setLiveAttempt] = useState(0);
+  const onLiveTracks = useCallback((tracks: CameraTrack[], frameWidth: number) => setLiveVehicles(sceneFromTracks(tracks, frameWidth)), []);
+  const liveRoute = useMemo(
+    () => (navGeo && navMatch && currentLatLng ? routeAhead(navGeo, navMatch.along, navMatch.snapped ?? currentLatLng, headingTrack.filter.shown ?? 0) : []),
+    [navGeo, navMatch, currentLatLng, headingTrack.filter.shown]
+  );
 
   // Sensitivity is the one siren setting that genuinely should apply immediately without a
   // full restart -- kept as its own small effect, separate from the mount-once one above.
@@ -6804,7 +6822,8 @@ export function MapScreen() {
           safeTop={insets.top}
           safeBottom={insets.bottom}
           topBarHeight={instructionCardHeight}
-          bottomBarHeight={bottomBarHeight}
+          // The live road view sits on the ETA bar: the bottom controls go above it.
+          bottomBarHeight={liveViewOn ? bottomBarHeight + 8 + liveViewH : bottomBarHeight}
           showSpeedLimit={!!speedLimitKmh}
           bearing={mapBearing}
           northUp={navNorthUp}
@@ -6820,6 +6839,23 @@ export function MapScreen() {
           onBanner={() => navOptionsSheetRef.current?.expand()}
           dropBy={radarBanner && radarBannerHeight ? aheadRoomFor(radarBannerHeight) : aheadBannerUp ? aheadRoomFor(aheadBannerHeight) : 0}
         />
+      )}
+
+      {/* Live road view: above the ETA bar while navigating (toggle in Settings › Vehicle & AI tools). */}
+      {liveViewOn && (
+        <View style={[styles.liveView, { bottom: insets.bottom + bottomBarHeight + 8 }]}>
+          <LiveRoadView
+            status={liveStatus}
+            vehicles={liveVehicles}
+            route={liveRoute}
+            dark={mapScheme === "dark"}
+            height={liveViewH}
+            onTurnOff={() => updateSettings({ liveRoadView: false })}
+            onRetry={() => setLiveAttempt((n) => n + 1)}
+            onOpenSettings={() => Linking.openSettings().catch(() => {})}
+            cameraPreview={<LiveCameraSlot attempt={liveAttempt} egoSpeedKmh={currentSpeedKmh} onTracks={onLiveTracks} onStatus={setLiveStatus} />}
+          />
+        </View>
       )}
 
       {/* Siren radar: its own banner at the top (one banner at a time, so the ahead banner waits). */}
@@ -7882,6 +7918,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...shadow.high,
   },
+  liveView: { position: "absolute", left: 12, right: 12 },
   placementBar: {
     // Column, not row -- previously this bar only ever held one line of text and a row of
     // buttons side by side (space-between). Now stacks: label text, the optional comment field,

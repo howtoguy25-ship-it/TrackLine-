@@ -20,7 +20,7 @@ All in code, typechecked, tested and merged to `claude/go-session-0d5bup`. NEEDS
 | Siren radar §2 banner, §3 question + report, §4 privacy policy + permission text + disclaimer | DONE | `__tests__/siren/sirenRadar.test.tsx`, `web/public/privacy.html`, `app.config.js` |
 | Siren radar §5 accuracy on sample clips | DONE: 28/40 siren clips (28/33 with ≥ 3 s of siren), 0/180 false alarms, 0 in 15 min of non-siren audio | `docs/siren-radar/README.md`, `scripts/eval-yamnet-sirens.py` |
 | Siren radar frames light + dark | DONE (drawn from the components, not device screenshots) | `docs/siren-radar/*.png` |
-| Tesla-style live view toggle | NOT STARTED yet | -- |
+| Live road view (Tesla-style) toggle: camera vehicles drawn live around your route while navigating | DONE (needs build 213+) | `__tests__/nav/liveScene.test.ts`, `__tests__/nav/liveRoadView.test.tsx`, `docs/live-road-view` |
 
 ## Nav options, fix pass 4, road signs, nothing-fake audit — 2026-11-22
 

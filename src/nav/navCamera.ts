@@ -25,10 +25,15 @@ export function navFollowPose(center: LatLng, heading: number, speedKmh: number 
   return flat ? { center, heading, pitch: 0, zoom: NAV_FLAT_ZOOM } : { center, heading, pitch: NAV_FOLLOW_PITCH, zoom: speedZoomFor(speedKmh) };
 }
 
-/** Top padding that puts the camera's centre (the arrow) at NAV_ARROW_FRACTION of the height. */
-export function navFollowPadding(windowHeight: number): { top: number; right: number; bottom: number; left: number } {
-  // The centre of the padded area is (H + top) / 2; solve for NAV_ARROW_FRACTION * H.
-  return { top: Math.round(windowHeight * (2 * NAV_ARROW_FRACTION - 1)), right: 0, bottom: 0, left: 0 };
+/**
+ * Top padding that puts the camera's centre (the arrow) at NAV_ARROW_FRACTION of the height.
+ * `reservedBottom`: a panel over the bottom of the map (the live road view): the arrow then sits at
+ * that fraction of the map left above it.
+ */
+export function navFollowPadding(windowHeight: number, reservedBottom = 0): { top: number; right: number; bottom: number; left: number } {
+  // The centre of the padded area is (H - r + top) / 2; solve for NAV_ARROW_FRACTION * (H - r).
+  const h = windowHeight - reservedBottom;
+  return { top: Math.round(h * (2 * NAV_ARROW_FRACTION - 1)), right: 0, bottom: reservedBottom, left: 0 };
 }
 
 /** Raised buildings while driving: only when the driver turned 3D buildings on. */
