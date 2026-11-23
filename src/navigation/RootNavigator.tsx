@@ -33,6 +33,8 @@ import { SupportRequestsScreen } from "@/screens/SupportRequestsScreen";
 import { LicensesScreen } from "@/screens/LicensesScreen";
 import { DiagnosticsScreen } from "@/screens/DiagnosticsScreen";
 import { OfflineMapsScreen } from "@/screens/OfflineMapsScreen";
+import { PointsScreen } from "@/screens/PointsScreen";
+import { TripHistoryScreen } from "@/screens/TripHistoryScreen";
 import { SmokeTestScreen } from "@/screens/SmokeTestScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
 import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
@@ -94,6 +96,10 @@ export type RootStackParamList = {
   Licenses: undefined;
   Diagnostics: undefined;
   OfflineMaps: undefined;
+  // Points, levels, badges, weekly leaderboard (gap item 15).
+  Points: undefined;
+  // Trip history + stats (gap item 17).
+  TripHistory: undefined;
   SmokeTest: undefined;
   // Real Tracky mood grid ("View profile" from the main menu header). See TrackyProfileScreen.tsx.
   TrackyProfile: undefined;
@@ -230,6 +236,8 @@ export function RootNavigator() {
         <Stack.Screen name="Licenses" component={LicensesScreen} options={{ title: "Licences" }} />
         <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} options={{ headerShown: true, title: "Diagnostics" }} />
         <Stack.Screen name="OfflineMaps" component={OfflineMapsScreen} options={{ headerShown: true, title: "Offline maps" }} />
+        <Stack.Screen name="Points" component={PointsScreen} options={{ headerShown: true, title: "Points & badges" }} />
+        <Stack.Screen name="TripHistory" component={TripHistoryScreen} options={{ headerShown: true, title: "Trip history" }} />
         <Stack.Screen name="SettingsChoice" component={SettingsChoiceScreen} options={{ headerShown: true, title: "Settings" }} />
         {/* Development builds only (a JS bundle served by Metro: __DEV__). */}
         {__DEV__ ? <Stack.Screen name="SmokeTest" component={SmokeTestScreen} options={{ headerShown: true, title: "Smoke test" }} /> : null}

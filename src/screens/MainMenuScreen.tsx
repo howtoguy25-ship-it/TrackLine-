@@ -217,6 +217,8 @@ export function MainMenuScreen() {
           badge={unreadCount > 0 ? unreadCount : undefined}
           onPress={() => navigation.navigate("Inbox")}
         />
+        <MenuRow icon="star" label="Points & badges" onPress={() => navigation.navigate("Points")} />
+        <MenuRow icon="time" label="Trip history" onPress={() => navigation.navigate("TripHistory")} />
         {/* Moved here from the old "Map tools" panel on the map. */}
         <MenuRow
           icon="videocam-outline"
