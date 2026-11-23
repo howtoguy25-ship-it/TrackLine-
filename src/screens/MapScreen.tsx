@@ -281,6 +281,7 @@ import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmFeatureKind, type Osm
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
 import { setNavigationActive } from "@/services/navState";
 import { startLiveActivity, updateLiveActivity, endLiveActivity, maneuverToSfSymbol } from "live-activity";
+import { endNavNotification, startNavNotification, updateNavNotification } from "@/services/navNotification";
 import { recordDriveToday } from "@/services/trackyMood";
 import { ALERT_LABELS, type AlertDoc, type AlertType } from "@/types/alert";
 import { UNDO_MS } from "@/types/alertPolicy";
@@ -3966,6 +3967,13 @@ export function MapScreen() {
       // moment later from the guidance effect below, once activeStep/etaText are actually
       // available for this fresh route; this call only needs a destination name and a
       // placeholder first line.
+      // Android: the same, as an ongoing notification (services/navNotification.ts).
+      startNavNotification(destination.name, {
+        instruction: chosen.steps[0]?.instruction ?? "Starting navigation",
+        distanceText: chosen.distanceText,
+        etaText: chosen.etaInTrafficText ?? chosen.etaText,
+        roadName: "",
+      });
       startLiveActivity(destination.name, {
         instruction: chosen.steps[0]?.instruction ?? "Starting navigation",
         maneuverSymbol: maneuverToSfSymbol(chosen.steps[0]?.maneuver),
@@ -5216,6 +5224,12 @@ export function MapScreen() {
   const pushLiveActivityUpdate = useCallback(() => {
     if (!route) return;
     const step = route.steps[activeStepIndex];
+    updateNavNotification({
+      instruction: step?.instruction ?? "Continue on route",
+      distanceText: `${(remainingDistanceMeters / 1000).toFixed(1)} km`,
+      etaText: formatDurationText(remainingDurationSeconds),
+      roadName: currentRoadName ?? "",
+    });
     updateLiveActivity({
       instruction: step?.instruction ?? "Continue on route",
       maneuverSymbol: maneuverToSfSymbol(step?.maneuver),
@@ -5439,6 +5453,7 @@ export function MapScreen() {
     // reasoning as endLiveShare below (nothing useful to block exit on; a safe no-op on
     // Android/unsupported iOS versions/no activity currently running).
     endLiveActivity();
+    endNavNotification();
     // Per explicit user answer ("Until navigation ends"), a share started this trip stops
     // updating right here -- fire-and-forget since there's nothing useful to block exit on.
     if (liveShareIdRef.current) {
