@@ -1,5 +1,6 @@
 // Usage: MAPBOX_TOKEN_FILE=<file holding a pk. token> MAPBOX_GL_DIR=<dir with mapbox-gl installed> node scripts/map-polish-screenshots.js . docs/map-polish
 // The token is read from a file and never printed.
+/* global mapboxgl */
 // Renders TrackLine's built map styles with real Mapbox tiles + live traffic, as the app draws them.
 const { chromium } = require("playwright");
 const fs = require("fs");
