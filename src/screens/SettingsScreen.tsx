@@ -629,6 +629,20 @@ export function SettingsScreen() {
           toggle={{ value: settings.show3DBuildings, onValueChange: (v) => updateSettings({ show3DBuildings: v }) }}
         />
         <SettingsRow
+          icon="compass"
+          meaning="map"
+          title="Keep map north up"
+          subtitle="While driving. Off: the map turns with the road ahead"
+          toggle={{ value: settings.keepNorthUp, onValueChange: (v) => updateSettings({ keepNorthUp: v }), testID: "keep-north-up-switch" }}
+        />
+        <SettingsRow
+          icon="locate"
+          meaning="map"
+          title="Recentre automatically"
+          subtitle="While driving, follow you again 15 s after you move the map"
+          toggle={{ value: settings.navAutoRecentre, onValueChange: (v) => updateSettings({ navAutoRecentre: v }), testID: "nav-auto-recentre-switch" }}
+        />
+        <SettingsRow
           icon="warning"
           meaning="reports"
           title="Alerts on the map"

@@ -8,7 +8,7 @@ import { PinLayer } from "@/map-v2/layers/PinLayer";
 import { MarkerPin } from "@/map-v2/layers/MarkerPin";
 import { SchoolZoneLayer, type SchoolZoneDrawing } from "@/map-v2/layers/SchoolZoneLayer";
 import { MapIcons, type IconExtras } from "@/map-v2/layers/MapIcons";
-import { UserPuck, BLANK_ICON } from "@/map-v2/layers/UserPuck";
+import { UserArrow } from "@/map-v2/layers/UserArrow";
 import { PresenceLayerV2, presenceIconName } from "@/map-v2/layers/PresenceLayerV2";
 import { turnArrowAt, type LatLng } from "@/map-v2/geo";
 import { iconsUsed, type MapPin } from "@/map-v2/pins";
@@ -47,12 +47,15 @@ export interface RouteSelectionDrawing {
 
 export interface UserDrawing {
   coordinate: LatLng;
-  heading: number;
+  /** null = no heading yet (the arrow keeps its last direction). */
+  heading: number | null;
   accuracyMeters: number | null;
   deviceHeading: number | null;
   navigating: boolean;
   markerStyle: MapMarkerStyleKey;
   ghost: boolean;
+  /** The fix's own timestamp (orders fixes for the arrow's easing). */
+  fixTimeMs?: number;
 }
 
 interface Props {
@@ -89,7 +92,7 @@ interface Props {
 }
 
 const FIXED_ICONS = [
-  BLANK_ICON,
+  "blank",
   // The brand & popular-place badges the base style draws (map/poiBadges.ts).
   ...BADGE_CATEGORIES.map(badgeIconName),
   "flag",
@@ -105,11 +108,12 @@ const FIXED_ICONS = [
 
 export function MapboxLayers(props: Props) {
   const { user, selection } = props;
-  const arrowIcon = `car-arrow:${user?.markerStyle ?? "default"}`;
+  // The default is our bundled arrow (UserArrow); a chosen vehicle badge is drawn by MapIcons.
+  const markerIcon = user && user.markerStyle !== "default" ? `car-arrow:${user.markerStyle}` : null;
 
   const iconNames = useMemo(
-    () => Array.from(new Set([...FIXED_ICONS, arrowIcon, ...iconsUsed(props.pins), ...props.presences.map(presenceIconName)])),
-    [arrowIcon, props.pins, props.presences]
+    () => Array.from(new Set([...FIXED_ICONS, ...(markerIcon ? [markerIcon] : []), ...iconsUsed(props.pins), ...props.presences.map(presenceIconName)])),
+    [markerIcon, props.pins, props.presences]
   );
   const extras = useMemo<IconExtras>(
     () => ({
@@ -230,14 +234,7 @@ export function MapboxLayers(props: Props) {
       />
 
       {user && (
-        <UserPuck
-          coordinate={user.coordinate}
-          heading={user.heading}
-          accuracyMeters={user.accuracyMeters}
-          deviceHeading={user.deviceHeading}
-          navigating={user.navigating}
-          arrowIcon={arrowIcon}
-        />
+        <UserArrow coordinate={user.coordinate} heading={user.heading} accuracyMeters={user.accuracyMeters} markerIcon={markerIcon} fixTimeMs={user.fixTimeMs} />
       )}
 
       {/* The few things that are text: callouts, bubbles, a report's comment. */}

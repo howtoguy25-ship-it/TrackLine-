@@ -95,26 +95,6 @@ export function NavArrow3D({ size = 44 }: { size?: number }) {
   );
 }
 
-/**
- * The plain (not navigating) live-location marker -- a dot with a white ring plus a soft halo,
- * the same "live tracking" visual language Google/Apple Maps' own blue dot uses. Deliberately a
- * static halo, not an animated pulse: this Marker renders with tracksViewChanges={false} (see
- * the render call site) for the same reliability reason CarNavArrow avoids raster Image
- * rotation -- react-native-maps only snapshots a tracksViewChanges={false} marker's content
- * once, so a looping Animated value inside it would just freeze at whatever frame got
- * snapshotted instead of actually animating on the map. Deliberately never rotated either (see
- * the render call site's own comment on why a walking/browsing position has no meaningful
- * facing direction the way a moving vehicle does).
- */
-export function PersonLocationDot() {
-  return (
-    <View style={styles.personWrap}>
-      <View style={styles.personHalo} pointerEvents="none" />
-      <View style={styles.personDot} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   // Shadow lives on this outer, unclipped wrap -- RN shadows don't render through a clipped
   // (overflow:hidden) parent, which navBadge itself needs for the gradient/highlight to respect
@@ -144,28 +124,5 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     transform: [{ rotate: "-18deg" }],
     backgroundColor: "rgba(255,255,255,0.3)",
-  },
-  personWrap: {
-    width: 64,
-    height: 64,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  personHalo: {
-    position: "absolute",
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: LIVE_MARKER_TEAL,
-    opacity: 0.18,
-  },
-  personDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: LIVE_MARKER_TEAL,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    ...shadow.medium,
   },
 });

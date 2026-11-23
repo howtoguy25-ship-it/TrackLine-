@@ -5,7 +5,7 @@ import { describe, expect, it } from "@jest/globals";
 import { readFileSync } from "fs";
 import { render } from "@testing-library/react-native";
 import { CarNavArrow, NavArrow3D, LIVE_MARKER_TEAL } from "@/components/LocationMarkers";
-import { PUCK_SCALE } from "@/map-v2/layers/UserPuck";
+import { ARROW_SCALE as PUCK_SCALE } from "@/map-v2/layers/UserArrow";
 
 describe("navigation arrow", () => {
   it("default marker is the 3D arrow: two teal faces (light + bevel), a white outline and a shadow", async () => {
@@ -20,9 +20,9 @@ describe("navigation arrow", () => {
     expect(a.toJSON()).toBeTruthy();
   });
 
-  it("the puck always shows the arrow (home and navigating) and never draws the old cone or dot", () => {
-    const src = readFileSync("src/map-v2/layers/UserPuck.tsx", "utf8");
-    expect(src).toMatch(/puckBearingEnabled\s*\n/);
+  it("the arrow layer always shows the arrow (home and navigating) and never draws the old cone or dot", () => {
+    const src = readFileSync("src/map-v2/layers/UserArrow.tsx", "utf8");
+    expect(src).toMatch(/iconRotate: \["get", "heading"\]/);
     expect(src).not.toMatch(/heading-cone|coneIcon|dotIcon|me-cone/);
     const icons = readFileSync("src/map-v2/layers/MapIcons.tsx", "utf8");
     expect(icons).not.toMatch(/heading-cone/);

@@ -36,7 +36,7 @@ describe("wired into the live app", () => {
     ["src/screens/WhereToSheet.tsx", "ThreeSnapBottomSheet"],
     ["src/components/HomeMapControls.tsx", "FloatingButton"],
     ["src/screens/PlacePage.tsx", "Button"],
-    ["src/map-v2/MapboxLayers.tsx", "UserPuck"],
+    ["src/map-v2/MapboxLayers.tsx", "UserArrow"],
     ["src/map-v2/MapboxLayers.tsx", "PinLayer"],
     ["src/map-v2/MapboxLayers.tsx", "PresenceLayerV2"],
     ["src/map-v2/MapboxLayers.tsx", "RouteLine"],

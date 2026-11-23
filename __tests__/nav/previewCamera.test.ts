@@ -73,7 +73,9 @@ describe("route preview fit (§1)", () => {
 
   it("root cause stays fixed: the follow-the-driver camera does not run while choosing a route", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
-    expect(src).toMatch(/userMovedMapRef\.current \|\| placePage \|\| pendingDestination\) return;/);
+    expect(src).toMatch(/!mapReady \|\| placePage \|\| pendingDestination\) return;/);
+    // ...and it is a "follow" move, which the camera controller refuses in ROUTE_PREVIEW.
+    expect(src).toMatch(/camera\.move\("follow", \{ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM \}/);
     // And the fit re-runs when the top card or the sheet changes size.
     expect(src).toMatch(/\[previewFit, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight\]/);
   });

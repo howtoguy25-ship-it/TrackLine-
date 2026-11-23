@@ -15,7 +15,7 @@ describe("navigation camera", () => {
     expect(NAV_FOLLOW_PITCH).toBe(45);
     expect(NAV_START_MS).toBe(1200);
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
-    expect(src).toMatch(/navFollowPose\(currentLatLng, heading, currentSpeedKmhRef\.current, isFlatViewStyle\),\n\s*\{ duration: NAV_START_MS \}/);
+    expect(src).toMatch(/camera\.move\("transition", navFollowPose\(currentLatLng, startBearing, currentSpeedKmhRef\.current, isFlatViewStyle\), \{ duration: NAV_START_MS \}\)/);
     // No camera path still uses the old steep 60° / zoom 18.5 driving pose.
     expect(src).not.toMatch(/pitch: (isFlatViewStyle \? 0 : )?60, zoom: (isFlatViewStyle \? 17 : )?18\.5/);
   });
