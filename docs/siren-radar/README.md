@@ -8,7 +8,7 @@ Opt-in: **Settings › Vehicle & AI tools › Emergency vehicle radar › Siren 
 
 | Step | Where | What it does |
 |---|---|---|
-| Listen | `services/sirenDetection.ts` | Only while opted in **and** driving: over 10 km/h, within 2 min of it (a red light doesn't switch it off), or navigating a driving route. ~1 s windows at 16 kHz; each window's audio file is deleted as soon as it's classified. |
+| Listen | `services/sirenDetection.ts` + `modules/yamnet-siren` (native stream) | Only while opted in **and** driving: over 10 km/h, within 2 min of it (a red light doesn't switch it off), or navigating a driving route. Builds 214+: the microphone goes straight into the model in memory (iOS AVAudioEngine, Android AudioRecord, 16 kHz mono), a **0.975 s window every 0.48 s (50 % overlap)**; no file is ever written. Older builds: ~1 s recorded windows, each deleted as soon as it's classified. |
 | Hear | `modules/yamnet-siren` (YAMNet, on the phone) | Scores the classes *Siren, Civil defense siren, Emergency vehicle, Police car (siren), Ambulance (siren), Fire engine, fire truck (siren)*. |
 | Decide | `services/sirenTracker.ts` | A window counts at **≥ 0.6** (and only if *Music* isn't scored higher). **3 of the last 5** windows start it. Type = the strongest of police / ambulance / fire, else "Emergency vehicle". Closeness from the loudness trend over 3 s: **Getting closer / Nearby / Moving away** (no left/right/behind). Ends **8 s** after the last siren window. |
 | Ignore | `sirenDetection.setOwnAudioCheck(isNavSpeaking)` | Windows while TrackLine itself is talking are skipped (not even classified). During a phone call iOS gives the microphone to the call, so nothing is heard. |
@@ -31,6 +31,18 @@ ESC-50 set (list in `esc50-clips.txt`; the audio isn't committed — CC BY-NC).
 | Non-siren windows over 0.6 | 4 / 900 (all car horn; never 3 in 5) |
 | 15 min continuous non-siren audio (the 180 clips back to back) | **0** false alarms |
 
+**With the live stream's 50 % overlapping windows (builds 214+), same 220 clips** (`scripts/eval-yamnet-sirens.py … 7680`):
+
+| Set | Result |
+|---|---|
+| Siren clips | **31 / 40** triggered (78 %, up from 70 %) |
+| Siren windows over 0.6 | 254 / 360 |
+| Non-siren clips | **1 / 180** triggered — one car-horn clip honking for most of its 5 s (windows 0.86 / 0.78 / 0.78 in a row) |
+| Non-siren windows over 0.6 | 8 / 1620 (7 car horn, 1 crying baby) |
+| ~13 min continuous non-siren audio | 1 false alarm (the same horn clip) |
+
+Trade-off, as specified (3 of the last 5 windows): overlap hears a siren sooner (~1.5 s instead of ~3 s) and catches more of them, at the cost of a long, sustained horn occasionally passing. A "horn louder than siren" veto was tried and didn't remove it (the model scored that horn as siren). If you'd rather have zero, "4 of the last 6" is the next step up.
+
 Run it again: `python3 -m venv v && v/bin/pip install ai-edge-litert numpy`, download the clips in
 `esc50-clips.txt` from the ESC-50 repository's `audio/` folder, then
 `v/bin/python -I scripts/eval-yamnet-sirens.py modules/yamnet-siren/ios/yamnet.tflite modules/yamnet-siren/ios/yamnet_class_map.csv <clips> docs/siren-radar/esc50-clips.txt results.json`.
@@ -49,9 +61,8 @@ colours and words (not device screenshots — a phone run is in TEST_ON_PHONE.md
 
 ## Not done / limits (honest)
 
-- **Windows are back to back, not 50 % overlapped.** The phone records ~1 s compressed files with one
-  recorder; overlapping would need a native PCM ring buffer in `modules/yamnet-siren`. 3-of-5 then
-  needs about 3 s of siren.
+- **50 % overlap: done** (native stream, builds 214+; `__tests__/siren/sirenStream.test.ts`). It can only be
+  proven on the phone: the Swift/Kotlin side isn't compiled in this environment, EAS compiles it.
 - **Music from other apps** isn't measured directly (iOS doesn't give its level); a window where
   YAMNet scores *Music* above the siren classes doesn't count.
 - **Phone call**: relies on iOS taking the microphone for the call; there's no separate call check.

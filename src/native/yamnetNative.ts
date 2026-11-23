@@ -23,6 +23,21 @@ interface YamnetSirenNativeModule {
    * then classifies it. Returns the same shape as classify().
    */
   classifyFile(uri: string): Promise<ClassificationResult[]>;
+  /**
+   * Live stream (builds 214+): the microphone straight into the model, in memory only; a
+   * 0.975 s window every 0.48 s (half-overlapping), each sent as an "onWindow" event.
+   * Missing on older builds -- sirenDetection.ts then falls back to classifyFile windows.
+   */
+  startStream?(): Promise<boolean>;
+  stopStream?(): Promise<boolean>;
+  isStreaming?(): boolean;
+  addListener?(event: "onWindow", listener: (w: StreamWindow) => void): { remove(): void };
+}
+
+export interface StreamWindow {
+  scores: ClassificationResult[];
+  rmsDb: number;
+  at: number;
 }
 
 // This native module is provided by the local "yamnet-siren" Expo module (see
@@ -33,6 +48,8 @@ interface YamnetSirenNativeModule {
 const nativeModule = requireOptionalNativeModule<YamnetSirenNativeModule>("YamnetSiren");
 
 export const isYamnetAvailable = !!nativeModule;
+/** This build's native module can stream half-overlapping windows itself. */
+export const canStreamYamnet = typeof nativeModule?.startStream === "function" && typeof nativeModule?.addListener === "function";
 
 export const YamnetSiren: YamnetSirenNativeModule = nativeModule ?? {
   async loadModel() {

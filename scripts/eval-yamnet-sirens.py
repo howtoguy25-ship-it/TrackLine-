@@ -6,6 +6,9 @@ import numpy as np
 from ai_edge_litert.interpreter import Interpreter
 
 model, classmap, clipdir, picks = sys.argv[1:5]
+# HOP: 16000 = back-to-back ~1 s windows (recorded-file mode); 7680 = the live stream (0.48 s, half overlap).
+HOP = int(sys.argv[6]) if len(sys.argv) > 6 else 16000
+WIN = 16000 if HOP == 16000 else 15600
 labels = [r["display_name"] for r in csv.DictReader(open(classmap))]
 SIREN = {"Siren", "Civil defense siren", "Emergency vehicle", "Police car (siren)", "Ambulance (siren)", "Fire engine, fire truck (siren)"}
 interp = Interpreter(model_path=model)
@@ -37,7 +40,7 @@ res = []
 for line in open(picks):
     fn, cat = line.strip().split(",")
     x = load16k(f"{clipdir}/{fn}")
-    wins = [x[i : i + 16000] for i in range(0, len(x) - 15999, 16000)]
+    wins = [x[i : i + WIN] for i in range(0, len(x) - WIN + 1, HOP)]
     hits, confs = [], []
     for wv in wins:
         h, c = is_hit(classify(wv))

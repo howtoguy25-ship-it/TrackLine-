@@ -1,5 +1,5 @@
 import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
-import { YamnetSiren, isYamnetAvailable } from "@/native/yamnetNative";
+import { YamnetSiren, canStreamYamnet, isYamnetAvailable, type StreamWindow } from "@/native/yamnetNative";
 import { setMicInUse } from "@/services/audioSession";
 import { SirenTracker, type SirenEvent } from "@/services/sirenTracker";
 import { File } from "expo-file-system";
@@ -106,6 +106,21 @@ class SirenDetectionEngine {
       shouldPlayInBackground: true,
     });
 
+    // The live stream (half-overlapping windows, nothing written to disk) when this build has it.
+    if (canStreamYamnet && (await this.startStreaming())) {
+      if (!this.wanted) {
+        await this.stopStreaming();
+        return;
+      }
+      this.tickHandle = setInterval(() => {
+        this.emit(this.tracker.tick(Date.now()));
+        // iOS stops the engine for a phone call or another app; take the microphone back after.
+        if (this.streamSub && !this.suspended && YamnetSiren.isStreaming && !YamnetSiren.isStreaming()) YamnetSiren.startStream?.().catch(() => false);
+      }, 1000);
+      this.running = true;
+      return;
+    }
+
     // Real, explicit request: "volume glitching" / "voice keeps glitching" during navigation --
     // this is the app's own always-on background microphone loop (siren/EV detection, running
     // for as long as MapScreen is mounted, not just while actively navigating). It used to
@@ -135,9 +150,50 @@ class SirenDetectionEngine {
     }, WINDOW_MS);
   }
 
+  private streamSub: { remove(): void } | null = null;
+
+  private async startStreaming(): Promise<boolean> {
+    if (!YamnetSiren.addListener || !YamnetSiren.startStream) return false;
+    this.streamSub = YamnetSiren.addListener("onWindow", (w) => this.onStreamWindow(w));
+    let ok = false;
+    try {
+      ok = await YamnetSiren.startStream();
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      this.streamSub.remove();
+      this.streamSub = null;
+    }
+    return ok;
+  }
+
+  private async stopStreaming(): Promise<void> {
+    this.streamSub?.remove();
+    this.streamSub = null;
+    try {
+      await YamnetSiren.stopStream?.();
+    } catch {
+      // already stopped
+    }
+  }
+
+  /** One live window (0.975 s, every 0.48 s): the same tracker rules as a recorded one. */
+  onStreamWindow(w: StreamWindow): void {
+    if (this.suspended) return;
+    if (this.ownAudio()) {
+      this.emit(this.tracker.tick(Date.now()));
+      return;
+    }
+    const rmsDb = typeof w.rmsDb === "number" && Number.isFinite(w.rmsDb) && w.rmsDb > -150 ? w.rmsDb : null;
+    this.emit(this.tracker.push({ at: Date.now(), scores: Object.fromEntries((w.scores ?? []).map((r) => [r.label, r.confidence])), rmsDb }));
+  }
+
   /** Hands the microphone over: stops any capture in progress and holds off until resume(). */
   async suspend(): Promise<void> {
     this.suspended = true;
+    // The live stream gives the microphone back too (wake phrase / voice search need it).
+    if (this.streamSub) await YamnetSiren.stopStream?.().catch(() => false);
     this.consecutiveHits = 0;
     if (this.recorder) {
       try {
@@ -160,6 +216,7 @@ class SirenDetectionEngine {
     } catch {
       // The next capture window will surface any real problem.
     }
+    if (this.streamSub) await YamnetSiren.startStream?.().catch(() => false);
   }
 
   async stop(): Promise<void> {
@@ -174,6 +231,7 @@ class SirenDetectionEngine {
       clearInterval(this.tickHandle);
       this.tickHandle = null;
     }
+    if (this.streamSub) await this.stopStreaming();
     // A siren being heard when the radar stops still ends properly.
     if (this.tracker.isActive) this.emit(this.tracker.tick(Date.now() + 60_000));
     this.tracker.reset();

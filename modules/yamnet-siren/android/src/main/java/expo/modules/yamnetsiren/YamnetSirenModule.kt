@@ -1,6 +1,9 @@
 package expo.modules.yamnetsiren
 
+import android.media.AudioFormat
+import android.media.AudioRecord
 import android.media.MediaCodec
+import android.media.MediaRecorder
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
@@ -25,6 +28,12 @@ class YamnetSirenModule : Module() {
   private var interpreter: Interpreter? = null
   private var labels: List<String> = emptyList()
 
+  // Live stream (siren radar): AudioRecord at 16 kHz mono float, in memory only; every HOP new
+  // samples (0.48 s) the last WINDOW samples (0.975 s) are classified -- windows overlap by half.
+  @Volatile private var streaming = false
+  private var recorder: AudioRecord? = null
+  private var streamThread: Thread? = null
+
   override fun definition() = ModuleDefinition {
     Name("YamnetSiren")
 
@@ -48,6 +57,94 @@ class YamnetSirenModule : Module() {
       val samples = decodeToMono16kPcm(uri)
       runClassification(samples)
     }
+
+    // Live, half-overlapping windows: each one is an "onWindow" event
+    // { scores: [{label, confidence}] (top 10), rmsDb, at (ms since 1970) }.
+    Events("onWindow")
+
+    AsyncFunction("startStream") {
+      startStream()
+    }
+
+    AsyncFunction("stopStream") {
+      stopStream()
+      true
+    }
+
+    Function("isStreaming") {
+      streaming && recorder?.recordingState == AudioRecord.RECORDSTATE_RECORDING
+    }
+  }
+
+  private fun startStream(): Boolean {
+    if (streaming) return true
+    if (interpreter == null && !loadModelAndLabels()) return false
+    val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+    if (minBuf <= 0) return false
+    val rec = try {
+      AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT, maxOf(minBuf, HOP * 4 * 2))
+    } catch (e: SecurityException) {
+      return false
+    } catch (e: IllegalArgumentException) {
+      return false
+    }
+    if (rec.state != AudioRecord.STATE_INITIALIZED) {
+      rec.release()
+      return false
+    }
+    try {
+      rec.startRecording()
+    } catch (e: IllegalStateException) {
+      rec.release()
+      return false
+    }
+    recorder = rec
+    streaming = true
+    streamThread = Thread {
+      val ring = FloatArray(WINDOW)
+      val chunk = FloatArray(HOP)
+      var filled = 0
+      while (streaming) {
+        var got = 0
+        while (got < HOP && streaming) {
+          val n = rec.read(chunk, got, HOP - got, AudioRecord.READ_BLOCKING)
+          if (n <= 0) break
+          got += n
+        }
+        if (got < HOP) break
+        System.arraycopy(ring, HOP, ring, 0, WINDOW - HOP)
+        System.arraycopy(chunk, 0, ring, WINDOW - HOP, HOP)
+        filled = minOf(WINDOW, filled + HOP)
+        if (filled < WINDOW) continue
+        val win = ring.copyOf()
+        var sum = 0.0
+        for (v in win) sum += (v * v).toDouble()
+        val rms = Math.sqrt(sum / win.size)
+        val db = if (rms > 0) 20 * Math.log10(rms) else -160.0
+        sendEvent("onWindow", mapOf("scores" to runClassification(win), "rmsDb" to db, "at" to System.currentTimeMillis().toDouble()))
+      }
+    }.also { it.start() }
+    return true
+  }
+
+  private fun stopStream() {
+    streaming = false
+    val rec = recorder
+    recorder = null
+    try {
+      rec?.stop()
+    } catch (e: IllegalStateException) {
+      // already stopped
+    }
+    streamThread?.join(1000)
+    streamThread = null
+    rec?.release()
+  }
+
+  companion object {
+    private const val SAMPLE_RATE = 16000
+    private const val WINDOW = 15600
+    private const val HOP = 7680
   }
 
   private fun loadModelAndLabels(): Boolean {
