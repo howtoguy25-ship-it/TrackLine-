@@ -83,13 +83,53 @@ function metres(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
+/** Sydney CBD (Town Hall): "inbound" / "city-bound" is towards it, "outbound" away from it. */
+export const SYDNEY_CBD = { latitude: -33.8732, longitude: 151.2061 };
+const COMPASS: Record<string, number> = { north: 0, east: 90, south: 180, west: 270 };
+
+export type OfficialDirection = { kind: "both" } | { kind: "bearing"; deg: number } | { kind: "unresolved" };
+
 /**
- * An ahead closure worth routing around: a driver's "all lanes" closure (the feed has already
- * matched its direction), or a Live Traffic NSW closure that doesn't say it's one direction only
- * ("closed northbound" can't be matched to the driver's way, so it's warned about, not avoided).
+ * Which way a Live Traffic NSW closure applies, from its own words:
+ *   "both directions" / no direction / two opposite ways named   -> both
+ *   "northbound", "southbound", "eastbound", "westbound"          -> that compass bearing
+ *   "inbound" / "city-bound" / "outbound" (Sydney)               -> towards / away from the CBD from the closure
+ *   "one direction" with no way named                             -> unresolved: warned about, never routed around
  */
-export function shouldRouteAround(a: { kind: string; source: string; closure?: ClosureDetails | null; officialText?: string | null }): boolean {
+export function officialDirection(text: string | null | undefined, at: LatLng): OfficialDirection {
+  const t = (text ?? "").toLowerCase();
+  if (/\b(both|all) directions\b|\bin both\b/.test(t)) return { kind: "both" };
+  const bounds = [...new Set([...t.matchAll(/\b(north|south|east|west)[- ]?bound\b/g)].map((m) => m[1]))];
+  const inbound = /\b(in|city)[- ]?bound\b|\btowards? the city\b/.test(t);
+  const outbound = /\bout[- ]?bound\b|\baway from the city\b/.test(t);
+  if (bounds.length + (inbound ? 1 : 0) + (outbound ? 1 : 0) > 1) return { kind: "both" };
+  if (bounds.length === 1) return { kind: "bearing", deg: COMPASS[bounds[0]] };
+  if (inbound || outbound) {
+    const toCbd = bearingDeg(at, SYDNEY_CBD);
+    return { kind: "bearing", deg: inbound ? toCbd : (toCbd + 180) % 360 };
+  }
+  if (/\bone direction\b|\bsingle direction\b/.test(t)) return { kind: "unresolved" };
+  return { kind: "both" };
+}
+
+function bearingDeg(a: LatLng, b: LatLng): number {
+  const r = (d: number) => (d * Math.PI) / 180;
+  const y = Math.sin(r(b.longitude - a.longitude)) * Math.cos(r(b.latitude));
+  const x = Math.cos(r(a.latitude)) * Math.sin(r(b.latitude)) - Math.sin(r(a.latitude)) * Math.cos(r(b.latitude)) * Math.cos(r(b.longitude - a.longitude));
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Tolerance for a named compass direction along a bending road (see AheadSource.headingToleranceDeg). */
+export const OFFICIAL_DIRECTION_TOLERANCE_DEG = 80;
+
+/**
+ * An ahead closure worth routing around: a driver's "all lanes" closure, or a Live Traffic NSW
+ * closure that applies to the driver's way. The feed has already dropped closures for the other
+ * way (their direction is matched to the route there); only one whose direction can't be worked
+ * out ("one direction", no way named) is warned about but not avoided.
+ */
+export function shouldRouteAround(a: { kind: string; source: string; closure?: ClosureDetails | null; directionUnknown?: boolean }): boolean {
   if (a.kind !== "closure") return false;
-  if (a.source === "official") return !/\b(north|south|east|west|in|out)bound\b|\bone direction\b/i.test(a.officialText ?? "");
+  if (a.source === "official") return !a.directionUnknown;
   return blocksRoute(a.closure);
 }

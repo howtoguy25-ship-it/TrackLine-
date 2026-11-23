@@ -33,6 +33,10 @@ export interface AheadSource {
   lng: number;
   /** Direction of travel it applies to, when known (traffic, directional reports). */
   bearingDeg?: number | null;
+  /** How far the route may differ from bearingDeg and still be "that way" (default 60°). A named
+   * compass direction ("northbound") is only approximate along a bending road: 80° still never
+   * confuses it with the opposite way (180° off). */
+  headingToleranceDeg?: number;
   /** Community: drivers who confirmed it (the reporter not counted). */
   confirmCount?: number;
   /** Community: when it was reported (ms). */
@@ -49,6 +53,8 @@ export interface AheadSource {
   delaySeconds?: number | null;
   /** A driver-reported closure's details (nav/closures.ts). */
   closure?: ClosureDetails;
+  /** An official closure that's one way only, but doesn't say which way ("one direction"). */
+  directionUnknown?: boolean;
 }
 
 export interface AheadAlert extends AheadSource {
@@ -143,7 +149,7 @@ export function projectFeed(
     if (aheadM < 0) continue;
     if (s.bearingDeg != null && Number.isFinite(s.bearingDeg)) {
       const routeBearing = routeBearingAt(polyline, p.alongM);
-      if (routeBearing != null && angleOff(routeBearing, s.bearingDeg) > HEADING_TOLERANCE_DEG) continue;
+      if (routeBearing != null && angleOff(routeBearing, s.bearingDeg) > (s.headingToleranceDeg ?? HEADING_TOLERANCE_DEG)) continue;
     }
     onRoute.push({
       ...s,

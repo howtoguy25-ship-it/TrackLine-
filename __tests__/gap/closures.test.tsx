@@ -6,7 +6,7 @@ import React from "react";
 import { describe, expect, it, jest } from "@jest/globals";
 import { readFileSync } from "fs";
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { closedStretch, closureForReport, closureLine, shouldRouteAround, DEFAULT_CLOSURE, type ClosureDetails } from "@/nav/closures";
+import { closedStretch, closureForReport, closureLine, officialDirection, shouldRouteAround, DEFAULT_CLOSURE, SYDNEY_CBD, type ClosureDetails } from "@/nav/closures";
 import { aheadSourcesFrom } from "@/nav/ahead/aheadSources";
 import { aheadOf, projectFeed } from "@/nav/ahead/aheadFeed";
 import { aheadSubtitle } from "@/nav/ahead/aheadText";
@@ -73,8 +73,9 @@ describe("while driving", () => {
   it("routed around: drivers' all-lane closures and official ones that aren't one-way only", () => {
     expect(shouldRouteAround({ kind: "closure", source: "community", closure: { direction: "both", lanes: "all", until: "1h" } })).toBe(true);
     expect(shouldRouteAround({ kind: "closure", source: "community", closure: { direction: "both", lanes: "some", until: "1h" } })).toBe(false);
-    expect(shouldRouteAround({ kind: "closure", source: "official", officialText: "Road closed in both directions" })).toBe(true);
-    expect(shouldRouteAround({ kind: "closure", source: "official", officialText: "Closed northbound" })).toBe(false);
+    expect(shouldRouteAround({ kind: "closure", source: "official" })).toBe(true);
+    // One way only, but which way isn't said: warned about, never routed around.
+    expect(shouldRouteAround({ kind: "closure", source: "official", directionUnknown: true })).toBe(false);
     expect(shouldRouteAround({ kind: "crash", source: "official" })).toBe(false);
   });
   it("Mapbox is asked to keep clear of the closure, alongside the Avoid settings", () => {
@@ -88,5 +89,36 @@ describe("while driving", () => {
     expect(src).toMatch(/closedStretches=\{closedStretches\}/);
     expect(src).toMatch(/closuresTriedRef\.current\.add\(c\.key\)/);
     expect(src).toMatch(/if \(near && near\.offM < 40\) return;/);
+  });
+});
+
+describe("official closures: which way they apply (Live Traffic NSW's own words)", () => {
+  const parramatta = { latitude: -33.815, longitude: 151.003 }; // west of the CBD
+  it("compass ways, both ways, inbound / outbound, and 'one direction' left unresolved", () => {
+    expect(officialDirection("Road closed northbound", parramatta)).toEqual({ kind: "bearing", deg: 0 });
+    expect(officialDirection("M4: Westbound lanes closed", parramatta)).toEqual({ kind: "bearing", deg: 270 });
+    expect(officialDirection("Closed in both directions", parramatta)).toEqual({ kind: "both" });
+    expect(officialDirection("Closed northbound and southbound", parramatta)).toEqual({ kind: "both" });
+    expect(officialDirection("Road closed", parramatta)).toEqual({ kind: "both" });
+    expect(officialDirection("Closed in one direction", parramatta)).toEqual({ kind: "unresolved" });
+    const inbound = officialDirection("Inbound lanes closed", parramatta);
+    const outbound = officialDirection("Outbound closed", parramatta);
+    // From Parramatta the city is to the east (about 100°); outbound is the opposite.
+    expect(inbound.kind === "bearing" && inbound.deg > 80 && inbound.deg < 120).toBe(true);
+    expect(outbound.kind === "bearing" && Math.round((outbound.deg - (inbound as { deg: number }).deg + 360) % 360)).toBe(180);
+    expect(officialDirection("City-bound closed", SYDNEY_CBD).kind).toBe("bearing");
+  });
+
+  it("'closed northbound' is on the route going north, not on the route going south", () => {
+    const f = { key: "ltn:9", item: "closures" as const, lat: at(2).latitude, lng: at(2).longitude };
+    const incident = { id: "9", headline: "Road closed northbound", advice: "Use alternative route", where: "Main Rd" };
+    const src = aheadSourcesFrom([f], [], [incident]);
+    expect(projectFeed(src, north).map((a) => a.key)).toEqual(["ltn:9"]);
+    expect(projectFeed(src, south)).toEqual([]);
+    // Unresolved: shown both ways (so nobody misses it) but never routed around.
+    const vague = aheadSourcesFrom([f], [], [{ ...incident, headline: "Closed in one direction" }]);
+    const [a] = projectFeed(vague, south);
+    expect(a.directionUnknown).toBe(true);
+    expect(shouldRouteAround(a)).toBe(false);
   });
 });
