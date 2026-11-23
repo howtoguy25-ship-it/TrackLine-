@@ -1,6 +1,6 @@
 // Gap item 2: the home-screen widget -- live drive time to Home and Work, the next planned drive,
 // stamped with when; tapping a row opens the route. The App Group id must match everywhere.
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import { readFileSync } from "fs";
 import { buildWidgetSnapshot, driveLinkTarget, widgetSnapshotNow } from "@/services/homeWidget";
 import { deepLinkTarget } from "@/navigation/deepLinks";
@@ -64,5 +64,42 @@ describe("native wiring", () => {
     const sync = readFileSync("src/components/HomeWidgetSync.tsx", "utf8");
     expect(sync).toMatch(/setWidgetSnapshot\(JSON\.stringify\(snap\)\)/);
     expect(sync).toMatch(/Linking\.addEventListener\("url"/);
+  });
+});
+
+describe("App Group switch (build 209 failed signing without it registered at Apple)", () => {
+  const load = (flag: string | undefined) => {
+    const before = process.env.TRACKLINE_APP_GROUP;
+    if (flag === undefined) delete process.env.TRACKLINE_APP_GROUP;
+    else process.env.TRACKLINE_APP_GROUP = flag;
+    let target: { entitlements?: Record<string, string[]> } = {};
+    let app: { entitlements?: Record<string, string[]> } = {};
+    jest.isolateModules(() => {
+      target = require("../../targets/liveActivity/expo-target.config.js");
+      const cfg = require("../../app.config.js");
+      app = (typeof cfg === "function" ? cfg({ config: {} }) : cfg).expo.ios;
+    });
+    if (before === undefined) delete process.env.TRACKLINE_APP_GROUP;
+    else process.env.TRACKLINE_APP_GROUP = before;
+    return { target, app };
+  };
+
+  it("off: no App Group entitlement, so the existing profiles still sign", () => {
+    const { target, app } = load(undefined);
+    expect(target.entitlements).toBeUndefined();
+    expect(app.entitlements).toBeUndefined();
+  });
+
+  it("on (TRACKLINE_APP_GROUP=1): the extension asks for the shared group", () => {
+    const { target, app } = load("1");
+    const group = { "com.apple.security.application-groups": ["group.com.trackline.navigate"] };
+    expect(target.entitlements).toEqual(group);
+    expect(app.entitlements).toEqual(group);
+  });
+
+  it("without the group the widget says it's not available yet, rather than looking empty", () => {
+    const widget = readFileSync("targets/liveActivity/TrackLineHomeWidget.swift", "utf8");
+    expect(widget).toMatch(/containerURL\(forSecurityApplicationGroupIdentifier: "group\.com\.trackline\.navigate"\) != nil/);
+    expect(widget).toMatch(/else if !appGroupReady \{[\s\S]*not available yet/);
   });
 });

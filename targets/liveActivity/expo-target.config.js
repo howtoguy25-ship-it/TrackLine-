@@ -20,6 +20,10 @@ module.exports = {
   // it) is untouched; the native bridge module guards every call with `if #available(iOS 16.1)`
   // so older devices simply never start an activity instead of crashing.
   deploymentTarget: "16.1",
-  // The home-screen widget (TrackLineHomeWidget.swift) reads what the app shares here.
-  entitlements: { "com.apple.security.application-groups": ["group.com.trackline.navigate"] },
+  // The home-screen widget (TrackLineHomeWidget.swift) reads what the app shares here. Only once
+  // the App Group is registered with Apple for both App IDs (BLOCKED.md "App Group"): a profile
+  // without it fails signing (build 209). Without it the widget says "Not available yet".
+  ...(process.env.TRACKLINE_APP_GROUP === "1"
+    ? { entitlements: { "com.apple.security.application-groups": ["group.com.trackline.navigate"] } }
+    : {}),
 };

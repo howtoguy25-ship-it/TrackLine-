@@ -30,6 +30,10 @@ struct HomeWidgetEntry: TimelineEntry {
     let snapshot: HomeWidgetSnapshot?
 }
 
+// nil until the App Group is switched on for this build (BLOCKED.md "App Group"): then the app
+// can't share anything with the widget, and the widget says so instead of looking empty.
+let appGroupReady = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.trackline.navigate") != nil
+
 struct HomeWidgetProvider: TimelineProvider {
     func read() -> HomeWidgetSnapshot? {
         guard let json = UserDefaults(suiteName: "group.com.trackline.navigate")?.string(forKey: "homeWidget"),
@@ -75,6 +79,12 @@ struct TrackLineHomeWidgetView: View {
                 Text("as of \(s.updatedText)").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(2)
+        } else if !appGroupReady {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("TrackLine").font(.headline)
+                Text("Drive times: not available yet. This version can't share them with widgets.").font(.caption).foregroundStyle(.secondary)
+            }
+            .widgetURL(URL(string: "trackline://travel"))
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TrackLine").font(.headline)
