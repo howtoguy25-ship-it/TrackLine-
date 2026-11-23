@@ -104,7 +104,7 @@ export function AheadBanner(p: Props) {
   const stopped = (p.speedKmh ?? 0) < STOPPED_KMH;
   const askStillThere = p.canVote && a.source === "community" && !!a.alertId && (state.aheadM < 0 || stopped);
   const offer = p.fasterRoute && (a.kind === "heavyTraffic" || a.kind === "standstill" || !!a.mergedTraffic) ? p.fasterRoute : null;
-  const dist = distanceText(Math.max(0, state.aheadM), p.unit);
+  const dist = distanceText(Math.max(0, state.aheadM), p.unit, a.source);
 
   return (
     <Animated.View

@@ -19,7 +19,8 @@ export const CORRIDOR_M = 30;
 export const HEADING_TOLERANCE_DEG = 60;
 export const DEDUP_M = 50;
 
-export type AheadSourceKind = "official" | "community" | "traffic" | "map";
+/** "siren": heard by the phone's own siren radar (nav/ahead/sirenAhead.ts), not projected. */
+export type AheadSourceKind = "official" | "community" | "traffic" | "map" | "siren";
 
 export interface AheadSource {
   /** Unique per real thing: "alert:abc", "ltn:123", "osm:speedBump:9", "traffic:0". */

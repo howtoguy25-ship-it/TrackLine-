@@ -96,8 +96,15 @@ export class AheadBannerController {
   update(input: BannerUpdate): void {
     if (this.disposed) return;
     this.last = input;
-    const cur = this.state.alert;
+    let cur = this.state.alert;
     if (cur) {
+      // Measure from where the feed has it now, not where it was when the banner opened: a siren
+      // rides with the car (nav/ahead/sirenAhead.ts), and a re-projected source can shift.
+      const fresh = input.feed.find((a) => a.key === cur!.key);
+      if (fresh && fresh.alongM !== cur.alongM) {
+        cur = { ...cur, alongM: fresh.alongM };
+        this.set({ ...this.state, alert: cur });
+      }
       const aheadM = cur.alongM - input.carAlongM;
       const passedBy = cur.source === "community" ? -PASSED_M : 0;
       if (aheadM < passedBy && this.state.phase !== "leaving") {

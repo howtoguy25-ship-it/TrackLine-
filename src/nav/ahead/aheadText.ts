@@ -23,6 +23,9 @@ export function aheadSubtitle(a: AheadAlert, road: string | null, unit: Distance
     const when = ago(a.createdAt, nowMs);
     const drivers = (a.confirmCount ?? 0) + 1;
     if (when) parts.push(`Reported ${when} · ${drivers} driver${drivers === 1 ? "" : "s"}`);
+  } else if (a.source === "siren") {
+    // Where it is isn't known, so no road: what to do instead.
+    return "Siren heard · move aside when it's safe";
   } else if (a.source === "official" && a.officialText) {
     parts.push(a.officialText.trim());
   }
@@ -40,6 +43,8 @@ export function aheadSourceLine(a: AheadAlert): string {
       return a.reporterName ? `by ${a.reporterName}` : "by a Tracky";
     case "traffic":
       return "Live traffic";
+    case "siren":
+      return "Heard by your phone";
     default:
       return "Mapped road feature";
   }

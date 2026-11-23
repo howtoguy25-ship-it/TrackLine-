@@ -39,7 +39,8 @@ export function bannerMs(alert: Pick<AheadAlert, "minor">, reminder: boolean): n
 }
 
 /** "400 m", "1.2 km", "Now" under 30 m. */
-export function distanceText(aheadM: number, unit: DistanceUnit): string {
+export function distanceText(aheadM: number, unit: DistanceUnit, source?: string): string {
+  if (source === "siren") return "Nearby";
   return aheadM < NOW_M ? "Now" : formatDistance(aheadM, unit);
 }
 

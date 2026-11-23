@@ -279,6 +279,7 @@ import {
 } from "@/services/alerts";
 import { classifyAuRegion } from "@/utils/auStates";
 import { sirenDetection } from "@/services/sirenDetection";
+import { noteSiren, sirenAheadAlert, SIREN_HOLD_MS, SIREN_SPOKEN, type SirenEpisode } from "@/nav/ahead/sirenAhead";
 import { containsBlockedLanguage, clampToWordLimit, MAX_ALERT_COMMENT_WORDS } from "@/utils/commentFilter";
 import { fetchOsmTrafficData, fetchSpeedLimitNear, type OsmFeatureKind, type OsmTrafficData } from "@/services/osmTrafficData";
 import { createLiveShare, updateLiveShare, endLiveShare } from "@/services/liveShare";
@@ -2618,13 +2619,26 @@ export function MapScreen() {
   const userRef = useLatest(user);
   const autoShareDetectionsRef = useLatest(settings.autoShareDetections);
   const alertExpiryMsRef = useLatest(settings.alertExpiryMs);
+  // While driving a route, a siren is an ahead alert (nav/ahead/sirenAhead.ts); otherwise the info banner.
+  const drivingRouteRef = useLatest(!!route && travelMode === "driving");
+  const [sirenEpisode, setSirenEpisode] = useState<SirenEpisode | null>(null);
+  useEffect(() => {
+    if (!sirenEpisode) return;
+    const t = setTimeout(() => setSirenEpisode(null), Math.max(0, sirenEpisode.lastAt + SIREN_HOLD_MS - Date.now()));
+    return () => clearTimeout(t);
+  }, [sirenEpisode]);
 
   useEffect(() => {
     sirenDetection.start();
 
     const unsubscribe = sirenDetection.onDetection(async ({ label }) => {
-      setBannerMessage("Emergency vehicle detected nearby");
-      setBannerVisible(true);
+      const heardAt = currentLatLngRef.current;
+      if (drivingRouteRef.current && heardAt) {
+        setSirenEpisode((prev) => noteSiren(prev, Date.now(), heardAt));
+      } else {
+        setBannerMessage("Emergency vehicle detected nearby");
+        setBannerVisible(true);
+      }
 
       const latLng = currentLatLngRef.current;
       const currentUser = userRef.current;
@@ -2641,7 +2655,7 @@ export function MapScreen() {
       unsubscribe();
       sirenDetection.stop();
     };
-  }, [alertExpiryMsRef, autoShareDetectionsRef, currentLatLngRef, userRef]);
+  }, [alertExpiryMsRef, autoShareDetectionsRef, currentLatLngRef, userRef, drivingRouteRef]);
 
   // Sensitivity is the one siren setting that genuinely should apply immediately without a
   // full restart -- kept as its own small effect, separate from the mount-once one above.
@@ -5064,10 +5078,14 @@ export function MapScreen() {
         : [],
     [route, trackySlowdownAt]
   );
-  const aheadFeedNow = useMemo(
-    () => (navMatch?.onRoute ? aheadOf([...aheadProjected, ...aheadSlowdown], navMatch.along).sort((a, b) => a.aheadM - b.aheadM) : []),
-    [aheadProjected, aheadSlowdown, navMatch]
-  );
+  const aheadFeedNow = useMemo(() => {
+    if (!navMatch?.onRoute) return [];
+    const feed = aheadOf([...aheadProjected, ...aheadSlowdown], navMatch.along);
+    // The episode clears itself when the hold ends (effect above), so non-null means heard recently.
+    const siren = travelMode === "driving" ? sirenAheadAlert(sirenEpisode, navMatch.along, sirenEpisode?.lastAt ?? 0) : null;
+    if (siren) feed.push(siren);
+    return feed.sort((a, b) => a.aheadM - b.aheadM);
+  }, [aheadProjected, aheadSlowdown, navMatch, sirenEpisode, travelMode]);
   const [aheadCtl] = useState(
     () => new AheadBannerController({ setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, Date.now)
   );
@@ -5084,7 +5102,8 @@ export function MapScreen() {
         }
       }
       const delayMin = a.delaySeconds && a.delaySeconds >= 60 ? Math.round(a.delaySeconds / 60) : null;
-      announcePhrase({ kind: "ahead", text: spokenLine(a.mergedTraffic ? "crash" : a.kind, a.title, delayMin), critical: a.critical, clipKey: aheadClipKey(a) });
+      const text = a.source === "siren" ? SIREN_SPOKEN : spokenLine(a.mergedTraffic ? "crash" : a.kind, a.title, delayMin);
+      announcePhrase({ kind: "ahead", text, critical: a.critical, clipKey: aheadClipKey(a) });
     });
   });
   useEffect(() => {
@@ -5596,7 +5615,8 @@ export function MapScreen() {
   const aheadRows = useMemo<AheadRow[]>(() => {
     if (!route) return [];
     const pace = remainingDistanceMeters > 0 ? remainingDurationSeconds / remainingDistanceMeters : null;
-    return aheadFeedNow.map((a) => ({
+    // A siren has no place on the route, so it isn't listed (it's in the banner and spoken).
+    return aheadFeedNow.filter((a) => a.source !== "siren").map((a) => ({
       key: a.key,
       kind: a.kind,
       title: a.title,
