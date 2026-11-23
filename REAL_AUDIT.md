@@ -118,5 +118,12 @@ user's own data; S = static app content (settings, help, licences).
 - CI (`.github/workflows/tests.yml`) now runs `npx eslint src __tests__ jest.setup.js --max-warnings 0`.
 - `__tests__/audit/nothingFake.test.tsx` runs the real ESLint CLI on bad snippets and checks it
   refuses them (and still allows fixtures in tests).
+- Permanent fix (2026-11-23): `no-restricted-syntax` also refuses a second driver marker
+  (`LocationPuck`, `UserLocation`, `showsUserLocation`, `puckBearing`…) and any camera call
+  (`animateCamera`, `fitToCoordinates`, `animateToRegion`, `setCamera`, `flyTo`, `fitBounds`…)
+  outside `src/map-v2/cameraController.ts` / `TrackLineMap.tsx`. `__tests__/map/oneUserMarker.test.tsx`
+  and `__tests__/map/cameraOwnership.test.ts` run the ESLint CLI on bad snippets to prove it.
+- The proof frames in `docs/permanent-fix` are labelled for what they are: rendered from the app's
+  styles, tiles, arrow, camera and layout code in headless Chromium — not an iOS recording.
 
 Lint now: 0 errors, 0 warnings (the 13 old warnings in tests were cleared to make the CI gate pass).

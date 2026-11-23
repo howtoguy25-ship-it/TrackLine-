@@ -59,3 +59,17 @@ describe("user arrow motion", () => {
     expect(m.at(1000)!.latitude).toBeCloseTo(-33.8, 9);
   });
 });
+
+describe("the arrow image bundles (Metro)", () => {
+  it("is required by its base name, with 1x / 2x / 3x files present; nothing requires an @Nx file", () => {
+    const fs = require("fs") as typeof import("fs");
+    const src = fs.readFileSync("src/map-v2/layers/UserArrow.tsx", "utf8");
+    expect(src).toMatch(/require\("\.\.\/\.\.\/\.\.\/assets\/map\/user-arrow\.png"\)/);
+    for (const f of ["user-arrow.png", "user-arrow@2x.png", "user-arrow@3x.png"]) expect([f, fs.existsSync(`assets/map/${f}`)]).toEqual([f, true]);
+    // Requiring "x@3x.png" directly made `expo export` fail ("Unable to resolve module"), which
+    // jest never noticed: guard every source file.
+    const { execSync } = require("child_process") as typeof import("child_process");
+    const hits = execSync("grep -rnE \"require\\(['\\\"][^'\\\"]*@[0-9]x\\.(png|jpg)['\\\"]\\)\" src || true", { encoding: "utf8" }).trim();
+    expect(hits).toBe("");
+  });
+});
