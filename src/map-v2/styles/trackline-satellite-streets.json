@@ -352,7 +352,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#D2D6DB",
+        "line-color": "#DDE1E6",
         "line-width": [
           "interpolate",
           [
@@ -396,7 +396,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#D2D6DB",
+        "line-color": "#DDE1E6",
         "line-width": [
           "interpolate",
           [
@@ -440,7 +440,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#D2D6DB",
+        "line-color": "#DDE1E6",
         "line-width": [
           "interpolate",
           [
@@ -484,7 +484,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#D2D6DB",
+        "line-color": "#DDE1E6",
         "line-width": [
           "interpolate",
           [
@@ -528,7 +528,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#D2D6DB",
+        "line-color": "#DDE1E6",
         "line-width": [
           "interpolate",
           [
@@ -572,7 +572,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#C9CED5",
+        "line-color": "#B4BBC4",
         "line-width": [
           "interpolate",
           [
@@ -616,7 +616,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#C9CED5",
+        "line-color": "#B4BBC4",
         "line-width": [
           "interpolate",
           [
@@ -669,8 +669,8 @@
           ]
         ],
         "text-font": [
-          "DIN Pro Medium",
-          "Arial Unicode MS Regular"
+          "DIN Pro Bold",
+          "Arial Unicode MS Bold"
         ],
         "text-size": [
           "interpolate",
@@ -681,14 +681,14 @@
             "zoom"
           ],
           9,
-          14,
           13,
-          20,
+          13,
+          18,
           16,
-          22
+          20
         ],
-        "text-transform": "uppercase",
-        "text-letter-spacing": 0.06,
+        "text-transform": "none",
+        "text-letter-spacing": 0.02,
         "text-max-width": 8,
         "symbol-sort-key": [
           "get",
@@ -745,8 +745,8 @@
           ]
         ],
         "text-font": [
-          "DIN Pro Medium",
-          "Arial Unicode MS Regular"
+          "DIN Pro Bold",
+          "Arial Unicode MS Bold"
         ],
         "text-size": [
           "interpolate",
@@ -757,14 +757,14 @@
             "zoom"
           ],
           9,
-          14,
           13,
-          20,
+          13,
+          18,
           16,
-          22
+          20
         ],
-        "text-transform": "uppercase",
-        "text-letter-spacing": 0.06,
+        "text-transform": "none",
+        "text-letter-spacing": 0.02,
         "text-max-width": 8,
         "symbol-sort-key": [
           "get",
@@ -831,9 +831,9 @@
             "zoom"
           ],
           10,
-          13,
+          14,
           18,
-          18
+          19
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -902,9 +902,9 @@
             "zoom"
           ],
           10,
-          13,
+          14,
           18,
-          18
+          19
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -973,9 +973,9 @@
             "zoom"
           ],
           11,
-          13,
+          13.5,
           18,
-          17
+          18
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1044,9 +1044,9 @@
             "zoom"
           ],
           12.5,
-          12,
+          13,
           18,
-          16
+          17
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1103,8 +1103,8 @@
           ]
         ],
         "text-font": [
-          "DIN Pro Medium",
-          "Arial Unicode MS Regular"
+          "DIN Pro Bold",
+          "Arial Unicode MS Bold"
         ],
         "text-size": [
           "interpolate",
@@ -1115,9 +1115,9 @@
             "zoom"
           ],
           13.5,
-          12,
+          12.5,
           18,
-          15
+          16
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1186,9 +1186,9 @@
             "zoom"
           ],
           14.5,
-          12,
+          12.5,
           18,
-          15
+          16
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1258,7 +1258,7 @@
           16,
           11,
           18,
-          13
+          13.5
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1431,7 +1431,44 @@
         "text-color": [
           "case",
           [
-            "!=",
+            "match",
+            [
+              "get",
+              "shield"
+            ],
+            "au-national-highway",
+            true,
+            "au-national-route",
+            true,
+            "au-state",
+            true,
+            false
+          ],
+          "#FFD400",
+          [
+            "case",
+            [
+              "!=",
+              [
+                "match",
+                [
+                  "get",
+                  "shield_text_color"
+                ],
+                "black",
+                "#1A1A1A",
+                "white",
+                "#FFFFFF",
+                "yellow",
+                "#FFD400",
+                "orange",
+                "#E87722",
+                "blue",
+                "#1E4FA3",
+                "none"
+              ],
+              "none"
+            ],
             [
               "match",
               [
@@ -1450,95 +1487,76 @@
               "#1E4FA3",
               "none"
             ],
-            "none"
-          ],
-          [
-            "match",
             [
-              "get",
-              "shield_text_color"
-            ],
-            "black",
-            "#1A1A1A",
-            "white",
-            "#FFFFFF",
-            "yellow",
-            "#FFD400",
-            "orange",
-            "#E87722",
-            "blue",
-            "#1E4FA3",
-            "none"
-          ],
-          [
-            "match",
-            [
-              "get",
-              "shield"
-            ],
-            "rectangle-white",
-            "#1A1A1A",
-            "rectangle-red",
-            "#FFFFFF",
-            "rectangle-orange",
-            "#1A1A1A",
-            "rectangle-yellow",
-            "#1A1A1A",
-            "rectangle-green",
-            "#FFFFFF",
-            "rectangle-blue",
-            "#FFFFFF",
-            "circle-white",
-            "#1A1A1A",
-            "au-national-highway",
-            "#FFFFFF",
-            "au-national-route",
-            "#FFFFFF",
-            "au-state",
-            "#FFFFFF",
-            "au-tourist",
-            "#FFFFFF",
-            "nz-state",
-            "#FFFFFF",
-            "us-interstate",
-            "#FFFFFF",
-            "us-interstate-duplex",
-            "#FFFFFF",
-            "us-interstate-truck",
-            "#FFFFFF",
-            "us-interstate-business",
-            "#FFFFFF",
-            "us-highway",
-            "#1A1A1A",
-            "us-highway-duplex",
-            "#1A1A1A",
-            "us-highway-alternate",
-            "#1A1A1A",
-            "us-highway-bypass",
-            "#1A1A1A",
-            "us-highway-truck",
-            "#1A1A1A",
-            "us-highway-business",
-            "#FFFFFF",
-            "de-motorway",
-            "#FFFFFF",
-            "hu-motorway",
-            "#FFFFFF",
-            "ch-motorway",
-            "#FFFFFF",
-            "gr-motorway",
-            "#FFFFFF",
-            "hr-motorway",
-            "#FFFFFF",
-            "si-motorway",
-            "#FFFFFF",
-            "cn-nths-expy",
-            "#FFFFFF",
-            "mx-federal",
-            "#1A1A1A",
-            "mx-state",
-            "#1A1A1A",
-            "#1A1A1A"
+              "match",
+              [
+                "get",
+                "shield"
+              ],
+              "rectangle-white",
+              "#1A1A1A",
+              "rectangle-red",
+              "#FFFFFF",
+              "rectangle-orange",
+              "#1A1A1A",
+              "rectangle-yellow",
+              "#1A1A1A",
+              "rectangle-green",
+              "#FFFFFF",
+              "rectangle-blue",
+              "#FFFFFF",
+              "circle-white",
+              "#1A1A1A",
+              "au-national-highway",
+              "#FFFFFF",
+              "au-national-route",
+              "#FFFFFF",
+              "au-state",
+              "#FFFFFF",
+              "au-tourist",
+              "#FFFFFF",
+              "nz-state",
+              "#FFFFFF",
+              "us-interstate",
+              "#FFFFFF",
+              "us-interstate-duplex",
+              "#FFFFFF",
+              "us-interstate-truck",
+              "#FFFFFF",
+              "us-interstate-business",
+              "#FFFFFF",
+              "us-highway",
+              "#1A1A1A",
+              "us-highway-duplex",
+              "#1A1A1A",
+              "us-highway-alternate",
+              "#1A1A1A",
+              "us-highway-bypass",
+              "#1A1A1A",
+              "us-highway-truck",
+              "#1A1A1A",
+              "us-highway-business",
+              "#FFFFFF",
+              "de-motorway",
+              "#FFFFFF",
+              "hu-motorway",
+              "#FFFFFF",
+              "ch-motorway",
+              "#FFFFFF",
+              "gr-motorway",
+              "#FFFFFF",
+              "hr-motorway",
+              "#FFFFFF",
+              "si-motorway",
+              "#FFFFFF",
+              "cn-nths-expy",
+              "#FFFFFF",
+              "mx-federal",
+              "#1A1A1A",
+              "mx-state",
+              "#1A1A1A",
+              "#1A1A1A"
+            ]
           ]
         ]
       }

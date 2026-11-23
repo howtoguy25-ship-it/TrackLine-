@@ -83,10 +83,11 @@ export const AU_SUBURB_LAYER_ID = "au-suburb-labels";
 export function auSuburbLabelStyle(palette: StylePalette) {
   return {
     textField: ["case", ["has", "postcode"], ["concat", ["get", "name"], " ", ["get", "postcode"]], ["get", "name"]],
-    textFont: LABEL_FONT,
-    textSize: ["interpolate", ["linear"], ["zoom"], 11, 15, 13, 20, 16, 22],
-    textTransform: "uppercase" as const,
-    textLetterSpacing: 0.06,
+    // Mixed case, semi-bold (map polish §1): "Punchbowl 2196", not "PUNCHBOWL 2196".
+    textFont: LABEL_FONT_BOLD,
+    textSize: ["interpolate", ["linear"], ["zoom"], 11, 14, 13, 18, 16, 20],
+    textTransform: "none" as const,
+    textLetterSpacing: 0.02,
     textMaxWidth: 9,
     textColor: palette.suburbLabel,
     textHaloColor: palette.labelHalo,
@@ -227,8 +228,14 @@ function plateExpression(): unknown[] {
 function shieldTextExpression(): unknown[] {
   const fromData = ["match", ["get", "shield_text_color"], ...Object.entries(SHIELD_TEXT_COLOURS).flat(), "none"];
   const byPlate = ["match", ["get", "shield"], ...Object.entries(SHIELD_PLATE_FOR).flatMap(([shield, plate]) => [shield, PLATE_TEXT[plate]]), PLATE_TEXT.white];
-  return ["case", ["!=", fromData, "none"], fromData, byPlate];
+  // Australia's green route plates (M5, M8, A1, A3) always carry bold yellow numbers.
+  const australian = ["match", ["get", "shield"], ...AU_YELLOW_TEXT_SHIELDS.flatMap((v) => [v, true]), false];
+  return ["case", australian, AU_SHIELD_TEXT, ["case", ["!=", fromData, "none"], fromData, byPlate]];
 }
+
+/** Australia's green-plate shields: yellow route numbers (map polish §1). */
+export const AU_YELLOW_TEXT_SHIELDS = ["au-national-highway", "au-national-route", "au-state"];
+export const AU_SHIELD_TEXT = "#FFD400";
 
 export interface StylePalette {
   name: string;
@@ -248,32 +255,34 @@ export interface StylePalette {
 
 export const LIGHT_PALETTE: StylePalette = {
   name: "TrackLine Light",
-  land: "#F7F8F7",
-  park: "#C9EFC9",
-  water: "#A9D3F5",
+  // Near-white land, light grey roads with crisp white casing, darker grey motorways, bright
+  // clear water, soft green parks (map polish §1).
+  land: "#FAFAF9",
+  park: "#D3F0CC",
+  water: "#9EDBFA",
   // Very light, flat buildings so the roads read first.
-  building: "#EEF0F2",
-  road: "#D2D6DB",
+  building: "#F0F1F3",
+  road: "#DDE1E6",
   roadCasing: "#FFFFFF",
-  motorway: "#C9CED5",
-  suburbLabel: "#6E8FA6",
-  streetLabel: "#2E3338",
+  motorway: "#B4BBC4",
+  suburbLabel: "#4F6F8A",
+  streetLabel: "#3A3F44",
   labelHalo: "#FFFFFF",
   shieldText: "#FFD400",
 };
 
 export const DARK_PALETTE: StylePalette = {
   name: "TrackLine Dark",
-  // Navy-grey roads on a dark background.
-  land: "#161B24",
-  park: "#1A2C26",
-  water: "#0F2540",
-  building: "#1F2632",
-  road: "#36435A",
-  roadCasing: "#0D1118",
-  motorway: "#475673",
-  suburbLabel: "#8FAFC6",
-  streetLabel: "#D7DBE0",
+  // Dark slate background, readable navy-grey roads, bright labels: clear, not murky.
+  land: "#1B2230",
+  park: "#1E3229",
+  water: "#12304F",
+  building: "#232B39",
+  road: "#3F4D66",
+  roadCasing: "#121722",
+  motorway: "#566683",
+  suburbLabel: "#A9C6DC",
+  streetLabel: "#EEF1F4",
   labelHalo: "#14171B",
   shieldText: "#FFD400",
 };
@@ -327,16 +336,17 @@ function round2(n: number): number {
 
 // Bigger street names than before (Waze-style): readable at a glance while driving.
 const LABEL_SIZES: Record<RoadClass, [number, number]> = {
-  motorway: [13, 18],
-  trunk: [13, 18],
-  primary: [13, 17],
-  secondary: [12, 16],
-  tertiary: [12, 15],
-  residential: [12, 15],
-  service: [11, 13],
+  // Street names a touch larger than before, so they read first along the road (map polish §1).
+  motorway: [14, 19],
+  trunk: [14, 19],
+  primary: [13.5, 18],
+  secondary: [13, 17],
+  tertiary: [12.5, 16],
+  residential: [12.5, 16],
+  service: [11, 13.5],
 };
 /** Main roads' names in bold. */
-const BOLD_LABEL_CLASSES: RoadClass[] = ["motorway", "trunk", "primary", "secondary"];
+const BOLD_LABEL_CLASSES: RoadClass[] = ["motorway", "trunk", "primary", "secondary", "tertiary"];
 
 /** The street-name layer for one road class. */
 export function roadLabelLayer(cls: RoadClass, palette: StylePalette, text: unknown = LOCAL_NAME): Json {
@@ -503,10 +513,10 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
   // country has an official source wired, so no postcode is shown anywhere else.
   const suburbLayout = {
     "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
-    "text-font": LABEL_FONT,
-    "text-size": ["interpolate", ["linear"], ["zoom"], 9, 14, 13, 20, 16, 22],
-    "text-transform": "uppercase",
-    "text-letter-spacing": 0.06,
+    "text-font": LABEL_FONT_BOLD,
+    "text-size": ["interpolate", ["linear"], ["zoom"], 9, 13, 13, 18, 16, 20],
+    "text-transform": "none",
+    "text-letter-spacing": 0.02,
     "text-max-width": 8,
     "symbol-sort-key": ["get", "symbolrank"],
   };

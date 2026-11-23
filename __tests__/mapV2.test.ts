@@ -52,16 +52,27 @@ describe("map style", () => {
     }
   });
 
-  it("uses the requested colours", () => {
-    expect(layer("land").paint!["background-color"]).toBe("#F7F8F7");
-    expect(layer("parks").paint!["fill-color"]).toBe("#C9EFC9");
-    expect(layer("water").paint!["fill-color"]).toBe("#A9D3F5");
-    // Very light flat buildings, soft grey roads (Waze-style).
-    expect(layer("buildings").paint!["fill-color"]).toBe("#EEF0F2");
-    expect(layer("road-residential").paint!["line-color"]).toBe("#D2D6DB");
+  it("uses the requested colours (map polish §1)", () => {
+    expect(layer("land").paint!["background-color"]).toBe("#FAFAF9");
+    expect(layer("parks").paint!["fill-color"]).toBe("#D3F0CC");
+    // Bright clear water, in the #9EDBFA range.
+    expect(layer("water").paint!["fill-color"]).toBe("#9EDBFA");
+    // Very light flat buildings, light grey roads with crisp white casing, darker motorways.
+    expect(layer("buildings").paint!["fill-color"]).toBe("#F0F1F3");
+    expect(layer("road-residential").paint!["line-color"]).toBe("#DDE1E6");
+    expect(layer("road-motorway").paint!["line-color"]).toBe("#B4BBC4");
     expect(layer("road-casing-residential").paint!["line-color"]).toBe("#FFFFFF");
-    expect(layer("suburb-labels").paint!["text-color"]).toBe("#6E8FA6");
-    expect(layer("road-label-primary").paint!["text-color"]).toBe("#2E3338");
+    expect(layer("suburb-labels").paint!["text-color"]).toBe("#4F6F8A");
+    expect(layer("road-label-primary").paint!["text-color"]).toBe("#3A3F44");
+  });
+
+  it("suburbs in mixed case, semi-bold, white halo -- never ALL CAPS", () => {
+    for (const id of ["suburb-labels", "suburb-labels-intl"]) {
+      expect(layer(id).layout!["text-transform"]).toBe("none");
+      expect((layer(id).layout!["text-font"] as string[])[0]).toBe("DIN Pro Bold");
+      expect(layer(id).paint!["text-halo-color"]).toBe("#FFFFFF");
+    }
+    for (const l of light.layers) expect([l.id, l.layout?.["text-transform"] === "uppercase"]).toEqual([l.id, false]);
   });
 
   it.each([
@@ -132,6 +143,8 @@ describe("map style", () => {
     // data's yellow text.
     expect(plate({ shield: "au-national-highway" })).toBe("tl-shield-green");
     expect(text({ shield: "au-national-highway", shield_text_color: "yellow" })).toBe("#FFD400");
+    // Bold yellow on green for every Australian route plate, whatever the tile data says.
+    expect(text({ shield: "au-national-route", shield_text_color: "white" })).toBe("#FFD400");
     expect(plate({ shield: "au-state" })).toBe("tl-shield-green");
     expect(plate({ shield: "au-national-route" })).toBe("tl-shield-green");
     // The generic plates Mapbox uses for alphanumeric routes (M5, A22) follow the data too.
@@ -364,8 +377,9 @@ describe("Waze-style look (Pass 3 §4)", () => {
   it("dark style: navy-grey roads on a dark background", () => {
      
     const { DARK_PALETTE } = require("../src/map-v2/styles/buildStyle");
-    expect(DARK_PALETTE.road).toBe("#36435A");
-    expect(DARK_PALETTE.land).toBe("#161B24");
+    expect(DARK_PALETTE.road).toBe("#3F4D66");
+    expect(DARK_PALETTE.land).toBe("#1B2230");
+    expect(DARK_PALETTE.streetLabel).toBe("#EEF1F4");
   });
   it("3D buildings: off by default; when on, low and see-through", () => {
      

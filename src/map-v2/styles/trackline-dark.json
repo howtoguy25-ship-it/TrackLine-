@@ -16,7 +16,7 @@
       "id": "land",
       "type": "background",
       "paint": {
-        "background-color": "#161B24"
+        "background-color": "#1B2230"
       }
     },
     {
@@ -43,7 +43,7 @@
         false
       ],
       "paint": {
-        "fill-color": "#1A2C26"
+        "fill-color": "#1E3229"
       }
     },
     {
@@ -60,7 +60,7 @@
         "national_park"
       ],
       "paint": {
-        "fill-color": "#1A2C26",
+        "fill-color": "#1E3229",
         "fill-opacity": 0.6
       }
     },
@@ -70,7 +70,7 @@
       "source": "composite",
       "source-layer": "water",
       "paint": {
-        "fill-color": "#0F2540"
+        "fill-color": "#12304F"
       }
     },
     {
@@ -79,7 +79,7 @@
       "source": "composite",
       "source-layer": "waterway",
       "paint": {
-        "line-color": "#0F2540",
+        "line-color": "#12304F",
         "line-width": [
           "interpolate",
           [
@@ -110,8 +110,8 @@
         "false"
       ],
       "paint": {
-        "fill-color": "#1F2632",
-        "fill-outline-color": "#313742",
+        "fill-color": "#232B39",
+        "fill-outline-color": "#343B48",
         "fill-opacity": [
           "interpolate",
           [
@@ -150,7 +150,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -194,7 +194,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -238,7 +238,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -282,7 +282,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -326,7 +326,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -370,7 +370,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -414,7 +414,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#0D1118",
+        "line-color": "#121722",
         "line-width": [
           "interpolate",
           [
@@ -457,7 +457,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#36435A",
+        "line-color": "#3F4D66",
         "line-width": [
           "interpolate",
           [
@@ -501,7 +501,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#36435A",
+        "line-color": "#3F4D66",
         "line-width": [
           "interpolate",
           [
@@ -545,7 +545,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#36435A",
+        "line-color": "#3F4D66",
         "line-width": [
           "interpolate",
           [
@@ -589,7 +589,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#36435A",
+        "line-color": "#3F4D66",
         "line-width": [
           "interpolate",
           [
@@ -633,7 +633,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#36435A",
+        "line-color": "#3F4D66",
         "line-width": [
           "interpolate",
           [
@@ -677,7 +677,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#475673",
+        "line-color": "#566683",
         "line-width": [
           "interpolate",
           [
@@ -721,7 +721,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#475673",
+        "line-color": "#566683",
         "line-width": [
           "interpolate",
           [
@@ -774,8 +774,8 @@
           ]
         ],
         "text-font": [
-          "DIN Pro Medium",
-          "Arial Unicode MS Regular"
+          "DIN Pro Bold",
+          "Arial Unicode MS Bold"
         ],
         "text-size": [
           "interpolate",
@@ -786,14 +786,14 @@
             "zoom"
           ],
           9,
-          14,
           13,
-          20,
+          13,
+          18,
           16,
-          22
+          20
         ],
-        "text-transform": "uppercase",
-        "text-letter-spacing": 0.06,
+        "text-transform": "none",
+        "text-letter-spacing": 0.02,
         "text-max-width": 8,
         "symbol-sort-key": [
           "get",
@@ -801,7 +801,7 @@
         ]
       },
       "paint": {
-        "text-color": "#8FAFC6",
+        "text-color": "#A9C6DC",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -850,8 +850,8 @@
           ]
         ],
         "text-font": [
-          "DIN Pro Medium",
-          "Arial Unicode MS Regular"
+          "DIN Pro Bold",
+          "Arial Unicode MS Bold"
         ],
         "text-size": [
           "interpolate",
@@ -862,14 +862,14 @@
             "zoom"
           ],
           9,
-          14,
           13,
-          20,
+          13,
+          18,
           16,
-          22
+          20
         ],
-        "text-transform": "uppercase",
-        "text-letter-spacing": 0.06,
+        "text-transform": "none",
+        "text-letter-spacing": 0.02,
         "text-max-width": 8,
         "symbol-sort-key": [
           "get",
@@ -877,7 +877,7 @@
         ]
       },
       "paint": {
-        "text-color": "#8FAFC6",
+        "text-color": "#A9C6DC",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -936,9 +936,9 @@
             "zoom"
           ],
           10,
-          13,
+          14,
           18,
-          18
+          19
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -948,7 +948,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1007,9 +1007,9 @@
             "zoom"
           ],
           10,
-          13,
+          14,
           18,
-          18
+          19
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1019,7 +1019,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1078,9 +1078,9 @@
             "zoom"
           ],
           11,
-          13,
+          13.5,
           18,
-          17
+          18
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1090,7 +1090,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1149,9 +1149,9 @@
             "zoom"
           ],
           12.5,
-          12,
+          13,
           18,
-          16
+          17
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1161,7 +1161,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1208,8 +1208,8 @@
           ]
         ],
         "text-font": [
-          "DIN Pro Medium",
-          "Arial Unicode MS Regular"
+          "DIN Pro Bold",
+          "Arial Unicode MS Bold"
         ],
         "text-size": [
           "interpolate",
@@ -1220,9 +1220,9 @@
             "zoom"
           ],
           13.5,
-          12,
+          12.5,
           18,
-          15
+          16
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1232,7 +1232,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1291,9 +1291,9 @@
             "zoom"
           ],
           14.5,
-          12,
+          12.5,
           18,
-          15
+          16
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1303,7 +1303,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1363,7 +1363,7 @@
           16,
           11,
           18,
-          13
+          13.5
         ],
         "text-max-angle": 30,
         "text-padding": 4,
@@ -1373,7 +1373,7 @@
         "text-rotation-alignment": "map"
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 2
       }
@@ -1536,7 +1536,44 @@
         "text-color": [
           "case",
           [
-            "!=",
+            "match",
+            [
+              "get",
+              "shield"
+            ],
+            "au-national-highway",
+            true,
+            "au-national-route",
+            true,
+            "au-state",
+            true,
+            false
+          ],
+          "#FFD400",
+          [
+            "case",
+            [
+              "!=",
+              [
+                "match",
+                [
+                  "get",
+                  "shield_text_color"
+                ],
+                "black",
+                "#1A1A1A",
+                "white",
+                "#FFFFFF",
+                "yellow",
+                "#FFD400",
+                "orange",
+                "#E87722",
+                "blue",
+                "#1E4FA3",
+                "none"
+              ],
+              "none"
+            ],
             [
               "match",
               [
@@ -1555,95 +1592,76 @@
               "#1E4FA3",
               "none"
             ],
-            "none"
-          ],
-          [
-            "match",
             [
-              "get",
-              "shield_text_color"
-            ],
-            "black",
-            "#1A1A1A",
-            "white",
-            "#FFFFFF",
-            "yellow",
-            "#FFD400",
-            "orange",
-            "#E87722",
-            "blue",
-            "#1E4FA3",
-            "none"
-          ],
-          [
-            "match",
-            [
-              "get",
-              "shield"
-            ],
-            "rectangle-white",
-            "#1A1A1A",
-            "rectangle-red",
-            "#FFFFFF",
-            "rectangle-orange",
-            "#1A1A1A",
-            "rectangle-yellow",
-            "#1A1A1A",
-            "rectangle-green",
-            "#FFFFFF",
-            "rectangle-blue",
-            "#FFFFFF",
-            "circle-white",
-            "#1A1A1A",
-            "au-national-highway",
-            "#FFFFFF",
-            "au-national-route",
-            "#FFFFFF",
-            "au-state",
-            "#FFFFFF",
-            "au-tourist",
-            "#FFFFFF",
-            "nz-state",
-            "#FFFFFF",
-            "us-interstate",
-            "#FFFFFF",
-            "us-interstate-duplex",
-            "#FFFFFF",
-            "us-interstate-truck",
-            "#FFFFFF",
-            "us-interstate-business",
-            "#FFFFFF",
-            "us-highway",
-            "#1A1A1A",
-            "us-highway-duplex",
-            "#1A1A1A",
-            "us-highway-alternate",
-            "#1A1A1A",
-            "us-highway-bypass",
-            "#1A1A1A",
-            "us-highway-truck",
-            "#1A1A1A",
-            "us-highway-business",
-            "#FFFFFF",
-            "de-motorway",
-            "#FFFFFF",
-            "hu-motorway",
-            "#FFFFFF",
-            "ch-motorway",
-            "#FFFFFF",
-            "gr-motorway",
-            "#FFFFFF",
-            "hr-motorway",
-            "#FFFFFF",
-            "si-motorway",
-            "#FFFFFF",
-            "cn-nths-expy",
-            "#FFFFFF",
-            "mx-federal",
-            "#1A1A1A",
-            "mx-state",
-            "#1A1A1A",
-            "#1A1A1A"
+              "match",
+              [
+                "get",
+                "shield"
+              ],
+              "rectangle-white",
+              "#1A1A1A",
+              "rectangle-red",
+              "#FFFFFF",
+              "rectangle-orange",
+              "#1A1A1A",
+              "rectangle-yellow",
+              "#1A1A1A",
+              "rectangle-green",
+              "#FFFFFF",
+              "rectangle-blue",
+              "#FFFFFF",
+              "circle-white",
+              "#1A1A1A",
+              "au-national-highway",
+              "#FFFFFF",
+              "au-national-route",
+              "#FFFFFF",
+              "au-state",
+              "#FFFFFF",
+              "au-tourist",
+              "#FFFFFF",
+              "nz-state",
+              "#FFFFFF",
+              "us-interstate",
+              "#FFFFFF",
+              "us-interstate-duplex",
+              "#FFFFFF",
+              "us-interstate-truck",
+              "#FFFFFF",
+              "us-interstate-business",
+              "#FFFFFF",
+              "us-highway",
+              "#1A1A1A",
+              "us-highway-duplex",
+              "#1A1A1A",
+              "us-highway-alternate",
+              "#1A1A1A",
+              "us-highway-bypass",
+              "#1A1A1A",
+              "us-highway-truck",
+              "#1A1A1A",
+              "us-highway-business",
+              "#FFFFFF",
+              "de-motorway",
+              "#FFFFFF",
+              "hu-motorway",
+              "#FFFFFF",
+              "ch-motorway",
+              "#FFFFFF",
+              "gr-motorway",
+              "#FFFFFF",
+              "hr-motorway",
+              "#FFFFFF",
+              "si-motorway",
+              "#FFFFFF",
+              "cn-nths-expy",
+              "#FFFFFF",
+              "mx-federal",
+              "#1A1A1A",
+              "mx-state",
+              "#1A1A1A",
+              "#1A1A1A"
+            ]
           ]
         ]
       }
@@ -1750,7 +1768,7 @@
         "symbol-sort-key": 10
       },
       "paint": {
-        "text-color": "#CED1D5",
+        "text-color": "#E0E2E4",
         "text-halo-color": "#14171B",
         "text-halo-width": 1.2
       }
@@ -1907,7 +1925,7 @@
         "text-optional": true
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 1.4
       }
@@ -2082,7 +2100,7 @@
         "text-optional": true
       },
       "paint": {
-        "text-color": "#D7DBE0",
+        "text-color": "#EEF1F4",
         "text-halo-color": "#14171B",
         "text-halo-width": 1.4
       }
