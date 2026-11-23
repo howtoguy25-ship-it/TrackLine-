@@ -37,12 +37,18 @@ export interface ThroughPoint {
  * Points along the road still ahead (from `at`), evenly spaced, ends excluded, so a request
  * through them follows the road you're on. A stop on the route stays a real stop, in order.
  */
-export function throughPointsAhead(line: LatLng[], at: LatLng | null, stop: LatLng | null, count = VIA_POINTS): ThroughPoint[] {
+export function throughPointsAhead(line: LatLng[], at: LatLng | null, stops: LatLng | readonly LatLng[] | null, count = VIA_POINTS): ThroughPoint[] {
+  const list: LatLng[] = !stops ? [] : Array.isArray(stops) ? [...stops] : [stops as LatLng];
   const ahead = routeAheadOf(line, at);
-  if (ahead.length < 2) return stop ? [{ point: stop, via: false }] : [];
+  if (ahead.length < 2) return list.map((point) => ({ point, via: false }));
   const samples = samplePolyline(ahead, count + 2).slice(1, -1);
-  const out: ThroughPoint[] = samples.map((point) => ({ point, via: true }));
-  if (!stop) return out;
+  let out: ThroughPoint[] = samples.map((point) => ({ point, via: true }));
+  // Each stop goes where it falls along the road, in the trip's order.
+  for (const stop of list) out = withStopAt(out, ahead, stop);
+  return out;
+}
+
+function withStopAt(out: ThroughPoint[], ahead: LatLng[], stop: LatLng): ThroughPoint[] {
   // Put the stop where it falls along the road: before the first via point further along.
   const along = (p: LatLng) => {
     let best = 0;

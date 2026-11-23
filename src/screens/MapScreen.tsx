@@ -161,8 +161,10 @@ import {
   getHeadingAwareReroute,
   detailedRoutePolyline,
   TRAVEL_MODE_LABELS,
+  waypointList,
   type Route,
   type TravelMode,
+  type Waypoints,
 } from "@/services/directions";
 import {
   avoidPillLabel,
@@ -302,6 +304,7 @@ import { savedPinIcon, savedPinPlaces } from "@/map/savedPins";
 import { getSavedPlaces, pushSavedPlacesToProfile, removeCustomPlace, removeHomeOrWork, addCustomPlace, subscribeSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { clearParkingSpot, getParkingSpot, setParkingSpot, subscribeParkingSpot, type ParkingSpot } from "@/services/parkingSpot";
 import { onDriveEnd, onFixAfterDrive, type ParkingWatch } from "@/nav/autoParking";
+import { addStop, markStop, moveStop, nextStopEvent, removeStop, stopPoints, stopRows, MAX_STOPS, type TripStop } from "@/nav/multiStop";
 import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type ParkingOffer } from "@/nav/arrivalFlow";
 import { withTimeout } from "@/utils/withTimeout";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -566,7 +569,14 @@ export function MapScreen() {
   // starts), not a permanent fixture competing with the map for attention.
   // Settings > Map shortcuts > Traffic flow: on the home map too, not just once a route is picked.
   const showsTrafficLayer = settings.showTrafficFlow;
-  const [stopLocation, setStopLocation] = useState<LatLng | null>(null);
+  // The trip's stops, in order (nav/multiStop.ts). Every route request goes through the ones
+  // not reached yet (stopWaypoints), so a reroute never drops a stop or sends you back to one.
+  const [stops, setStops] = useState<TripStop[]>([]);
+  const stopWaypoints = useMemo(() => {
+    const pts = stopPoints(stops);
+    return pts.length ? pts : null;
+  }, [stops]);
+  const stopWaypointsLiveRef = useLatest(stopWaypoints);
   const [pickingStop, setPickingStop] = useState(false);
   // Real custom "From" -- Google/Apple-Maps-style, lets a route be planned between any two real
   // searched places, not just always starting from the driver's own live GPS fix. null means
@@ -2516,8 +2526,10 @@ export function MapScreen() {
     // getHeadingAwareReroute's own header for exactly what Google's heading field does and
     // doesn't guarantee). Only the driving mode gets this treatment; walking/transit/bicycling
     // have no U-turn-legality concern worth the Routes API's extra cost, same as before.
+    const rerouteStops = stopWaypointsLiveRef.current ?? [];
     const googleReroute = (): Promise<Route> => getHeadingAwareReroute(currentLatLng, destinationLatLng, heading, {
             ...avoidRouteOptions(settings.routeAvoid),
+            waypoint: rerouteStops,
             signal: controller.signal,
           }).then(({ route: primary, alternates }) => {
             // Real, explicit request -- pick the genuinely lowest-ETA real alternative Google
@@ -2543,9 +2555,9 @@ export function MapScreen() {
     // given up after ~2.5 s), with Google as the fallback.
     const fetchReroute = (): Promise<Route> =>
       travelMode !== "driving"
-        ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode)
+        ? getDirectionsForMode(currentLatLng, destinationLatLng, travelMode, rerouteStops)
         : mapboxRoutingAvailable()
-          ? mapboxReroute(currentLatLng, destinationLatLng, heading, settings.routeAvoid, controller.signal).catch((err) => {
+          ? mapboxReroute(currentLatLng, destinationLatLng, heading, settings.routeAvoid, controller.signal, rerouteStops).catch((err) => {
               if (controller.signal.aborted) throw err;
               console.warn("[reroute] Mapbox failed, using Google", err);
               return googleReroute();
@@ -2695,7 +2707,7 @@ export function MapScreen() {
     async (
       origin: LatLng,
       destination: LatLng,
-      waypoint: LatLng | undefined,
+      waypoint: Waypoints | undefined,
       mode: TravelMode,
       avoidOverride?: RouteAvoidPrefs
     ) => {
@@ -2721,7 +2733,7 @@ export function MapScreen() {
               ? Promise.resolve<Route[]>([])
               : getRouteChoices(origin, destination, { ...avoidOpts, avoidHighways: true, waypoint }).catch(() => [] as Route[]),
           ]);
-          if (!waypoint) rememberRoutes(origin, destination, "", all).catch(() => {});
+          if (!waypointList(waypoint).length) rememberRoutes(origin, destination, "", all).catch(() => {});
           const sideRoute: Route | null = side[0] ? { ...side[0], viaSideStreets: true } : null;
           const { routes: usable, allHaveUturns } = avoid.uturns ? withoutUturns(all) : { routes: all, allHaveUturns: false };
           const sideUsable = sideRoute && !(avoid.uturns && routeHasUturn(sideRoute)) ? sideRoute : null;
@@ -2803,7 +2815,7 @@ export function MapScreen() {
 
   /** Routes for the chosen mode; remembers it as the last mode used. */
   const requestRoutes = useCallback(
-    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, requestedMode: ModeId, avoidOverride?: RouteAvoidPrefs, rememberMode = true) => {
+    async (origin: LatLng, destination: LatLng, waypoint: Waypoints | undefined, requestedMode: ModeId, avoidOverride?: RouteAvoidPrefs, rememberMode = true) => {
       // Owner dashboard can switch the extra travel modes off: then it's Drive only.
       const mode: ModeId = travelModesOn ? requestedMode : ("drive" as ModeId);
       setSelectedMode(mode);
@@ -2812,7 +2824,7 @@ export function MapScreen() {
       const avoid = avoidOverride ?? settings.routeAvoid;
       const trip = ++routeTripRef.current;
       // Drive, Transit, and any trip with a stop: the Google flow (it handles waypoints).
-      if (mode === "drive" || mode === "transit" || (waypoint && mode !== "ferry")) {
+      if (mode === "drive" || mode === "transit" || (waypointList(waypoint).length > 0 && mode !== "ferry")) {
         const navMode = MODE_NAVIGATES_AS[mode as Exclude<ModeId, "ferry">];
         setTravelMode(navMode);
         await fetchRouteOptions(origin, destination, waypoint, navMode, avoidOverride);
@@ -3478,7 +3490,7 @@ export function MapScreen() {
       if (!routeOriginLatLng) return;
       closeAllPlaceSheets();
       setPendingDestination(place);
-      setStopLocation(null);
+      setStops([]);
       // A fresh destination starts in the mode used last (Drive the first time). Ferry depends
       // on the trip, so it starts from Drive.
       const last = asModeId(settings.lastTravelMode);
@@ -3496,7 +3508,7 @@ export function MapScreen() {
       if (!routeOriginLatLng) return;
       closeAllPlaceSheets();
       setPendingDestination(place);
-      setStopLocation(null);
+      setStops([]);
       setModeSummaries({});
       setModeResults({});
       requestRoutes(routeOriginLatLng, place.location, undefined, travelModesOn ? "walk" : "drive", undefined, false);
@@ -3573,7 +3585,7 @@ export function MapScreen() {
       }
       closeAllPlaceSheets();
       setPendingDestination(station);
-      setStopLocation(null);
+      setStops([]);
       requestRoutes(routeOriginLatLng, station.location, undefined, "walk");
     } catch (err) {
       console.warn("[map] find nearest station failed", err);
@@ -3586,11 +3598,12 @@ export function MapScreen() {
   const onStopSelected = useCallback(
     (place: PlaceDetails) => {
       if (!pendingDestination || !routeOriginLatLng) return;
-      setStopLocation(place.location);
+      const next = addStop(stops, place);
+      setStops(next);
       setPickingStop(false);
-      requestRoutes(routeOriginLatLng, pendingDestination.location, place.location, selectedMode);
+      requestRoutes(routeOriginLatLng, pendingDestination.location, stopPoints(next), selectedMode);
     },
-    [pendingDestination, routeOriginLatLng, requestRoutes, selectedMode]
+    [pendingDestination, routeOriginLatLng, requestRoutes, selectedMode, stops]
   );
 
   // Real mid-trip "add a stop" -- previously the only Add Stop control was on the pre-Start
@@ -3641,10 +3654,10 @@ export function MapScreen() {
             ? (
                 await getRouteChoices(currentLatLng, destinationLatLng, {
                   ...avoidRouteOptions(settings.routeAvoid),
-                  waypoint: place.location,
+                  waypoint: [...(stopWaypointsLiveRef.current ?? []), place.location],
                 })
               )[0]
-            : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode, place.location);
+            : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode, [...(stopWaypointsLiveRef.current ?? []), place.location]);
         setStopPreviewPlace(place);
         setStopPreviewRoute(preview);
         mapRef.current?.fitToCoordinates(preview.polyline, {
@@ -3660,14 +3673,14 @@ export function MapScreen() {
         setRerouting(false);
       }
     },
-    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip]
+    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip, stopWaypointsLiveRef]
   );
 
   const confirmStopPreview = useCallback(() => {
     if (!stopPreviewRoute || !stopPreviewPlace) return;
     guidanceRef.current = createGuidanceState();
     setActiveStepIndex(0);
-    setStopLocation(stopPreviewPlace.location);
+    setStops((prev) => addStop(prev, stopPreviewPlace));
     setRoute(stopPreviewRoute);
     setAcceptedSuggestionOriginalRoute(null);
     setStopPreviewRoute(null);
@@ -3699,7 +3712,7 @@ export function MapScreen() {
   // 90s) -- position, stop, and "is a suggestion already showing" are all read fresh from refs
   // inside the interval callback instead.
   const trafficSuggestionRouteRef = useRef<Route | null>(null);
-  const stopLocationRef = useRef<LatLng | null>(null);
+  const stopWaypointsRef = useRef<LatLng[] | null>(null);
   // Also skips while any of these other route-editing flows are up -- a second green line
   // (this suggestion's) appearing on top of the add-stop preview's own green line, or while
   // actively placing an alert pin, would just be confusing overlap, not a helpful suggestion.
@@ -3707,9 +3720,9 @@ export function MapScreen() {
   // Kept in step after each render (the interval only reads them later).
   useEffect(() => {
     trafficSuggestionRouteRef.current = trafficSuggestionRoute;
-    stopLocationRef.current = stopLocation;
+    stopWaypointsRef.current = stopWaypoints;
     otherFlowActiveRef.current = !!stopPreviewRoute || addingStopDuringNav || placingAlert;
-  }, [trafficSuggestionRoute, stopLocation, stopPreviewRoute, addingStopDuringNav, placingAlert]);
+  }, [trafficSuggestionRoute, stopWaypoints, stopPreviewRoute, addingStopDuringNav, placingAlert]);
   const trafficCheckInFlightRef = useRef(false);
   const slowdownAheadRef = useRef(false);
   const trafficSuggestionDismissedAtRef = useRef(0);
@@ -3736,7 +3749,7 @@ export function MapScreen() {
       if (remainingMeters < MIN_REMAINING_METERS_TO_CHECK) return;
       trafficCheckInFlightRef.current = true;
       try {
-        const stop = stopLocationRef.current;
+        const stop = stopWaypointsRef.current;
         const avoidOpts = avoidRouteOptions(routeAvoidRef.current);
         const ahead = routeAheadOf(line, latLng);
         const [yours, alts, side] = await Promise.all([
@@ -3788,7 +3801,7 @@ export function MapScreen() {
       const latLng = currentLatLngRef.current;
       if (!latLng || trafficCheckInFlightRef.current) return;
       try {
-        const yours = await getRouteThrough(latLng, destinationLatLng, throughPointsAhead(line, latLng, stopLocationRef.current));
+        const yours = await getRouteThrough(latLng, destinationLatLng, throughPointsAhead(line, latLng, stopWaypointsRef.current));
         if (cancelled) return;
         setAheadLiveTraffic({ forRoute: route, polyline: yours.polyline, intervals: yours.speedIntervals });
         setLiveEtaSeconds(routeSeconds(yours));
@@ -3918,18 +3931,20 @@ export function MapScreen() {
     setAcceptedSuggestionOriginalRoute(null);
   }, [acceptedSuggestionOriginalRoute]);
 
-  // Real removal of a mid-trip stop -- clears stopLocation and recomputes the route straight
+  // Real removal of a mid-trip stop -- clears stopWaypoints and recomputes the route straight
   // to the original destination, the same real fetch this screen already does for adding one,
   // just without the waypoint.
-  const removeStopDuringNav = useCallback(async () => {
+  // Any change to the stops while driving (remove, reorder): a fresh route through the ones left.
+  const applyStopsDuringNav = useCallback(async (next: TripStop[]) => {
     if (!currentLatLng || !destinationLatLng) return;
-    setStopLocation(null);
+    setStops(next);
+    const through = stopPoints(next);
     setRerouting(true);
     try {
       const fresh =
         travelMode === "driving"
-          ? (await getRouteChoices(currentLatLng, destinationLatLng, avoidRouteOptions(settings.routeAvoid)))[0]
-          : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode);
+          ? (await getRouteChoices(currentLatLng, destinationLatLng, { ...avoidRouteOptions(settings.routeAvoid), waypoint: through }))[0]
+          : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode, through);
       guidanceRef.current = createGuidanceState();
       setActiveStepIndex(0);
       setRoute(fresh);
@@ -3939,21 +3954,27 @@ export function MapScreen() {
         animated: true,
       });
     } catch (err) {
-      console.warn("[map] remove stop during nav failed", err);
-      Sentry.logger.error("map: remove stop during nav failed", { error: String(err) });
+      console.warn("[map] changing stops during nav failed", err);
+      Sentry.logger.error("map: changing stops during nav failed", { error: String(err) });
+      showManoeuvreChip(`Couldn't change the stops: ${routeErrorText(err)}`, "neutral", 5000);
     } finally {
       setRerouting(false);
     }
-  }, [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid]);
+  }, [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip]);
+  // The bar's ✕: drops the next stop.
+  const removeStopDuringNav = useCallback(() => {
+    const next = stops.find((x) => !x.reached);
+    if (next) applyStopsDuringNav(removeStop(stops, next.id));
+  }, [stops, applyStopsDuringNav]);
 
   const onSelectTravelMode = useCallback(
     (mode: ModeId) => {
       // From/To and the stop stay as they are; only the mode changes.
       if (pendingDestination && routeOriginLatLng) {
-        requestRoutes(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, mode);
+        requestRoutes(routeOriginLatLng, pendingDestination.location, stopWaypoints ?? undefined, mode);
       } else setSelectedMode(mode);
     },
-    [pendingDestination, stopLocation, routeOriginLatLng, requestRoutes]
+    [pendingDestination, stopWaypoints, routeOriginLatLng, requestRoutes]
   );
 
   // Tapping a route (its line, its bubble, or its row) selects it; tapping the selected one
@@ -4060,7 +4081,7 @@ export function MapScreen() {
       // soon as Mapbox answers (normally well before the first manoeuvre); if it can't, the
       // picked route simply carries on.
       if (travelMode === "driving" && chosen.source !== "mapbox" && currentLatLng && mapboxRoutingAvailable()) {
-        mapboxRouteForChoice(chosen, currentLatLng, destination.location, settings.routeAvoid, heading)
+        mapboxRouteForChoice(chosen, currentLatLng, destination.location, settings.routeAvoid, heading, stopWaypointsLiveRef.current ?? [])
           .then((navRoute) => {
             if (!navRoute || routeRef.current !== chosen) return; // ended or changed meanwhile
             guidanceRef.current = createGuidanceState();
@@ -4070,7 +4091,7 @@ export function MapScreen() {
           .catch((err) => console.warn("[nav] Mapbox route unavailable, staying on the picked route", err));
       }
     },
-    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.routeAvoid, announcePhrase, currentSpeedKmhRef]
+    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef]
   );
 
   // Development builds: Settings › Developer › test drives start a recorded motorway drive here
@@ -4105,7 +4126,7 @@ export function MapScreen() {
       try {
         const choices = await getRouteChoices(origin, place.location, {
           ...avoidRouteOptions(settings.routeAvoid),
-          waypoint: stopLocation ?? undefined,
+          waypoint: stopWaypoints ?? undefined,
         });
         startRoute(choices[0], place);
       } catch (err) {
@@ -4115,7 +4136,7 @@ export function MapScreen() {
         setBannerVisible(true);
       }
     },
-    [routeOriginLatLng, stopLocation, startRoute, settings.routeAvoid]
+    [routeOriginLatLng, stopWaypoints, startRoute, settings.routeAvoid]
   );
 
   const cancelRouteOptions = useCallback(() => {
@@ -4128,7 +4149,7 @@ export function MapScreen() {
     setModeRoute(null);
     setModeRouteOptions([]);
     setPendingDestination(null);
-    setStopLocation(null);
+    setStops([]);
     setPickingStop(false);
     setRouteOptionsError(null);
     setTravelMode("driving");
@@ -4250,10 +4271,10 @@ export function MapScreen() {
       const next = { ...settings.routeAvoid, [key]: value };
       updateSettings({ routeAvoid: next });
       if (travelMode === "driving" && pendingDestination && routeOriginLatLng) {
-        requestRoutes(routeOriginLatLng, pendingDestination.location, stopLocation ?? undefined, selectedMode, next);
+        requestRoutes(routeOriginLatLng, pendingDestination.location, stopWaypoints ?? undefined, selectedMode, next);
       }
     },
-    [settings.routeAvoid, updateSettings, travelMode, pendingDestination, routeOriginLatLng, stopLocation, requestRoutes, selectedMode]
+    [settings.routeAvoid, updateSettings, travelMode, pendingDestination, routeOriginLatLng, stopWaypoints, requestRoutes, selectedMode]
   );
 
   // "From" row tap on the initial search panel -- opens a second DestinationSearchBar configured
@@ -4269,10 +4290,10 @@ export function MapScreen() {
       setPickingOrigin(false);
       if (pendingDestination) {
         const origin = next?.location ?? currentLatLng;
-        if (origin) requestRoutes(origin, pendingDestination.location, stopLocation ?? undefined, selectedMode);
+        if (origin) requestRoutes(origin, pendingDestination.location, stopWaypoints ?? undefined, selectedMode);
       }
     },
-    [pendingDestination, stopLocation, selectedMode, currentLatLng, requestRoutes]
+    [pendingDestination, stopWaypoints, selectedMode, currentLatLng, requestRoutes]
   );
 
   // Real, explicit request -- a real swap button (like Apple/Google Maps) that flips the
@@ -4295,8 +4316,8 @@ export function MapScreen() {
     const newDestination = currentOriginPlace;
     setOriginOverride(newOrigin);
     setPendingDestination(newDestination);
-    requestRoutes(newOrigin.location, newDestination.location, stopLocation ?? undefined, selectedMode);
-  }, [pendingDestination, routeOriginLatLng, originOverride, liveAddress, stopLocation, selectedMode, requestRoutes]);
+    requestRoutes(newOrigin.location, newDestination.location, stopWaypoints ?? undefined, selectedMode);
+  }, [pendingDestination, routeOriginLatLng, originOverride, liveAddress, stopWaypoints, selectedMode, requestRoutes]);
 
   // Real, explicit request: "choose starting point" opens straight into the pin-drop picker
   // (below), seeded from wherever the current origin already is (a previously custom-picked
@@ -4427,9 +4448,9 @@ export function MapScreen() {
   const clearOriginOverride = useCallback(() => {
     setOriginOverride(null);
     if (pendingDestination && currentLatLng) {
-      requestRoutes(currentLatLng, pendingDestination.location, stopLocation ?? undefined, selectedMode);
+      requestRoutes(currentLatLng, pendingDestination.location, stopWaypoints ?? undefined, selectedMode);
     }
-  }, [pendingDestination, currentLatLng, stopLocation, selectedMode, requestRoutes]);
+  }, [pendingDestination, currentLatLng, stopWaypoints, selectedMode, requestRoutes]);
 
   // Real, explicit request: the confirmed starting-point pin now stays visible on the map (see
   // its own Marker below) specifically so it's there to tap -- a real options menu instead of a
@@ -5255,14 +5276,14 @@ export function MapScreen() {
     showRouteOverview();
     if (!currentLatLng || !destinationLatLng || travelMode !== "driving") return;
     const current = remainingPolyline;
-    getRouteChoices(currentLatLng, destinationLatLng, { ...avoidRouteOptions(settings.routeAvoid), waypoint: stopLocation ?? undefined })
+    getRouteChoices(currentLatLng, destinationLatLng, { ...avoidRouteOptions(settings.routeAvoid), waypoint: stopWaypoints ?? undefined })
       .then((choices) => {
         const alts = pickAlternatives(choices, current);
         setNavAlternatives(alts);
         if (!alts.length) showManoeuvreChip("No other routes right now", "neutral", 3000);
       })
       .catch((err) => showManoeuvreChip(`Couldn't load other routes: ${routeErrorText(err)}`, "neutral", 4000));
-  }, [showRouteOverview, currentLatLng, destinationLatLng, travelMode, remainingPolyline, settings.routeAvoid, stopLocation, showManoeuvreChip]);
+  }, [showRouteOverview, currentLatLng, destinationLatLng, travelMode, remainingPolyline, settings.routeAvoid, stopWaypoints, showManoeuvreChip]);
   const switchToAlternative = useCallback((alt: Route) => {
     guidanceRef.current = createGuidanceState();
     setActiveStepIndex(0);
@@ -5414,7 +5435,7 @@ export function MapScreen() {
       setRerouting(true);
       try {
         const fresh = (await getRouteChoices(here, place.location, avoidRouteOptions(settings.routeAvoid)))[0];
-        setStopLocation(null);
+        setStops([]);
         setNavDestinationPlace(place);
         startRoute(fresh, place);
       } catch (err) {
@@ -5436,7 +5457,7 @@ export function MapScreen() {
       if (!here || !destinationLatLng || travelMode !== "driving") return;
       setRerouting(true);
       try {
-        const fresh = (await getRouteChoices(here, destinationLatLng, { ...avoidRouteOptions(next), waypoint: stopLocation ?? undefined }))[0];
+        const fresh = (await getRouteChoices(here, destinationLatLng, { ...avoidRouteOptions(next), waypoint: stopWaypoints ?? undefined }))[0];
         guidanceRef.current = createGuidanceState();
         setActiveStepIndex(0);
         setRoute(fresh);
@@ -5448,7 +5469,7 @@ export function MapScreen() {
         setRerouting(false);
       }
     },
-    [settings.routeAvoid, updateSettings, currentLatLngRef, destinationLatLng, travelMode, stopLocation]
+    [settings.routeAvoid, updateSettings, currentLatLngRef, destinationLatLng, travelMode, stopWaypoints]
   );
 
   // Voice command while driving (the microphone button): the phone's own speech recogniser hears
@@ -5568,7 +5589,7 @@ export function MapScreen() {
       setRoute(null);
       setActiveStepIndex(0);
       setFollowTilt(true);
-      setStopLocation(null);
+      setStops([]);
       setDestinationLatLng(null);
       setAcceptedSuggestionOriginalRoute(null);
     // Ends the real native Live Activity started in confirmRoute -- fire-and-forget, same
@@ -5693,6 +5714,34 @@ export function MapScreen() {
       etaSeconds: pace != null ? Math.round(a.aheadM * pace) : null,
     }));
   }, [route, aheadFeedNow, remainingDistanceMeters, remainingDurationSeconds]);
+  // ---- Multi-stop (nav/multiStop.ts): each stop's distance + time, "Arriving at stop 1" ----
+  const stopRowsNow = useMemo(() => {
+    if (!route || !stops.some((x) => !x.reached)) return [];
+    const pace = remainingDistanceMeters > 0 ? remainingDurationSeconds / remainingDistanceMeters : null;
+    return stopRows(stops, route.polyline, navMatch?.along ?? 0, pace);
+  }, [route, stops, navMatch, remainingDistanceMeters, remainingDurationSeconds]);
+  useEffect(() => {
+    if (!navMatch?.onRoute) return;
+    const ev = nextStopEvent(stops, stopRowsNow);
+    if (!ev) return;
+    if (ev.kind === "arriving") announcePhrase({ kind: "said", text: `Arriving at stop ${ev.number}, ${ev.name}` });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marks the stop the car just reached (GPS progress), once
+    setStops((prev) => markStop(prev, ev.id, ev.kind === "arriving" ? { announced: true } : { reached: true }));
+    // announcePhrase is stable for the screen's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopRowsNow, navMatch?.onRoute]);
+  const stopsSection = useMemo(
+    () =>
+      stopRowsNow.length
+        ? {
+            rows: stopRowsNow,
+            onMove: (id: string, dir: -1 | 1) => applyStopsDuringNav(moveStop(stops, id, dir)),
+            onRemove: (id: string) => applyStopsDuringNav(removeStop(stops, id)),
+          }
+        : null,
+    [stopRowsNow, stops, applyStopsDuringNav]
+  );
+
   // ---- Arrival flow: car parks near the destination from 1 km out (nav/arrivalFlow.ts) ----
   const fetchArrivalParking = useCallback((key: string, near: string, nearLocation: LatLng) => {
     setArrivalParking({ key, near, nearLocation, state: "loading" });
@@ -5769,11 +5818,11 @@ export function MapScreen() {
     if (!currentLatLng || !destinationLatLng) return Promise.reject(new Error("no current location"));
     const origin = currentLatLng;
     const dest = destinationLatLng;
-    const waypoint = stopLocation ?? undefined;
+    const waypoint = stopWaypoints ?? undefined;
     return predictLeaveTimes(departureSlots(Date.now()), (t) =>
       getDirections(origin, dest, { useTraffic: t === "now" ? true : t, waypoint }).then((r) => r.durationInTrafficSeconds ?? r.durationSeconds)
     );
-  }, [currentLatLng, destinationLatLng, stopLocation]);
+  }, [currentLatLng, destinationLatLng, stopWaypoints]);
   const onNavOptionsEndNavigation = useCallback(() => exitNavigation("stop"), [exitNavigation]);
 
   // Keeps the live share doc (if one was ever started for this trip) fresh while navigating --
@@ -6451,7 +6500,13 @@ export function MapScreen() {
               onCountdownDone={goNowFromRouteSelection}
               onAddStop={travelMode !== "transit" ? () => setPickingStop(true) : undefined}
               onDetails={selectionRoutes[selectionIndex] && (travelMode === "transit" || routeHasFerry(selectionRoutes[selectionIndex])) ? openTripDetails : undefined}
-              hasStop={!!stopLocation}
+              hasStop={!!stopWaypoints}
+              stopNames={stops.filter((x) => !x.reached).map((x) => x.name)}
+              stopsFull={stops.filter((x) => !x.reached).length >= MAX_STOPS}
+              onClearStops={() => {
+                setStops([]);
+                if (pendingDestination && routeOriginLatLng) requestRoutes(routeOriginLatLng, pendingDestination.location, undefined, selectedMode);
+              }}
               onHeightChange={setRouteSheetHeight}
             />
           </MapSurface>
@@ -6539,7 +6594,7 @@ export function MapScreen() {
           distanceRemainingText={formatDistance(remainingDistanceMeters, settings.distanceUnit)}
           roadName={navRoadName}
           themeKey={settings.navCardTheme}
-          hasStop={!!stopLocation}
+          hasStop={!!stopWaypoints}
           onAddStop={() => setSearchAlongOpen(true)}
           onRemoveStop={removeStopDuringNav}
           onOptions={() => navOptionsSheetRef.current?.expand()}
@@ -7296,6 +7351,7 @@ export function MapScreen() {
         events={etaSheetEvents}
         ahead={aheadRows}
         parking={parkingSection}
+        stops={stopsSection}
         onAheadPress={onAheadRowPress}
         loadLeaveTimes={loadLeaveTimes}
         onShowMoreTimes={() => {

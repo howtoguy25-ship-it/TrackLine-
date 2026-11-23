@@ -391,6 +391,11 @@ interface SheetProps {
   onCountdownDone: () => void;
   onAddStop?: () => void;
   hasStop: boolean;
+  /** The trip's stops in order (nav/multiStop.ts), shown with Clear stops. */
+  stopNames?: string[];
+  onClearStops?: () => void;
+  /** At the most stops a trip can have: no "Add another stop". */
+  stopsFull?: boolean;
   /** Transit / ferry: open the trip's timeline and ferry details. */
   onDetails?: () => void;
   /** Height of the collapsed sheet (from the bottom of the screen), for fitting the routes. */
@@ -414,6 +419,9 @@ export function RouteSelectionSheet({
   onCountdownDone,
   onAddStop,
   hasStop,
+  stopNames = [],
+  onClearStops,
+  stopsFull = false,
   onDetails,
   onCollapsedHeightChange,
   onHeightChange,
@@ -561,14 +569,24 @@ export function RouteSelectionSheet({
               </Pressable>
             );
           })}
-          {onAddStop && (
+          {stopNames.length > 0 && (
+            <View style={[styles.addStop, styles.rowDivider, { paddingHorizontal: 20 * k }]} testID="route-stops">
+              <Icon name="flag" size={20 * k} color={colors.textMuted} />
+              <Text style={[styles.stopsText, { fontSize: 15 * k }]} numberOfLines={2}>
+                {stopNames.map((n, i) => `${i + 1}. ${n}`).join("  ·  ")}
+              </Text>
+              {onClearStops ? <Button variant="ghost" label="Clear stops" inline onPress={onClearStops} testID="route-clear-stops" /> : null}
+            </View>
+          )}
+          {onAddStop && !stopsFull && (
             <Pressable
               onPress={onAddStop}
               accessibilityRole="button"
               style={({ pressed }) => [styles.addStop, styles.rowDivider, { paddingHorizontal: 20 * k }, pressed && { opacity: pressedOpacity }]}
+              testID="route-add-stop"
             >
               <Icon name="add" size={20 * k} color={colors.accent} />
-              <Text style={[styles.addStopText, { fontSize: 17 * k }]}>{hasStop ? "Change stop" : "Add a stop"}</Text>
+              <Text style={[styles.addStopText, { fontSize: 17 * k }]}>{hasStop ? "Add another stop" : "Add a stop"}</Text>
             </Pressable>
           )}
         </ScrollView>
@@ -711,6 +729,7 @@ const styles = StyleSheet.create({
   selectedBar: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: colors.primary },
   addStop: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 52 },
   addStopText: { fontWeight: "500", color: colors.accent },
+  stopsText: { flex: 1, color: colors.text },
   footer: { flexDirection: "row" },
   footerButton: { flex: 1 },
   goFill: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: GO_BLUE_DARK },

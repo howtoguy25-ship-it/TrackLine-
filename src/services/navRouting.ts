@@ -34,10 +34,11 @@ export async function mapboxRouteForChoice(
   origin: LatLng,
   destination: LatLng,
   avoid: RouteAvoidPrefs,
-  heading: number | null
+  heading: number | null,
+  waypoints: readonly LatLng[] = []
 ): Promise<Route | null> {
   if (!mapboxRoutingAvailable()) return null;
-  const routes = await fetchMapboxRoutes({ origin, destination, avoid, heading }, usableMapboxToken(), { timeoutMs: 8000, diagnosticsKey: "navigation" });
+  const routes = await fetchMapboxRoutes({ origin, destination, waypoints, avoid, heading }, usableMapboxToken(), { timeoutMs: 8000, diagnosticsKey: "navigation" });
   return closestRoute(routes, picked.polyline, (a, b) => sharedPathFraction(a, b));
 }
 
@@ -47,9 +48,10 @@ export async function mapboxReroute(
   destination: LatLng,
   heading: number | null,
   avoid: RouteAvoidPrefs,
-  signal: AbortSignal
+  signal: AbortSignal,
+  waypoints: readonly LatLng[] = []
 ): Promise<Route> {
-  const routes = await fetchMapboxRoutes({ origin, destination, heading, avoid }, usableMapboxToken(), {
+  const routes = await fetchMapboxRoutes({ origin, destination, waypoints, heading, avoid }, usableMapboxToken(), {
     signal,
     diagnosticsKey: "reroute",
     timeoutMs: REROUTE_TIMEOUT_MS,

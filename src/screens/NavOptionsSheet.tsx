@@ -15,6 +15,12 @@ import { AheadGlyph } from "@/components/art/AheadGlyph";
 import { AHEAD_COLOURS } from "@/theme/colors";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
 
+export interface StopsSection {
+  rows: { id: string; number: number; name: string; aheadM: number; etaSeconds: number | null; first: boolean; last: boolean }[];
+  onMove: (id: string, dir: -1 | 1) => void;
+  onRemove: (id: string) => void;
+}
+
 export type ParkingSection =
   | { state: "loading"; near: string }
   | { state: "error"; near: string; message: string; onRetry: () => void }
@@ -50,6 +56,8 @@ interface Props {
   onAheadPress?: (key: string) => void;
   /** Car parks near the destination, from 1 km out (nav/arrivalFlow.ts); null = not offered. */
   parking?: ParkingSection | null;
+  /** The stops still to come (nav/multiStop.ts): distance, time, reorder and remove. */
+  stops?: StopsSection | null;
   /** Asked once each time the sheet opens: predicted drive times for leaving now and later. */
   loadLeaveTimes: () => Promise<LeavePrediction[]>;
   /** "Show more": the full Plan a drive time list for this destination. */
@@ -99,6 +107,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     ahead,
     onAheadPress,
     parking = null,
+    stops = null,
     loadLeaveTimes,
     onShowMoreTimes,
     onOpenSettings,
@@ -187,6 +196,8 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
           ) : null}
         </View>
 
+        {stops ? <StopsList section={stops} unit={distanceUnit} /> : null}
+
         <Text style={styles.sectionLabel}>On your route</Text>
         {ahead ? <AheadList rows={ahead} unit={distanceUnit} onPress={onAheadPress} /> : <RouteEventsBar events={events} unit={distanceUnit} />}
 
@@ -227,6 +238,28 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
 });
 
 const SNAP_POINTS = ["72%"];
+
+function StopsList({ section, unit }: { section: StopsSection; unit: DistanceUnit }) {
+  return (
+    <View testID="eta-sheet-stops">
+      <Text style={styles.sectionLabel}>Stops</Text>
+      {section.rows.map((r) => {
+        const when = r.etaSeconds != null ? ` · in ${formatDurationText(Math.max(60, r.etaSeconds))}` : "";
+        return (
+          <View key={r.id} style={styles.aheadRow} testID={`eta-sheet-stop-${r.number}`}>
+            <View style={styles.aheadText}>
+              <Text style={styles.eventLabel} numberOfLines={1}>{`Stop ${r.number} · ${r.name}`}</Text>
+              <Text style={styles.quiet} numberOfLines={1}>{`${formatDistance(r.aheadM, unit)}${when}`}</Text>
+            </View>
+            <Button variant="ghost" icon="chevron-up" onPress={() => section.onMove(r.id, -1)} disabled={r.first} accessibilityLabel={`Move ${r.name} earlier`} testID={`eta-sheet-stop-up-${r.number}`} />
+            <Button variant="ghost" icon="chevron-down" onPress={() => section.onMove(r.id, 1)} disabled={r.last} accessibilityLabel={`Move ${r.name} later`} testID={`eta-sheet-stop-down-${r.number}`} />
+            <Button variant="ghost" icon="close" onPress={() => section.onRemove(r.id)} accessibilityLabel={`Remove ${r.name}`} testID={`eta-sheet-stop-remove-${r.number}`} />
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 function ParkingList({ section, unit }: { section: ParkingSection; unit: DistanceUnit }) {
   return (

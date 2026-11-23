@@ -108,6 +108,20 @@ export interface Route {
   source?: "google" | "mapbox";
   /** Mapbox's maxspeed annotation per polyline segment, in km/h (null where unknown). */
   maxSpeedsKmh?: (number | null)[];
+  /** One per leg (a trip with stops has stops + 1): distance and time, for "ETA per stop". */
+  legs?: RouteLeg[];
+}
+
+export interface RouteLeg {
+  distanceMeters: number;
+  durationSeconds: number;
+}
+
+/** One stop, or several in order: the trip goes through each before the destination. */
+export type Waypoints = LatLng | readonly LatLng[];
+export function waypointList(w: Waypoints | null | undefined): LatLng[] {
+  if (!w) return [];
+  return Array.isArray(w) ? [...w] : [w as LatLng];
 }
 
 // Google's overview_polyline (Route.polyline) is a deliberately simplified/lower-point-count
@@ -173,7 +187,7 @@ export interface DirectionsOptions {
   avoidHighways?: boolean;
   avoidTolls?: boolean;
   avoidFerries?: boolean;
-  waypoint?: LatLng;
+  waypoint?: Waypoints;
   // Requests Google's live traffic-adjusted duration. `true` means departure_time=now (the
   // original behavior -- left opt-in rather than always-on because it's the one param that
   // makes the three parallel route-option requests non-cacheable/time-sensitive). A number is a
@@ -293,9 +307,13 @@ export function manoeuvresAtStepEnds(steps: RouteStep[]): RouteStep[] {
 
 /** Google Directions (classic) route -> the app's Route. Exported for tests on recorded responses. */
 export function parseRoute(route: any): Route {
-  const leg = route.legs[0];
+  // A trip with stops has one leg per stop + 1: every leg's steps, and the whole trip's totals
+  // (only the first leg used to be read, so a classic-API route with a stop ended at the stop).
+  const allLegs: any[] = route.legs ?? [];
+  const leg = allLegs[0];
+  const sum = (f: (l: any) => number | undefined) => allLegs.reduce((acc, l) => acc + (f(l) ?? 0), 0);
 
-  const steps: RouteStep[] = crossCheckSteps(manoeuvresAtStepEnds(leg.steps.map((step: any) => ({
+  const steps: RouteStep[] = crossCheckSteps(manoeuvresAtStepEnds(allLegs.flatMap((l: any) => l.steps ?? []).map((step: any) => ({
     instruction: stripHtml(step.html_instructions ?? ""),
     targetStreetName: extractBoldRoadName(step.html_instructions ?? ""),
     maneuver: step.maneuver,
@@ -308,19 +326,22 @@ export function parseRoute(route: any): Route {
     ferry: step.maneuver === "ferry" || step.maneuver === "ferry-train" ? { name: null } : undefined,
   }))), logTurnMismatch);
 
-  const durationSeconds: number = leg.duration?.value ?? 0;
-  const durationInTrafficSeconds: number | undefined = leg.duration_in_traffic?.value;
+  const multi = allLegs.length > 1;
+  const durationSeconds: number = sum((l) => l.duration?.value);
+  const durationInTrafficSeconds: number | undefined = allLegs.every((l) => l.duration_in_traffic?.value != null) ? sum((l) => l.duration_in_traffic?.value) : undefined;
+  const distanceMeters = sum((l) => l.distance?.value);
 
   return {
     polyline: decodePolyline(route.overview_polyline.points),
     steps,
     summary: typeof route.summary === "string" && route.summary.length > 0 ? route.summary : undefined,
-    distanceMeters: leg.distance?.value ?? 0,
+    distanceMeters,
     durationSeconds,
-    etaText: leg.duration?.text ?? "",
-    distanceText: leg.distance?.text ?? "",
+    etaText: multi ? formatSecondsAsEtaText(durationSeconds) : (leg.duration?.text ?? ""),
+    distanceText: multi ? formatMetersAsDistanceText(distanceMeters) : (leg.distance?.text ?? ""),
     durationInTrafficSeconds,
-    etaInTrafficText: leg.duration_in_traffic?.text,
+    etaInTrafficText: multi ? (durationInTrafficSeconds != null ? formatSecondsAsEtaText(durationInTrafficSeconds) : undefined) : leg.duration_in_traffic?.text,
+    ...(multi ? { legs: allLegs.map((l) => ({ distanceMeters: l.distance?.value ?? 0, durationSeconds: l.duration_in_traffic?.value ?? l.duration?.value ?? 0 })) } : {}),
     // 10% + a 60s floor so a couple of red lights don't get flagged as "traffic".
     hasTrafficDelay:
       durationInTrafficSeconds != null &&
@@ -353,7 +374,7 @@ function buildDirectionsUrl(
     `&destination=${destination.latitude},${destination.longitude}` +
     `&mode=${mode}&key=${env.googleDirectionsApiKey}` +
     (avoid ? `&avoid=${avoid}` : "") +
-    (waypoint ? `&waypoints=${waypoint.latitude},${waypoint.longitude}` : "") +
+    (waypointList(waypoint).length ? `&waypoints=${waypointList(waypoint).map((w) => `${w.latitude},${w.longitude}`).join("|")}` : "") +
     (useTraffic ? `&departure_time=${typeof useTraffic === "number" ? useTraffic : "now"}&traffic_model=best_guess` : "") +
     (alternatives ? `&alternatives=true` : "") +
     // English is Google's own default here, so it's only stated for the other languages --
@@ -397,7 +418,7 @@ function fasterOf(a: Route, b: Route): Route {
 async function getFastestRouteCandidates(
   origin: LatLng,
   destination: LatLng,
-  waypoint?: LatLng
+  waypoint?: Waypoints
 ): Promise<Route[]> {
   const url = buildDirectionsUrl(origin, destination, "driving", {
     waypoint,
@@ -471,15 +492,13 @@ function formatTollMoney(money: RoutesApiMoney): string {
  *  enabled, the request fails, or Google genuinely has no price on file for this toll (it still
  *  reports the toll exists in that case -- see hasToll in getRouteOptions, which is determined
  *  separately and doesn't depend on this call succeeding). Never fabricates a number. */
-async function getTollPrice(origin: LatLng, destination: LatLng, waypoint?: LatLng): Promise<string | null> {
+async function getTollPrice(origin: LatLng, destination: LatLng, waypoint?: Waypoints): Promise<string | null> {
   try {
     const body = {
       origin: { location: { latLng: { latitude: origin.latitude, longitude: origin.longitude } } },
       destination: { location: { latLng: { latitude: destination.latitude, longitude: destination.longitude } } },
-      ...(waypoint
-        ? {
-            intermediates: [{ location: { latLng: { latitude: waypoint.latitude, longitude: waypoint.longitude } } }],
-          }
+      ...(waypointList(waypoint).length
+        ? { intermediates: waypointList(waypoint).map((w) => ({ location: { latLng: { latitude: w.latitude, longitude: w.longitude } } })) }
         : {}),
       travelMode: "DRIVE",
       extraComputations: ["TOLLS"],
@@ -598,6 +617,9 @@ export function parseRoutesApiRoute(route: any, withTolls = false): Route {
     // Only filled in when the request asked for them (getRouteChoices does; the reroute doesn't).
     // With TOLLS requested, Google sets tollInfo exactly when the route crosses a toll.
     ...(withTolls ? { tollEstimate: { hasToll: !!tollInfo, priceText: tollPrice ? formatTollMoney(tollPrice) : null } } : {}),
+    ...(Array.isArray(route.legs) && route.legs.length > 1
+      ? { legs: route.legs.map((l: any) => ({ distanceMeters: l.distanceMeters ?? 0, durationSeconds: l.duration ? parseProtoDurationSeconds(l.duration) : l.staticDuration ? parseProtoDurationSeconds(l.staticDuration) : 0 })) }
+      : {}),
     ...(intervals
       ? {
           speedIntervals: intervals.map((iv) => ({
@@ -658,7 +680,7 @@ export async function getHeadingAwareReroute(
   origin: LatLng,
   destination: LatLng,
   headingDeg: number,
-  options: { waypoint?: LatLng; avoidTolls?: boolean; avoidHighways?: boolean; avoidFerries?: boolean; signal?: AbortSignal } = {}
+  options: { waypoint?: Waypoints; avoidTolls?: boolean; avoidHighways?: boolean; avoidFerries?: boolean; signal?: AbortSignal } = {}
 ): Promise<RerouteResult> {
   const { waypoint, avoidTolls, avoidHighways, avoidFerries, signal } = options;
   const body: Record<string, unknown> = {
@@ -669,12 +691,12 @@ export async function getHeadingAwareReroute(
       },
     },
     destination: { location: { latLng: { latitude: destination.latitude, longitude: destination.longitude } } },
-    ...(waypoint
-      ? { intermediates: [{ location: { latLng: { latitude: waypoint.latitude, longitude: waypoint.longitude } } }] }
+    ...(waypointList(waypoint).length
+      ? { intermediates: waypointList(waypoint).map((w) => ({ location: { latLng: { latitude: w.latitude, longitude: w.longitude } } })) }
       : {}),
     travelMode: "DRIVE",
     routingPreference: "TRAFFIC_AWARE",
-    computeAlternativeRoutes: true,
+    computeAlternativeRoutes: !waypointList(waypoint).length,
     ...(directionsLanguage !== "en" ? { languageCode: directionsLanguage } : {}),
     ...(avoidTolls || avoidHighways || avoidFerries
       ? { routeModifiers: { avoidTolls: !!avoidTolls, avoidHighways: !!avoidHighways, avoidFerries: !!avoidFerries } }
@@ -715,14 +737,15 @@ export interface RouteChoiceOptions {
   avoidTolls?: boolean;
   avoidHighways?: boolean;
   avoidFerries?: boolean;
-  waypoint?: LatLng;
+  waypoint?: Waypoints;
 }
 
 const ROUTE_CHOICES_FIELD_MASK =
   "routes.distanceMeters,routes.duration,routes.staticDuration,routes.polyline.encodedPolyline,routes.description," +
   "routes.travelAdvisory.speedReadingIntervals,routes.travelAdvisory.tollInfo," +
   "routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.polyline.encodedPolyline," +
-  "routes.legs.steps.startLocation,routes.legs.steps.endLocation,routes.legs.steps.navigationInstruction";
+  "routes.legs.steps.startLocation,routes.legs.steps.endLocation,routes.legs.steps.navigationInstruction," +
+  "routes.legs.distanceMeters,routes.legs.duration,routes.legs.staticDuration";
 
 /**
  * Every driving route Google offers for the route-selection screen, best first, each with live
@@ -744,10 +767,10 @@ export async function getRouteChoices(
   const body: Record<string, unknown> = {
     origin: toWaypoint(origin),
     destination: toWaypoint(destination),
-    ...(waypoint ? { intermediates: [toWaypoint(waypoint)] } : {}),
+    ...(waypointList(waypoint).length ? { intermediates: waypointList(waypoint).map(toWaypoint) } : {}),
     travelMode: "DRIVE",
     routingPreference: "TRAFFIC_AWARE",
-    computeAlternativeRoutes: !waypoint,
+    computeAlternativeRoutes: !waypointList(waypoint).length,
     polylineQuality: "HIGH_QUALITY",
     extraComputations: ["TRAFFIC_ON_POLYLINE", "TOLLS"],
     routeModifiers: {
@@ -892,7 +915,7 @@ function isSameRoute(a: Route, b: Route): boolean {
 export async function getRouteOptions(
   origin: LatLng,
   destination: LatLng,
-  waypoint?: LatLng
+  waypoint?: Waypoints
 ): Promise<Record<RouteProfileKey, Route>> {
   const [normal, safestRaw, fastestCandidates, noTolls, backStreetsRoute] = await Promise.all([
     getDirections(origin, destination, { waypoint, useTraffic: true }),
@@ -971,7 +994,7 @@ export async function getDirectionsForMode(
   origin: LatLng,
   destination: LatLng,
   mode: Exclude<TravelMode, "driving">,
-  waypoint?: LatLng
+  waypoint?: Waypoints
 ): Promise<Route> {
   const url = buildDirectionsUrl(origin, destination, mode, { waypoint });
   const res = await netFetch("routes", url);
@@ -1002,7 +1025,7 @@ export async function getModeRouteOptions(
   origin: LatLng,
   destination: LatLng,
   mode: Exclude<TravelMode, "driving">,
-  waypoint?: LatLng
+  waypoint?: Waypoints
 ): Promise<Route[]> {
   const url = buildDirectionsUrl(origin, destination, mode, { waypoint, alternatives: true });
   const res = await netFetch("routes", url);

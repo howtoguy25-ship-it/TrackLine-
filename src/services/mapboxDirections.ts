@@ -32,6 +32,8 @@ export interface MapboxRequest {
   profile?: MapboxProfile;
   origin: LatLng;
   destination: LatLng;
+  /** Stops on the way, in order (a multi-stop trip). */
+  waypoints?: readonly LatLng[];
   /** Degrees, so the route starts the way the car is facing (reroutes). */
   heading?: number | null;
   avoid?: Partial<RouteAvoidPrefs>;
@@ -51,7 +53,8 @@ export function excludeParam(avoid: Partial<RouteAvoidPrefs> | undefined): strin
 }
 
 export function directionsUrl(req: MapboxRequest, token: string): string {
-  const coords = `${req.origin.longitude},${req.origin.latitude};${req.destination.longitude},${req.destination.latitude}`;
+  const points = [req.origin, ...(req.waypoints ?? []), req.destination];
+  const coords = points.map((p) => `${p.longitude},${p.latitude}`).join(";");
   const profile = req.profile ?? "driving-traffic";
   const driving = profile === "driving-traffic" || profile === "driving";
   const params: Record<string, string> = {
@@ -62,7 +65,8 @@ export function directionsUrl(req: MapboxRequest, token: string): string {
     geometries: "polyline6",
     // congestion only exists with live traffic; maxspeed only for driving.
     annotations: driving ? (profile === "driving-traffic" ? "congestion,maxspeed" : "maxspeed") : "duration,distance",
-    alternatives: req.alternatives === false ? "false" : "true",
+    // Mapbox only offers alternatives between two points; a trip with stops is one route.
+    alternatives: req.alternatives === false || points.length > 2 ? "false" : "true",
     language: req.language ?? "en",
     access_token: token,
   };
@@ -70,7 +74,8 @@ export function directionsUrl(req: MapboxRequest, token: string): string {
   const exclude = driving ? excludeParam(req.avoid) : null;
   if (exclude) params.exclude = exclude;
   if (req.heading != null && Number.isFinite(req.heading)) {
-    params.bearings = `${Math.round(((req.heading % 360) + 360) % 360)},45;`;
+    // One entry per coordinate: the car's heading at the start, none at the stops or the end.
+    params.bearings = `${Math.round(((req.heading % 360) + 360) % 360)},45` + ";".repeat(points.length - 1);
   }
   const query = Object.entries(params)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
@@ -247,7 +252,17 @@ function formatKm(meters: number): string {
 }
 
 export function parseMapboxRoute(route: any): Route {
-  const leg = route?.legs?.[0] ?? {};
+  // A trip with stops has one leg per stop + 1: every leg's steps and per-segment annotations, in
+  // order (each leg's annotations cover its own part of the geometry, so they join end to end).
+  const legsIn: any[] = Array.isArray(route?.legs) && route.legs.length ? route.legs : [{}];
+  const leg = {
+    ...legsIn[0],
+    steps: legsIn.flatMap((l) => l.steps ?? []),
+    annotation: {
+      congestion: legsIn.every((l) => Array.isArray(l.annotation?.congestion)) ? legsIn.flatMap((l) => l.annotation.congestion) : undefined,
+      maxspeed: legsIn.every((l) => Array.isArray(l.annotation?.maxspeed)) ? legsIn.flatMap((l) => l.annotation.maxspeed) : undefined,
+    },
+  };
   // Most of the world drives on the right; Mapbox says per step, this is only the fallback.
   const firstSide = (leg.steps ?? []).find((s: any) => s?.driving_side === "left" || s?.driving_side === "right")?.driving_side;
   const drivingSide: "left" | "right" = firstSide ?? "right";
@@ -270,6 +285,7 @@ export function parseMapboxRoute(route: any): Route {
     speedIntervals: congestionIntervals(leg.annotation?.congestion),
     maxSpeedsKmh: maxSpeeds(leg.annotation?.maxspeed),
     source: "mapbox",
+    ...(legsIn.length > 1 ? { legs: legsIn.map((l) => ({ distanceMeters: l.distance ?? 0, durationSeconds: l.duration ?? 0 })) } : {}),
   };
 }
 

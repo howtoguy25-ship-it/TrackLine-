@@ -61,7 +61,7 @@ export const NAV_OVERLAY_RESETS = [
   "setArrival(null)",
   "setRoute(null)",
   "setDestinationLatLng(null)",
-  "setStopLocation(null)",
+  "setStops([])",
   "setAcceptedSuggestionOriginalRoute(null)",
   "setPlanDriveFor(null)",
   "stopNavSpeech()",
