@@ -87,6 +87,14 @@ service cloud.firestore {
     match /pendingReports/{id} {
       allow read, write: if false;
     }
+    // Points, levels, badges and the weekly leaderboard (gap item 15): written only by the report
+    // functions (reports/scores.js); readable by signed-in drivers. A name is there only when its
+    // driver chose to show their name on reports.
+    match /scores/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /reporterState/{uid} {
       allow read: if isOwner(uid);
       allow write: if false;

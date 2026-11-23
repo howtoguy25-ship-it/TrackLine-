@@ -5,6 +5,8 @@ const { alertFromPending, applyVote, clampTrust, newReporterState, moderate } = 
 const STATE = "reporterState";
 const PENDING = "pendingReports";
 const ALERTS = "alerts";
+const SCORES_COL = "scores";
+const { applyScore } = require("./scores");
 
 const ms = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : typeof v === "number" ? v : 0);
 
@@ -59,10 +61,15 @@ function firestoreReportStore(db, { FieldValue, Timestamp }) {
       return db.runTransaction(async (tx) => {
         const snap = await tx.get(pendingRef);
         if (!snap.exists) return false;
-        const a = alertFromPending(snap.data());
+        const p = snap.data();
+        // Points for the reporter (reports/scores.js): read before any write, as transactions need.
+        const scoreRef = db.collection(SCORES_COL).doc(p.uid);
+        const scoreSnap = await tx.get(scoreRef);
+        const a = alertFromPending(p);
         const { createdAtMs, expiresAtMs, lastConfirmedAtMs, ...rest } = a;
         tx.set(alertRef, { ...rest, createdAt: ts(createdAtMs), expiresAt: ts(expiresAtMs), lastConfirmedAt: ts(lastConfirmedAtMs) });
         tx.delete(pendingRef);
+        tx.set(scoreRef, applyScore(scoreSnap.exists ? scoreSnap.data() : null, "reportPublished", p.publishAtMs || Date.now(), p.reporterName || null));
         return true;
       });
     },
@@ -76,6 +83,9 @@ function firestoreReportStore(db, { FieldValue, Timestamp }) {
         if (d.createdBy === voterUid) return "own";
         const stateRef = db.collection(STATE).doc(d.createdBy);
         const stateSnap = await tx.get(stateRef);
+        const reporterScoreRef = db.collection(SCORES_COL).doc(d.createdBy);
+        const voterScoreRef = db.collection(SCORES_COL).doc(voterUid);
+        const [reporterScore, voterScore] = await Promise.all([tx.get(reporterScoreRef), tx.get(voterScoreRef)]);
         const alert = { type: d.type, item: d.item, permanent: !!d.permanent, confirmCount: d.confirmCount || 0, createdAtMs: ms(d.createdAt), expiresAtMs: ms(d.expiresAt), notThere: d.notThere || 0 };
         const r = applyVote(alert, vote, nowMs);
         if (r.action === "delete") tx.delete(alertRef);
@@ -89,6 +99,10 @@ function firestoreReportStore(db, { FieldValue, Timestamp }) {
         }
         const state = stateSnap.exists ? stateSnap.data() : newReporterState();
         tx.set(stateRef, { ...state, trust: clampTrust((state.trust ?? 50) + r.trustDelta) });
+        // Points: the voter for helping, the reporter when confirmed (or less when it's removed).
+        tx.set(voterScoreRef, applyScore(voterScore.exists ? voterScore.data() : null, "vote", nowMs));
+        const reporterEvent = vote === "confirm" ? "confirmedByOther" : r.action === "delete" ? "reportRemoved" : null;
+        if (reporterEvent) tx.set(reporterScoreRef, applyScore(reporterScore.exists ? reporterScore.data() : null, reporterEvent, nowMs));
         return r.action;
       });
     },
