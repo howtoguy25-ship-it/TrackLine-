@@ -17,7 +17,7 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 | Admin site (`/admin`) | `tsc` 0 errors · vitest 4/4 · `next build` OK (new `/map-editor` page, 211 kB) |
 | Map styles | open style-spec validator: 0 errors on light / dark / satellite (`__tests__/map/styleValid.test.ts`) |
 | Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
-| TestFlight | build 212 (ce48702) map polish + siren radar · 213 (ace575b) live road view · 214 (4633690) native siren stream — all FINISHED and submitted. BUILD_LATEST |
+| TestFlight | build 212 (ce48702) map polish + siren radar · 213 (ace575b) live road view · 214 (4633690) native siren stream · **215 (a9b1f86) gaps 15-18 + everything above** — all FINISHED and on TestFlight (not submitted for review) |
 
 ## 2026-11-23: banner, map polish, siren radar, live road view, gaps 4-18
 
