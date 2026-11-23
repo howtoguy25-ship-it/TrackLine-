@@ -2,6 +2,42 @@
 const { defineConfig } = require('eslint/config');
 const expoConfig = require("eslint-config-expo/flat");
 
+const BASE_SYNTAX = [
+  {
+    selector: "VariableDeclarator[id.name=/^(MOCK|FAKE|DUMMY)_|^SAMPLE_(REPORT|DATA|RESULT)|^(mock|fake|dummy)[A-Z]/]",
+    message: "No mock, fake or dummy data in production code: use the real source, or an honest 'not available' state.",
+  },
+  // Permanent fix §1: the driver is drawn ONLY by map-v2/layers/UserArrow.tsx. A second
+  // renderer (Mapbox's puck, its UserLocation, the platform blue dot) is what kept bringing
+  // back the blue ball and the lag.
+  {
+    selector: "JSXOpeningElement[name.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
+    message: "Only UserArrow draws the driver (permanent fix §1).",
+  },
+  {
+    selector: "JSXMemberExpression[property.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
+    message: "Only UserArrow draws the driver (permanent fix §1).",
+  },
+  {
+    selector: "MemberExpression[property.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
+    message: "Only UserArrow draws the driver (permanent fix §1).",
+  },
+  {
+    selector: "JSXAttribute[name.name=/^(showsUserLocation|showUserLocation|puckBearing|puckBearingEnabled|followUserLocation|followUserMode)$/]",
+    message: "No native user dot / puck / follow mode: UserArrow draws the driver and CameraController moves the camera (permanent fix).",
+  },
+];
+// Permanent fix §2: ONE camera owner. Every animateCamera / fitToCoordinates / animateToRegion /
+// setCamera / flyTo / fitBounds call goes through map-v2/cameraController.ts, which knows whether
+// the driver has moved the map (FREE) and refuses automatic moves then.
+const CAMERA_SYNTAX = [
+  {
+    selector: "CallExpression > MemberExpression.callee[property.name=/^(animateCamera|fitToCoordinates|animateToRegion|setCamera|flyTo|fitBounds|easeTo|jumpTo)$/]",
+    message: "Move the camera only through CameraController (src/map-v2/cameraController.ts): camera.move / camera.fit / camera.region with a source (permanent fix §2).",
+  },
+];
+const CAMERA_OWNERS = ["src/map-v2/cameraController.ts", "src/map-v2/TrackLineMap.tsx"];
+
 module.exports = defineConfig([
   expoConfig,
   {
@@ -20,6 +56,7 @@ module.exports = defineConfig([
     // fixtures, mocks, stubs or the test support folder, and can't name a value MOCK_/FAKE_/DUMMY_.
     // Dev-only tools live in src/dev and are only reachable behind __DEV__.
     files: ["src/**/*.{ts,tsx}"],
+    ignores: CAMERA_OWNERS,
     rules: {
       "no-restricted-imports": [
         "error",
@@ -30,33 +67,13 @@ module.exports = defineConfig([
           ],
         },
       ],
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector: "VariableDeclarator[id.name=/^(MOCK|FAKE|DUMMY)_|^SAMPLE_(REPORT|DATA|RESULT)|^(mock|fake|dummy)[A-Z]/]",
-          message: "No mock, fake or dummy data in production code: use the real source, or an honest 'not available' state.",
-        },
-        // Permanent fix §1: the driver is drawn ONLY by map-v2/layers/UserArrow.tsx. A second
-        // renderer (Mapbox's puck, its UserLocation, the platform blue dot) is what kept bringing
-        // back the blue ball and the lag.
-        {
-          selector: "JSXOpeningElement[name.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
-          message: "Only UserArrow draws the driver (permanent fix §1).",
-        },
-        {
-          selector: "JSXMemberExpression[property.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
-          message: "Only UserArrow draws the driver (permanent fix §1).",
-        },
-        {
-          selector: "MemberExpression[property.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
-          message: "Only UserArrow draws the driver (permanent fix §1).",
-        },
-        {
-          selector: "JSXAttribute[name.name=/^(showsUserLocation|showUserLocation|puckBearing|puckBearingEnabled|followUserLocation|followUserMode)$/]",
-          message: "No native user dot / puck / follow mode: UserArrow draws the driver and CameraController moves the camera (permanent fix).",
-        },
-      ],
+      "no-restricted-syntax": ["error", ...BASE_SYNTAX, ...CAMERA_SYNTAX],
     },
+  },
+  {
+    // The two files that may move the camera: the controller, and the map component it drives.
+    files: CAMERA_OWNERS,
+    rules: { "no-restricted-syntax": ["error", ...BASE_SYNTAX] },
   },
   {
     // Jest tests: jest.mock() calls must come before the imports they replace, and a mock

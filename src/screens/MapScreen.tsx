@@ -60,6 +60,7 @@ import {
 } from "react-native";
 import { Text, TextInput } from "@/components/AppText";
 import { MapErrorBanner, TrackLineMap, type MapHandle } from "@/map-v2/TrackLineMap";
+import { CameraController, shouldAutoRecentre, type CameraMode } from "@/map-v2/cameraController";
 import { AlertCard } from "@/components/AlertCard";
 import { MapSpotlight } from "@/components/MapSpotlight";
 import { cardForOfficial, cardForReport, distanceLine, roadAndSuburb, spotlightCentre, type AlertCardModel } from "@/map/alertCard";
@@ -239,7 +240,7 @@ import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
-import { NAV_START_MS, navFollowPadding, navFollowPose, showManoeuvreCallout } from "@/nav/navCamera";
+import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, showManoeuvreCallout } from "@/nav/navCamera";
 import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
 import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
@@ -357,6 +358,10 @@ const TRAFFIC_CHECK_INTERVAL_MS = 90_000;
 const AHEAD_TRAFFIC_REFRESH_MS = 30_000;
 /** The camera eases to a tapped pin, and back, over this long. */
 const ALERT_CARD_CAMERA_MS = 600;
+// Permanent fix §6: the map is never tilted past 45° -- the home map, 3D on, and placing a report.
+const DEFAULT_IDLE_PITCH = 45;
+const HOME_3D_PITCH = 45;
+const PLACEMENT_PITCH = 45;
 /** The alert card that's up: a community report or an official Live Traffic NSW incident. */
 type OpenAlertCard = { model: AlertCardModel; alert: AlertDoc | null; incident: NearbyIncident | null };
 const TRAFFIC_SUGGESTION_COOLDOWN_MS = 8 * 60_000;
@@ -435,8 +440,7 @@ export function MapScreen() {
   const [simulatingDrive, setSimulatingDrive] = useState(() => __DEV__ && isGpsReplayActive());
   useEffect(() => (__DEV__ ? subscribeGpsReplayActiveChange(setSimulatingDrive) : undefined), []);
   // The map's own real, currently-rendered center -- ground truth from onRegionChangeComplete's
-  // own `region` (gesture or programmatic alike), not inferred from JS state. See the "SIXTH
-  // cause" drift safety-net effect (near userMovedMapRef) for why this matters.
+  // own `region` (gesture or programmatic alike), not inferred from JS state.
   const lastRegionCenterRef = useRef<LatLng | null>(null);
   // True once the native MapView has actually attached its ref (react-native-maps' own
   // onMapReady) -- see the SF-placeholder correction effect below for why this matters: without
@@ -929,7 +933,13 @@ export function MapScreen() {
   // risk, which matters given the iOS crash history around the custom 3D module. Defaults on
   // whenever navigation starts, and the user can drop back to a flat top-down view without
   // exiting navigation entirely.
-  const [followTilt, setFollowTilt] = useState(true);
+  // Permanent fix §2: the ONE camera owner (map-v2/cameraController.ts). Every camera move below
+  // goes through it with a source; the state decides. followTilt is now just "driving and
+  // following" (NAV_FOLLOW), and the home map's "you moved it" is FREE.
+  const camera = useMemo(() => new CameraController(mapRef), []);
+  const [cameraMode, setCameraMode] = useState<CameraMode>(camera.state);
+  useEffect(() => camera.onChange(setCameraMode), [camera]);
+  const followTilt = cameraMode === "NAV_FOLLOW";
 
   // Whether the tilted chase-cam is currently pulled back to the wider "overview" pose (same
   // pose enterOverviewMode below already uses when tapping the route line) or the tight
@@ -1060,17 +1070,13 @@ export function MapScreen() {
   // behavior Google Maps' own app has, just triggered from a standalone toggle instead of only
   // while navigating. Only runs while NOT actively navigating (`!route`), so it can never
   // fight the chase-cam's own pitch/zoom ownership during a real drive.
+  // Permanent fix §2: this used to run on EVERY GPS fix while 3D was on and snap the camera to
+  // pitch 65 / zoom 18.5 -- the root cause of "I pinch out and it zooms straight back in". Now it
+  // runs only when 3D is switched on, only while following, and only tilts (pitch <= 45, §6).
   useEffect(() => {
-    if (!currentLatLng || route) return;
-    if (show3D) {
-      mapRef.current?.animateCamera(
-        { center: currentLatLng, pitch: 65, zoom: 18.5 },
-        { duration: 700 }
-      );
-    } else {
-      mapRef.current?.animateCamera({ pitch: 0 }, { duration: 500 });
-    }
-  }, [show3D, currentLatLng, route]);
+    if (!show3D || route) return;
+    camera.move("follow", { pitch: HOME_3D_PITCH }, { duration: 600 });
+  }, [show3D, route, camera]);
 
   // `initialRegion` above is a mount-time-only prop, so it never moves the map once the very
   // first real GPS fix actually lands -- this is that correction (skipped while navigating since
@@ -1100,11 +1106,8 @@ export function MapScreen() {
   // session even though currentLatLng eventually DID resolve (the address banner elsewhere on
   // this screen, fed by the exact same location watcher, kept updating fine the whole time --
   // this camera-recenter effect was the only thing that had stopped listening). No time bound at
-  // all now: keeps following the driver's own live position for as long as the map is idle (no
-  // route active) and they haven't manually touched it -- the instant `userMovedMapRef` above
-  // flips true, this stops for good, same "manual gesture wins" guarantee as before, just no
-  // longer racing a clock against real-world GPS variance to earn that guarantee.
-  const userMovedMapRef = useRef(false);
+  // all now: keeps following the driver's own live position for as long as the camera controller
+  // is in FOLLOW -- the instant they touch the map it is FREE and this stops until Recentre.
   // While following on the home map the camera is heading-up at street zoom: the road ahead
   // runs up the screen, the way it will once a trip starts. `headingRef` rather than `heading`
   // itself in the dependency list -- heading is recomputed on every fix anyway, and listing it
@@ -1134,90 +1137,40 @@ export function MapScreen() {
     // Not while a place page is up (the camera is showing the place), and not while choosing a
     // route: every GPS fix used to pull the camera back onto the driver at street zoom, undoing
     // the fit that shows all the routes.
-    if (!currentLatLng || route || !mapReady || userMovedMapRef.current || placePage || pendingDestination) return;
+    // FREE (you moved the map) is refused by the controller: nothing follows until Recentre.
+    if (!currentLatLng || route || !mapReady || placePage || pendingDestination) return;
     const bearing = northUpRef.current ? 0 : followHeadingRef.current;
-    mapRef.current?.animateCamera({ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 });
-    mapBearing.set(bearing);
-  }, [currentLatLng, route, mapReady, mapBearing, placePage, northUpRef, pendingDestination]);
+    if (camera.move("follow", { center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 })) mapBearing.set(bearing);
+  }, [currentLatLng, route, mapReady, mapBearing, placePage, northUpRef, pendingDestination, camera]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
-  // that only appears once the driver has actually panned away, mirroring Waze's own behaviour.
-  // userMovedMapRef above is a ref (doesn't trigger a re-render), so this parallel useState tracks
-  // the same "has the user panned away" condition for the purpose of conditionally rendering this
-  // button -- kept in sync with every place that ref is set/cleared below.
-  const [pannedAwayIdle, setPannedAwayIdle] = useState(false);
+  // that only appears once the driver has actually panned away, mirroring Waze's own behaviour:
+  // the camera controller's FREE state off a drive.
+  const pannedAwayIdle = !route && cameraMode === "FREE";
 
-  // Real, confirmed FIFTH cause of "opens showing San Francisco" (see the four causes already
-  // fixed above): this screen doesn't unmount on a normal backgrounding/foregrounding cycle
-  // (only a genuine force-quit resets userMovedMapRef back to its fresh false default via a real
-  // remount) -- so a manual pan from EARLIER in the same install, at any point, permanently
-  // suppressed the recenter effect above for the rest of the app's install, including "opening
-  // the app" in the everyday sense most drivers mean (bringing it back from the multitasking
-  // switcher, not force-quitting it first). liveAddress/currentLatLng kept resolving correctly
-  // the whole time (a separate, unrelated watcher) -- only the camera-follow lock was stuck,
-  // exactly matching "the address is right but the map shows San Francisco." Real driving nav
-  // apps (Apple/Google Maps) don't stay frozen at a stale pan position across app switches
-  // either -- this restores that same "coming back to the app resumes live tracking" behavior,
-  // skipped while a route is actively running so it can't yank the camera away from an in-
-  // progress turn-by-turn trip's own chase-cam.
   const routeActiveRef = useRef(false);
   useEffect(() => {
     routeActiveRef.current = !!route;
   }, [route]);
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active" && !routeActiveRef.current) {
-        userMovedMapRef.current = false;
-        setPannedAwayIdle(false);
-      }
-    });
-    return () => subscription.remove();
-  }, []);
+  // (Coming back to the app no longer un-does a pan: permanent fix §2 -- only Recentre does. The
+  // "opens on San Francisco" case it guarded is covered by FOLLOW being the starting state: the
+  // follow effect above moves to every fix until the driver touches the map.)
 
-  // Real, confirmed SIXTH cause, still reported after all five fixes above -- a genuine ground-
-  // truth safety net rather than another guess at the exact trigger. Every previous fix (this
-  // one included) has been reactive: it corrects the camera in response to some specific JS-side
-  // EVENT (a fresh GPS fix, mapReady flipping, an AppState transition) -- which means it can only
-  // ever be as reliable as every one of those events firing exactly when expected, on every real
-  // device, every time. This instead directly compares what the map is ACTUALLY, natively
-  // showing right now (lastRegionCenterRef, updated from onRegionChangeComplete's own real
-  // `region` on every single change, gesture or programmatic -- the one source of truth this
-  // screen has for the map's true current center) against the driver's real live GPS position,
-  // and self-corrects the moment those two disagree by an amount no legitimate manual "let me
-  // look at something nearby" pan would ever produce -- regardless of WHICH of the five earlier
-  // causes (or a sixth one nobody's hit yet) is why they drifted apart. A driving-alerts app's
-  // camera showing a real city 100+km from the driver's own live position is never a deliberate
-  // choice worth preserving the same way a genuine nearby pan is -- so this overrides
-  // userMovedMapRef rather than being gated by it, same as the "manual gesture wins" rule being
-  // deliberately overridden already is for the AppState-foreground case right above.
-  const SANITY_RECENTER_DISTANCE_KM = 100;
-  useEffect(() => {
-    if (!currentLatLng || route) return;
-    const lastCenter = lastRegionCenterRef.current;
-    if (!lastCenter) return;
-    const driftKm = distanceKm(currentLatLng.latitude, currentLatLng.longitude, lastCenter.latitude, lastCenter.longitude);
-    if (driftKm < SANITY_RECENTER_DISTANCE_KM) return;
-    userMovedMapRef.current = false;
-    setPannedAwayIdle(false);
-    lastRegionCenterRef.current = currentLatLng;
-    mapRef.current?.animateCamera({ center: currentLatLng }, { duration: 500 });
-  }, [currentLatLng, route]);
+  // Permanent fix §2: the 100 km "sanity recentre" that lived here is gone -- it overrode a pan,
+  // so looking at another city got yanked back. FOLLOW (the starting state) covers the case it
+  // was for: until the driver touches the map, every fix moves the camera to them.
 
   // Real, confirmed request -- the idle (not-navigating) map used to open flat, top-down
   // (pitch 0) until the driver manually two-finger-tilted it or started a route (the chase-cam
   // effects further down apply their own pitch once navigating). Applies a default 3D angle a
-  // single time, right after the map is first ready, matching the always-tilted look Google/
-  // Apple Maps' own default view has. One-shot (idlePitchAppliedRef) and skipped once the
-  // driver's already interacted (userMovedMapRef, set on manual pan) or a route is active, so
-  // this never fights a real gesture or the chase-cam's own pitch ownership -- same "manual
-  // gesture wins, set-once" convention as every other camera effect on this screen.
-  const DEFAULT_IDLE_PITCH = 45;
+  // single time, right after the map is first ready. One-shot (idlePitchAppliedRef); a "follow"
+  // move, so the controller refuses it once the driver has touched the map (FREE).
   const idlePitchAppliedRef = useRef(false);
   useEffect(() => {
-    if (!mapReady || route || userMovedMapRef.current || idlePitchAppliedRef.current) return;
+    if (!mapReady || route || idlePitchAppliedRef.current) return;
     idlePitchAppliedRef.current = true;
-    mapRef.current?.animateCamera({ pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
-  }, [mapReady, route]);
+    camera.move("follow", { pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
+  }, [mapReady, route, camera]);
 
   // ---- Where on the route the car is (nav/routeMatcher.ts) ----
   // Progress along the route, matched by distance-along-route AND direction of travel, so a
@@ -1325,6 +1278,13 @@ export function MapScreen() {
   }
 
   const heading = headingTrack.filter.shown ?? 0;
+  // Permanent fix §4: which way the driving camera faces -- the route segment at the matched
+  // position (before the first match: the segment you're nearest, so it faces the road before you
+  // move); off the route, the filtered heading. North-up only if the driver asked for it.
+  const navRoadBearing =
+    route && navGeo ? (navMatch ? (navMatch.onRoute ? routeBearingAt(navGeo, navMatch.along) : null) : navStartBearing(route.polyline, currentLatLng)) : null;
+  const navBearing = navCameraBearing({ keepNorthUp: settings.keepNorthUp, navNorthUp, roadBearing: navRoadBearing, heading });
+  const navBearingRef = useLatest(navBearing);
   // The phone-direction cone on the arrow only while the compass is allowed to mean something.
   const compassConeAllowed = compassAllowed(headingTrack.filter, {
     speedKmh: location?.coords.speed != null && location.coords.speed >= 0 ? location.coords.speed * 3.6 : null,
@@ -1533,10 +1493,9 @@ export function MapScreen() {
     // During the approach view the camera sits a little ahead, so the split and the lanes show.
     const approaching = approachRef.current.phase === "approach" && approachRef.current.zoomed && approachRef.current.stepIndex !== null;
     const split = approaching ? route.steps[approachRef.current.stepIndex!]?.endLocation : null;
-    const bearing = navNorthUp ? 0 : heading;
-    mapRef.current?.animateCamera({ center: split ? approachCenter(currentLatLng, split) : currentLatLng, heading: bearing }, { duration: 600 });
-    mapBearing.set(bearing);
-  }, [route, followTilt, currentLatLng, heading, detectionOpen, placingAlert, navNorthUp, mapBearing]);
+    const bearing = navBearingRef.current;
+    if (camera.move("navFollow", { center: split ? approachCenter(currentLatLng, split) : currentLatLng, heading: bearing }, { duration: 600 })) mapBearing.set(bearing);
+  }, [route, followTilt, currentLatLng, heading, detectionOpen, placingAlert, navNorthUp, mapBearing, camera, navBearingRef]);
 
   // Actually applies the "tilted, zoomed in" chase cam the comment above promises -- followTilt
   // defaulting to true was previously the *only* thing that happened on nav start; the per-tick
@@ -1591,13 +1550,15 @@ export function MapScreen() {
     // front/overview toggle, confirmRoute's own immediate snap, the alert-placement restore) so
     // the camera never lands on two different zooms depending on which path set it.
     const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
-    mapRef.current?.animateCamera(
+    const bearing = navBearingRef.current;
+    camera.move(
+      "navFollow",
       overviewMode
-        ? { center: currentLatLng, heading, pitch: isFlatViewStyle ? 0 : 45, zoom: isFlatViewStyle ? 17 : 15 }
-        : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current, isFlatViewStyle),
+        ? { center: currentLatLng, heading: bearing, pitch: isFlatViewStyle ? 0 : 45, zoom: isFlatViewStyle ? 17 : 15 }
+        : navFollowPose(currentLatLng, bearing, currentSpeedKmhRef.current, isFlatViewStyle),
       { duration: 700 }
     );
-  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle, currentSpeedKmhRef]);
+  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle, currentSpeedKmhRef, camera, navBearingRef]);
 
   // The approach view around exits, merges, splits, roundabouts, lane changes and complex turns
   // (nav/approach.ts): zoom in 200 m out (400 m above 90 km/h), confirm the manoeuvre with a
@@ -1637,7 +1598,8 @@ export function MapScreen() {
           const routeItem = routeItemFor(approachStepsRef.current?.[effect.stepIndex]?.maneuverKind);
           const zoomAllowed = !routeItem || alertsWhileDriving(routeItemSettingsRef.current, routeItem);
           if (cam.followTilt && zoomAllowed) {
-            mapRef.current?.animateCamera(
+            camera.move(
+              "navFollow",
               { center: effect.center, heading: effect.heading, pitch: APPROACH_CAMERA.pitch, zoom: APPROACH_CAMERA.zoom },
               { duration: APPROACH_CAMERA.durationMs }
             );
@@ -1646,7 +1608,8 @@ export function MapScreen() {
           // Back to the normal follow pose (the same one the chase cam uses), unless the driver
           // is looking around the map themselves.
           if (cam.followTilt && cam.currentLatLng) {
-            mapRef.current?.animateCamera(
+            camera.move(
+              "navFollow",
               cam.flat
                 ? { center: cam.currentLatLng, heading: cam.heading, pitch: 0, zoom: 17 }
                 : cam.overviewMode
@@ -1672,7 +1635,7 @@ export function MapScreen() {
         }
       }
     },
-    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef, currentSpeedKmhRef]
+    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef, currentSpeedKmhRef, camera]
   );
   const dispatchApproachRef = useRef(dispatchApproach);
   useEffect(() => {
@@ -1945,7 +1908,7 @@ export function MapScreen() {
     }
     if (appliedSpeedZoomRef.current === speedZoom) return;
     appliedSpeedZoomRef.current = speedZoom;
-    mapRef.current?.animateCamera({ zoom: speedZoom }, { duration: 700 });
+    camera.move("navFollow", { zoom: speedZoom }, { duration: 700 });
   }, [
     route,
     followTilt,
@@ -1956,23 +1919,8 @@ export function MapScreen() {
     overviewMode,
     settings.defaultMapViewStyle,
     speedZoom,
+    camera,
   ]);
-
-  const toggleFollowTilt = useCallback(() => {
-    setFollowTilt((was) => {
-      const next = !was;
-      if (!next && currentLatLng) {
-        // A bit closer than the old zoom 15 -- "keep it lower, not too high" -- 15 read as too
-        // zoomed-out/distant for a normal driving view once the tilted close-follow (zoom 18)
-        // was the point of comparison.
-        mapRef.current?.animateCamera(
-          { center: currentLatLng, heading: 0, pitch: 0, zoom: 17 },
-          { duration: 500 }
-        );
-      }
-      return next;
-    });
-  }, [currentLatLng]);
 
   // General-purpose "snap back to my location" -- unlike the nav-only Recenter pill above
   // (only ever rendered once route && !followTilt), this is meant to be on screen at all times,
@@ -1981,30 +1929,16 @@ export function MapScreen() {
   // of animating the camera itself, so it doesn't fight/duplicate that effect's own camera work.
   const onRecenter = useCallback(() => {
     if (!currentLatLng) return;
-    if (route) {
-      if (!followTilt) toggleFollowTilt();
-      return;
-    }
-    // Real, confirmed bug (screenshot evidence: a real, correct GPS fix confirmed via the live
-    // address banner, camera still stuck wherever it last was): userMovedMapRef -- set the
-    // instant the driver ever manually pans the map, so the live-recenter effect above stops
-    // fighting that gesture -- was never reset anywhere, including here. That meant a single
-    // pan (even a brief, accidental one) permanently disabled auto-follow for the rest of the
-    // session; this "locate me" button only ever did a one-time camera snap back to the current
-    // position, not a real resume of live tracking, so the very next GPS update after pressing
-    // it left the camera sitting still again instead of continuing to follow. Resetting it here
-    // is the real fix -- matches Apple/Google Maps' own "recenter" button convention, where
-    // tapping it always resumes live tracking, not just a single jump.
-    userMovedMapRef.current = false;
-    setPannedAwayIdle(false);
+    // Recentre: the one way out of FREE (and out of the route overview while driving).
+    camera.recentre();
+    // Driving: NAV_FOLLOW re-applies the chase pose (chaseCamAppliedRef resets on the change).
+    if (route) return;
     // Flies back to follow mode -- position, heading-up, street zoom and the default tilt --
-    // over 600ms; the re-centre button fades out as pannedAwayIdle clears.
-    mapRef.current?.animateCamera(
-      { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH },
-      { duration: 600 }
-    );
-    mapBearing.set(followHeadingRef.current);
-  }, [currentLatLng, route, followTilt, toggleFollowTilt, mapBearing]);
+    // over 600ms; the re-centre button fades out as the state leaves FREE.
+    const bearing = northUpRef.current ? 0 : followHeadingRef.current;
+    camera.move("recentre", { center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
+    mapBearing.set(bearing);
+  }, [currentLatLng, route, mapBearing, camera, northUpRef]);
 
   // Tapping the route line pulls the camera back into a wider, still-tilted "overview" --
   // Apple/Google Maps' own convention when you tap the route during nav: not the tight
@@ -2019,15 +1953,10 @@ export function MapScreen() {
     // chase-cam effect doesn't try to reapply its own pitch/zoom over this pulled-back view on
     // the very next GPS tick -- this call sets the camera explicitly right below.
     chaseCamAppliedRef.current = true;
-    setFollowTilt(true);
+    camera.setMode("NAV_FOLLOW", true);
     setOverviewMode(true);
-    if (currentLatLng) {
-      mapRef.current?.animateCamera(
-        { center: currentLatLng, heading, pitch: 45, zoom: 15 },
-        { duration: 500 }
-      );
-    }
-  }, [currentLatLng, heading]);
+    if (currentLatLng) camera.move("navFollow", { center: currentLatLng, heading: navBearingRef.current, pitch: 45, zoom: 15 }, { duration: 500 });
+  }, [currentLatLng, camera, navBearingRef]);
 
   // The actual camera-height swap between the pulled-back "overview" pose and the tight
   // "front view" pose -- used by the locate button below. Reuses the exact same two poses the
@@ -2038,14 +1967,14 @@ export function MapScreen() {
       if (!currentLatLng) return;
       chaseCamAppliedRef.current = true;
       setOverviewMode(nextOverview);
-      mapRef.current?.animateCamera(
-        nextOverview
-          ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current),
+      const bearing = navBearingRef.current;
+      camera.move(
+        "navFollow",
+        nextOverview ? { center: currentLatLng, heading: bearing, pitch: 45, zoom: 15 } : navFollowPose(currentLatLng, bearing, currentSpeedKmhRef.current),
         { duration: 500 }
       );
     },
-    [currentLatLng, heading, currentSpeedKmhRef]
+    [currentLatLng, currentSpeedKmhRef, camera, navBearingRef]
   );
 
   // The locate/recenter button, per explicit request: while already following (the common
@@ -2068,13 +1997,10 @@ export function MapScreen() {
   // re-animates the camera back to its fixed pitch/zoom on every single GPS update (often under
   // a second apart) -- which stomps a two-finger tilt gesture almost as soon as the user starts
   // it, making manual 3D tilting feel broken even though the gesture itself works fine.
+  // Any gesture -> FREE, immediately (permanent fix §2).
   const onMapPanDrag = useCallback(() => {
-    if (followTilt) setFollowTilt(false);
-    // See the map-recenter effect below (userMovedMapRef) -- a manual drag stops the app from
-    // fighting the driver's own pan, same "manual gesture wins" convention as followTilt above.
-    userMovedMapRef.current = true;
-    if (!route) setPannedAwayIdle(true);
-  }, [followTilt, route]);
+    camera.gesture();
+  }, [camera]);
 
   // Real, explicit request -- Waze's own "resume following automatically after a short while"
   // behaviour: once a manual gesture has dropped the camera out of auto-follow DURING an active
@@ -2084,12 +2010,15 @@ export function MapScreen() {
   // this transitions from following to not-following again (a fresh manual pan after an earlier
   // auto-recentre), and cleared outright the moment following resumes (manual tap or the earlier
   // one firing) or the trip ends.
-  const AUTO_RECENTER_IDLE_MS = 10_000;
+  // Permanent fix §2: 15 s untouched (not 10), only while moving over 10 km/h, only while driving,
+  // only with Settings > Recentre automatically on (default on). Never on the home map.
   useEffect(() => {
-    if (!route || followTilt) return;
-    const timer = setTimeout(() => onRecenter(), AUTO_RECENTER_IDLE_MS);
-    return () => clearTimeout(timer);
-  }, [route, followTilt, onRecenter]);
+    if (!route || cameraMode !== "FREE" || !settings.navAutoRecentre) return;
+    const timer = setInterval(() => {
+      if (shouldAutoRecentre({ mode: camera.state, navigating: camera.isNavigating, settingOn: true, speedKmh: currentSpeedKmhRef.current, idleMs: camera.idleMs() })) onRecenter();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [route, cameraMode, settings.navAutoRecentre, camera, currentSpeedKmhRef, onRecenter]);
 
   // First-launch default: the moment a real GPS fix comes in, if the driver hasn't toggled on
   // any region yet, seed visibleRegions with whichever real Australian state/territory their
@@ -2832,9 +2761,16 @@ export function MapScreen() {
   // start and destination. The fit itself happens in the effect further down, which also runs
   // again whenever the top card or the sheet changes size, so it always uses the real space.
   const [previewFit, setPreviewFit] = useState<{ lines: LatLng[][]; tick: number }>({ lines: [], tick: 0 });
-  const fitRoutesOnScreen = useCallback((lines: LatLng[][]) => {
-    setPreviewFit((f) => ({ lines, tick: f.tick + 1 }));
-  }, []);
+  // An explicit fit (routes arrived, a route picked, mode or Avoid changed) re-enters ROUTE_PREVIEW
+  // even after a pinch: you asked for it. Sheet / top-card size changes only refit while still in
+  // ROUTE_PREVIEW, and location updates never do (permanent fix §3).
+  const fitRoutesOnScreen = useCallback(
+    (lines: LatLng[][]) => {
+      camera.setMode("ROUTE_PREVIEW", false);
+      setPreviewFit((f) => ({ lines, tick: f.tick + 1 }));
+    },
+    [camera]
+  );
 
   const fetchRouteOptions = useCallback(
     // `avoidOverride`: an Avoid switch just flipped, so use the new choices without waiting for
@@ -3172,7 +3108,7 @@ export function MapScreen() {
           .then((places) => {
             placesCategorySetters[category](places);
             if (fitCategories.includes(category) && places.length > 0) {
-              mapRef.current?.fitToCoordinates(places.map((p) => p.location), {
+              camera.fit("autoFocus", places.map((p) => p.location), {
                 edgePadding: { top: 100, right: 60, bottom: 380, left: 60 },
                 animated: true,
               });
@@ -3181,7 +3117,7 @@ export function MapScreen() {
           .catch((err) => console.warn(`[map] ${category} viewport fetch failed`, err));
       }
     },
-    [placesCategorySetters]
+    [placesCategorySetters, camera]
   );
 
   // Same real "initial load, independent of ever panning" fix as osmInitialLoadRef above --
@@ -3226,13 +3162,8 @@ export function MapScreen() {
       // native layer reports isGesture: true for *any* user-touch-driven camera change
       // (pan, pinch, rotate, tilt alike) as opposed to this app's own animateCamera calls, so
       // this catches the rotate-only case onPanDrag misses.
-      if (details?.isGesture && followTilt) setFollowTilt(false);
-      // On the idle home map a pinch-zoom or a twist is "moving away" just as a drag is --
-      // onPanDrag only hears drags -- so it too stops the follow and brings up Re-centre.
-      if (details?.isGesture && !route && !userMovedMapRef.current) {
-        userMovedMapRef.current = true;
-        setPannedAwayIdle(true);
-      }
+      // A pinch, twist or tilt is a gesture just as a drag is (onPanDrag only hears drags): FREE.
+      if (details?.isGesture) camera.gesture();
       // The compass needle follows the map's real bearing, read back from the map itself.
       mapRef.current
         ?.getCamera()
@@ -3258,11 +3189,11 @@ export function MapScreen() {
         if (isZoomedOutPastThreshold && placementFrontView) {
           autoOverheadPlacementRef.current = true;
           setPlacementFrontView(false);
-          mapRef.current?.animateCamera({ pitch: 0, heading: 0 }, { duration: 300 });
+          camera.move("transition", { pitch: 0, heading: 0 }, { duration: 300 });
         } else if (!isZoomedOutPastThreshold && !placementFrontView && autoOverheadPlacementRef.current) {
           autoOverheadPlacementRef.current = false;
           setPlacementFrontView(true);
-          mapRef.current?.animateCamera({ pitch: 60, heading }, { duration: 300 });
+          camera.move("transition", { pitch: PLACEMENT_PITCH, heading }, { duration: 300 });
         }
       }
 
@@ -3334,13 +3265,13 @@ export function MapScreen() {
       destinationPickerView,
       osmWantAny,
       osmFetchOptions,
-      followTilt,
       openPlaceCategories,
       fetchViewportPlaces,
       placementFrontView,
       heading,
       route,
       mapBearing,
+      camera,
     ]
   );
 
@@ -3397,11 +3328,8 @@ export function MapScreen() {
   }, [hotelViewportPlaces, osmZoomDelta]);
 
   const onPlaceClusterPress = useCallback((lat: number, lng: number) => {
-    mapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 },
-      350
-    );
-  }, [osmZoomDelta]);
+    camera.region("focus", { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 }, 350);
+  }, [osmZoomDelta, camera]);
 
   // Traffic-light nodes cluster into a single badge wherever they're too dense to render as
   // individual pins without lagging the map -- a real intersection cluster (several nodes,
@@ -3411,11 +3339,8 @@ export function MapScreen() {
   // real individual pins as the driver zooms in, floored so it never over-clusters at max zoom.
 
   const onTrafficLightClusterPress = useCallback((lat: number, lng: number) => {
-    mapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 },
-      350
-    );
-  }, [osmZoomDelta]);
+    camera.region("focus", { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 }, 350);
+  }, [osmZoomDelta, camera]);
 
   // Speed cameras used to render one native <Marker> per point unconditionally, on the
   // assumption they're "genuinely sparse (a handful per suburb at most)". Real confirmed
@@ -3427,11 +3352,8 @@ export function MapScreen() {
   // it once a wide radius makes them dense too.
 
   const onSpeedCameraClusterPress = useCallback((lat: number, lng: number) => {
-    mapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 },
-      350
-    );
-  }, [osmZoomDelta]);
+    camera.region("focus", { latitude: lat, longitude: lng, latitudeDelta: osmZoomDelta / 4, longitudeDelta: osmZoomDelta / 4 }, 350);
+  }, [osmZoomDelta, camera]);
 
   // Real, confirmed bug this fixes: this used to run a Google Places "Nearby Search, ranked by
   // distance" lookup on EVERY raw map tap -- including a tap on an empty road, since Nearby
@@ -3516,7 +3438,7 @@ export function MapScreen() {
     lastFitKeyRef.current = openListKey;
     const coords = openListPins.map((p) => ({ latitude: p.lat, longitude: p.lng }));
     if (currentLatLng) coords.push(currentLatLng);
-    mapRef.current?.fitToCoordinates(coords, { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true });
+    camera.fit("autoFocus", coords, { edgePadding: { top: 120, right: 60, bottom: 420, left: 60 }, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the result ids only
   }, [openListKey, route]);
 
@@ -3603,22 +3525,19 @@ export function MapScreen() {
       setPlacePage(place);
       // The camera stops following the driver while the place is shown (the follow effect checks
       // placePage), and comes back to them when the page closes.
-      mapRef.current?.animateCamera({ center: place.location, zoom: 16, heading: 0, pitch: 0 }, { duration: 500 });
+      camera.move("focus", { center: place.location, zoom: 16, heading: 0, pitch: 0 }, { duration: 500 });
       mapBearing.set(0);
     },
-    [closeAllPlaceSheets, mapBearing]
+    [closeAllPlaceSheets, mapBearing, camera]
   );
   const closePlacePage = useCallback(() => {
     setPlacePage(null);
-    userMovedMapRef.current = false;
-    setPannedAwayIdle(false);
+    // Closing the place page is Recentre: back to following you.
+    camera.recentre();
     if (currentLatLng) {
-      mapRef.current?.animateCamera(
-        { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH },
-        { duration: 600 }
-      );
+      camera.move("recentre", { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
     }
-  }, [currentLatLng]);
+  }, [currentLatLng, camera]);
 
   const onDestinationSelected = useCallback(
     (place: PlaceDetails) => {
@@ -3795,7 +3714,7 @@ export function MapScreen() {
             : await getDirectionsForMode(currentLatLng, destinationLatLng, travelMode, [...(stopWaypointsLiveRef.current ?? []), place.location]);
         setStopPreviewPlace(place);
         setStopPreviewRoute(preview);
-        mapRef.current?.fitToCoordinates(preview.polyline, {
+        camera.fit("focus", preview.polyline, {
           edgePadding: { top: 120, right: 60, bottom: 220, left: 60 },
           animated: true,
         });
@@ -3808,7 +3727,7 @@ export function MapScreen() {
         setRerouting(false);
       }
     },
-    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip, stopWaypointsLiveRef]
+    [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip, stopWaypointsLiveRef, camera]
   );
 
   const confirmStopPreview = useCallback(() => {
@@ -3820,14 +3739,17 @@ export function MapScreen() {
     setAcceptedSuggestionOriginalRoute(null);
     setStopPreviewRoute(null);
     setStopPreviewPlace(null);
-  }, [stopPreviewRoute, stopPreviewPlace]);
+    // Back to the drive: following again (the preview fit had left the camera FREE).
+    camera.recentre();
+  }, [stopPreviewRoute, stopPreviewPlace, camera]);
 
   // The "back" button, per explicit request -- discards the preview and returns to using
   // navigation exactly as it was, live route/puck/turn card untouched throughout.
   const cancelStopPreview = useCallback(() => {
     setStopPreviewRoute(null);
     setStopPreviewPlace(null);
-  }, []);
+    camera.recentre();
+  }, [camera]);
 
   // Periodic real traffic check while navigating -- every 90s. The actual trigger is scoped
   // tightly to the next NEAR_TERM_TRAFFIC_CHECK_METERS (1km) of the route ahead of the driver's
@@ -4084,7 +4006,7 @@ export function MapScreen() {
       setActiveStepIndex(0);
       setRoute(fresh);
       setAcceptedSuggestionOriginalRoute(null);
-      mapRef.current?.fitToCoordinates(fresh.polyline, {
+      camera.fit("focus", fresh.polyline, {
         edgePadding: { top: 120, right: 60, bottom: 120, left: 60 },
         animated: true,
       });
@@ -4095,7 +4017,7 @@ export function MapScreen() {
     } finally {
       setRerouting(false);
     }
-  }, [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip]);
+  }, [currentLatLng, destinationLatLng, travelMode, settings.routeAvoid, showManoeuvreChip, camera]);
   // The bar's ✕: drops the next stop.
   const removeStopDuringNav = useCallback(() => {
     const next = stops.find((x) => !x.reached);
@@ -4185,7 +4107,9 @@ export function MapScreen() {
         currentSpeedKmh: null,
         speedLimitKmh: null,
       });
-      setFollowTilt(true);
+      // Permanent fix §2/§4: starting navigation is one of the two ways into following -- and it
+      // starts facing the road: the route segment you're on, not the parked GPS course/compass.
+      camera.setMode("NAV_FOLLOW", true);
       // Real, explicit request -- go DIRECTLY into the Waze-style tilted close-follow view the
       // instant Start is tapped, no flat/overhead "see the whole route" flash first. Previously
       // this called fitToCoordinates (an un-tilted whole-route-bounds fit) and the real chase-
@@ -4196,10 +4120,14 @@ export function MapScreen() {
       // immediate) re-application runs.
       if (currentLatLng) {
         const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
-        mapRef.current?.animateCamera(
-          navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current, isFlatViewStyle),
-          { duration: NAV_START_MS }
-        );
+        const startBearing = navCameraBearing({
+          keepNorthUp: settings.keepNorthUp,
+          navNorthUp: false,
+          roadBearing: navStartBearing(chosen.polyline, currentLatLng),
+          heading,
+        });
+        camera.move("transition", navFollowPose(currentLatLng, startBearing, currentSpeedKmhRef.current, isFlatViewStyle), { duration: NAV_START_MS });
+        mapBearing.set(startBearing);
       }
       setRouteChoices(null);
       setAutoGoRunning(false);
@@ -4226,7 +4154,7 @@ export function MapScreen() {
           .catch((err) => console.warn("[nav] Mapbox route unavailable, staying on the picked route", err));
       }
     },
-    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef]
+    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.keepNorthUp, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef, camera, mapBearing]
   );
 
   // Development builds: Settings › Developer › test drives start a recorded motorway drive here
@@ -4467,9 +4395,9 @@ export function MapScreen() {
     setOriginPickerView("pin");
     setPickingOrigin(true);
     if (seed) {
-      mapRef.current?.animateToRegion({ ...seed, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+      camera.region("focus", { ...seed, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
     }
-  }, [originOverride, currentLatLng, liveAddress]);
+  }, [originOverride, currentLatLng, liveAddress, camera]);
 
   // Search icon on the pin picker -- exits pin-dragging in favor of typing an address instead,
   // without closing the whole "choose starting point" flow outright.
@@ -4498,9 +4426,9 @@ export function MapScreen() {
       setOriginPinLatLng(place.location);
       setOriginPinAddress(place.address);
       setOriginPickerView("pin");
-      mapRef.current?.animateToRegion({ ...place.location, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+      camera.region("focus", { ...place.location, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
     },
-    [onOriginSelected]
+    [onOriginSelected, camera]
   );
 
   // A true, full exit of the "choose starting point" flow -- reached from the search view's own
@@ -4543,8 +4471,8 @@ export function MapScreen() {
     setDestinationPinLatLng(place.location);
     setDestinationPinAddress(place.address);
     setDestinationPickerView("pin");
-    mapRef.current?.animateToRegion({ ...place.location, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
-  }, []);
+    camera.region("focus", { ...place.location, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+  }, [camera]);
 
   const cancelDestinationPicker = useCallback(() => {
     setPickingDestinationPoint(false);
@@ -4703,12 +4631,9 @@ export function MapScreen() {
       // overhead no matter what. animateCamera with an explicit pitch/heading/zoom (matching the
       // same tilt togglePlacementFrontView's own "front" pose already uses) opens already in the
       // real driving-style angle this is supposed to default to.
-      mapRef.current?.animateCamera(
-        { center: currentLatLng, heading, pitch: 60, zoom: 17.5 },
-        { duration: 300 }
-      );
+      camera.move("transition", { center: currentLatLng, heading, pitch: PLACEMENT_PITCH, zoom: 17.5 }, { duration: 300 });
     },
-    [currentLatLng, initialAlertPlacement, heading]
+    [currentLatLng, initialAlertPlacement, heading, camera]
   );
 
   // Optional `overrideLocation` -- the "Set at my location" button below passes the driver's
@@ -4885,16 +4810,16 @@ export function MapScreen() {
     onReportItemSelected("emergencyVehicles");
     const at = q.loudest ?? initialAlertPlacement(currentLatLng);
     setAlertPlacementLatLng(at);
-    mapRef.current?.animateCamera({ center: at }, { duration: 300 });
-  }, [sirenQuestion, currentLatLng, onReportItemSelected, initialAlertPlacement]);
+    camera.move("transition", { center: at }, { duration: 300 });
+  }, [sirenQuestion, currentLatLng, onReportItemSelected, initialAlertPlacement, camera]);
   const onSirenQuickPin = useCallback(
     (spot: QuickPinSpot) => {
       if (!currentLatLng) return;
       const at = quickPin(spot, currentLatLng, headingTrack.filter.shown ?? null, sirenLoudest);
       setAlertPlacementLatLng(at);
-      mapRef.current?.animateCamera({ center: at }, { duration: 300 });
+      camera.move("transition", { center: at }, { duration: 300 });
     },
-    [currentLatLng, headingTrack.filter.shown, sirenLoudest]
+    [currentLatLng, headingTrack.filter.shown, sirenLoudest, camera]
   );
   // Voice on ("Hey TrackLine" turned on): a spoken "yes" or "no" answers the question too.
   const sirenVoice = sirenAsking && settings.wakePhrase;
@@ -4932,13 +4857,10 @@ export function MapScreen() {
   const togglePlacementFrontView = useCallback(() => {
     setPlacementFrontView((was) => {
       const next = !was;
-      mapRef.current?.animateCamera(
-        next ? { pitch: 60, heading } : { pitch: 0, heading: 0 },
-        { duration: 400 }
-      );
+      camera.move("transition", next ? { pitch: PLACEMENT_PITCH, heading } : { pitch: 0, heading: 0 }, { duration: 400 });
       return next;
     });
-  }, [heading]);
+  }, [heading, camera]);
 
   // Restores the proper nav camera pose (based on overviewMode) once placement ends -- without
   // this, canceling/confirming an alert reported from the front-view switch would leave the
@@ -4949,7 +4871,8 @@ export function MapScreen() {
   useEffect(() => {
     if (placingAlert) return;
     if (placementFrontView && route && followTilt && currentLatLng) {
-      mapRef.current?.animateCamera(
+      camera.move(
+        "navFollow",
         overviewMode
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
           : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current),
@@ -4973,7 +4896,7 @@ export function MapScreen() {
   const [alertCard, setAlertCard] = useState<OpenAlertCard | null>(null);
   const [alertCardPlaces, setAlertCardPlaces] = useState<Readonly<Record<string, string | null>>>({});
   const [thankedAlertIds, setThankedAlertIds] = useState<ReadonlySet<string>>(() => new Set());
-  const alertCardCameraRef = useRef<{ camera: CameraLike | null; userMoved: boolean } | null>(null);
+  const alertCardCameraRef = useRef<{ camera: CameraLike | null; mode: CameraMode; gestures: number } | null>(null);
   const alertPlaceRequestedRef = useRef(new Set<string>());
   // A pin tap can also reach the map's own onPress on some platforms; that same tap mustn't
   // close the card it just opened.
@@ -4992,18 +4915,13 @@ export function MapScreen() {
       if (routeActiveRef.current) return;
       // Keep the camera from before the FIRST card; tapping another pin just moves on.
       if (!alertCardCameraRef.current) {
-        alertCardCameraRef.current = { camera: null, userMoved: userMovedMapRef.current };
-        // Pause the home follow while the card is up, so it doesn't drag the camera away.
-        userMovedMapRef.current = true;
-        const camera = (await mapRef.current?.getCamera().catch(() => null)) ?? null;
-        if (alertCardCameraRef.current) alertCardCameraRef.current.camera = camera;
+        alertCardCameraRef.current = { camera: null, mode: camera.state, gestures: camera.gestures };
+        const before = (await mapRef.current?.getCamera().catch(() => null)) ?? null;
+        if (alertCardCameraRef.current) alertCardCameraRef.current.camera = before;
       }
-      mapRef.current?.animateCamera(
-        { center: { latitude: next.model.latitude, longitude: next.model.longitude } },
-        { duration: ALERT_CARD_CAMERA_MS }
-      );
+      camera.move("focus", { center: { latitude: next.model.latitude, longitude: next.model.longitude } }, { duration: ALERT_CARD_CAMERA_MS });
     },
-    [user]
+    [user, camera]
   );
 
   const dismissAlertCard = useCallback(
@@ -5013,12 +4931,14 @@ export function MapScreen() {
       const saved = alertCardCameraRef.current;
       alertCardCameraRef.current = null;
       if (!saved) return;
-      userMovedMapRef.current = saved.userMoved;
+      // Moved the map while the card was up: that's yours now (FREE), nothing is put back.
+      if (camera.gestures !== saved.gestures) return;
+      camera.setMode(saved.mode);
       // Navigation started meanwhile: its own follow camera takes over.
       if (routeActiveRef.current || !saved.camera) return;
-      mapRef.current?.animateCamera(saved.camera, { duration: ALERT_CARD_CAMERA_MS });
+      camera.move("transition", saved.camera, { duration: ALERT_CARD_CAMERA_MS });
     },
-    [detailSheetOpenRef]
+    [detailSheetOpenRef, camera]
   );
 
   const onMarkerPress = useCallback(
@@ -5486,8 +5406,8 @@ export function MapScreen() {
   // ten seconds, so a driver is never left looking at the overview by accident.
   const showRouteOverview = useCallback(() => {
     if (remainingPolyline.length < 2) return;
-    setFollowTilt(false);
-    mapRef.current?.fitToCoordinates(remainingPolyline, {
+    camera.setMode("OVERVIEW", true);
+    camera.fit("overview", remainingPolyline, {
       edgePadding: {
         top: instructionCardHeight + insets.top + spacing.xl,
         right: 56,
@@ -5496,7 +5416,7 @@ export function MapScreen() {
       },
       animated: true,
     });
-  }, [remainingPolyline, instructionCardHeight, bottomBarHeight, insets.top, insets.bottom]);
+  }, [remainingPolyline, instructionCardHeight, bottomBarHeight, insets.top, insets.bottom, camera]);
   // The Routes button: the whole route on screen plus the other ways there from here, each
   // labelled with the time difference; tap one to switch to it.
   const showNavRoutes = useCallback(() => {
@@ -5516,8 +5436,8 @@ export function MapScreen() {
     setActiveStepIndex(0);
     setRoute(alt);
     setNavAlternatives(null);
-    setFollowTilt(true);
-  }, []);
+    camera.setMode("NAV_FOLLOW", true);
+  }, [camera]);
 
   const remainingDistanceMeters = useMemo(
     () => (route ? route.steps.slice(activeStepIndex).reduce((sum, s) => sum + s.distanceMeters, 0) : 0),
@@ -5644,12 +5564,13 @@ export function MapScreen() {
       if ((settings.defaultMapViewStyle === "flat") !== flat) updateSettings({ defaultMapViewStyle: flat ? "flat" : "tilted3d" });
       const here = currentLatLngRef.current;
       if (here) {
-        const pose = navFollowPose(here, next === "northUp" ? 0 : heading, currentSpeedKmhRef.current, flat);
-        mapRef.current?.animateCamera(pose, { duration: 500 });
-        mapBearing.set(pose.heading);
+        // Picking a view is asking to see the drive: following again, in that view.
+        camera.recentre();
+        const pose = navFollowPose(here, next === "northUp" || settings.keepNorthUp ? 0 : navBearingRef.current, currentSpeedKmhRef.current, flat);
+        if (camera.move("navFollow", pose, { duration: 500 })) mapBearing.set(pose.heading);
       }
     },
-    [settings.defaultMapViewStyle, updateSettings, currentLatLngRef, heading, currentSpeedKmhRef, mapBearing]
+    [settings.defaultMapViewStyle, settings.keepNorthUp, updateSettings, currentLatLngRef, currentSpeedKmhRef, mapBearing, camera, navBearingRef]
   );
   const nextNavView: Record<NavView, NavView> = { "3d": "2d", "2d": "northUp", northUp: "3d" };
 
@@ -5800,22 +5721,21 @@ export function MapScreen() {
       approachRef.current = INITIAL_APPROACH;
       setApproach(INITIAL_APPROACH);
       guidanceRef.current = createGuidanceState();
-      userMovedMapRef.current = false;
-      setPannedAwayIdle(false);
+      // Ending navigation is the other way back into following (permanent fix §2).
+      camera.setMode("FOLLOW", false);
       // The trip's destination goes into Recents (a dropped pin has no name to list).
       const place = navDestinationPlaceRef.current;
       if (place && place.placeId) addSearchHistoryEntry(place).catch(() => {});
       setPlanDriveFor(null);
       const pose = homeCameraAfterDrive(currentLatLngRef.current, followHeadingRef.current, northUpRef.current);
       if (pose) {
-        mapRef.current?.animateCamera(pose, { duration: HOME_RESET_MS });
+        camera.move("transition", pose, { duration: HOME_RESET_MS });
         mapBearing.set(pose.heading);
       } else {
         homeSnapPendingRef.current = true;
       }
       setRoute(null);
       setActiveStepIndex(0);
-      setFollowTilt(true);
       setStops([]);
       setDestinationLatLng(null);
       setAcceptedSuggestionOriginalRoute(null);
@@ -5839,15 +5759,15 @@ export function MapScreen() {
     // useAutoGhostMode.ts's own comment.
     autoGhostOnArrival(visibilityRef.current, updateSettingsRef.current);
     },
-    [currentLatLngRef, northUpRef, mapBearing, navDestinationPlaceRef, autoParkingOnRef, travelModeRef, navMatchRef, savedPlacesRef, saveAutoParking]
+    [currentLatLngRef, northUpRef, mapBearing, navDestinationPlaceRef, autoParkingOnRef, travelModeRef, navMatchRef, savedPlacesRef, saveAutoParking, camera]
   );
   // No fix when the drive ended: snap home to the first one that arrives.
   useEffect(() => {
     if (!homeSnapPendingRef.current || !currentLatLng || route) return;
     homeSnapPendingRef.current = false;
     const pose = homeCameraAfterDrive(currentLatLng, followHeadingRef.current, northUpRef.current);
-    if (pose) mapRef.current?.animateCamera(pose, { duration: 0 });
-  }, [currentLatLng, route, northUpRef]);
+    if (pose) camera.move("follow", pose, { duration: 0 });
+  }, [currentLatLng, route, northUpRef, camera]);
 
   // "You've arrived": the destination, the time, Rate drive / Park here / Done. Ends the drive
   // after ARRIVAL_CARD_MS or on Done (any button ends it too, after doing its job).
@@ -6020,10 +5940,9 @@ export function MapScreen() {
       if (!a) return;
       navOptionsSheetRef.current?.close();
       // Off the follow camera (Re-centre comes back), and over to the spot.
-      setFollowTilt(false);
-      mapRef.current?.animateCamera({ center: { latitude: a.lat, longitude: a.lng }, zoom: 16, pitch: 0 }, { duration: 600 });
+      camera.move("focus", { center: { latitude: a.lat, longitude: a.lng }, zoom: 16, pitch: 0 }, { duration: 600 });
     },
-    [aheadFeedNow]
+    [aheadFeedNow, camera]
   );
   const etaSheetEvents = useMemo(() => {
     if (!route || remainingPolyline.length < 2) return [];
@@ -6297,7 +6216,7 @@ export function MapScreen() {
     if (!inRouteSelection || !mapReady || previewFit.lines.length === 0) return;
     const t = setTimeout(() => {
       const coords = previewFitCoordinates(previewFit.lines, routeOriginLatLng, pendingDestination?.location ?? null);
-      mapRef.current?.fitToCoordinates(coords, { animated: true });
+      camera.fit("previewFit", coords, { animated: true });
     }, 120);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the fit request and the UI sizes
@@ -7302,7 +7221,7 @@ export function MapScreen() {
             const next = !northUp;
             setNorthUp(next);
             const bearing = next ? 0 : followHeadingRef.current;
-            mapRef.current?.animateCamera({ heading: bearing }, { duration: 400 });
+            camera.move("transition", { heading: bearing }, { duration: 400 });
             mapBearing.set(bearing);
           }}
           showAudioPlayer={settings.showAudioPlayer}
@@ -7785,7 +7704,7 @@ export function MapScreen() {
             onDestinationSelected({ placeId: sp.placeId, name: sp.title, address: sp.address, location: sp.location });
           }}
           onPreview={() => {
-            mapRef.current?.animateCamera({ center: selectedSaved.location, zoom: 17, pitch: 0 }, { duration: 600 });
+            camera.move("focus", { center: selectedSaved.location, zoom: 17, pitch: 0 }, { duration: 600 });
           }}
           onMarkParking={() => {
             setParkingSpot({ latitude: selectedSaved.location.latitude, longitude: selectedSaved.location.longitude, label: selectedSaved.address || selectedSaved.title }).then(() => {

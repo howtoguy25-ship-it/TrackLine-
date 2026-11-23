@@ -5,7 +5,7 @@ import { AUTO_RECENTRE_IDLE_MS, CameraController, allowed, shouldAutoRecentre, t
 
 function setup() {
   const target = { animateCamera: jest.fn(), animateToRegion: jest.fn(), fitToCoordinates: jest.fn() };
-  return { target, cam: new CameraController(() => target) };
+  return { target, cam: new CameraController({ current: target }) };
 }
 const here = { latitude: -33.9, longitude: 151 };
 

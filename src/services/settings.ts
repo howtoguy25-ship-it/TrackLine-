@@ -136,6 +136,13 @@ export interface AppSettings {
   // Settings > Map display > 3D buildings. (Was a row in the old Map tools panel, kept only in
   // memory; it's a setting now, so it's remembered.)
   show3DBuildings: boolean;
+  // Settings > Map view > Keep map north up: while driving the map stays north-up (the arrow
+  // still turns). Off: the map turns with the road ahead (permanent fix §4).
+  keepNorthUp: boolean;
+  // Settings > Map view > Recentre automatically: while driving, after you've moved the map, the
+  // camera goes back to following you after 15 s untouched if you're moving over 10 km/h. Never on
+  // the home map (permanent fix §2).
+  navAutoRecentre: boolean;
   // Route selection > Avoid: what every driving route request steers around (tolls, motorways,
   // ferries, U-turns). Remembered, so it applies to the next trip too.
   routeAvoid: RouteAvoidPrefs;
@@ -235,6 +242,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showAudioPlayer: false,
   settingsVersion: SETTINGS_VERSION,
   show3DBuildings: false,
+  keepNorthUp: false,
+  navAutoRecentre: true,
   routeAvoid: DEFAULT_ROUTE_AVOID,
   spokenDirections: "normal",
   appearance: "auto",
