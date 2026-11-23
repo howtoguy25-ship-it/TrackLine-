@@ -596,6 +596,35 @@ new road's within a few seconds (it used to stick to the first road).
 6. Tap ✕: the view turns off (the setting goes off). Open AI vehicle detection while driving:
    the live view's camera pauses and comes back after.
 
+## 41. Points & badges — NEEDS DEVICE TEST (and the Firebase deploy first)
+
+1. Menu › Points & badges: your level, points, "N points to …", badges with progress.
+2. Report something that goes live; a minute later the points go up (+5). Another account votes
+   Still there on it: +3. The weekly board lists drivers with points this week.
+3. Airplane mode, open it: "Couldn't load in 10 seconds…" with Try again.
+
+## 42. Trip history — NEEDS DEVICE TEST
+
+1. Drive a route (any length over 200 m), arrive. Menu › Trip history: the trip is listed with
+   its distance, time, average and top speed and "Arrived". Stop one early: "Stopped early".
+2. Totals switch between This week / This month / All time. Tap a trip → Delete → it's gone.
+3. Settings › Privacy › Keep trip history off: the next drive isn't saved.
+
+## 43. EV availability and driver fuel prices — NEEDS DEVICE TEST (prices need the Firebase deploy)
+
+1. Petrol list › EV: charging sites show "N of M free · up to X kW" where the network reports it,
+   otherwise "live availability not reported".
+2. At a station (within 500 m), petrol list › your fuel: "Report E10 price at …" → type the sign's
+   price → Send: "it shows once 3 drivers report the same price". From 3 accounts within 2 ¢, the
+   station shows the price with "3 drivers" — only where there's no official price.
+
+## 44. Web map editor — NEEDS THE ADMIN SITE + FIREBASE DEPLOY
+
+1. Admin site › Map editor: pins for reports (red), fixed items (blue), needs approval (amber), map
+   edits (purple) in the area on screen; zooming out too far asks to zoom in.
+2. As a moderator, drag a pin a little: asked for a reason, then it stays there (and on phones).
+   Dragging more than 2 km is refused. Click a pin: Approve / Remove. Audit log shows each change.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the

@@ -15,12 +15,14 @@ All in code, typechecked, tested and merged to `claude/go-session-0d5bup`. NEEDS
 | Ahead banner moved to the top under the turn card, controls shift down, swipe up to dismiss | DONE | `docs/ahead-alerts/*.png`, `__tests__/nav/aheadAlerts.test.ts` |
 | Closures naming one direction: only rerouted when that direction is resolved to yours | DONE | `__tests__/gap/closures.test.tsx` |
 | Map polish §1 style, §2 zoom states / clusters / far dots, §3 road features, §4 thin traffic lines, §5 controls | DONE | `__tests__/map/zoomStates.test.tsx`, `__tests__/map/roadSigns.test.tsx`, `docs/map-polish/README.md` |
-| Map polish §6 screenshots z11-17 | BLOCKED (no Mapbox token in this environment) | `docs/map-polish/README.md` |
-| Siren radar §1 detection (YAMNet, 0.6, 3 of 5, type, closeness, driving-only, opt-in, own voice skipped, audio deleted) | DONE (windows back to back, not 50 % overlapped: BLOCKED #26) | `__tests__/siren/sirenTracker.test.ts`, `__tests__/siren/sirenEngine.test.ts` |
+| Siren radar §1 detection (YAMNet, 0.6, 3 of 5, type, closeness, driving-only, opt-in, own voice skipped, audio deleted) | DONE (50 % overlap added later, see below) | `__tests__/siren/sirenTracker.test.ts`, `__tests__/siren/sirenEngine.test.ts` |
 | Siren radar §2 banner, §3 question + report, §4 privacy policy + permission text + disclaimer | DONE | `__tests__/siren/sirenRadar.test.tsx`, `web/public/privacy.html`, `app.config.js` |
 | Siren radar §5 accuracy on sample clips | DONE: 28/40 siren clips (28/33 with ≥ 3 s of siren), 0/180 false alarms, 0 in 15 min of non-siren audio | `docs/siren-radar/README.md`, `scripts/eval-yamnet-sirens.py` |
 | Siren radar frames light + dark | DONE (drawn from the components, not device screenshots) | `docs/siren-radar/*.png` |
 | Live road view (Tesla-style) toggle: camera vehicles drawn live around your route while navigating | DONE (needs build 213+) | `__tests__/nav/liveScene.test.ts`, `__tests__/nav/liveRoadView.test.tsx`, `docs/live-road-view` |
+| Map polish §6 screenshots (real tiles) + found/fixed a rejected road-shield colour expression | DONE | `docs/map-polish/z*.png`, `__tests__/map/styleValid.test.ts` |
+| Siren radar 50 % overlapping windows (native in-memory stream) | DONE (build 214 compiled it) | `__tests__/siren/sirenStream.test.ts`, `docs/siren-radar/README.md` |
+| Gap 15 Points & badges screen · 16 Web map editor · 17 Trip history · 18 Driver fuel prices + EV availability | DONE (15/16/18 need the Firebase deploy, BLOCKED #27) | `docs/WAZE_GAP_CHECK.md` rows 15-18 | `__tests__/nav/liveScene.test.ts`, `__tests__/nav/liveRoadView.test.tsx`, `docs/live-road-view` |
 
 ## Nav options, fix pass 4, road signs, nothing-fake audit — 2026-11-22
 

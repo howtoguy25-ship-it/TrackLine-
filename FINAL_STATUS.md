@@ -4,6 +4,41 @@ One row per requirement. DONE = in code with a passing test. Nothing has been ru
 me; "needs deploy" means the Cloud Functions / rules have never been deployed (BLOCKED.md #1).
 Everything that needs a key, a console setting or a decision from you is in BLOCKED.md.
 
+## Final checks (2026-11-23, branch claude/go-session-0d5bup, real output)
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit -p .` | exit 0, no errors |
+| `npx eslint src __tests__ jest.setup.js --max-warnings 0` | exit 0, 0 problems |
+| `npx jest` | Test Suites: 104 passed, 104 total · Tests: 1344 passed, 1344 total |
+| Server pure tests (`firebase/tests`, no emulator) | all non-emulator suites pass (fuelUserPrices 5, mapEditor 3, scores, reports, admin…) |
+| Emulator suite (`firebase emulators:exec … npm --prefix firebase/tests test`, isolated copy without local secrets) | EMULATOR_RESULT |
+| `npx expo export --platform ios` | exit 0 · iOS bundle 3136 modules |
+| Admin site (`/admin`) | `tsc` 0 errors · vitest 4/4 · `next build` OK (new `/map-editor` page, 211 kB) |
+| Map styles | open style-spec validator: 0 errors on light / dark / satellite (`__tests__/map/styleValid.test.ts`) |
+| Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
+| TestFlight | build 212 (ce48702) map polish + siren radar · 213 (ace575b) live road view · 214 (4633690) native siren stream — all FINISHED and submitted. BUILD_LATEST |
+
+## 2026-11-23: banner, map polish, siren radar, live road view, gaps 4-18
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| Ahead banner at the top, neatly spaced, controls move down | DONE | `__tests__/nav/aheadAlerts.test.ts`, `docs/ahead-alerts` | Phone test |
+| One-direction closures reroute only when that direction is yours | DONE | `__tests__/gap/closures.test.tsx` | — |
+| Map polish §1-§5 | DONE | `__tests__/map/*`, `docs/map-polish/README.md` | Phone test |
+| Map polish §6 screenshots z11/13/15/17 light + dark (real tiles) | DONE — and found + fixed a road-shield colour expression Mapbox rejects | `docs/map-polish/*.png`, `__tests__/map/styleValid.test.ts` | — |
+| Siren radar §1-§5 (opt-in, driving only, 0.6 / 3 of 5, type, closeness, banner, voice, question, report, privacy, accuracy, frames) | DONE | `__tests__/siren/*`, `docs/siren-radar` | TEST_ON_PHONE §39 |
+| Siren radar 0.96 s windows with 50 % overlap | DONE (native in-memory stream; compiled in build 214) | `__tests__/siren/sirenStream.test.ts` | Phone test |
+| Live road view (Tesla-style) toggle | DONE | `__tests__/nav/liveScene.test.ts`, `liveRoadView.test.tsx`, `docs/live-road-view` | TEST_ON_PHONE §40 |
+| Gaps 4-14 | DONE (see `docs/WAZE_GAP_CHECK.md`; 8, 9 blocked on Spotify/MusicKit and Apple's CarPlay entitlement) | `__tests__/gap/*` | BLOCKED #17, #25 |
+| Gap 15 Points, levels, badges, leaderboard | DONE | `__tests__/gap/points.test.tsx`, `firebase/tests/scores.test.js` | Firebase deploy (BLOCKED #27) |
+| Gap 16 Web map editor | DONE | `firebase/tests/mapEditor.test.js`, `admin/tests/mapEditor.test.ts` | Firebase + admin site deploy (BLOCKED #27) |
+| Gap 17 Trip history + stats | DONE | `__tests__/gap/tripHistory.test.tsx` | TEST_ON_PHONE §42 |
+| Gap 18 Driver fuel prices (3 to confirm) + EV availability | DONE | `__tests__/gap/fuelEv.test.tsx`, `firebase/tests/fuelUserPrices.test.js` | Firebase deploy for prices (BLOCKED #27) |
+| Mapbox token (was BLOCKED #23) | RESOLVED — a real `pk.` token is in EAS production | real-tile screenshots | — |
+
+Not submitted for App Store review (your rule: only after your phone tests pass).
+
 ## Final checks (2026-11-17, branch claude/go-session-0d5bup, real output)
 
 | Check | Result |

@@ -100,6 +100,16 @@ user's own data; S = static app content (settings, help, licences).
 | SirenReportPicker / placement bar | report | the normal report pipeline (server rules, undo, anti-spam) | R |
 | Settings › Siren radar | on / off | local setting; off = the microphone loop is stopped | S |
 
+### Added 2026-11-23 (later): gaps 15-18
+
+| Where | Shows | Source | Status |
+|---|---|---|---|
+| PointsScreen | level, badges, weekly board | `scores/{uid}` written only by the report functions | R (needs deploy) |
+| TripHistoryScreen | trips, totals | the phone's own GPS fixes during navigation, stored on the phone | R |
+| Petrol list EV rows | free / total connectors, kW | Google Places (New) evChargeOptions; "not reported" when absent | R |
+| Petrol list driver prices | price + "3 drivers" | `fuelUserPrices` confirmed by the server only after 3 agreeing drivers | R (needs deploy) |
+| Admin Map editor | pins in view | `alerts`, `roadFeatureReports` via staff-only callables | R (needs deploy) |
+
 ## 5. The guard (so it stays this way)
 
 - `eslint.config.js`, files `src/**`: `no-restricted-imports` blocks `__tests__`, `__mocks__`,
