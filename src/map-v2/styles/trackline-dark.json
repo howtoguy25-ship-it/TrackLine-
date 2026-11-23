@@ -1551,47 +1551,21 @@
           ],
           "#FFD400",
           [
-            "case",
+            "match",
             [
-              "!=",
-              [
-                "match",
-                [
-                  "get",
-                  "shield_text_color"
-                ],
-                "black",
-                "#1A1A1A",
-                "white",
-                "#FFFFFF",
-                "yellow",
-                "#FFD400",
-                "orange",
-                "#E87722",
-                "blue",
-                "#1E4FA3",
-                "none"
-              ],
-              "none"
+              "get",
+              "shield_text_color"
             ],
-            [
-              "match",
-              [
-                "get",
-                "shield_text_color"
-              ],
-              "black",
-              "#1A1A1A",
-              "white",
-              "#FFFFFF",
-              "yellow",
-              "#FFD400",
-              "orange",
-              "#E87722",
-              "blue",
-              "#1E4FA3",
-              "none"
-            ],
+            "black",
+            "#1A1A1A",
+            "white",
+            "#FFFFFF",
+            "yellow",
+            "#FFD400",
+            "orange",
+            "#E87722",
+            "blue",
+            "#1E4FA3",
             [
               "match",
               [

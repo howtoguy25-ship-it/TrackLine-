@@ -1,0 +1,98 @@
+[
+  {
+    "name": "z11-light.png",
+    "where": "Sydney west (M4, M5, suburbs)",
+    "center": [
+      151.06,
+      -33.88
+    ],
+    "zoom": 11,
+    "renderedFeatures": 1852,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:09.891Z"
+  },
+  {
+    "name": "z13-light.png",
+    "where": "Bankstown",
+    "center": [
+      151.035,
+      -33.915
+    ],
+    "zoom": 13,
+    "renderedFeatures": 1140,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:12.492Z"
+  },
+  {
+    "name": "z15-light.png",
+    "where": "Sydney CBD, Town Hall",
+    "center": [
+      151.2065,
+      -33.8735
+    ],
+    "zoom": 15,
+    "renderedFeatures": 1909,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:15.111Z"
+  },
+  {
+    "name": "z17-light.png",
+    "where": "Stacey St, Bankstown",
+    "center": [
+      151.0345,
+      -33.9175
+    ],
+    "zoom": 17,
+    "renderedFeatures": 202,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:16.580Z"
+  },
+  {
+    "name": "z11-dark.png",
+    "where": "Sydney west (M4, M5, suburbs)",
+    "center": [
+      151.06,
+      -33.88
+    ],
+    "zoom": 11,
+    "renderedFeatures": 1852,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:21.136Z"
+  },
+  {
+    "name": "z13-dark.png",
+    "where": "Bankstown",
+    "center": [
+      151.035,
+      -33.915
+    ],
+    "zoom": 13,
+    "renderedFeatures": 1140,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:23.769Z"
+  },
+  {
+    "name": "z15-dark.png",
+    "where": "Sydney CBD, Town Hall",
+    "center": [
+      151.2065,
+      -33.8735
+    ],
+    "zoom": 15,
+    "renderedFeatures": 1909,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:26.196Z"
+  },
+  {
+    "name": "z17-dark.png",
+    "where": "Stacey St, Bankstown",
+    "center": [
+      151.0345,
+      -33.9175
+    ],
+    "zoom": 17,
+    "renderedFeatures": 202,
+    "trafficSegments": 0,
+    "takenAt": "2026-11-23T13:51:27.486Z"
+  }
+]

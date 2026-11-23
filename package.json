@@ -98,6 +98,7 @@
     "@babel/core": "^7.24.0",
     "@bacons/apple-targets": "^5.0.0",
     "@jest/globals": "^29.7.0",
+    "@maplibre/maplibre-gl-style-spec": "^20.3.1",
     "@react-native/jest-preset": "^0.86.3",
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "29.5.14",
