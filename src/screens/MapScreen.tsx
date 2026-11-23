@@ -196,7 +196,7 @@ import {
   type PlaceInfo,
   type NearbyPlace,
 } from "@/services/places";
-import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds } from "@/services/osmPlaces";
+import { isOsmPlaceId, getOsmPlaceInfo, fetchOsmPlacesInBounds, searchNearbyOsmPlaces } from "@/services/osmPlaces";
 import {
   distanceKm,
   encodeGeohash,
@@ -213,7 +213,7 @@ import { AheadBannerController } from "@/nav/ahead/bannerController";
 import { aheadOf, projectFeed, trafficSources, type AheadAlert } from "@/nav/ahead/aheadFeed";
 import { aheadSourcesFrom } from "@/nav/ahead/aheadSources";
 import { aheadClipKey, roadAtAlong } from "@/nav/ahead/aheadText";
-import type { AheadRow } from "@/screens/NavOptionsSheet";
+import type { AheadRow, ParkingSection } from "@/screens/NavOptionsSheet";
 import { spokenLine } from "@/nav/ahead/aheadKinds";
 import { MAP_ICONS_AHEAD_M, MAX_MAP_ICONS, warnDistanceM } from "@/nav/ahead/aheadTiming";
 import { useMapScheme } from "@/components/ui/uiScheme";
@@ -302,6 +302,8 @@ import { savedPinIcon, savedPinPlaces } from "@/map/savedPins";
 import { getSavedPlaces, pushSavedPlacesToProfile, removeCustomPlace, removeHomeOrWork, addCustomPlace, subscribeSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { clearParkingSpot, getParkingSpot, setParkingSpot, subscribeParkingSpot, type ParkingSpot } from "@/services/parkingSpot";
 import { onDriveEnd, onFixAfterDrive, type ParkingWatch } from "@/nav/autoParking";
+import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type ParkingOffer } from "@/nav/arrivalFlow";
+import { withTimeout } from "@/utils/withTimeout";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -1076,6 +1078,12 @@ export function MapScreen() {
   const [navNorthUp, setNavNorthUp] = useState(false);
   // The "You've arrived" card (nav/endDrive.ts); the drive ends when it goes.
   const [arrival, setArrival] = useState<ArrivalInfo | null>(null);
+  // Arrival flow (nav/arrivalFlow.ts): car parks near the destination from 1 km out, and the
+  // place you were going to after you chose to park at one (for "Walk 180 m" on arrival).
+  const [arrivalParking, setArrivalParking] = useState<
+    { key: string; near: string; nearLocation: LatLng; state: "loading" } | { key: string; near: string; nearLocation: LatLng; state: "error"; message: string } | { key: string; near: string; nearLocation: LatLng; state: "ready"; offers: ParkingOffer[] } | null
+  >(null);
+  const [walkAfterParking, setWalkAfterParking] = useState<{ name: string; address: string | null; location: LatLng } | null>(null);
   // Avoid switches while driving (the ETA sheet's Avoid row).
   const [navAvoidOpen, setNavAvoidOpen] = useState(false);
   useEffect(() => {
@@ -3483,11 +3491,10 @@ export function MapScreen() {
 
   // "Find my car": a walking route back to the parking spot (Walk mode, not remembered as the
   // mode for the next drive).
-  const findMyCar = useCallback(
-    (spot: ParkingSpot) => {
+  const walkTo = useCallback(
+    (place: PlaceDetails) => {
       if (!routeOriginLatLng) return;
       closeAllPlaceSheets();
-      const place = { placeId: "parking", name: "Your car", address: spot.label, location: { latitude: spot.latitude, longitude: spot.longitude } };
       setPendingDestination(place);
       setStopLocation(null);
       setModeSummaries({});
@@ -3495,6 +3502,10 @@ export function MapScreen() {
       requestRoutes(routeOriginLatLng, place.location, undefined, travelModesOn ? "walk" : "drive", undefined, false);
     },
     [routeOriginLatLng, requestRoutes, closeAllPlaceSheets, travelModesOn]
+  );
+  const findMyCar = useCallback(
+    (spot: ParkingSpot) => walkTo({ placeId: "parking", name: "Your car", address: spot.label, location: { latitude: spot.latitude, longitude: spot.longitude } }),
+    [walkTo]
   );
 
   // Real, explicit request -- the Plan a Drive screen's own "Start" hand-off (see
@@ -5523,6 +5534,8 @@ export function MapScreen() {
       toolsSheetRef.current?.close();
       setSearchAlongOpen(false);
       setNavAlternatives(null);
+      setArrivalParking(null);
+      setWalkAfterParking(null);
       setNavAvoidOpen(false);
       setAddingStopDuringNav(false);
       setStopPreviewRoute(null);
@@ -5680,6 +5693,51 @@ export function MapScreen() {
       etaSeconds: pace != null ? Math.round(a.aheadM * pace) : null,
     }));
   }, [route, aheadFeedNow, remainingDistanceMeters, remainingDurationSeconds]);
+  // ---- Arrival flow: car parks near the destination from 1 km out (nav/arrivalFlow.ts) ----
+  const fetchArrivalParking = useCallback((key: string, near: string, nearLocation: LatLng) => {
+    setArrivalParking({ key, near, nearLocation, state: "loading" });
+    withTimeout(searchNearbyOsmPlaces(nearLocation, "parking", undefined, PARKING_NEAR_M), 10_000, "Car parks")
+      .then((places) => {
+        const offers = rankParking(nearLocation, places);
+        setArrivalParking((cur) => (cur?.key === key ? { key, near, nearLocation, state: "ready", offers } : cur));
+        if (offers.length) announcePhrase({ kind: "said", text: `There's parking near ${near}. It's in the trip sheet.` });
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error && /timed out/.test(err.message) ? "no answer in 10 s" : "the map data service didn't answer";
+        setArrivalParking((cur) => (cur?.key === key ? { key, near, nearLocation, state: "error", message } : cur));
+      });
+    // announcePhrase is stable for the screen's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const arrivalParkingKey = navDestinationPlace ? `${navDestinationPlace.placeId}:${navDestinationPlace.location.latitude.toFixed(5)},${navDestinationPlace.location.longitude.toFixed(5)}` : null;
+  useEffect(() => {
+    if (!route || travelMode !== "driving" || !navDestinationPlace || !arrivalParkingKey) return;
+    if (!shouldOfferParking(remainingDistanceMeters, navDestinationPlace, arrivalParking?.key === arrivalParkingKey)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- crossing 1 km from the destination starts an external lookup (OpenStreetMap car parks); "loading" is its state
+    fetchArrivalParking(arrivalParkingKey, navDestinationPlace.name, navDestinationPlace.location);
+  }, [route, travelMode, navDestinationPlace, arrivalParkingKey, remainingDistanceMeters, arrivalParking?.key, fetchArrivalParking]);
+  const parkingSection = useMemo<ParkingSection | null>(() => {
+    const p = arrivalParking;
+    if (!p || p.key !== arrivalParkingKey) return null;
+    if (p.state === "loading") return { state: "loading", near: p.near };
+    if (p.state === "error") return { state: "error", near: p.near, message: p.message, onRetry: () => fetchArrivalParking(p.key, p.near, p.nearLocation) };
+    return {
+      state: "ready",
+      near: p.near,
+      offers: p.offers,
+      onGo: (placeId: string) => {
+        const o = p.offers.find((x) => x.placeId === placeId);
+        const going = navDestinationPlaceRef.current;
+        if (!o || !going) return;
+        navOptionsSheetRef.current?.close();
+        // Remember where you were really going, for the walk on arrival.
+        setWalkAfterParking({ name: going.name, address: going.address ?? null, location: going.location });
+        goInsteadDuringNav({ placeId: o.placeId, name: o.name, address: o.address, location: o.location });
+      },
+    };
+  }, [arrivalParking, arrivalParkingKey, fetchArrivalParking, goInsteadDuringNav, navDestinationPlaceRef]);
+  const arrivalWalk = arrival ? walkLeft(arrival.location ?? currentLatLng, walkAfterParking) : null;
+
   const onAheadRowPress = useCallback(
     (key: string) => {
       const a = aheadFeedNow.find((x) => x.key === key);
@@ -6605,6 +6663,18 @@ export function MapScreen() {
               : null
           }
           onDone={() => exitNavigation("arrived")}
+          walk={
+            arrivalWalk && walkAfterParking
+              ? {
+                  label: `Walk ${formatDistance(arrivalWalk.metres, settings.distanceUnit)} to ${arrivalWalk.name}`,
+                  onPress: () => {
+                    const to = walkAfterParking;
+                    exitNavigation("arrived");
+                    walkTo({ placeId: `walk-${to.location.latitude},${to.location.longitude}`, name: to.name, address: to.address ?? "", location: to.location });
+                  },
+                }
+              : null
+          }
         />
       )}
 
@@ -7225,6 +7295,7 @@ export function MapScreen() {
         viaText={route?.summary}
         events={etaSheetEvents}
         ahead={aheadRows}
+        parking={parkingSection}
         onAheadPress={onAheadRowPress}
         loadLeaveTimes={loadLeaveTimes}
         onShowMoreTimes={() => {

@@ -9,8 +9,9 @@ import { ChequeredFlag } from "@/components/art/ChequeredFlag";
 import type { ArrivalInfo } from "@/nav/endDrive";
 
 // "You've arrived": where, and when, with Rate drive (opens Help to send feedback), Park here
-// (saves this spot as "Parked car" in your places) and Done. Up for 5 s or until tapped, then the
-// drive ends (MapScreen's exitNavigation("arrived")). Our own flag art.
+// (saves this spot as your parking spot, the P pin) and Done. After parking at a car park picked
+// on the way (nav/arrivalFlow.ts), "Walk 180 m" walks you the rest of the way. Up for 5 s or until
+// tapped, then the drive ends (MapScreen's exitNavigation("arrived")). Our own flag art.
 
 export function ArrivedCard({
   arrival,
@@ -18,12 +19,15 @@ export function ArrivedCard({
   onRate,
   onPark,
   onDone,
+  walk = null,
 }: {
   arrival: ArrivalInfo;
   bottom: number;
   onRate: () => void;
   onPark: (() => void) | null;
   onDone: () => void;
+  /** The walk left to where you were going, after parking at a car park on the way. */
+  walk?: { label: string; onPress: () => void } | null;
 }) {
   return (
     <SurfaceScheme value="dark">
@@ -40,6 +44,7 @@ export function ArrivedCard({
             <Text style={styles.time}>Arrived {formatArrivalClock(arrival.arrivedAtMs)}</Text>
           </View>
         </View>
+        {walk ? <Button variant="primary" label={walk.label} icon="walk" onPress={walk.onPress} testID="arrived-walk" /> : null}
         <View style={styles.actions}>
           <Button variant="secondary" label="Rate drive" onPress={onRate} style={styles.flex} testID="arrived-rate" />
           {onPark ? <Button variant="secondary" label="Park here" onPress={onPark} style={styles.flex} testID="arrived-park" /> : null}

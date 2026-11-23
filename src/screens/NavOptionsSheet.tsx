@@ -15,6 +15,11 @@ import { AheadGlyph } from "@/components/art/AheadGlyph";
 import { AHEAD_COLOURS } from "@/theme/colors";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
 
+export type ParkingSection =
+  | { state: "loading"; near: string }
+  | { state: "error"; near: string; message: string; onRetry: () => void }
+  | { state: "ready"; near: string; offers: { placeId: string; name: string; toDestinationM: number }[]; onGo: (placeId: string) => void };
+
 export interface AheadRow {
   key: string;
   kind: AheadKind;
@@ -43,6 +48,8 @@ interface Props {
    */
   ahead?: AheadRow[];
   onAheadPress?: (key: string) => void;
+  /** Car parks near the destination, from 1 km out (nav/arrivalFlow.ts); null = not offered. */
+  parking?: ParkingSection | null;
   /** Asked once each time the sheet opens: predicted drive times for leaving now and later. */
   loadLeaveTimes: () => Promise<LeavePrediction[]>;
   /** "Show more": the full Plan a drive time list for this destination. */
@@ -91,6 +98,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     events,
     ahead,
     onAheadPress,
+    parking = null,
     loadLeaveTimes,
     onShowMoreTimes,
     onOpenSettings,
@@ -182,6 +190,8 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         <Text style={styles.sectionLabel}>On your route</Text>
         {ahead ? <AheadList rows={ahead} unit={distanceUnit} onPress={onAheadPress} /> : <RouteEventsBar events={events} unit={distanceUnit} />}
 
+        {parking ? <ParkingList section={parking} unit={distanceUnit} /> : null}
+
         <Text style={styles.sectionLabel}>Find the best time to leave</Text>
         <LeaveTimesChart state={leave} onRetry={fetchLeaveTimes} />
         <Button variant="ghost" label="Show more" inline onPress={onShowMoreTimes} accessibilityLabel="Show more leave times in Plan a drive" testID="eta-sheet-more" />
@@ -217,6 +227,40 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
 });
 
 const SNAP_POINTS = ["72%"];
+
+function ParkingList({ section, unit }: { section: ParkingSection; unit: DistanceUnit }) {
+  return (
+    <View testID="eta-sheet-parking">
+      <Text style={styles.sectionLabel}>{`Parking near ${section.near}`}</Text>
+      {section.state === "loading" ? (
+        <Text style={styles.quiet} testID="eta-sheet-parking-loading">
+          Looking for car parks…
+        </Text>
+      ) : section.state === "error" ? (
+        <View>
+          <Text style={styles.quiet} testID="eta-sheet-parking-error">{`Couldn't find car parks: ${section.message}`}</Text>
+          <Button variant="ghost" label="Try again" inline onPress={section.onRetry} testID="eta-sheet-parking-retry" />
+        </View>
+      ) : section.offers.length === 0 ? (
+        <Text style={styles.quiet} testID="eta-sheet-parking-none">
+          No car parks mapped near there
+        </Text>
+      ) : (
+        section.offers.map((o) => (
+          <View key={o.placeId} style={styles.aheadRow}>
+            <View style={styles.aheadText}>
+              <Text style={styles.eventLabel} numberOfLines={1}>
+                {o.name}
+              </Text>
+              <Text style={styles.quiet} numberOfLines={1}>{`${formatDistance(o.toDestinationM, unit)} from ${section.near}`}</Text>
+            </View>
+            <Button variant="secondary" label="Go" inline onPress={() => section.onGo(o.placeId)} accessibilityLabel={`Drive to ${o.name}, then walk`} testID={`eta-sheet-parking-go-${o.placeId}`} />
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
 
 function AheadList({ rows, unit, onPress }: { rows: AheadRow[]; unit: DistanceUnit; onPress?: (key: string) => void }) {
   if (rows.length === 0) {
