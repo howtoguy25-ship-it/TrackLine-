@@ -582,6 +582,13 @@ export function SettingsScreen() {
           subtitle="Adds an anonymous +1 to places you arrive at, so popular places get a badge. Only a count is kept, never who or when."
           toggle={{ value: settings.shareArrivals, onValueChange: (v) => updateSettings({ shareArrivals: v }), testID: "share-arrivals-switch" }}
         />
+        <SettingsRow
+          icon="car"
+          meaning="map"
+          title="Remember where I parked"
+          subtitle="When you arrive, or walk away from your car after a drive, the spot is saved on this phone as the P pin (not at Home). Tap it to walk back."
+          toggle={{ value: settings.autoParking, onValueChange: (v: boolean) => updateSettings({ autoParking: v }), testID: "auto-parking-switch" }}
+        />
       </Section>
 
       {/* ---------------- Map display ---------------- */}

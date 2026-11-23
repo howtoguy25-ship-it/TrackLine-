@@ -96,6 +96,8 @@ export interface AppSettings {
   speedWarningChimeEnabled: boolean;
   /** "Hey TrackLine": listen on the phone for the wake phrase while the map is open (off by default). */
   wakePhrase: boolean;
+  /** Save where the car was parked when a drive ends (nav/autoParking.ts). On by default. */
+  autoParking: boolean;
   /** Warn (chime/colour) this many km/h over the limit -- school-zone limits included. 1-10. */
   speedingThresholdKmh: number;
   /** Travel mode last picked (Drive by default): drive, motorbike, bike, walk, transit, ferry. */
@@ -213,6 +215,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   mapMarkerStyle: "default",
   speedWarningChimeEnabled: true,
   wakePhrase: false,
+  autoParking: true,
   speedingThresholdKmh: 5,
   lastTravelMode: "drive",
   mapLabels: "local",

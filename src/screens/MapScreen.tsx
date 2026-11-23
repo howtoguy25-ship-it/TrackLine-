@@ -301,6 +301,7 @@ import { SavedPlacePopup, type SavedPinPlace } from "@/components/SavedPlacePopu
 import { savedPinIcon, savedPinPlaces } from "@/map/savedPins";
 import { getSavedPlaces, pushSavedPlacesToProfile, removeCustomPlace, removeHomeOrWork, addCustomPlace, subscribeSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { clearParkingSpot, getParkingSpot, setParkingSpot, subscribeParkingSpot, type ParkingSpot } from "@/services/parkingSpot";
+import { onDriveEnd, onFixAfterDrive, type ParkingWatch } from "@/nav/autoParking";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
 
@@ -2794,11 +2795,12 @@ export function MapScreen() {
 
   /** Routes for the chosen mode; remembers it as the last mode used. */
   const requestRoutes = useCallback(
-    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, requestedMode: ModeId, avoidOverride?: RouteAvoidPrefs) => {
+    async (origin: LatLng, destination: LatLng, waypoint: LatLng | undefined, requestedMode: ModeId, avoidOverride?: RouteAvoidPrefs, rememberMode = true) => {
       // Owner dashboard can switch the extra travel modes off: then it's Drive only.
       const mode: ModeId = travelModesOn ? requestedMode : ("drive" as ModeId);
       setSelectedMode(mode);
-      if (settings.lastTravelMode !== mode) updateSettings({ lastTravelMode: mode });
+      // "Find my car" walks, but the next destination still starts in the mode you drive in.
+      if (rememberMode && settings.lastTravelMode !== mode) updateSettings({ lastTravelMode: mode });
       const avoid = avoidOverride ?? settings.routeAvoid;
       const trip = ++routeTripRef.current;
       // Drive, Transit, and any trip with a stop: the Google flow (it handles waypoints).
@@ -3477,6 +3479,22 @@ export function MapScreen() {
       requestRoutes(routeOriginLatLng, place.location, undefined, last === "ferry" ? "drive" : last);
     },
     [routeOriginLatLng, requestRoutes, closeAllPlaceSheets, settings.lastTravelMode]
+  );
+
+  // "Find my car": a walking route back to the parking spot (Walk mode, not remembered as the
+  // mode for the next drive).
+  const findMyCar = useCallback(
+    (spot: ParkingSpot) => {
+      if (!routeOriginLatLng) return;
+      closeAllPlaceSheets();
+      const place = { placeId: "parking", name: "Your car", address: spot.label, location: { latitude: spot.latitude, longitude: spot.longitude } };
+      setPendingDestination(place);
+      setStopLocation(null);
+      setModeSummaries({});
+      setModeResults({});
+      requestRoutes(routeOriginLatLng, place.location, undefined, travelModesOn ? "walk" : "drive", undefined, false);
+    },
+    [routeOriginLatLng, requestRoutes, closeAllPlaceSheets, travelModesOn]
   );
 
   // Real, explicit request -- the Plan a Drive screen's own "Start" hand-off (see
@@ -5456,9 +5474,46 @@ export function MapScreen() {
   // Recents, and eases the camera back to the live location in the home follow view (or snaps to
   // the first fix if there isn't one right now).
   const homeSnapPendingRef = useRef(false);
+  // "Remember where I parked" (nav/autoParking.ts): saved on arrival, or once you walk away.
+  const autoParkingOnRef = useLatest(settings.autoParking);
+  const travelModeRef = useLatest(travelMode);
+  const navMatchRef = useLatest(navMatch);
+  const savedPlacesRef = useLatest(savedPlaces);
+  const parkingWatchRef = useRef<ParkingWatch | null>(null);
+  const saveAutoParking = useCallback((spot: { latitude: number; longitude: number; label: string }) => {
+    setParkingSpot(spot)
+      .then(() => {
+        setBannerMessage("Parking spot saved — tap the P to walk back to your car.");
+        setBannerVisible(true);
+      })
+      .catch((err) => Sentry.logger.error("map: auto parking save failed", { error: String(err) }));
+  }, []);
+  useEffect(() => {
+    const watch = parkingWatchRef.current;
+    if (!watch || !currentLatLng || route) return;
+    const verdict = onFixAfterDrive(watch, { ...currentLatLng, speedKmh: currentSpeedKmh ?? null, at: Date.now() });
+    if (!verdict) return;
+    parkingWatchRef.current = null;
+    if (verdict === "save") saveAutoParking({ latitude: watch.at.latitude, longitude: watch.at.longitude, label: watch.label });
+  }, [currentLatLng, currentSpeedKmh, route, saveAutoParking]);
+
   const exitNavigation = useCallback(
     (reason: EndReason = "exit") => {
       Sentry.logger.info("map: drive ended", { reason });
+      if (autoParkingOnRef.current && travelModeRef.current === "driving") {
+        const end = currentLatLngRef.current;
+        const dest = navDestinationPlaceRef.current;
+        const decision = onDriveEnd({
+          reason,
+          at: end,
+          label: reason === "arrived" && dest ? dest.address || dest.name : "Where you parked",
+          drivenM: navMatchRef.current?.along ?? 0,
+          endedAt: Date.now(),
+          home: savedPlacesRef.current.home?.location ?? null,
+        });
+        parkingWatchRef.current = decision.watch;
+        if (decision.save) saveAutoParking(decision.save);
+      }
       stopNavSpeech();
       navVoiceSessionRef.current?.stop();
       navOptionsSheetRef.current?.close();
@@ -5523,7 +5578,7 @@ export function MapScreen() {
     // useAutoGhostMode.ts's own comment.
     autoGhostOnArrival(visibilityRef.current, updateSettingsRef.current);
     },
-    [currentLatLngRef, northUpRef, mapBearing, navDestinationPlaceRef]
+    [currentLatLngRef, northUpRef, mapBearing, navDestinationPlaceRef, autoParkingOnRef, travelModeRef, navMatchRef, savedPlacesRef, saveAutoParking]
   );
   // No fix when the drive ended: snap home to the first one that arrives.
   useEffect(() => {
@@ -6542,10 +6597,9 @@ export function MapScreen() {
             currentLatLng
               ? () => {
                   const here = currentLatLng;
-                  addCustomPlace(
-                    { placeId: `parked-${arrival.arrivedAtMs}`, name: "Parked car", address: arrival.address ?? arrival.name, location: here },
-                    "Parked car"
-                  ).catch((err) => Sentry.logger.error("map: park here failed", { error: String(err) }));
+                  // The one parking spot (P pin, "Find my car"), at exactly where you are now. With
+                  // "Remember where I parked" on, ending the drive as arrived saves it already.
+                  if (!settings.autoParking) saveAutoParking({ latitude: here.latitude, longitude: here.longitude, label: arrival.address ?? arrival.name });
                   exitNavigation("arrived");
                 }
               : null
@@ -7332,7 +7386,7 @@ export function MapScreen() {
             parkingSpot
               ? () => {
                   setSelectedSaved(null);
-                  onDestinationSelected({ placeId: "parking", name: "Your parking spot", address: parkingSpot.label, location: { latitude: parkingSpot.latitude, longitude: parkingSpot.longitude } });
+                  findMyCar(parkingSpot);
                 }
               : null
           }
