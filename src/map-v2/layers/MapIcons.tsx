@@ -15,7 +15,7 @@ import { AheadGlyph } from "@/components/art/AheadGlyph";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors } from "@/theme/tokens";
-import { AHEAD_COLOURS, LIVE_TRAFFIC_BADGE, ROAD_SIGN_ART } from "@/theme/colors";
+import { AHEAD_COLOURS, LIVE_TRAFFIC_BADGE, MAP_DOT, ROAD_SIGN_ART } from "@/theme/colors";
 import { Icon, isIconName } from "@/components/ui/Icon";
 import { Text } from "@/components/AppText";
 import { BADGE_COLOURS, type BadgeCategory } from "@/map/poiBadges";
@@ -62,6 +62,21 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
           <View style={[styles.pointer, { borderTopColor: color }]} />
         </View>
       );
+    }
+    case "alert-mid": {
+      // Mid zoom (map/zoomStates.ts): the report's badge without its pointer (drawn at 60%).
+      const type = rest[0] as AlertType;
+      const pin = ALERT_PIN[type];
+      return (
+        <Badge color={pin?.fill ?? colors.text} size={30}>
+          <AlertTypeGlyph type={type} size={17} color={pin?.glyph ?? "#FFFFFF"} />
+        </Badge>
+      );
+    }
+    case "dot": {
+      // Far zoom: a small dot in the report's meaning colour with a white ring.
+      const c = MAP_DOT[rest[0] as keyof typeof MAP_DOT] ?? MAP_DOT.other;
+      return <View testID={`map-dot-${rest[0]}`} style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c, borderWidth: 1.5, borderColor: MAP_DOT.ring }} />;
     }
     case "traffic-light":
       // Our own little traffic light (components/art/RoadSignArt.tsx).

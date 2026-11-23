@@ -228,7 +228,6 @@ import {
   homeMapPadding,
   homeArrowTargetY,
   roadFromRouteSteps,
-  shouldClusterAlerts,
   zoomFromLatitudeDelta,
   STATIONARY_AFTER_MS,
 } from "@/map/homeMapLogic";
@@ -307,6 +306,7 @@ import { onDriveEnd, onFixAfterDrive, type ParkingWatch } from "@/nav/autoParkin
 import { projectOnPolyline } from "@/alerts/approachAlerts";
 import { closedStretch, closureForReport, shouldRouteAround, DEFAULT_CLOSURE, type ClosureDetails } from "@/nav/closures";
 import { ClosureDetailsPicker } from "@/components/ClosureDetailsPicker";
+import { layoutPins, midPinIcon } from "@/map/zoomStates";
 import { addStop, markStop, moveStop, nextStopEvent, removeStop, stopPoints, stopRows, MAX_STOPS, type TripStop } from "@/nav/multiStop";
 import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type ParkingOffer } from "@/nav/arrivalFlow";
 import { withTimeout } from "@/utils/withTimeout";
@@ -4958,30 +4958,30 @@ export function MapScreen() {
   // How reports are drawn at the current zoom: grouped into counts when zoomed out, otherwise
   // one pin each, with reports on the active route a step larger.
   const mapZoom = zoomFromLatitudeDelta(osmZoomDelta);
+  // Map polish §2 (map/zoomStates.ts): full pins close up, 60% icons + count badges in between,
+  // coloured dots far out (max 60, most important first).
+  const pinCentre = viewCentre ?? currentLatLng;
+  const pinCentreKey = pinCentre ? `${pinCentre.latitude.toFixed(2)},${pinCentre.longitude.toFixed(2)}` : "";
   const alertPins = useMemo(() => {
-    if (shouldClusterAlerts(mapZoom)) {
-      const groups = clusterPoints(
-        visibleAlerts.map((alert) => ({ id: alert.id, lat: alert.lat, lng: alert.lng, alert })),
-        Math.max(osmZoomDelta / 12, 0.004)
-      );
-      const base = alertPinSize(mapZoom);
-      return {
-        clusters: groups.filter((group) => group.count > 1),
-        singles: groups.filter((group) => group.count === 1).map((group) => ({ alert: group.points[0].alert, size: base })),
-      };
-    }
+    const layout = layoutPins(
+      visibleAlerts.map((alert) => ({ id: alert.id, lat: alert.lat, lng: alert.lng, type: alert.type, item: alert.item ?? null, alert })),
+      { zoom: mapZoom, latitudeDelta: osmZoomDelta, screenHeight: windowHeight, centre: pinCentre ?? { latitude: 0, longitude: 0 } }
+    );
     const routeLine = route && remainingPolyline.length > 1 ? remainingPolyline : null;
     return {
-      clusters: [],
-      singles: visibleAlerts.map((alert) => ({
-        alert,
-        size: alertPinSize(mapZoom, !!routeLine && distanceToPolylineMeters(alert.lat, alert.lng, routeLine) <= 60),
+      state: layout.state,
+      clusters: layout.clusters,
+      singles: layout.singles.map(({ point, scale }) => ({
+        alert: point.alert,
+        mid: layout.state === "mid",
+        size: alertPinSize(mapZoom, !!routeLine && distanceToPolylineMeters(point.lat, point.lng, routeLine) <= 60) * scale,
       })),
+      dots: layout.dots.map(({ point, colour }) => ({ alert: point.alert, colour })),
     };
     // remainingPolyline changes on every fix; whether a report is "on the route" only needs
-    // re-checking when the step changes, so it's keyed on that instead.
+    // re-checking when the step changes, and the far-zoom priority only when the view moves ~1 km.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleAlerts, mapZoom, osmZoomDelta, route, activeStepIndex]);
+  }, [visibleAlerts, mapZoom, osmZoomDelta, route, activeStepIndex, windowHeight, pinCentreKey]);
 
   // The real number behind the street pill's "N reports around you": active reports within 10km.
   // Counted from a position rounded to ~100m: the count can't change meaningfully over less,
@@ -5915,22 +5915,26 @@ export function MapScreen() {
     };
     for (const cluster of alertPins.clusters) {
       add(
-        { id: `alert-cluster:${cluster.points[0].id}`, coordinate: { latitude: cluster.lat, longitude: cluster.lng }, icon: "alert-cluster", label: String(cluster.count), priority: 20 },
+        { id: `alert-cluster:${cluster.ids[0]}`, coordinate: { latitude: cluster.lat, longitude: cluster.lng }, icon: "alert-cluster", label: String(cluster.count), priority: 20 },
         { kind: "zoomTo", lat: cluster.lat, lng: cluster.lng }
       );
     }
-    for (const { alert, size } of alertPins.singles) {
+    for (const { alert, size, mid } of alertPins.singles) {
       add(
         {
           id: `alert:${alert.id}`,
           coordinate: { latitude: alert.lat, longitude: alert.lng },
-          icon: reportPinIcon(alert),
+          // Mid zoom: the same icon without its pointer, centred on the spot.
+          icon: mid ? midPinIcon(reportPinIcon(alert)) : reportPinIcon(alert),
           size: size / 30,
-          anchor: "bottom",
+          anchor: mid ? "center" : "bottom",
           priority: selectedAlert?.id === alert.id ? 31 : 30,
         },
         { kind: "alert", alert }
       );
+    }
+    for (const { alert, colour } of alertPins.dots) {
+      add({ id: `alert:${alert.id}`, coordinate: { latitude: alert.lat, longitude: alert.lng }, icon: `dot:${colour}`, anchor: "center", priority: 20 }, { kind: "alert", alert });
     }
     // Off a drive: cameras (and traffic lights at street level) in view, as road-sign icons.
     for (const f of homeRoadSignList) {
@@ -5994,11 +5998,16 @@ export function MapScreen() {
     {
       for (const incident of visibleIncidents(settings, nearbyTrafficIncidents)) {
         const st = incidentStyle(incident);
+        // Far out (map/zoomStates.ts): a dot like every other item -- red for crashes and
+        // closures, amber for the rest.
+        const far = alertPins.state === "far";
+        const farColour = /crash|collision|clos/i.test(`${incident.category} ${incident.headline}`) ? "red" : "amber";
         add(
           {
             id: `incident:${incident.id}`,
             coordinate: { latitude: incident.lat, longitude: incident.lng },
-            icon: `incident:${st.color}:${st.glyph}:${st.shape}:${st.icon}:${incident.major ? 1 : 0}`,
+            ...(far ? { anchor: "center" as const } : {}),
+            icon: far ? `dot:${farColour}` : `incident:${st.color}:${st.glyph}:${st.shape}:${st.icon}:${incident.major ? 1 : 0}`,
             priority: incident.major ? 26 : 25,
           },
           { kind: "incident", incident }

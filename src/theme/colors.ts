@@ -379,3 +379,18 @@ export const DRIVE_TILE: Record<DriveTileKind, { fill: string; glyph: string }> 
   ev: { fill: "#15803D", glyph: WHITE },
   toilets: { fill: "#0E7490", glyph: WHITE },
 };
+
+/**
+ * Far-zoom map dots (z < 12, map/zoomStates.ts): one colour per meaning -- police blue, crash /
+ * closure red, hazard / roadwork amber, camera purple, Trackys pink, anything else grey -- each
+ * with a white ring so it reads on light and dark maps.
+ */
+export const MAP_DOT = {
+  police: "#1E6BD6",
+  red: "#D93025",
+  amber: "#E8A000",
+  camera: "#8B5CF6",
+  tracky: "#E0559A",
+  other: "#5F6368",
+  ring: "#FFFFFF",
+} as const;
