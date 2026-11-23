@@ -2,6 +2,7 @@
 // mapped OSM features, driver reports, Live Traffic NSW, each already filtered by its Settings >
 // Reports switch and merged across sources), derived features (crash-prone spots, lane endings)
 // and live traffic -- into ahead sources (nav/ahead/aheadFeed.ts). Pure.
+import type { ClosureDetails } from "@/nav/closures";
 import type { ApproachFeature } from "@/alerts/approachAlerts";
 import { kindOfItem } from "@/nav/ahead/aheadKinds";
 import type { AheadSource } from "@/nav/ahead/aheadFeed";
@@ -12,6 +13,7 @@ export interface ReportLike {
   confirmCount?: number;
   createdAt?: number;
   reporterName?: string;
+  closure?: ClosureDetails;
 }
 export interface IncidentLike {
   id: string;
@@ -51,6 +53,8 @@ export function aheadSourcesFrom(
         confirmCount: r?.confirmCount ?? 0,
         createdAt: r?.createdAt ?? null,
         reporterName: r?.reporterName ?? null,
+        // A closure one way only applies to that way (the feed's heading check).
+        ...(r?.closure ? { closure: r.closure, ...(r.closure.direction === "mine" && r.closure.bearingDeg != null ? { bearingDeg: r.closure.bearingDeg } : {}) } : {}),
       });
     } else if (f.key.startsWith("ltn:")) {
       const i = incidentById.get(f.key.slice(4));

@@ -1,5 +1,6 @@
 // The banner's words for one ahead alert. Only what the data really says: a line is left out
 // rather than guessed (no road name -> no "On ..."; no delay -> no "+N min"). Pure.
+import { closureLine } from "@/nav/closures";
 import type { AheadAlert } from "@/nav/ahead/aheadFeed";
 import { formatDistance, type DistanceUnit } from "@/utils/navFormat";
 
@@ -19,6 +20,8 @@ export function aheadSubtitle(a: AheadAlert, road: string | null, unit: Distance
     if (a.lengthM && a.lengthM > 0) parts.push(`${a.kind === "standstill" || a.mergedTraffic === "standstill" ? "Stopped" : "Slow"} for ${formatDistance(a.lengthM, unit)}`);
     if (a.delaySeconds && a.delaySeconds >= 60) parts.push(`+${Math.round(a.delaySeconds / 60)} min`);
   }
+  const closed = closureLine(a.closure);
+  if (closed) parts.push(closed);
   if (a.source === "community") {
     const when = ago(a.createdAt, nowMs);
     const drivers = (a.confirmCount ?? 0) + 1;

@@ -11,6 +11,7 @@
 //   merged          a crash inside a jam (or within DEDUP_M of its start) is one alert,
 //                   "Crash causing heavy traffic"
 // Tested in __tests__/nav/aheadAlerts.test.ts.
+import type { ClosureDetails } from "@/nav/closures";
 import { projectOnPolyline } from "@/alerts/approachAlerts";
 import { CRITICAL_KINDS, KIND_TIER, MINOR_KINDS, titleFor, type AheadKind } from "@/nav/ahead/aheadKinds";
 import type { ReportItemId } from "@/settings/reportCatalog";
@@ -46,6 +47,8 @@ export interface AheadSource {
   /** Live traffic: how long the slow stretch is, and how much time it costs, when known. */
   lengthM?: number | null;
   delaySeconds?: number | null;
+  /** A driver-reported closure's details (nav/closures.ts). */
+  closure?: ClosureDetails;
 }
 
 export interface AheadAlert extends AheadSource {

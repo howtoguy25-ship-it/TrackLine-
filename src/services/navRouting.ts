@@ -60,3 +60,22 @@ export async function mapboxReroute(
   if (!chosen) throw new Error("Mapbox reroute: no route");
   return chosen;
 }
+
+/** A route that keeps clear of closed roads (nav/closures.ts), through the trip's stops. */
+export async function mapboxRouteAround(
+  origin: LatLng,
+  destination: LatLng,
+  heading: number | null,
+  avoid: RouteAvoidPrefs,
+  waypoints: readonly LatLng[],
+  avoidPoints: readonly LatLng[],
+  signal?: AbortSignal
+): Promise<Route | null> {
+  if (!mapboxRoutingAvailable()) return null;
+  const routes = await fetchMapboxRoutes({ origin, destination, waypoints, heading, avoid, avoidPoints }, usableMapboxToken(), {
+    signal,
+    diagnosticsKey: "reroute",
+    timeoutMs: 8000,
+  });
+  return pickReroute(routes);
+}

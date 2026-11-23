@@ -42,6 +42,8 @@ export interface AlertDoc {
   // the reporter didn't add one (the overwhelming majority of alerts, same as before this
   // existed) -- never an empty string.
   comment?: string;
+  /** A road closure's details (nav/closures.ts), on closure reports only. */
+  closure?: import("@/nav/closures").ClosureDetails;
   // Thumbs-up count from the alert card -- once per user, never on your own report, enforced by
   // firestore.rules (alerts/{id}/thanks/{uid}). 0 on alerts written before this existed.
   thanksCount: number;

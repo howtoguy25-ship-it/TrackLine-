@@ -34,6 +34,8 @@ export interface MapboxRequest {
   destination: LatLng;
   /** Stops on the way, in order (a multi-stop trip). */
   waypoints?: readonly LatLng[];
+  /** Points the route must not pass (a closed road), Mapbox `exclude=point(lng lat)`. */
+  avoidPoints?: readonly LatLng[];
   /** Degrees, so the route starts the way the car is facing (reroutes). */
   heading?: number | null;
   avoid?: Partial<RouteAvoidPrefs>;
@@ -71,7 +73,8 @@ export function directionsUrl(req: MapboxRequest, token: string): string {
     access_token: token,
   };
   // The Avoid options are road options: only sent for driving profiles.
-  const exclude = driving ? excludeParam(req.avoid) : null;
+  const pointExcludes = driving ? (req.avoidPoints ?? []).slice(0, 50).map((p) => `point(${p.longitude.toFixed(6)} ${p.latitude.toFixed(6)})`) : [];
+  const exclude = [driving ? excludeParam(req.avoid) : null, ...pointExcludes].filter(Boolean).join(",");
   if (exclude) params.exclude = exclude;
   if (req.heading != null && Number.isFinite(req.heading)) {
     // One entry per coordinate: the car's heading at the start, none at the stops or the end.

@@ -20,7 +20,7 @@ import {
 import { calloutLabel } from "@/nav/manoeuvre";
 import { ManoeuvreChip, type ChipTone } from "@/components/nav/ManoeuvreChip";
 import { JunctionViewCard } from "@/components/nav/JunctionViewCard";
-import { mapboxReroute, mapboxRouteForChoice, mapboxRoutingAvailable } from "@/services/navRouting";
+import { mapboxReroute, mapboxRouteAround, mapboxRouteForChoice, mapboxRoutingAvailable } from "@/services/navRouting";
 import { prepareNavigationAudio } from "@/services/audioSession";
 import { calendarFor, tileKey as schoolTileKey, zonesAround } from "@/schoolZones/zoneStore";
 import { INITIAL_SCHOOL_ZONE_TRACKER, trackSchoolZone, type SchoolZoneNow } from "@/schoolZones/schoolZoneTracker";
@@ -304,6 +304,9 @@ import { savedPinIcon, savedPinPlaces } from "@/map/savedPins";
 import { getSavedPlaces, pushSavedPlacesToProfile, removeCustomPlace, removeHomeOrWork, addCustomPlace, subscribeSavedPlaces, type SavedPlaces } from "@/services/savedPlaces";
 import { clearParkingSpot, getParkingSpot, setParkingSpot, subscribeParkingSpot, type ParkingSpot } from "@/services/parkingSpot";
 import { onDriveEnd, onFixAfterDrive, type ParkingWatch } from "@/nav/autoParking";
+import { projectOnPolyline } from "@/alerts/approachAlerts";
+import { closedStretch, closureForReport, shouldRouteAround, DEFAULT_CLOSURE, type ClosureDetails } from "@/nav/closures";
+import { ClosureDetailsPicker } from "@/components/ClosureDetailsPicker";
 import { addStop, markStop, moveStop, nextStopEvent, removeStop, stopPoints, stopRows, MAX_STOPS, type TripStop } from "@/nav/multiStop";
 import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type ParkingOffer } from "@/nav/arrivalFlow";
 import { withTimeout } from "@/utils/withTimeout";
@@ -760,6 +763,9 @@ export function MapScreen() {
   // again inside reportAlert itself before it's ever written. Reset on both a successful submit
   // and Cancel so the next report always starts blank.
   const [alertComment, setAlertComment] = useState("");
+  // The item being placed (for item-specific questions: a closure's details, nav/closures.ts).
+  const [placingItem, setPlacingItem] = useState<ReportItemId | null>(null);
+  const [closureDraft, setClosureDraft] = useState<ClosureDetails>(DEFAULT_CLOSURE);
   const alertCommentBlocked = containsBlockedLanguage(alertComment);
   const onChangeAlertComment = useCallback((text: string) => {
     setAlertComment(clampToWordLimit(text));
@@ -4552,6 +4558,8 @@ export function MapScreen() {
       if (!currentLatLng || !type) return;
       pendingAlertTypeRef.current = type;
       pendingReportItemRef.current = item;
+      setPlacingItem(item);
+      setClosureDraft(DEFAULT_CLOSURE);
       reportSheetRef.current?.close();
       setAlertPlacementLatLng(initialAlertPlacement(currentLatLng));
       setPlacingAlert(true);
@@ -4623,6 +4631,7 @@ export function MapScreen() {
         comment: alertComment,
         reporterName: settings.showNameOnReports ? user.displayName : null,
         item,
+        closure: item === "closures" ? closureForReport(closureDraft, headingTrack.filter.shown ?? null) : null,
       });
       if (result.kind === "merged") {
         setBannerMessage(`${item ? itemLabel(item) : ALERT_LABELS[type]} was already reported here — you've confirmed it.`);
@@ -4632,6 +4641,7 @@ export function MapScreen() {
       }
       pendingAlertTypeRef.current = null;
       pendingReportItemRef.current = null;
+      setPlacingItem(null);
       setPlacingAlert(false);
       setAlertPlacementLatLng(null);
       setAlertComment("");
@@ -4653,7 +4663,7 @@ export function MapScreen() {
       submittingAlertRef.current = false;
       setSubmittingAlert(false);
     }
-  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment, currentLatLng]);
+  }, [alertPlacementLatLng, user, settings.alertExpiryMs, settings.showNameOnReports, alertComment, currentLatLng, closureDraft, headingTrack.filter.shown]);
 
   // A report said out loud (nav/voiceReport.ts): where you are now, the same server rules (rate
   // limits, trust) as a tapped one, said back to you, with the same 3 s Undo.
@@ -4718,6 +4728,7 @@ export function MapScreen() {
   const cancelAlertPlacement = useCallback(() => {
     pendingAlertTypeRef.current = null;
     pendingReportItemRef.current = null;
+    setPlacingItem(null);
     setPlacingAlert(false);
     setAlertPlacementLatLng(null);
     setAlertComment("");
@@ -5136,6 +5147,34 @@ export function MapScreen() {
     if (siren) feed.push(siren);
     return feed.sort((a, b) => a.aheadM - b.aheadM);
   }, [aheadProjected, aheadSlowdown, navMatch, sirenEpisode, travelMode]);
+  // Closures on the route ahead: drawn closed on the map, and a full one routed around once.
+  const closedStretches = useMemo(
+    () => (route ? aheadFeedNow.filter((a) => a.kind === "closure").map((a) => closedStretch(route.polyline, a.alongM)).filter((l) => l.length > 1) : []),
+    [route, aheadFeedNow]
+  );
+  const closuresTriedRef = useRef(new Set<string>());
+  const blockingClosure = route && travelMode === "driving" ? aheadFeedNow.find((a) => a.aheadM > 200 && a.aheadM < 30_000 && shouldRouteAround(a)) ?? null : null;
+  useEffect(() => {
+    const c = blockingClosure;
+    if (!c || !currentLatLng || !destinationLatLng || closuresTriedRef.current.has(c.key)) return;
+    closuresTriedRef.current.add(c.key);
+    const avoidPts = aheadFeedNow.filter(shouldRouteAround).map((a) => ({ latitude: a.lat, longitude: a.lng }));
+    mapboxRouteAround(currentLatLng, destinationLatLng, headingTrack.filter.shown ?? null, settings.routeAvoid, stopWaypointsLiveRef.current ?? [], avoidPts)
+      .then((fresh) => {
+        if (!fresh || routeRef.current == null) return;
+        // Only if it really keeps clear of the closure (Mapbox can't always).
+        const near = projectOnPolyline(fresh.polyline, { latitude: c.lat, longitude: c.lng });
+        if (near && near.offM < 40) return;
+        guidanceRef.current = createGuidanceState();
+        setActiveStepIndex(0);
+        setRoute(fresh);
+        announcePhrase({ kind: "said", text: "Road closed ahead. Taking you around it." });
+      })
+      .catch((err) => console.warn("[nav] route around the closure failed", err));
+    // Once per closure; the refs and announcePhrase are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockingClosure?.key]);
+
   const [aheadCtl] = useState(
     () => new AheadBannerController({ setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) }, Date.now)
   );
@@ -6206,6 +6245,7 @@ export function MapScreen() {
           <MapboxLayers
             navRoute={mapboxNavRoute}
             navTraffic={route ? navTraffic : []}
+            closedStretches={closedStretches}
             navAlternatives={
               route && navAlternatives
                 ? navAlternatives.map((alt, i) => ({
@@ -7063,6 +7103,7 @@ export function MapScreen() {
       {placingAlert && (
         <View style={[styles.placementBar, { bottom: insets.bottom + spacing.xl }]}>
           <Text style={styles.placementBarText}>Move the map to place the pin</Text>
+          {placingItem === "closures" ? <ClosureDetailsPicker value={closureDraft} onChange={setClosureDraft} /> : null}
           {/* Optional "up to 7 words" comment, per explicit request -- clamped live to that
               word cap on every keystroke (onChangeAlertComment) so it's never possible to type
               past it, and re-checked for blocked language here (inline error, blocks Set) as

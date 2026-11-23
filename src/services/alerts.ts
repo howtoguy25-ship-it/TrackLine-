@@ -117,7 +117,7 @@ export async function submitReport(
   location: { latitude: number; longitude: number },
   from: { latitude: number; longitude: number },
   uid: string,
-  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null; item?: string | null } = {}
+  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null; item?: string | null; closure?: import("@/nav/closures").ClosureDetails | null } = {}
 ): Promise<ReportResult> {
   try {
     return await submitReportOnce(type, location, from, uid, options);
@@ -134,7 +134,7 @@ async function submitReportOnce(
   location: { latitude: number; longitude: number },
   from: { latitude: number; longitude: number },
   uid: string,
-  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null; item?: string | null } = {}
+  options: { customTtlMs?: number | null; comment?: string | null; reporterName?: string | null; item?: string | null; closure?: import("@/nav/closures").ClosureDetails | null } = {}
 ): Promise<ReportResult> {
   const trimmed = options.comment?.trim();
   const comment = trimmed && !containsBlockedLanguage(trimmed) ? clampToWordLimit(trimmed) : undefined;
@@ -149,6 +149,7 @@ async function submitReportOnce(
       customTtlMs: options.customTtlMs ?? null,
       showName: !!options.reporterName,
       item: options.item ?? null,
+      ...(options.closure ? { closure: options.closure } : {}),
     });
     if (r.merged && r.alertId) return { kind: "merged", alertId: r.alertId };
     return { kind: "pending", pendingId: r.pendingId as string, publishAtMs: r.publishAtMs as number, needsConfirmation: !!r.needsConfirmation };

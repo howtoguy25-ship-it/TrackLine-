@@ -150,6 +150,7 @@ function alertFromPending(p) {
     lastConfirmedAtMs: p.publishAtMs,
     notThere: 0,
     ...(p.comment ? { comment: p.comment } : {}),
+    ...(p.closure ? { closure: p.closure } : {}),
     ...(p.reporterName ? { reporterName: p.reporterName } : {}),
   };
 }
@@ -226,6 +227,21 @@ function encodeGeohash(lat, lng, precision = 9) {
   return hash;
 }
 
+// A road closure's details (gap item 14), only on a closure report: which way, how much of the
+// road, and how long. Anything else is dropped, never guessed.
+const CLOSURE_DIRECTIONS = ["mine", "both"];
+const CLOSURE_LANES = ["all", "some"];
+const CLOSURE_UNTIL = { "1h": 60, today: 12 * 60, days: 3 * 24 * 60, unknown: null };
+function closureOf(d) {
+  const c = d && d.closure;
+  if (!c || typeof c !== "object") return null;
+  if (!CLOSURE_DIRECTIONS.includes(c.direction) || !CLOSURE_LANES.includes(c.lanes) || !Object.prototype.hasOwnProperty.call(CLOSURE_UNTIL, c.until)) return null;
+  const bearing = typeof c.bearingDeg === "number" && Number.isFinite(c.bearingDeg) ? Math.round(((c.bearingDeg % 360) + 360) % 360) : null;
+  // "My direction" only means something with the direction the reporter was driving.
+  if (c.direction === "mine" && bearing == null) return null;
+  return { direction: c.direction, lanes: c.lanes, until: c.until, ...(c.direction === "mine" ? { bearingDeg: bearing } : {}) };
+}
+
 function validateInput(data) {
   const d = data || {};
   const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : NaN);
@@ -238,7 +254,10 @@ function validateInput(data) {
     comment: typeof d.comment === "string" && d.comment.trim() ? d.comment.trim().split(/\s+/).slice(0, 7).join(" ").slice(0, 80) : undefined,
     item: typeof d.item === "string" && d.item ? d.item : null,
     customTtlMs: typeof d.customTtlMs === "number" && d.customTtlMs > 0 ? d.customTtlMs : null,
+    closure: d.item === "closures" ? closureOf(d) : null,
   };
+  // How long the reporter said it's closed sets the report's lifetime (still capped by the item's rules).
+  if (input.closure && CLOSURE_UNTIL[input.closure.until]) input.customTtlMs = CLOSURE_UNTIL[input.closure.until] * MIN;
   if (!REGIONS.includes(input.region)) throw new ReportError("bad-region", "Reports are for Australia for now.");
   if (isCoord(input.at)) input.geohash = encodeGeohash(input.at.lat, input.at.lng, 9);
   return input;
@@ -276,6 +295,7 @@ async function submit(store, { uid, data, reporterName, nowMs }) {
     comment: input.comment || null,
     reporterName: reporterName || null,
     customTtlMs: input.customTtlMs,
+    ...(input.closure ? { closure: input.closure } : {}),
     needsConfirmation: d.needsConfirmation,
     createdAtMs: nowMs,
     publishAtMs: nowMs + POLICY.undoSeconds * 1000,
@@ -295,4 +315,4 @@ async function undo(store, { uid, pendingId, nowMs }) {
   return { undone: true };
 }
 
-module.exports = { POLICY, ReportError, metres, encodeGeohash, itemPolicy, itemOf, moderate, DEFAULT_ITEM, decide, decideUndo, alertFromPending, applyVote, clampTrust, newReporterState, submit, undo, validateInput };
+module.exports = { closureOf, POLICY, ReportError, metres, encodeGeohash, itemPolicy, itemOf, moderate, DEFAULT_ITEM, decide, decideUndo, alertFromPending, applyVote, clampTrust, newReporterState, submit, undo, validateInput };

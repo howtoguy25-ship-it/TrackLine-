@@ -16,7 +16,7 @@ import { BADGE_CATEGORIES, badgeIconName } from "@/map/poiBadges";
 import type { PresenceDoc } from "@/services/presence";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
-import { GREEN, LAVENDER, PURPLE_BRIGHT, TRAFFIC } from "@/theme/colors";
+import { AHEAD_COLOURS, GREEN, LAVENDER, PURPLE_BRIGHT, TRAFFIC } from "@/theme/colors";
 
 // Everything drawn on the Mapbox map, from plain data the map screen already works out: the
 // route being driven (travelled part faded, turn callouts, the turn arrow), route choices
@@ -82,6 +82,8 @@ interface Props {
   manoeuvre?: { through: LatLng[]; exitSide: LatLng[]; callout: { coordinate: LatLng; text: string } | null } | null;
   /** While driving: live traffic on the route still ahead (slow amber, stopped red, over its length). */
   navTraffic?: { coordinates: LatLng[]; speed: "SLOW" | "TRAFFIC_JAM" }[];
+  /** Closed stretches on the route (nav/closures.ts), drawn in the closure colour over it. */
+  closedStretches?: LatLng[][];
   /** Official school zones nearby (Settings > Road features > School zones > Show on map). */
   schoolZones?: SchoolZoneDrawing[];
 }
@@ -164,6 +166,12 @@ export function MapboxLayers(props: Props) {
               width={NAV_ROUTE_WIDTH - 3}
               aboveLayerID="nav-route-line"
             />
+          ) : null
+        )}
+      {props.remaining.length > 1 &&
+        (props.closedStretches ?? []).map((line, i) =>
+          line.length > 1 ? (
+            <RouteLine key={`nav-closed-${i}`} id={`nav-closed-${i}`} coordinates={line} color={AHEAD_COLOURS.closure.fill} width={NAV_ROUTE_WIDTH} casingColor="#FFFFFF" casingWidth={NAV_ROUTE_WIDTH + 4} aboveLayerID="nav-route-line" />
           ) : null
         )}
       {turnArrow.length > 1 && (
