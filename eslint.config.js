@@ -36,6 +36,25 @@ module.exports = defineConfig([
           selector: "VariableDeclarator[id.name=/^(MOCK|FAKE|DUMMY)_|^SAMPLE_(REPORT|DATA|RESULT)|^(mock|fake|dummy)[A-Z]/]",
           message: "No mock, fake or dummy data in production code: use the real source, or an honest 'not available' state.",
         },
+        // Permanent fix §1: the driver is drawn ONLY by map-v2/layers/UserArrow.tsx. A second
+        // renderer (Mapbox's puck, its UserLocation, the platform blue dot) is what kept bringing
+        // back the blue ball and the lag.
+        {
+          selector: "JSXOpeningElement[name.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
+          message: "Only UserArrow draws the driver (permanent fix §1).",
+        },
+        {
+          selector: "JSXMemberExpression[property.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
+          message: "Only UserArrow draws the driver (permanent fix §1).",
+        },
+        {
+          selector: "MemberExpression[property.name=/^(LocationPuck|UserLocation|CustomLocationProvider)$/]",
+          message: "Only UserArrow draws the driver (permanent fix §1).",
+        },
+        {
+          selector: "JSXAttribute[name.name=/^(showsUserLocation|showUserLocation|puckBearing|puckBearingEnabled|followUserLocation|followUserMode)$/]",
+          message: "No native user dot / puck / follow mode: UserArrow draws the driver and CameraController moves the camera (permanent fix).",
+        },
       ],
     },
   },

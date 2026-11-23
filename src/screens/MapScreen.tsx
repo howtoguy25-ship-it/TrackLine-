@@ -6353,7 +6353,9 @@ export function MapScreen() {
       currentLatLng
         ? {
             coordinate: currentLatLng,
-            heading,
+            // No heading yet: null, so the arrow keeps its last direction (UserArrow), never a dot.
+            heading: headingTrack.filter.shown ?? null,
+            fixTimeMs: location?.timestamp,
             accuracyMeters: currentAccuracyMeters,
             deviceHeading: route && compassConeAllowed ? deviceHeading : null,
             navigating: !!route,
@@ -6361,7 +6363,7 @@ export function MapScreen() {
             ghost: settings.visibility === "ghost",
           }
         : null,
-    [currentLatLng, heading, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility]
+    [currentLatLng, headingTrack.filter.shown, location?.timestamp, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility]
   );
 
   // A tap on a named place drawn by the Mapbox map: find it with Google Places (same details,
