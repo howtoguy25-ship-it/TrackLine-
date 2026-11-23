@@ -599,6 +599,7 @@ export function SettingsScreen() {
       </Section>
 
       <Section title="Map view" visible={shouldShow("Map view")}>
+        <SettingsRow icon="download" meaning="map" title="Offline maps" subtitle="Download the map around you to use without a signal" onPress={() => navigation.navigate("OfflineMaps")} testID="open-offline-maps" />
         <SettingsRow
           icon="earth"
           meaning="map"

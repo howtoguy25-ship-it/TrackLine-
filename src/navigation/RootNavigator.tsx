@@ -32,6 +32,7 @@ import { PhoneSignInScreen } from "@/screens/PhoneSignInScreen";
 import { SupportRequestsScreen } from "@/screens/SupportRequestsScreen";
 import { LicensesScreen } from "@/screens/LicensesScreen";
 import { DiagnosticsScreen } from "@/screens/DiagnosticsScreen";
+import { OfflineMapsScreen } from "@/screens/OfflineMapsScreen";
 import { SmokeTestScreen } from "@/screens/SmokeTestScreen";
 import { TrackyProfileScreen } from "@/screens/TrackyProfileScreen";
 import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
@@ -92,6 +93,7 @@ export type RootStackParamList = {
   // "Licences & attributions" row. See LicensesScreen.tsx.
   Licenses: undefined;
   Diagnostics: undefined;
+  OfflineMaps: undefined;
   SmokeTest: undefined;
   // Real Tracky mood grid ("View profile" from the main menu header). See TrackyProfileScreen.tsx.
   TrackyProfile: undefined;
@@ -227,6 +229,7 @@ export function RootNavigator() {
         <Stack.Screen name="PhoneSignIn" component={PhoneSignInScreen} options={{ headerShown: true, title: "Phone number" }} />
         <Stack.Screen name="Licenses" component={LicensesScreen} options={{ title: "Licences" }} />
         <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} options={{ headerShown: true, title: "Diagnostics" }} />
+        <Stack.Screen name="OfflineMaps" component={OfflineMapsScreen} options={{ headerShown: true, title: "Offline maps" }} />
         <Stack.Screen name="SettingsChoice" component={SettingsChoiceScreen} options={{ headerShown: true, title: "Settings" }} />
         {/* Development builds only (a JS bundle served by Metro: __DEV__). */}
         {__DEV__ ? <Stack.Screen name="SmokeTest" component={SmokeTestScreen} options={{ headerShown: true, title: "Smoke test" }} /> : null}
