@@ -87,6 +87,14 @@ export function allVisible(screen: { x: number; y: number }[], viewport: { width
 /** Time bubbles are about this big on screen (pointer at the bottom centre). */
 export const BUBBLE_SIZE = { width: 84, height: 40 } as const;
 
+/**
+ * A bubble's real size: "12 min" is 84 wide, "1 h 12 min" wider; the selected one with its "Best"
+ * line is 60 tall (RouteTimeBubble: 6 + 21 + 18 + 6 padding/lines + an 8pt pointer).
+ */
+export function bubbleSize(timeText: string, tagged: boolean): { width: number; height: number } {
+  return { width: Math.max(BUBBLE_SIZE.width, Math.round(24 + 10 * timeText.length)), height: tagged ? 60 : BUBBLE_SIZE.height };
+}
+
 /** Whether any two bubbles (pointer at each screen point) overlap. */
 export function bubblesOverlap(anchors: { x: number; y: number }[], size = BUBBLE_SIZE): boolean {
   for (let i = 0; i < anchors.length; i++) {

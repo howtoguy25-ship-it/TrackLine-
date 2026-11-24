@@ -65,7 +65,7 @@ export const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   mapDisplay: ["Appearance", "Map view", "Dark map", "Map theme", "Road thickness", "Default map view", "Map labels", "Navigation card", "Your map marker", "Alert icons"],
   // Reports (every camera, road feature and report type), the speedometer, and the map's buttons.
   mapInfo: ["Reports", "Mapped road features", "Live traffic (NSW)", "Speedometer", "Speed limit sign", "Map shortcuts"],
-  navigationVoice: ["Voice guidance", "Spoken directions", "Units", "Public transport"],
+  navigationVoice: ["Driving preferences", "Voice guidance", "Spoken directions", "Units", "Public transport"],
   alertsCommunity: ["Live alerts", "Alert regions"],
   notifications: ["Messages from TrackLine"],
   plannedDrives: ["Planned drives"],

@@ -8,8 +8,9 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button, Chip } from "@/components/ui/Button";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
-import { SurfaceScheme, darkText } from "@/components/ui/surfaceScheme";
 import { MAX_SHEET_FRACTION } from "@/nav/previewCamera";
+import { VehicleChoiceList } from "@/components/VehiclePicker";
+import type { VehicleType } from "@/services/vehicle";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -83,11 +84,13 @@ interface TopCardProps {
   onOpenAvoid: () => void;
   travelMode: ModeId;
   onOpenMode: () => void;
+  /** Driving (Drive / Motorbike): the vehicle pill shows your vehicle ("Private car", "Taxi"). */
+  vehicle?: { label: string; icon: IconName } | null;
   /** Distance from the top of the screen to the bottom of the pills, for fitting the routes. */
   onHeightChange?: (height: number) => void;
 }
 
-const TOP_TEXT = darkText(colors.text) as string;
+const TOP_TEXT = colors.text;
 
 export function RouteSelectionTopCard({
   originLabel,
@@ -101,6 +104,7 @@ export function RouteSelectionTopCard({
   onOpenAvoid,
   travelMode,
   onOpenMode,
+  vehicle,
   onHeightChange,
 }: TopCardProps) {
   const insets = useSafeAreaInsets();
@@ -112,8 +116,7 @@ export function RouteSelectionTopCard({
       pointerEvents="box-none"
       onLayout={(e) => onHeightChange?.(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
     >
-      {/* The top card is always dark (Waze-style), over light or dark maps alike. */}
-      <SurfaceScheme value="dark">
+      {/* White card over the light map (dark with the map's dark theme -- MapSurface sets the scheme). */}
       <View style={[styles.topCard, { borderRadius: 32 * k, padding: 10 * k, gap: 6 * k }]} testID="route-preview-top">
         <Button variant="ghost" icon="chevron-back" iconColor={TOP_TEXT} onPress={onBack} accessibilityLabel="Back" />
         <View style={[styles.field, { borderRadius: 22 * k, paddingHorizontal: 14 * k }]}>
@@ -150,10 +153,10 @@ export function RouteSelectionTopCard({
           />
         </View>
       </View>
-      </SurfaceScheme>
       <View style={[styles.pillRow, { gap: 8 * k, marginTop: 8 * k }]} pointerEvents="box-none">
         <Chip
           onMap
+          tone="link"
           selected={avoidActive}
           label={avoidLabel}
           trailingIcon="chevron-down"
@@ -162,11 +165,12 @@ export function RouteSelectionTopCard({
         />
         <Chip
           onMap
-          icon={MODE_ICONS[travelMode]}
-          label={MODE_LABELS[travelMode]}
+          icon={vehicle?.icon ?? MODE_ICONS[travelMode]}
+          label={vehicle?.label ?? MODE_LABELS[travelMode]}
           trailingIcon="chevron-down"
           onPress={onOpenMode}
-          accessibilityLabel={`${MODE_LABELS[travelMode]}. Change how you're getting there.`}
+          testID="route-vehicle-pill"
+          accessibilityLabel={`${vehicle?.label ?? MODE_LABELS[travelMode]}. Change how you're getting there or your vehicle.`}
         />
       </View>
     </View>
@@ -249,6 +253,8 @@ export function TravelModeSheet({
   note,
   onSelect,
   onClose,
+  vehicle,
+  onSelectVehicle,
 }: {
   visible: boolean;
   mode: ModeId;
@@ -257,9 +263,18 @@ export function TravelModeSheet({
   note?: string | null;
   onSelect: (mode: ModeId) => void;
   onClose: () => void;
+  /** Waze-match §3: your vehicle, switchable here (re-requests the routes). */
+  vehicle?: VehicleType;
+  onSelectVehicle?: (v: VehicleType) => void;
 }) {
   return (
     <SheetFrame visible={visible} title="Getting there" onClose={onClose}>
+      {vehicle && onSelectVehicle ? (
+        <View testID="mode-sheet-vehicle" style={{ marginBottom: 8 }}>
+          <Text style={styles.sectionLabel}>Your vehicle</Text>
+          <VehicleChoiceList value={vehicle} onChange={onSelectVehicle} />
+        </View>
+      ) : null}
       <ModeIconRow mode={mode} summaries={summaries} ferryAvailable={ferryAvailable} onSelect={onSelect} />
       {visibleModes(ferryAvailable).map((m, i) => {
         const active = m === mode;
@@ -561,7 +576,7 @@ export function RouteSelectionSheet({
                   <Text style={[styles.summaryDistance, { fontSize: 17 * k }]}>{row.distanceText}</Text>
                 </View>
                 {row.title && (
-                  <Text style={[styles.summaryVia, { fontSize: 18 * k }]} numberOfLines={1}>
+                  <Text style={[styles.summaryVia, { fontSize: 18 * k }]} numberOfLines={2} testID="route-row-via">
                     {row.title}
                   </Text>
                 )}
@@ -594,7 +609,8 @@ export function RouteSelectionSheet({
 
       <View
         onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
-        style={[styles.footer, { gap: 12 * k, paddingHorizontal: 16 * k, paddingTop: 10 * k, paddingBottom: insets.bottom + 12 * k }]}
+        testID="route-footer"
+        style={[styles.footer, styles.footerDivider, { gap: 12 * k, paddingHorizontal: 16 * k, paddingTop: 10 * k, paddingBottom: insets.bottom + 12 * k }]}
       >
         {onDetails && (
           <Button variant="secondary" size="large" label="Trip details" onPress={onDetails} disabled={!hasRoutes} style={styles.footerButton} testID="trip-details" />
@@ -698,6 +714,7 @@ const styles = StyleSheet.create({
   avoidHint: { fontSize: 14, color: colors.textFaint, marginTop: 2 },
   avoidNote: { fontSize: 15, color: colors.textMuted, marginTop: 8 },
   modeRow: { flexDirection: "row", alignItems: "center", gap: 14, minHeight: 56 },
+  sectionLabel: { fontSize: 14, fontWeight: "600", color: colors.textMuted, marginTop: 4 },
   modeReason: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   modeTime: { fontSize: 15, fontWeight: "600", color: colors.text },
   modeIconRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8, gap: 4 },
@@ -732,6 +749,7 @@ const styles = StyleSheet.create({
   stopsText: { flex: 1, color: colors.text },
   footer: { flexDirection: "row" },
   footerButton: { flex: 1 },
+  footerDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   goFill: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: GO_BLUE_DARK },
 
   bubbleWrap: { alignItems: "center" },

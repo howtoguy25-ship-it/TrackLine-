@@ -414,14 +414,19 @@ export function screenBubbleAnchors(
   viewport: { width: number; height: number },
   padding: EdgePadding,
   size: { width: number; height: number } = BUBBLE_SIZE,
-  gap = 6
+  gap = 6,
+  /** Each route's own bubble size (bubbleSize), when known -- the selected one is taller. */
+  sizes?: ({ width: number; height: number } | undefined)[]
 ): (LatLng | null)[] {
   const fit = boundsOf(fitPoints);
   const result: (LatLng | null)[] = polylines.map(() => null);
   if (!fit) return result;
   const order = [selectedIndex, ...polylines.map((_, i) => i).filter((i) => i !== selectedIndex)];
   const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
-  const boxAt = (s: { x: number; y: number }) => ({ x0: s.x - size.width / 2, x1: s.x + size.width / 2, y0: s.y - size.height, y1: s.y });
+  const boxFor = (i: number) => (s: { x: number; y: number }) => {
+    const z = sizes?.[i] ?? size;
+    return { x0: s.x - z.width / 2, x1: s.x + z.width / 2, y0: s.y - z.height, y1: s.y };
+  };
   const inside = (b: { x0: number; x1: number; y0: number; y1: number }) =>
     b.x0 >= padding.left && b.x1 <= viewport.width - padding.right && b.y0 >= padding.top && b.y1 <= viewport.height - padding.bottom;
   const clear = (b: { x0: number; x1: number; y0: number; y1: number }) =>
@@ -429,6 +434,7 @@ export function screenBubbleAnchors(
   for (const i of order) {
     const line = polylines[i];
     if (!line || line.length === 0) continue;
+    const boxAt = boxFor(i);
     const samples = samplePolyline(line, 61).slice(3, -3);
     const candidates = samples.length > 0 ? samples : [line[Math.floor(line.length / 2)]];
     const screen = projectFitted(candidates, fit, viewport, padding);

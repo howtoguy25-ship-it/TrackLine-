@@ -2,6 +2,7 @@
 // picking one makes. Pure, so a test can check that exactly one option is ticked for any saved
 // settings. Short lists show inline; long ones open their own page (SettingsChoiceScreen).
 import type { AppSettings, SpokenDirectionsMode, VisibilityMode } from "@/services/settings";
+import { VEHICLE_OPTIONS, isVehicleType, vehiclePatch } from "@/services/vehicle";
 import { SPEED_LIMIT_DISPLAY_OPTIONS, selectedThresholdKey, thresholdOptions, thresholdPatch } from "@/settings/speedometer";
 
 export interface ChoiceListOption {
@@ -29,7 +30,8 @@ export type ChoiceListId =
   | "mapLabels"
   | "appearance"
   | "nightMode"
-  | "alertLifetime";
+  | "alertLifetime"
+  | "vehicleType";
 
 export const VISIBILITY_OPTIONS: { key: VisibilityMode; label: string; hint: string }[] = [
   { key: "everyone", label: "Visible to everyone", hint: "Drivers nearby see your Tracky while you drive" },
@@ -65,6 +67,14 @@ export function formatDuration(ms: number): string {
 const list = (l: ChoiceList) => l;
 
 export const CHOICE_LISTS: Record<ChoiceListId, ChoiceList> = {
+  vehicleType: list({
+    id: "vehicleType",
+    title: "Vehicle type",
+    footer: "Sets your routes and your map icon. Motorcycle uses motorcycle routes where Google has them, car routes elsewhere.",
+    options: () => VEHICLE_OPTIONS.map((o) => ({ key: o.key, label: o.label })),
+    selected: (s) => s.vehicleType,
+    patch: (key, s) => (isVehicleType(key) ? vehiclePatch(s, key) : {}),
+  }),
   visibility: list({
     id: "visibility",
     title: "Who can see you",

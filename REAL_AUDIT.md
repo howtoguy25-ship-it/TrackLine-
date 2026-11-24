@@ -127,3 +127,16 @@ user's own data; S = static app content (settings, help, licences).
   styles, tiles, arrow, camera and layout code in headless Chromium — not an iOS recording.
 
 Lint now: 0 errors, 0 warnings (the 13 old warnings in tests were cleared to make the CI gate pass).
+
+## 6. Startup + Waze-match pass (2026-11-24): what's real
+
+| Thing on screen | Where it comes from | When it can't be had |
+|---|---|---|
+| "N Trackys around you" | Server count (`trackysAround` callable, geohash cells, active in the last 15 min, rounded; "A few" under 10) | Call fails or not deployed → no pill (logged), never a made-up number |
+| "3 reports near you" pill | The real reports already loaded around you | None near → no pill |
+| Other Trackys in view | Presence docs by geohash cell (max 50); the server leaves out anyone within 400 m of their Home / Work / trip start / destination / tonight's first stop | — |
+| "Via Wattle St Punchbowl; …" | The route's own steps (the two roads it spends most distance on) + the nearest ABS suburb centre within 4 km | No named roads → Google's own route summary; outside Australia → road names only |
+| Motorcycle routes | Google Routes `TWO_WHEELER` where Google offers it (with Google's required beta note) | Not offered (AU/UK/US) or no answer → car routes labelled "Motorbike routes use car roads here" |
+| Taxi routes | Car routes, with a note that taxi/bus lanes aren't in the data | — |
+| Electric car, Truck/Van | Not offered (no provider support, BLOCKED #29) | — |
+| Proof images (`docs/startup-trackys`, `docs/waze-match-routes`) | Real tiles and real Mapbox routes; the app screens are HTML drawings of the components, captioned "drawn" | — |

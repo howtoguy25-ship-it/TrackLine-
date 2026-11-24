@@ -9,6 +9,7 @@ import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import type { AuRegionCode } from "@/utils/auStates";
 import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
+import { DEFAULT_VEHICLE, type VehicleType } from "@/services/vehicle";
 import { DEFAULT_ROUTE_AVOID, normalizeRouteAvoid, type RouteAvoidPrefs } from "@/map/routeChoices";
 
 export { SETTINGS_VERSION, migrateStoredSettings };
@@ -139,6 +140,10 @@ export interface AppSettings {
   // Settings > Map view > Keep map north up: while driving the map stays north-up (the arrow
   // still turns). Off: the map turns with the road ahead (permanent fix §4).
   keepNorthUp: boolean;
+  // Settings > Driving preferences > Vehicle type ("What's your ride?", services/vehicle.ts).
+  vehicleType: VehicleType;
+  // The first-run "What's your ride?" has been answered (Done or Skip) -- shown once.
+  vehicleChosen: boolean;
   // Settings > Map display > Dark map: Off / On / Only at night / Same as phone. When it applies,
   // the map (and the controls on it) switch to TrackLine Dark; otherwise the Map theme shows.
   mapDarkMode: "off" | "on" | "night" | "system";
@@ -246,6 +251,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   settingsVersion: SETTINGS_VERSION,
   show3DBuildings: false,
   keepNorthUp: false,
+  vehicleType: DEFAULT_VEHICLE,
+  vehicleChosen: false,
   mapDarkMode: "off",
   navAutoRecentre: true,
   routeAvoid: DEFAULT_ROUTE_AVOID,
