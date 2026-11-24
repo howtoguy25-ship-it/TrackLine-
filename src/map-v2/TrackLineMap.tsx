@@ -10,6 +10,7 @@ import { loadMapbox, mapboxUnavailableReason } from "@/map-v2/mapbox";
 import { recordMapStyle } from "@/diagnostics/diagnostics";
 import { INK, RED_SOFT, RED_TEXT, TRAFFIC, WHITE } from "@/theme/colors";
 import { GestureTracker } from "@/map-v2/gestures";
+import { LoadingGrid } from "@/map-v2/LoadingGrid";
 import {
   BUILDING_EXTRUSION_MIN_PITCH,
   buildingExtrusionPaint,
@@ -138,6 +139,8 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   const paddingRef = useLatest(props.padding);
   // Why the map isn't drawing, shown over it instead of a blank grey screen.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Startup §1: the loading grid covers the map until it has drawn its first frame.
+  const [firstFrame, setFirstFrame] = useState(false);
   const unavailable = Mapbox ? null : mapboxUnavailableReason() ?? "Map engine failed to start";
   useEffect(() => {
     if (unavailable) {
@@ -302,6 +305,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
   const labelPalette = props.satellite ? SATELLITE_LABEL_PALETTE : (THEME_PALETTES[props.theme] ?? SATELLITE_LABEL_PALETTE);
 
   return (
+    <>
     <MapView
       ref={(r) => {
         mapRef.current = r;
@@ -317,7 +321,11 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
       onMapIdle={onMapIdle as never}
       onCameraChanged={remember as never}
       onPress={onPress as never}
-      onDidFinishLoadingMap={props.onMapReady}
+      onDidFinishLoadingMap={() => {
+        setFirstFrame(true);
+        props.onMapReady?.();
+      }}
+      onDidFinishRenderingFrameFully={() => setFirstFrame(true)}
       onDidFinishLoadingStyle={onStyleLoaded}
       onMapLoadingError={onMapLoadingError as never}
     >
@@ -409,6 +417,8 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
       {props.children}
       {loadError ? <MapErrorBanner text={loadError} /> : null}
     </MapView>
+    {!firstFrame && !loadError ? <LoadingGrid dark={props.theme === "dark" || props.satellite} /> : null}
+    </>
   );
 });
 

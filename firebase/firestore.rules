@@ -315,6 +315,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // "Trackys around you" (startup §2): who's using the app, for counting only -- position rounded
+    // to ~1 km, written and read only by noteActive / trackysAround (Admin SDK). No client can read
+    // anyone's, including their own; the app only ever gets the rounded count.
+    match /activity/{uid} {
+      allow read, write: if false;
+    }
+    match /trackysCountCache/{cell} {
+      allow read, write: if false;
+    }
+    // Tonight's private zone for a driver with no Home saved (startup §3). Server-only.
+    match /privateZones/{uid} {
+      allow read, write: if false;
+    }
+
     // Real, explicit request -- "[Wave 👋] rate-limited 1/10min/blockable." This per-sender-
     // per-target rate-limit doc is read/written only by sendWave (Admin SDK) -- a client could
     // otherwise just delete its own cooldown doc to bypass the rate limit entirely.

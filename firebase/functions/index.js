@@ -16,6 +16,7 @@ const {
   downsample,
 } = require("./presencePath");
 const personaCore = require("./personaSpeechCore");
+const trackysCore = require("./trackysCore");
 const trafficCore = require("./trafficNswCore");
 const schoolZonesCore = require("./schoolZonesCore");
 const roadReportsCore = require("./roadReportsCore");
@@ -741,8 +742,9 @@ const MAPBOX_SERVER_TOKEN = defineSecret("MAPBOX_SERVER_TOKEN");
 
 // Real, explicit request -- "only visible+driving... speed>15km/h."
 const PRESENCE_MIN_SPEED_KMH = 15;
-// "Never shown within 500m of Home/Work/trip start/destination."
-const PRESENCE_EXCLUSION_RADIUS_METERS = 500;
+// "Never shown within 400 m of Home / Work / trip start / destination" (startup §3; it was 500 m).
+// Also the night zone for drivers with no Home saved (trackysCore.shouldSetNightZone).
+const PRESENCE_EXCLUSION_RADIUS_METERS = trackysCore.PRIVACY_ZONE_M;
 // "Auto-deletes 2min after last update" -- both a real Firestore TTL field (see DEPLOY.md's own
 // one-time `gcloud firestore fields ttl-policies create` step -- TTL policies aren't something
 // firestore.rules/firebase.json can declare) AND the belt-and-suspenders cleanupExpiredPresence
@@ -833,6 +835,10 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
     if (savedPlaces?.home?.location) exclusionPoints.push(savedPlaces.home.location);
     if (savedPlaces?.work?.location) exclusionPoints.push(savedPlaces.work.location);
   }
+  // No Home saved: tonight's first stationary place is private too (set by noteActive).
+  const zoneSnap = await db.doc(`privateZones/${uid}`).get();
+  const nightZone = zoneSnap.exists ? zoneSnap.data()?.night : null;
+  if (nightZone && typeof nightZone.latitude === "number" && typeof nightZone.longitude === "number") exclusionPoints.push(nightZone);
   const tripContext = data.tripContext || {};
   if (typeof tripContext.sourceLat === "number" && typeof tripContext.sourceLng === "number") {
     exclusionPoints.push({ latitude: tripContext.sourceLat, longitude: tripContext.sourceLng });
@@ -924,6 +930,8 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
   const presenceDoc = {
     lat: last.lat,
     lng: last.lng,
+    // For viewport queries (the map loads the Trackys in view by geohash cell).
+    geohash: require("./reports/core").encodeGeohash(last.lat, last.lng, trackysCore.PRESENCE_GEOHASH_PRECISION),
     headingDeg,
     mood: VALID_MOOD_KEYS.has(data.mood) ? data.mood : "happy",
     path,
@@ -1551,3 +1559,85 @@ Object.assign(
     authV1: require("firebase-functions/v1").auth,
   })
 );
+
+
+// =====================================================================
+// "N Trackys around you" (startup §2) + tonight's private zone (startup §3).
+//
+// noteActive: the app says "I'm using TrackLine" on open, on coming back, and every 5 min while
+// open. Stored in activity/{uid} (no client can read it) with the position rounded to ~1 km,
+// for counting only -- ghost-mode users too, as a number. It expires after 15 min. With no Home
+// saved, the first stationary place tonight becomes a private zone (privateZones/{uid}).
+exports.noteActive = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const uid = request.auth.uid;
+  const d = request.data || {};
+  if (!trackysCore.isCoord(d.lat, d.lng)) throw new HttpsError("invalid-argument", "lat/lng required.");
+  const db = getFirestore();
+  const now = Date.now();
+  await db.doc(`activity/${uid}`).set({
+    ...trackysCore.activityDoc({ lat: d.lat, lng: d.lng, ghost: d.ghost === true, now }),
+    expireAt: Timestamp.fromMillis(now + trackysCore.ACTIVE_WINDOW_MS),
+  });
+  let nightZoneSet = false;
+  const localHour = typeof d.localHour === "number" ? d.localHour : null;
+  const key = trackysCore.nightKey(d.localDate, localHour);
+  if (key && trackysCore.isNightHour(localHour) && d.stationary === true) {
+    let hasHome = false;
+    if (request.auth.token.firebase?.sign_in_provider !== "anonymous") {
+      const userSnap = await db.doc(`users/${uid}`).get();
+      hasHome = !!(userSnap.exists && userSnap.data()?.savedPlaces?.home?.location);
+    }
+    const zoneRef = db.doc(`privateZones/${uid}`);
+    const zone = await zoneRef.get();
+    if (trackysCore.shouldSetNightZone({ hasHome, localHour, stationary: true, dayKey: key, existingDayKey: zone.exists ? zone.data()?.nightKey : null })) {
+      await zoneRef.set({ night: { latitude: d.lat, longitude: d.lng }, nightKey: key, setAt: now });
+      nightZoneSet = true;
+    }
+  }
+  return { ok: true, nightZoneSet };
+});
+
+// trackysAround: the rounded count around a point, computed here from geohash cells (never by
+// the app downloading anyone's position), cached 60 s per ~1 km cell.
+exports.trackysAround = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  const d = request.data || {};
+  if (!trackysCore.isCoord(d.lat, d.lng)) throw new HttpsError("invalid-argument", "lat/lng required.");
+  const db = getFirestore();
+  const now = Date.now();
+  const cacheKey = require("./reports/core").encodeGeohash(d.lat, d.lng, 6);
+  const cacheRef = db.doc(`trackysCountCache/${cacheKey}`);
+  const cached = await cacheRef.get();
+  if (cached.exists && now - (cached.data().computedAt ?? 0) < trackysCore.COUNT_CACHE_MS) {
+    return { ...cached.data().result, cached: true };
+  }
+  // Smallest area first, widening only when it has too few people (10 km on geohash-4 cells,
+  // 25/50 km on geohash-3, the region on geohash-2): a busy city never reads the whole state.
+  let result = null;
+  for (const precision of [4, 3, 2]) {
+    const field = `gh${precision}`;
+    const cells = trackysCore.cellAndNeighbours(d.lat, d.lng, precision);
+    const people = [];
+    for (let i = 0; i < cells.length; i += 10) {
+      const snap = await db
+        .collection("activity")
+        .where(field, "in", cells.slice(i, i + 10))
+        .where("lastActive", ">=", now - trackysCore.ACTIVE_WINDOW_MS)
+        .select("lat", "lng", "lastActive")
+        .get();
+      snap.forEach((doc) => people.push({ uid: doc.id, ...doc.data() }));
+    }
+    const steps = trackysCore.AREA_STEPS_KM.filter((km) => trackysCore.STEP_PRECISION[km] === precision);
+    const counts = trackysCore.countSteps({ lat: d.lat, lng: d.lng }, people, now, request.auth.uid);
+    const enough = steps.find((km) => counts[km] >= trackysCore.MIN_USERS_FOR_AREA);
+    const last = precision === 2;
+    if (enough || last) {
+      const km = enough ?? steps[steps.length - 1];
+      result = { ...trackysCore.roundCount(counts[km]), radiusKm: km };
+      break;
+    }
+  }
+  await cacheRef.set({ computedAt: now, result, expireAt: Timestamp.fromMillis(now + 10 * 60 * 1000) });
+  return { ...result, cached: false };
+});

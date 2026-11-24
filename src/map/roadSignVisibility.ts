@@ -82,3 +82,15 @@ export function homeRoadSigns(
   const pick = (list: { p: SignPoint; d: number }[]) => list.sort((a, b) => a.d - b.d).slice(0, MAX_SIGNS_PER_KIND).map((x) => x.p);
   return [...pick(byKind.camera), ...pick(byKind.trafficLight), ...pick(byKind.other)];
 }
+
+/**
+ * A driver-reported road feature (a speed bump, a crossing...) follows the same rule as the
+ * OpenStreetMap ones: its small grey icon at street zoom, the tiny mark at mid zoom, nothing
+ * further out -- never the big coloured report badge or a far-zoom dot (waze-match §0: reported
+ * speed bumps were still drawn as big coloured circles on the home map). null = not a road
+ * feature (draw it as a normal report).
+ */
+export function roadFeatureReportIcon(item: ReportItemId, zoom: number): string | "hidden" | null {
+  if (signKind(item) !== "other" || REPORT_ITEM_BY_ID[item]?.section !== "roadFeatures") return null;
+  return roadFeatureState(zoom) === "hidden" ? "hidden" : signIcon(item, zoom);
+}
