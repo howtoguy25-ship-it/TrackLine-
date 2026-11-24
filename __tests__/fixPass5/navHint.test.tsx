@@ -47,7 +47,7 @@ const props = (over: Record<string, unknown> = {}) => ({
 
 
 describe("default driving view (§4)", () => {
-  it("heading-up, 45° pitch, arrow at 72%, 300-500 m ahead at every speed -- the same every time", () => {
+  it("heading-up, 45° pitch, arrow at 72%, 400-700 m ahead at every speed -- the same every time", () => {
     for (const speed of [0, 20, 50, 60, 80, 100, 110]) {
       const a = navFollowPose({ latitude: -33.9, longitude: 151.1 }, 90, speed, false, 844);
       const b = navFollowPose({ latitude: -33.9, longitude: 151.1 }, 90, speed, false, 844);
@@ -55,7 +55,7 @@ describe("default driving view (§4)", () => {
       expect(a.pitch).toBe(45);
       expect(a.heading).toBe(90);
       const ahead = metresAheadVisible(navZoomForSpeed(speed, 844, -33.9), 45, 844, -33.9, NAV_ARROW_FRACTION);
-      expect([speed, ahead >= 280 && ahead <= 550]).toEqual([speed, true]);
+      expect([speed, ahead >= 360 && ahead <= 770]).toEqual([speed, true]);
     }
     expect(NAV_ARROW_FRACTION).toBeCloseTo(0.72);
   });

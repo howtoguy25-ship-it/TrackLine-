@@ -1,7 +1,7 @@
 // Ending a drive (src/nav/endDrive.ts + MapScreen's exitNavigation): every end path calls the SAME
 // function; that function closes every driving overlay listed in NAV_OVERLAY_RESETS, clears the
 // route, saves the trip to Recents and eases the camera back to the live location in the home
-// follow view (pitch 45, zoom 17) -- or waits for the first fix. Also: voice commands, the info
+// follow view (pitch 45, zoom 18) -- or waits for the first fix. Also: voice commands, the info
 // banner, and the arrival card's timing.
 import { describe, expect, it } from "@jest/globals";
 import { readFileSync } from "fs";
@@ -47,13 +47,13 @@ describe("one end-of-drive reset", () => {
     expect(src).toMatch(/if \(!homeSnapPendingRef\.current \|\| !currentLatLng \|\| route\) return;/);
   });
 
-  it("home camera: live location, pitch 45, zoom 17, heading-up or north-up, over 1.2 s", () => {
+  it("home camera: live location, pitch 45, zoom 18 (closer, owner request), heading-up or north-up, over 1.2 s", () => {
     const here = { latitude: -33.9, longitude: 151.05 };
     expect(homeCameraAfterDrive(here, 75, false)).toEqual({ center: here, heading: 75, pitch: 45, zoom: HOME_FOLLOW_ZOOM });
     expect(homeCameraAfterDrive(here, 75, true)!.heading).toBe(0);
     expect(homeCameraAfterDrive(null, 75, false)).toBeNull();
     expect(HOME_PITCH).toBe(45);
-    expect(HOME_FOLLOW_ZOOM).toBe(17);
+    expect(HOME_FOLLOW_ZOOM).toBe(18);
     expect(HOME_RESET_MS).toBe(1200);
     expect(ARRIVAL_CARD_MS).toBe(5000);
   });

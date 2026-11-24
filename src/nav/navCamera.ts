@@ -24,10 +24,12 @@ export interface NavPose {
 /** Mapbox GL's vertical field of view (radians). */
 const MAPBOX_FOV = 0.6435011087932844;
 /** Road ahead to keep in view, by speed band (changes only when a band is crossed). */
+// Owner request 2026-11-24: the driving camera higher and further back, more road ahead
+// (was 300 / 400 / 500 m).
 export const AHEAD_BANDS: { maxKmh: number; metres: number }[] = [
-  { maxKmh: 40, metres: 300 },
-  { maxKmh: 80, metres: 400 },
-  { maxKmh: Infinity, metres: 500 },
+  { maxKmh: 40, metres: 400 },
+  { maxKmh: 80, metres: 550 },
+  { maxKmh: Infinity, metres: 700 },
 ];
 export function aheadTargetMetres(speedKmh: number | null | undefined): number {
   const v = speedKmh != null && Number.isFinite(speedKmh) ? speedKmh : 0;

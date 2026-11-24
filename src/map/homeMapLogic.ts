@@ -118,8 +118,8 @@ export function arrowScreenY(mapHeight: number, padding: MapPadding): number {
   return padding.top + (mapHeight - padding.top - padding.bottom) / 2;
 }
 
-/** The zoom the home map opens and re-centres at. */
-export const HOME_FOLLOW_ZOOM = 17;
+/** The zoom the home map opens and re-centres at (closer, street level: owner request 2026-11-24, was 17). */
+export const HOME_FOLLOW_ZOOM = 18;
 
 // ---------------------------------------------------------------------------------------------
 // Zoom and alert pins
