@@ -50,6 +50,9 @@ export const LABEL_MIN_ZOOM: Record<RoadClass, number> = {
 
 /** Road lines are drawn from this zoom up (the tiles decide which roads exist that far out). */
 export const ROAD_LINE_MIN_ZOOM = 9;
+/** Motorways show from further out (the whole network across a city / state), thin until z9. */
+export const MOTORWAY_LINE_MIN_ZOOM = 6;
+export const lineMinZoom = (cls: RoadClass) => (cls === "motorway" ? MOTORWAY_LINE_MIN_ZOOM : ROAD_LINE_MIN_ZOOM);
 /** px between repeated labels of one road. */
 export const LABEL_SPACING_PX = 250;
 /** Lower wins when labels compete for space. */
@@ -99,7 +102,7 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 9;
+export const STYLE_VERSION = 10;
 
 /**
  * Clean satellite (map styles add-on §2): imagery a little less saturated and contrasty with a
@@ -291,8 +294,14 @@ export interface StylePalette {
   building: string;
   road: string;
   roadCasing: string;
-  /** Motorways can be tinted apart from other roads. */
+  /**
+   * Motorways (M1, M2, M4... and their on/off ramps): their own warm colour with a darker edge,
+   * so drivers can see at a glance where the motorway network is.
+   */
   motorway: string;
+  motorwayCasing: string;
+  /** Trunk roads / highways: the quieter slate main-road colour. */
+  trunk: string;
   suburbLabel: string;
   streetLabel: string;
   labelHalo: string;
@@ -320,7 +329,10 @@ export const LIGHT_PALETTE: StylePalette = {
   building: "#ECEFF3",
   road: "#D3D9E2",
   roadCasing: "#FFFFFF",
-  motorway: "#A7B4C6",
+  // Motorways: TrackLine amber with a deeper amber edge; highways keep the slate.
+  motorway: "#EBAE45",
+  motorwayCasing: "#C98A1E",
+  trunk: "#A7B4C6",
   suburbLabel: "#4A6886",
   streetLabel: "#323A45",
   labelHalo: "#FFFFFF",
@@ -338,7 +350,10 @@ export const DARK_PALETTE: StylePalette = {
   building: "#232B39",
   road: "#3D4B63",
   roadCasing: "#121722",
-  motorway: "#5A6B8B",
+  // A muted amber on dark ground: clearly a motorway, not glaring at night.
+  motorway: "#B5823A",
+  motorwayCasing: "#8A5F22",
+  trunk: "#5A6B8B",
   suburbLabel: "#A9C6DC",
   streetLabel: "#EEF1F4",
   labelHalo: "#14171B",
@@ -355,7 +370,9 @@ export const SATELLITE_LABEL_PALETTE: StylePalette = {
   suburbLabel: "#FFFFFF",
   // Roads over imagery: light, semi-transparent lines (buildStyle sets the opacity).
   road: "#F2F4F7",
-  motorway: "#FFE9A8",
+  motorway: "#FFBE45",
+  motorwayCasing: "#1F2125",
+  trunk: "#FFE9A8",
   roadCasing: "#1F2125",
   ...ROUTE_SATELLITE,
 };
@@ -373,6 +390,11 @@ export interface BuildOptions {
 
 type Json = Record<string, unknown>;
 
+/** The fill colour of a road class: motorways amber, highways slate, the rest the street colour. */
+export function roadColour(p: StylePalette, cls: RoadClass): string {
+  return cls === "motorway" ? p.motorway : cls === "trunk" ? p.trunk : p.road;
+}
+
 function roadFilter(cls: RoadClass): unknown[] {
   return ["match", ["get", "class"], ROAD_CLASS_SOURCES[cls], true, false];
 }
@@ -381,10 +403,13 @@ function roadFilter(cls: RoadClass): unknown[] {
 export function roadWidthExpression(cls: RoadClass, scale = 1, extra = 0): unknown[] {
   const { z14, z18 } = ROAD_WIDTHS[cls];
   const z9 = Math.max(0.5, z14 * 0.25);
+  // Motorways start earlier, as a fine line that thickens towards z9.
+  const early = cls === "motorway" ? [MOTORWAY_LINE_MIN_ZOOM, round2(0.9 * scale + extra * 0.5)] : [];
   return [
     "interpolate",
     ["exponential", 1.5],
     ["zoom"],
+    ...early,
     ROAD_LINE_MIN_ZOOM,
     round2(z9 * scale + extra),
     14,
@@ -548,11 +573,11 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
       type: "line",
       source: "composite",
       "source-layer": "road",
-      minzoom: ROAD_LINE_MIN_ZOOM,
+      minzoom: lineMinZoom(cls),
       filter: roadFilter(cls),
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": p.roadCasing,
+        "line-color": cls === "motorway" ? p.motorwayCasing : p.roadCasing,
         "line-width": options.satellite ? roadWidthExpression(cls, roadScale * 0.5, 1.5) : roadWidthExpression(cls, roadScale, 2),
         "line-opacity": options.satellite ? (SATELLITE_CASED.includes(cls) ? SATELLITE_ROAD_OPACITY.casing : 0) : 1,
       },
@@ -564,11 +589,11 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
       type: "line",
       source: "composite",
       "source-layer": "road",
-      minzoom: ROAD_LINE_MIN_ZOOM,
+      minzoom: lineMinZoom(cls),
       filter: roadFilter(cls),
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": cls === "motorway" || cls === "trunk" ? p.motorway : p.road,
+        "line-color": roadColour(p, cls),
         "line-width": roadWidthExpression(cls, options.satellite ? roadScale * 0.5 : roadScale),
         "line-opacity": options.satellite ? (SATELLITE_CASED.includes(cls) ? SATELLITE_ROAD_OPACITY.main : SATELLITE_ROAD_OPACITY.other) : 1,
       },
@@ -719,10 +744,10 @@ export const THEME_PALETTES: Record<ThemeKey, StylePalette> = {
   normal: LIGHT_PALETTE,
   light: LIGHT_PALETTE,
   dark: DARK_PALETTE,
-  purpleBlue: { ...LIGHT_PALETTE, name: "Purple & Blue", land: "#F4F2FA", road: "#D8D3EC", motorway: "#C7BCEB", water: "#9FC6F2", suburbLabel: "#7563A8" },
-  blueGrey: { ...LIGHT_PALETTE, name: "Blue & Grey", land: "#EEF1F4", road: "#C9D2DC", motorway: "#B3C3D6", water: "#8FB7E3", suburbLabel: "#5C7690" },
-  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#DAD5A6", motorway: "#E0BC45", water: "#A6D2E8", suburbLabel: "#4E6B33" },
-  blue: { ...LIGHT_PALETTE, name: "Blue", land: "#EEF5FB", road: "#C5DCF0", motorway: "#9CC4EA", water: "#7FB6EC", suburbLabel: "#3E6E9A" },
+  purpleBlue: { ...LIGHT_PALETTE, name: "Purple & Blue", land: "#F4F2FA", road: "#D8D3EC", trunk: "#C7BCEB", water: "#9FC6F2", suburbLabel: "#7563A8" },
+  blueGrey: { ...LIGHT_PALETTE, name: "Blue & Grey", land: "#EEF1F4", road: "#C9D2DC", trunk: "#B3C3D6", water: "#8FB7E3", suburbLabel: "#5C7690" },
+  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#DAD5A6", trunk: "#E0BC45", motorway: "#E3912B", motorwayCasing: "#B86E14", water: "#A6D2E8", suburbLabel: "#4E6B33" },
+  blue: { ...LIGHT_PALETTE, name: "Blue", land: "#EEF5FB", road: "#C5DCF0", trunk: "#9CC4EA", water: "#7FB6EC", suburbLabel: "#3E6E9A" },
 };
 
 export const ROAD_SCALES: Record<"thin" | "normal" | "bold" | "extraBold", number> = {

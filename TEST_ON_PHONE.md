@@ -763,3 +763,11 @@ failed and what you saw instead.
 5. Settings › Map view › Flat: no automatic lean. While driving, previewing routes or placing a report: unchanged.
 6. Zoomed out, the map is calmer: no grey building blocks until street level.
 
+
+## 51. Motorways in their own colour — NEEDS DEVICE TEST
+
+1. Home map around Sydney: every motorway (M1, M2, M4, M5, M7, M8...) is amber with a slightly darker edge; highways (A-roads) slate; streets light grey.
+2. On / off ramps onto a motorway are the same amber, so you can see where the motorway starts.
+3. Pinch right out (city / state view): the motorway network is still drawn as fine amber lines.
+4. Dark mode: muted amber, not glaring. Satellite: bright amber over the imagery.
+5. Green M-shields (yellow numbers) still sit on the motorways. Your purple route is still clearly on top when it uses a motorway.

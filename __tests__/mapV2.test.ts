@@ -9,6 +9,7 @@ import {
   LABEL_SPACING_PX,
   LIGHT_PALETTE,
   ROAD_LINE_MIN_ZOOM,
+  MOTORWAY_LINE_MIN_ZOOM,
   SATELLITE_LABEL_PALETTE,
   SHIELD_PLATES,
   SHIELD_PLATE_FOR,
@@ -57,10 +58,14 @@ describe("map style", () => {
     expect(layer("parks").paint!["fill-color"]).toBe("#D2EED8");
     // Clear sky-blue water (map look 3).
     expect(layer("water").paint!["fill-color"]).toBe("#A3D2F3");
-    // Very light flat buildings, light grey roads with crisp white casing, darker motorways.
+    // Very light flat buildings, light grey roads with crisp white casing, slate highways and
+    // amber motorways with a deeper amber edge (so the motorway network is easy to pick out).
     expect(layer("buildings").paint!["fill-color"]).toBe("#ECEFF3");
     expect(layer("road-residential").paint!["line-color"]).toBe("#D3D9E2");
-    expect(layer("road-motorway").paint!["line-color"]).toBe("#A7B4C6");
+    expect(layer("road-motorway").paint!["line-color"]).toBe("#EBAE45");
+    expect(layer("road-casing-motorway").paint!["line-color"]).toBe("#C98A1E");
+    expect(layer("road-trunk").paint!["line-color"]).toBe("#A7B4C6");
+    expect(layer("road-casing-trunk").paint!["line-color"]).toBe("#FFFFFF");
     expect(layer("road-casing-residential").paint!["line-color"]).toBe("#FFFFFF");
     expect(layer("suburb-labels").paint!["text-color"]).toBe("#4A6886");
     expect(layer("road-label-primary").paint!["text-color"]).toBe("#323A45");
@@ -98,17 +103,19 @@ describe("map style", () => {
     expect(primary["symbol-sort-key"] as number).toBeLessThan(residential["symbol-sort-key"] as number);
   });
 
-  it("road lines are drawn from zoom 9 up", () => {
+  it("road lines are drawn from zoom 9 up; motorways from zoom 6, so the network shows zoomed out", () => {
     for (const l of light.layers.filter((x) => x.id.startsWith("road-") && x.type === "line")) {
-      expect(l.minzoom).toBe(ROAD_LINE_MIN_ZOOM);
+      expect(l.minzoom).toBe(/-motorway$/.test(l.id) ? MOTORWAY_LINE_MIN_ZOOM : ROAD_LINE_MIN_ZOOM);
     }
     expect(ROAD_LINE_MIN_ZOOM).toBe(9);
+    expect(MOTORWAY_LINE_MIN_ZOOM).toBe(6);
   });
 
   it("road widths: motorway 9->22, primary 7->17, secondary 5.5->13, residential 3->9, service 2->6 (z14->z18)", () => {
     const at = (cls: RoadClass) => {
       const e = roadWidthExpression(cls) as number[];
-      return [e[6], e[8]]; // values at z14 and z18
+      const stop = (z: number) => e[e.indexOf(z, 3) + 1];
+      return [stop(14), stop(18)];
     };
     expect(at("motorway")).toEqual([9, 22]);
     expect(at("primary")).toEqual([7, 17]);
@@ -117,6 +124,9 @@ describe("map style", () => {
     expect(at("service")).toEqual([2, 6]);
     // Casing is 2px wider than the road it outlines.
     expect((layer("road-casing-primary").paint!["line-width"] as number[])[6]).toBe(9);
+    // Motorways start as a fine line at zoom 6 and reach their z9 width.
+    const m = roadWidthExpression("motorway") as number[];
+    expect(m.slice(3, 7)).toEqual([6, 0.9, 9, 2.25]);
   });
 
   it("motorways draw over the streets they cross", () => {

@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Satellite Streets",
   "metadata": {
-    "trackline:styleVersion": 9
+    "trackline:styleVersion": 10
   },
   "sources": {
     "composite": {
@@ -315,7 +315,7 @@
       "type": "line",
       "source": "composite",
       "source-layer": "road",
-      "minzoom": 9,
+      "minzoom": 6,
       "filter": [
         "match",
         [
@@ -344,6 +344,8 @@
           [
             "zoom"
           ],
+          6,
+          1.2,
           9,
           2.63,
           14,
@@ -622,7 +624,7 @@
       "type": "line",
       "source": "composite",
       "source-layer": "road",
-      "minzoom": 9,
+      "minzoom": 6,
       "filter": [
         "match",
         [
@@ -641,7 +643,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#FFE9A8",
+        "line-color": "#FFBE45",
         "line-width": [
           "interpolate",
           [
@@ -651,6 +653,8 @@
           [
             "zoom"
           ],
+          6,
+          0.45,
           9,
           1.13,
           14,
