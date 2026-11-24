@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { View, StyleSheet, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
@@ -22,6 +23,35 @@ import { Sentry } from "@/services/sentry";
 // strips either side of the ad, which read as black bars on the dark sheet. Full width, there's no
 // strip. (Not "large anchored adaptive": that one grew to 90pt+ on wide phones.)
 export const BANNER_HEIGHT = 50;
+/** Never let an adaptive ad grow past this (a 90pt banner would eat the map on a phone). */
+export const BANNER_MAX_HEIGHT = 60;
+
+// Fix pass 7 §4: "the ad is cut off at the bottom". Root cause: the slot was a fixed 50pt while
+// Google's adaptive banner can come back taller (up to its maxHeight), so the bottom of the ad
+// hung out of the slot into the home-indicator strip. The ad's real size is now measured
+// (onSizeChange) and the slot -- and the map's bottom padding, via useBannerHeight -- follow it.
+let measuredHeight = BANNER_HEIGHT;
+const listeners = new Set<() => void>();
+export function bannerSlotHeight(reported: number | null | undefined): number {
+  if (!reported || !Number.isFinite(reported) || reported <= 0) return BANNER_HEIGHT;
+  return Math.min(BANNER_MAX_HEIGHT, Math.max(BANNER_HEIGHT, Math.ceil(reported)));
+}
+function setMeasured(h: number) {
+  const next = bannerSlotHeight(h);
+  if (next === measuredHeight) return;
+  measuredHeight = next;
+  listeners.forEach((l) => l());
+}
+/** The banner slot's current height (pt, without the safe area). */
+export function useBannerHeight(): number {
+  return useSyncExternalStore(
+    (fn) => {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    () => measuredHeight
+  );
+}
 
 /**
  * Whether the ad banner shows: on the plain home map only -- not during navigation, not on route
@@ -37,6 +67,7 @@ export function BannerAdBar() {
   const { width } = useWindowDimensions();
   // Same colour as the sheet above it, light or dark, so there's never a band around the ad.
   const sheet = SURFACES[useMapScheme()].sheet;
+  const slotHeight = useBannerHeight();
   return (
     // White, and padded by the bottom safe area, so the banner sits inside it with the sheet's
     // own white running straight down to the screen edge -- no dark strip under the ad, and
@@ -44,12 +75,13 @@ export function BannerAdBar() {
     // Sits directly on the bottom safe-area edge: the only space under the 50pt banner is the
     // safe-area inset itself, filled white like the sheet above it (no dark strip).
     <View testID="ad-bar" style={[styles.container, { paddingBottom: insets.bottom, backgroundColor: sheet }]}>
-      <View style={styles.slot}>
+      <View style={[styles.slot, { height: slotHeight }]}>
         <BannerAd
           unitId={env.ads.bannerUnitId}
           size={BannerAdSize.INLINE_ADAPTIVE_BANNER}
           width={Math.floor(width)}
-          maxHeight={BANNER_HEIGHT}
+          maxHeight={BANNER_MAX_HEIGHT}
+          onSizeChange={({ height }) => setMeasured(height)}
           onAdLoaded={() => Sentry.logger.info("ads: banner loaded")}
           onAdFailedToLoad={(error) => {
             Sentry.logger.error("ads: banner failed to load", { error: String(error) });
@@ -65,5 +97,5 @@ const styles = StyleSheet.create({
   container: { width: "100%", alignItems: "center" },
   // The slot keeps its 50pt whether or not an ad has loaded, so the layout above it (the sheet,
   // the floating buttons, the map padding) never jumps when one arrives.
-  slot: { width: "100%", height: BANNER_HEIGHT, alignItems: "center", justifyContent: "center" },
+  slot: { width: "100%", alignItems: "center", justifyContent: "center" },
 });

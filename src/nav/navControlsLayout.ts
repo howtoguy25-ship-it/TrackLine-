@@ -1,10 +1,10 @@
 // Where every floating control sits while driving, in one place, so they can't overlap again:
 //   top-left:     Compass (52), under the top instruction bar
 //   top-right:    Audio player (52), Sound (52), Voice command (52), a column under the bar
-//   bottom-left:  speed limit sign (56, on top) → 12 gap → speedometer (84), above the bottom bar;
-//                 in FREE (after panning) the "Re-centre" pill (fix pass 5 §4) sits under them,
-//                 right above the bar, and lifts them by its height + 12
-//   bottom-right: Report (56), above the bar
+//   bottom-left:  speed limit sign (56, on top) → 12 gap → speedometer (84), above the bottom bar
+//   bottom-right: Report (56), above the bar; in FREE (after panning) Re-centre (a round 56 button,
+//                 fix pass 7 §4) right above Report, in the same column -- its space is kept free
+//                 even before it shows, so nothing jumps, and it is never near the speedometer
 //   centre:       the street chip just above the bar, and the info banner ("Hazard reported
 //                 ahead · 800 m") above that, between the two bottom columns
 // The re-centre button used to sit bottom-LEFT above the bar, exactly where the speedometer is.
@@ -16,8 +16,8 @@ export const SPEED_SIGN_SIZE = 56;
 export const SPEEDOMETER_SIZE = 84;
 export const REPORT_SIZE = 56;
 export const RECENTER_SIZE = 52;
-/** The "Re-centre" pill (arrow icon + word) bottom-left in FREE. */
-export const RECENTER_PILL = { width: 124, height: 44 } as const;
+/** Re-centre: a round button above Report in the right column (fix pass 7 §4). */
+export const RECENTER_BUTTON = 56;
 export const SOUND_SIZE = 52;
 export const COMPASS_SIZE = 52;
 export const STREET_CHIP_HEIGHT = 28;
@@ -115,8 +115,8 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
   }
   out.bottomBar = { x: 0, y: i.height - i.safeBottom - i.bottomBarHeight, width: i.width, height: i.bottomBarHeight + i.safeBottom };
   out.topBar = { x: 0, y: 0, width: i.width, height: i.safeTop + i.topBarHeight };
-  // The left column rises above the Re-centre pill while it shows.
-  const leftBase = i.showRecenter ? base - RECENTER_PILL.height - CONTROL_GAP : base;
+  // The left column stays put: Re-centre lives in the right column now.
+  const leftBase = base;
   out.speedometer = { x: SIDE_MARGIN, y: leftBase - SPEEDOMETER_SIZE, width: SPEEDOMETER_SIZE, height: SPEEDOMETER_SIZE };
   const top = topColumnTop(i.safeTop, i.topBarHeight) + (i.dropBy ?? 0);
   const topBarBottom = i.safeTop + i.topBarHeight;
@@ -127,10 +127,7 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
   const raisedIntoTop = (i.raiseBy ?? 0) > 0 && stackedSignTop - CONTROL_GAP < (compassWanted ? top + COMPASS_SIZE : topBarBottom);
   // The ahead banner under the top bar reaching down to the stacked sign (a 4-inch phone).
   const bannerReaches = (i.dropBy ?? 0) > 0 && stackedSignTop - CONTROL_GAP < topBarBottom + (i.dropBy ?? 0);
-  // The Re-centre pill lifting the column so far the compass would have to step aside (a 4.7-inch
-  // phone with a tall banner): the sign goes beside the speedometer instead, the compass stays.
-  const pillPushesCompass = !!i.showRecenter && compassWanted && stackedSignTop - CONTROL_GAP < top + COMPASS_SIZE;
-  const signBeside = !!i.showSpeedLimit && (raisedIntoTop || bannerReaches || pillPushesCompass);
+  const signBeside = !!i.showSpeedLimit && (raisedIntoTop || bannerReaches);
   if (i.showSpeedLimit) {
     out.speedLimit = signBeside
       ? { x: SIDE_MARGIN + SPEEDOMETER_SIZE + CONTROL_GAP, y: leftBase - SPEED_SIGN_SIZE, width: SPEED_SIGN_SIZE, height: SPEED_SIGN_SIZE }
@@ -142,7 +139,8 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
         };
   }
   out.report = { x: i.width - SIDE_MARGIN - REPORT_SIZE, y: base - REPORT_SIZE, width: REPORT_SIZE, height: REPORT_SIZE };
-  if (i.showRecenter) out.recenter = { x: SIDE_MARGIN, y: base - RECENTER_PILL.height, width: RECENTER_PILL.width, height: RECENTER_PILL.height };
+  const recenterY = base - REPORT_SIZE - CONTROL_GAP - RECENTER_BUTTON;
+  if (i.showRecenter) out.recenter = { x: i.width - SIDE_MARGIN - RECENTER_BUTTON, y: recenterY, width: RECENTER_BUTTON, height: RECENTER_BUTTON };
   // The left column's highest point (the stacked sign, or the speedometer).
   const leftTop = out.speedLimit && !signBeside ? out.speedLimit.y : out.speedometer.y;
   // The compass keeps its place unless a raised column leaves no room (a 4-inch phone with a
@@ -151,7 +149,7 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
   // Top-right column, top to bottom: audio player, sound, voice command (each only when shown).
   // On a short phone they don't all fit above the space Re-centre needs (kept free even before
   // it shows, so nothing jumps), so the rest continue down the left column under the compass.
-  const rightLimit = base - REPORT_SIZE - CONTROL_GAP;
+  const rightLimit = recenterY - CONTROL_GAP;
   const leftLimit = leftTop - CONTROL_GAP;
   let yRight = top;
   let yLeft = out.compass ? top + COMPASS_SIZE + CONTROL_GAP : top;
@@ -170,9 +168,7 @@ export function navControlFrames(i: NavLayoutInput): Partial<Record<NavControl, 
   }
   const lane = centreLane(i.width);
   if (signBeside) lane.left += SPEED_SIGN_SIZE + CONTROL_GAP;
-  // The pill is wider than the speedometer column: while it shows, the street chip / info banner
-  // rise with the left column and sit above the pill's row, keeping their full width.
-  const chipBottom = i.showRecenter ? leftBase : base;
+  const chipBottom = base;
   if (i.showStreetChip) out.streetChip = { x: lane.left, y: chipBottom - STREET_CHIP_HEIGHT, width: lane.right - lane.left, height: STREET_CHIP_HEIGHT };
   if (i.showInfoBanner) {
     const bannerBottom = i.showStreetChip ? chipBottom - STREET_CHIP_HEIGHT - CONTROL_GAP : chipBottom;
@@ -212,3 +208,13 @@ export function crowded(frames: Partial<Record<NavControl, Frame>>, gap = CONTRO
 
 /** Re-centre's offset above the bottom bar's top edge, for NavBottomBar (sits over Report). */
 export const RECENTER_ABOVE_BAR = CONTROL_GAP + REPORT_SIZE + CONTROL_GAP;
+
+/**
+ * Top status badges while driving ("Rerouting…", the ride chip, the transit wait): between the
+ * compass column on the left and the sound column on the right, never on top of either (fix pass 7
+ * §4 -- they used to start 12 pt from the left edge, right over the compass).
+ */
+export function topBadgeLane(width: number): { left: number; maxWidth: number } {
+  const left = SIDE_MARGIN + COMPASS_SIZE + CONTROL_GAP;
+  return { left, maxWidth: Math.max(120, width - left - (SIDE_MARGIN + SOUND_SIZE + CONTROL_GAP)) };
+}

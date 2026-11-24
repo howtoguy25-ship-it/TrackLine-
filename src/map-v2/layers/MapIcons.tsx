@@ -215,8 +215,6 @@ export function iconView(name: string, extras: IconExtras = {}): React.ReactElem
       return <CarNavArrow markerStyle={(rest[0] as MapMarkerStyleKey) ?? "default"} />;
     case "blank":
       return <View style={styles.blank} />;
-    case "ghost-badge":
-      return <Tracky mood="spooky" size={28} animated={false} reactOnTap={false} translucent />;
     case "tracky": {
       // "tracky:<uid>" -- the look comes from extras, since it's a whole customisation object.
       const look = extras.trackyLooks?.[rest.join(":")];

@@ -141,7 +141,12 @@ describe("controls never overlap, every state, every phone (§5)", () => {
             });
             expect([p.width, showRecenter, banner, overlaps(frames)]).toEqual([p.width, showRecenter, banner, []]);
             if (!banner) expect(crowded(frames)).toEqual([]);
-            if (showRecenter) expect(frames.recenter!.x).toBeLessThan(p.width / 2); // bottom-left
+            if (showRecenter) {
+              // Fix pass 7 §4: Re-centre in the right column, right above Report, never near the speedometer.
+              expect(frames.recenter!.x).toBe(frames.report!.x);
+              expect(frames.recenter!.y + frames.recenter!.height).toBeLessThanOrEqual(frames.report!.y - 12);
+              expect(frames.recenter!.x).toBeGreaterThan(frames.speedometer!.x + frames.speedometer!.width + 12);
+            }
             // Report stays bottom-right, speed sign above the speedometer on the left.
             expect(frames.report!.x).toBeGreaterThan(p.width / 2);
             expect(frames.speedometer!.x).toBeLessThan(p.width / 2);
@@ -175,7 +180,7 @@ describe("faster route offer in the ahead banner (§5)", () => {
 // Last: pressing inside the animated controls leaves reanimated's test mock in a state later
 // renders in this file don't survive.
 describe("the hint buttons (§4)", () => {
-  it("renders the pill bottom-left (FREE) and the ringed compass, both bring the view back", async () => {
+  it("renders Re-centre above Report (FREE) and the ringed compass, both bring the view back", async () => {
     const onRecenter = jest.fn();
     const onCompass = jest.fn();
     const r = await render(<NavMapControls {...props({ showRecenter: true, onRecenter, compassHighlighted: true, onCompass })} />);
@@ -183,7 +188,7 @@ describe("the hint buttons (§4)", () => {
     expect(onRecenter).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByTestId("nav-compass-highlighted"));
     expect(onCompass).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Re-centre")).toBeTruthy();
+    expect(screen.getByLabelText("Re-centre on my location")).toBeTruthy();
     await r.unmount();
   });
 });

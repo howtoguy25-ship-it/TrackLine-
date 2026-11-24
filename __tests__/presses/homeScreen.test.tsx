@@ -260,10 +260,10 @@ describe("ad bar", () => {
     expect(BANNER_HEIGHT).toBe(50);
   });
 
-  it("spans the full width (no side strips -- the 'black bars'), capped at 50pt tall", () => {
+  it("spans the full width (no side strips -- the 'black bars'), 50-60pt tall, sized to the ad (fix pass 7)", () => {
     const src = require("fs").readFileSync("src/components/BannerAdBar.tsx", "utf8");
-    expect(src).toMatch(/size=\{BannerAdSize\.INLINE_ADAPTIVE_BANNER\}\s+width=\{Math\.floor\(width\)\}\s+maxHeight=\{BANNER_HEIGHT\}/);
-    expect(src).toMatch(/slot: \{ width: "100%", height: BANNER_HEIGHT/);
+    expect(src).toMatch(/size=\{BannerAdSize\.INLINE_ADAPTIVE_BANNER\}\s+width=\{Math\.floor\(width\)\}\s+maxHeight=\{BANNER_MAX_HEIGHT\}/);
+    expect(src).toMatch(/slot: \{ width: "100%", alignItems: "center"/);
     expect(src).not.toMatch(/width: 320/);
   });
 
