@@ -48,3 +48,23 @@ describe("route colours follow the style", () => {
     expect(src).not.toMatch(/<TrackLineMap[^>]*\bkey=/);
   });
 });
+
+describe("controls stay readable on every map (§3)", () => {
+  const { ACTIONS, contrastRatio } = require("@/theme/colors") as typeof import("@/theme/colors");
+  const { SATELLITE_GROUND } = require("@/map-v2/styles/buildStyle") as typeof import("@/map-v2/styles/buildStyle");
+  const { shadow } = require("@/theme/tokens") as typeof import("@/theme/tokens");
+  it("every floating control either stands apart from the ground or has a visible edge, on every theme and satellite; all have a shadow", () => {
+    const grounds = [...Object.entries(THEME_PALETTES).map(([k, p]) => [k, p.land] as const), ["satellite", SATELLITE_GROUND] as const];
+    for (const [name, land] of grounds) {
+      const scheme = schemeForMapTheme(name === "satellite" ? "light" : name);
+      for (const group of ["mapControl", "recenter", "report"] as const) {
+        const g = ACTIONS[scheme][group];
+        const apart = contrastRatio(g.fill, land) >= 1.5;
+        expect([name, group, apart || !!g.outline]).toEqual([name, group, true]);
+        // What's on the button reads on the button (WCAG AA for icons/text).
+        expect(contrastRatio(g.on, g.fill)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    expect(shadow.floating).toBeTruthy();
+  });
+});

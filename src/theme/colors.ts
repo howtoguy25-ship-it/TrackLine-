@@ -101,8 +101,9 @@ export const ACTIONS: Record<Scheme, Record<ActionGroup, GroupColours>> = {
   light: {
     go: { fill: BLUE, on: WHITE },
     alternative: { fill: LIGHT_GREY, on: BLUE_TEXT },
-    mapControl: { fill: WHITE, on: INK, outline: "rgba(16,24,40,0.06)" },
-    recenter: { fill: DARK_GREY, on: WHITE },
+    // Map styles §3: an edge you can see on every map theme and on satellite (was 0.06).
+    mapControl: { fill: WHITE, on: INK, outline: "rgba(16,24,40,0.14)" },
+    recenter: { fill: DARK_GREY, on: WHITE, outline: "rgba(255,255,255,0.18)" },
     report: { fill: YELLOW, on: BLACK, outline: BLACK },
     route: { fill: PURPLE, on: WHITE },
     danger: { fill: RED_SOFT, on: RED_TEXT },
@@ -112,8 +113,8 @@ export const ACTIONS: Record<Scheme, Record<ActionGroup, GroupColours>> = {
   dark: {
     go: { fill: BLUE, on: WHITE },
     alternative: { fill: "#33363B", on: "#6CC0FF" },
-    mapControl: { fill: "#2A2C30", on: WHITE, outline: "rgba(255,255,255,0.08)" },
-    recenter: { fill: DARK_GREY, on: WHITE },
+    mapControl: { fill: "#2A2C30", on: WHITE, outline: "rgba(255,255,255,0.18)" },
+    recenter: { fill: DARK_GREY, on: WHITE, outline: "rgba(255,255,255,0.18)" },
     report: { fill: YELLOW, on: BLACK, outline: BLACK },
     route: { fill: PURPLE, on: WHITE },
     danger: { fill: RED_SOFT_DARK, on: RED_TEXT_DARK },

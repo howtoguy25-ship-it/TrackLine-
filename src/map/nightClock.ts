@@ -13,3 +13,8 @@ export function isNightNow(now: Date = new Date(), at: { latitude: number; longi
   const h = now.getHours();
   return h >= 19 || h < 6;
 }
+
+/** The last position the map saw (the live map preview in Settings centres on it). */
+export function lastKnownPosition(): { latitude: number; longitude: number } | null {
+  return last;
+}

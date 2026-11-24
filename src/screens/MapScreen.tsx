@@ -7597,6 +7597,8 @@ export function MapScreen() {
         }}
         mapViewLabel={NAV_VIEW_LABEL[navView]}
         onMapView={() => applyNavView(nextNavView[navView])}
+        satelliteOn={mapType === "hybrid"}
+        onToggleSatellite={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
         avoidSummary={avoidCount(settings.routeAvoid) ? avoidPillLabel(settings.routeAvoid) : "None"}
         onAvoid={() => {
           navOptionsSheetRef.current?.close();

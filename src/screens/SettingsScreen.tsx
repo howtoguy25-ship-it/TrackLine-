@@ -46,6 +46,8 @@ import { mapEngineLine } from "@/config/mapEngine";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
 import { MAP_DARK_MODE_LABELS, type MapDarkMode } from "@/map-v2/styles/mapAppearance";
+import { LiveMapPreview } from "@/components/settings/LiveMapPreview";
+import type { ThemeKey } from "@/map-v2/styles/buildStyle";
 import { NAV_CARD_THEME_LABELS, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { MAP_MARKER_STYLE_LABELS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
@@ -664,6 +666,7 @@ export function SettingsScreen() {
         ))}
       </Section>
 
+      {shouldShow("Map theme") ? <LiveMapPreview theme={settings.mapTheme as ThemeKey} roadThickness={settings.roadThickness} label={MAP_THEME_LABELS[settings.mapTheme]} /> : null}
       {shouldShow("Map theme") ? (
         <SettingsPicker
           title="Map theme"

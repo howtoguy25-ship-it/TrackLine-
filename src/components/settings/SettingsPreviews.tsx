@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { Image, StyleSheet, View } from "react-native";
 import Svg, { Circle, G, Path, Polygon, Rect } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -7,6 +7,7 @@ import { Text } from "@/components/AppText";
 import { Icon } from "@/components/ui/Icon";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { THEME_PALETTES, ROAD_SCALES, type ThemeKey } from "@/map-v2/styles/buildStyle";
+import { THEME_PREVIEW_IMAGES } from "@/map-v2/themePreviews";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { MAP_MARKER_STYLE_ICONS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import type { AlertIconThemeKey } from "@/utils/alertIconThemes";
@@ -18,34 +19,13 @@ import { BLUE, PURPLE, WHITE } from "@/theme/colors";
 // the real map (the theme palettes in map-v2/styles/buildStyle.ts, the card colours in
 // navCardTheme.ts), so what's picked is what appears.
 
-/** A mini map in a theme's own colours: land, a park, water, blocks, streets, a motorway. */
-export function MapThemePreview({ theme, roadScale = 1 }: { theme: ThemeKey; roadScale?: number }) {
-  const p = THEME_PALETTES[theme];
-  const w = (n: number) => n * roadScale;
-  return (
-    <Svg width="100%" height="100%" viewBox="0 0 160 92" preserveAspectRatio="xMidYMid slice">
-      <Rect x="0" y="0" width="160" height="92" fill={p.land} />
-      <Path d="M0 70 C30 60 55 80 90 72 S140 60 160 66 L160 92 L0 92 Z" fill={p.water} />
-      <Rect x="104" y="8" width="44" height="30" rx="6" fill={p.park} />
-      <G fill={p.building}>
-        <Rect x="12" y="10" width="22" height="14" rx="2" />
-        <Rect x="40" y="10" width="18" height="14" rx="2" />
-        <Rect x="12" y="32" width="20" height="16" rx="2" />
-        <Rect x="66" y="36" width="24" height="14" rx="2" />
-      </G>
-      {/* streets: casing then fill */}
-      <G stroke={p.roadCasing} strokeWidth={w(7)} strokeLinecap="round" fill="none">
-        <Path d="M0 28 L160 28" />
-        <Path d="M62 0 L62 92" />
-      </G>
-      <G stroke={p.road} strokeWidth={w(5)} strokeLinecap="round" fill="none">
-        <Path d="M0 28 L160 28" />
-        <Path d="M62 0 L62 92" />
-      </G>
-      <Path d="M0 54 C40 50 90 58 160 46" stroke={p.roadCasing} strokeWidth={w(10)} fill="none" strokeLinecap="round" />
-      <Path d="M0 54 C40 50 90 58 160 46" stroke={p.motorway} strokeWidth={w(7.5)} fill="none" strokeLinecap="round" />
-    </Svg>
-  );
+/**
+ * A theme's preview: that style drawn with real Mapbox tiles (Sydney CBD, z14, with a route in the
+ * theme's route colours) -- rendered from buildStyle by scripts/build-theme-previews.ts, not a
+ * colour swatch.
+ */
+export function MapThemePreview({ theme }: { theme: ThemeKey; roadScale?: number }) {
+  return <Image source={THEME_PREVIEW_IMAGES[theme]} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityIgnoresInvertColors testID={`map-theme-preview-${theme}`} />;
 }
 
 /** Road thickness: the same mini map with its roads at that setting's real scale. */
