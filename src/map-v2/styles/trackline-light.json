@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Light",
   "metadata": {
-    "trackline:styleVersion": 9
+    "trackline:styleVersion": 10
   },
   "sources": {
     "composite": {
@@ -407,7 +407,7 @@
       "type": "line",
       "source": "composite",
       "source-layer": "road",
-      "minzoom": 9,
+      "minzoom": 6,
       "filter": [
         "match",
         [
@@ -426,7 +426,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#FFFFFF",
+        "line-color": "#C98A1E",
         "line-width": [
           "interpolate",
           [
@@ -436,6 +436,8 @@
           [
             "zoom"
           ],
+          6,
+          1.9,
           9,
           4.25,
           14,
@@ -714,7 +716,7 @@
       "type": "line",
       "source": "composite",
       "source-layer": "road",
-      "minzoom": 9,
+      "minzoom": 6,
       "filter": [
         "match",
         [
@@ -733,7 +735,7 @@
         "line-join": "round"
       },
       "paint": {
-        "line-color": "#A7B4C6",
+        "line-color": "#EBAE45",
         "line-width": [
           "interpolate",
           [
@@ -743,6 +745,8 @@
           [
             "zoom"
           ],
+          6,
+          0.9,
           9,
           2.25,
           14,

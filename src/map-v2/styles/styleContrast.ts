@@ -16,7 +16,9 @@ export interface ContrastRule {
 export const CONTRAST_RULES: ContrastRule[] = [
   // Roads must read against the ground (local streets also get a white / dark casing).
   { name: "street vs land", a: "road", b: "land", min: 1.25, drawnOnly: true },
-  { name: "main road vs land", a: "motorway", b: "land", min: 1.5, drawnOnly: true },
+  { name: "motorway vs land", a: "motorway", b: "land", min: 1.5, drawnOnly: true },
+  { name: "motorway edge vs land", a: "motorwayCasing", b: "land", min: 2, drawnOnly: true },
+  { name: "highway vs land", a: "trunk", b: "land", min: 1.5, drawnOnly: true },
   // Water and parks: clearly water, softly park.
   { name: "water vs land", a: "water", b: "land", min: 1.35, drawnOnly: true },
   // Street names: AAA-level against their halo and the ground.

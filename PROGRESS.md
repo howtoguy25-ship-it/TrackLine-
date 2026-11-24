@@ -6,6 +6,10 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Motorways in their own colour — 2026-11-24
+
+Every motorway (M1, M2, M4, M5, M7, M8, M12, M31...) and its on / off ramps (`motorway_link`) are now TrackLine amber (#EBAE45) with a deeper amber edge (#C98A1E), so the motorway network is obvious at a glance; highways (A-roads, trunk) keep the slate (#A7B4C6) and streets stay grey. Dark: muted amber (#B5823A, edge #8A5F22). Satellite: bright amber (#FFBE45). Every colour theme gets it. Motorways now show from zoom 6 (a fine line thickening to normal at zoom 9), so the whole network is visible zoomed out. The green M-shields are unchanged. New contrast rules (motorway, motorway edge and highway vs ground) pass on every theme. Tests: `__tests__/map/motorways.test.ts`, `__tests__/mapV2.test.ts`. Renders on real tiles at the M4 / M7 interchange, the M5 and all of Sydney: `docs/motorways` (`scripts/motorways-proof.ts`).
+
 ## Map look 3 — TrackLine's own cleaner light look — 2026-11-24
 
 A cooler, airier off-white ground (#F5F6F8), blue-grey streets (#D3D9E2) with white edges, slate main roads (#A7B4C6), fresh mint parks, clear sky-blue water; dark theme gently refreshed. Calmer: side-street names from zoom 15, service roads from 17, small place names only the most notable and only from 16.5. Every contrast rule still passes (`__tests__/map/styleContrast.test.ts`). Renders: `docs/map-look-3`. Launch status: `LAUNCH_READINESS.md`.
