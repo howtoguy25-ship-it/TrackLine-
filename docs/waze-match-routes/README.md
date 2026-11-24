@@ -11,8 +11,11 @@ header). **What is real and what is drawn:**
 - **Drawn:** the React Native screens on top are HTML drawings that copy the components' words,
   rows, colours and the layout numbers. There is no iOS simulator on the Linux build machine, so
   these are **not phone screenshots**. Every image says "drawn" in its caption.
-- **Your reference screenshots** were shared in chat and are not stored in the repo, so they can't
-  sit side by side here. Compare each file below with the matching reference.
+- **Your reference screenshots:** none of the 34 images attached in this session are the Waze
+  route-preview / route-list / vehicle-picker references (they're TrackLine, AdMob and TestFlight
+  screenshots). Drop yours into `reference/` named `route-preview-collapsed`, `route-preview-pulled-up`,
+  `vehicle-picker`, `home-map` (.png or .jpg) and re-run the script: it writes
+  `compare-<name>.png` with yours on the left and ours on the right.
 
 | File | What it shows | Measured (shots.json) |
 |---|---|---|

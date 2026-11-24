@@ -67,11 +67,32 @@ export function homeMapPadding(mapHeight: number, coveredBottom: number, screenH
 // ---------------------------------------------------------------------------------------------
 // The street-name pill's place on screen
 
-/** The pill is as tall as the report button and rides the sheet on the same baseline. */
-export const STREET_PILL_HEIGHT = 56;
+/** The pill rides the sheet on the Report button's baseline; 44 pt (a full tap target) so the
+ *  arrow above it can sit at ~72% of the screen (Waze-match: arrow at ~72%, pill under it). */
+export const STREET_PILL_HEIGHT = 44;
 /** The arrow's centre sits this far above the pill's top edge, so the pill overlaps the bottom
  *  of the accuracy circle slightly. */
-export const ARROW_ABOVE_PILL = 30;
+export const ARROW_ABOVE_PILL = 22;
+/**
+ * The "Where to?" sheet's peek, in points: the grabber (25) + the 48 pt search field + 8. Fixed,
+ * not a fraction of the screen, so the arrow lands at ~72% on every phone (71% on 390x844, 74%
+ * on 430x932, 69% on 375x667) with the street pill under it. Home / Work / New show one swipe up.
+ */
+export const WHERE_TO_PEEK_PT = 81;
+
+// Peek / half / full, as fractions of the space between the status bar and whatever is under
+// the sheet. Exported because the map lays itself out around the sheet from these same numbers.
+export const WHERE_TO_SNAP_FRACTIONS: [number, number, number] = [0.24, 0.55, 0.92];
+
+/**
+ * The fractions the sheet really uses: the peek is a fixed WHERE_TO_PEEK_PT (search field only,
+ * so the arrow sits at ~72%); half and full stay fractions. Same inputs as threeSnapHeights.
+ */
+export function whereToSnapFractions(screenHeight: number, topInset: number, bottomInset: number): [number, number, number] {
+  const max = Math.max(1, screenHeight - topInset - bottomInset);
+  return [Math.min(WHERE_TO_SNAP_FRACTIONS[0], WHERE_TO_PEEK_PT / max), WHERE_TO_SNAP_FRACTIONS[1], WHERE_TO_SNAP_FRACTIONS[2]];
+}
+
 
 /** The pill's top edge (px from the top of the map) for a sheet showing `sheetVisible` px. */
 export function streetPillTopY(mapHeight: number, sheetVisible: number, scale = 1): number {

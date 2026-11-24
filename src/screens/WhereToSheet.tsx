@@ -5,7 +5,8 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import type { SharedValue } from "react-native-reanimated";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import * as Crypto from "expo-crypto";
-import { FlatList, StyleSheet, ActivityIndicator, Keyboard, Alert, Modal, Share, ScrollView } from "react-native";
+import { FlatList, StyleSheet, ActivityIndicator, Keyboard, Alert, Modal, Share, ScrollView, useWindowDimensions } from "react-native";
+import { whereToSnapFractions } from "@/map/homeMapLogic";
 import { Pressable, View } from "@/components/ui/Surface";
 import { Text, TextInput } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -109,9 +110,8 @@ export interface WhereToSheetRef extends ThreeSnapBottomSheetRef {
   openSearch: (slot?: SavedPlaceSlot) => void;
 }
 
-// Peek / half / full, as fractions of the space between the status bar and whatever is under
-// the sheet. Exported because the map lays itself out around the sheet from these same numbers.
-export const WHERE_TO_SNAP_FRACTIONS: [number, number, number] = [0.24, 0.55, 0.92];
+// Peek / half / full: map/homeMapLogic.ts (pure, so the map lays itself out from the same numbers).
+export { WHERE_TO_SNAP_FRACTIONS, whereToSnapFractions } from "@/map/homeMapLogic";
 
 // What the main search input is currently FOR -- "route" (the default: picking a destination to
 // drive to) or assigning one of the real saved-place slots. Picking a result branches on this
@@ -138,8 +138,9 @@ export const WhereToSheet = forwardRef<WhereToSheetRef, Props>(function WhereToS
   ref
 ) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeightForSnaps } = useWindowDimensions();
+  const snapFractions = whereToSnapFractions(windowHeightForSnaps, insets.top, bottomInset ?? 0);
   const { user } = useAuth();
-  const snapFractions = WHERE_TO_SNAP_FRACTIONS;
 
   const [query, setQuery] = useState("");
   const [pickTarget, setPickTarget] = useState<PickTarget>("route");
@@ -1197,8 +1198,8 @@ const styles = StyleSheet.create({
   content: { flex: 1, paddingHorizontal: spacing.lg },
   // --- the sheet
   field: {
-    height: 56,
-    borderRadius: 28,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.surfaceMuted,
     flexDirection: "row",
     alignItems: "center",

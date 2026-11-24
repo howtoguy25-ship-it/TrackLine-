@@ -22,7 +22,7 @@ Line-by-line check of MAP POLISH + both PERMANENT FIX prompts: `docs/waze-match-
 | W2 Route sheet | Via = two main named roads + suburb (`viaText`), list Via on 2 lines, separator above Leave later / Go now, refit at both heights | same |
 | W3 What's your ride? | Once after the location question (guest or signed in), synced with the settings; Settings › Driving preferences › Vehicle type; vehicle pill re-requests routes; Motorcycle → TWO_WHEELER where offered, else labelled car routes; Taxi note; EV/Truck hidden (BLOCKED #29); vehicle sets the map icon | `__tests__/wazeMatch/vehiclePicker.test.tsx`, `docs/waze-match-routes/vehicle-picker.png` |
 
-Not done: the home arrow at ~72% (conflicts with the sheet peek; stays above the street pill at 61% on 390×844, see `docs/startup-trackys/README.md`). Simulator recordings (Linux, BLOCKED #28).
+Home arrow at ~72%: done after build 218 — fixed 81 pt "Where to?" peek (search field; Home / Work one swipe up), 44 pt street pill, arrow 71.2% on 390×844 (`__tests__/wazeMatch/homeArrow.test.ts`). Simulator recordings: not possible on the Linux build machine (BLOCKED #28).
 
 ## Map styles: every style Waze-level, clean satellite — 2026-11-24
 

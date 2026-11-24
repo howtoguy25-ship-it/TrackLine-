@@ -12,11 +12,11 @@
 //        npx tsx scripts/waze-match-proof.ts
 // The token is read from the file and never printed.
 /* global mapboxgl */
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { previewEdgePadding, previewFitCoordinates, MAX_SHEET_FRACTION, bubbleSize } from "../src/nav/previewCamera";
 import { screenBubbleAnchors } from "../src/map/routeChoices";
-import { homeArrowTargetY, homeControlFrames, homeMapPadding, HOME_FOLLOW_ZOOM, type HomeFrame } from "../src/map/homeMapLogic";
+import { homeArrowTargetY, homeControlFrames, homeMapPadding, HOME_FOLLOW_ZOOM, whereToSnapFractions, type HomeFrame } from "../src/map/homeMapLogic";
 import { mapboxZoomFromGoogle } from "../src/map-v2/geo";
 import { viaText } from "../src/map/viaText";
 import { routeColoursFor } from "../src/map-v2/styles/mapAppearance";
@@ -174,7 +174,8 @@ async function render(page: any, shot: Shot) { // eslint-disable-line @typescrip
           return p.x >= f.left - 1 && p.x <= 390 - f.right + 1 && p.y >= f.top - 1 && p.y <= 844 - f.bottom + 1;
         });
       }
-      return { zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing(), inside, anchors };
+      const me = shot.driver ? map.project(shot.driver.at) : null;
+      return { zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing(), inside, anchors, arrowY: me ? Math.round(me.y) : null, arrowFraction: me ? +(me.y / 844).toFixed(3) : null };
     },
     { token, style, shot, arrowPng, trackyIcon, colours }
   );
@@ -235,28 +236,34 @@ function expandedSheet(rs: RealRoute[], selected: number): { html: string; heigh
 }
 
 // ---------------------------------------------------------------- home, drawn
-function homeOverlay(scheme: "light" | "dark", extra = "", label = ""): { html: string; frames: ReturnType<typeof homeControlFrames> } {
-  const sheetPeek = 150;
+// The "Where to?" peek exactly as the app works it out (threeSnapHeights with whereToSnapFractions).
+const SHEET_PEEK = (() => {
   const banner = BANNER_HEIGHT + SAFE_BOTTOM;
-  const f = homeControlFrames({ width: W, height: H - banner, topInset: SAFE_TOP, scale: 1, sheetVisibleHeight: sheetPeek, bottomInset: 0, showCompass: true, showAudioPlayer: false, showSound: true, showRecenter: false, showStreetPill: true });
+  return whereToSnapFractions(H, SAFE_TOP, banner)[0] * (H - SAFE_TOP - banner);
+})();
+function homeOverlay(scheme: "light" | "dark", extra = "", label = "", streetPill = true): { html: string; frames: ReturnType<typeof homeControlFrames> } {
+  const sheetPeek = SHEET_PEEK;
+  const banner = BANNER_HEIGHT + SAFE_BOTTOM;
+  const f = homeControlFrames({ width: W, height: H - banner, topInset: SAFE_TOP, scale: 1, sheetVisibleHeight: sheetPeek, bottomInset: 0, showCompass: true, showAudioPlayer: false, showSound: true, showRecenter: false, showStreetPill: streetPill });
   const s = SURFACES[scheme];
   let html = box(f.menu!, MAP_BTN, ICON.menu, "16px") + box(f.compass!, MAP_BTN, ICON.compass) + box(f.sound!, MAP_BTN, ICON.sound) + box(f.report!, "#FFD400", ICON.report, "16px");
-  if (f.streetPill) html += `<div style="position:absolute;left:${f.streetPill.x}px;top:${f.streetPill.y + 8}px;width:${f.streetPill.width}px;height:40px;border-radius:20px;background:${s.sheet};box-shadow:0 2px 8px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;font:600 17px ${FONT};color:${s.text}">Stacey St</div>`;
+  if (f.streetPill) html += `<div style="position:absolute;left:${f.streetPill.x}px;top:${f.streetPill.y}px;width:${f.streetPill.width}px;height:${f.streetPill.height}px;border-radius:${f.streetPill.height / 2}px;background:${s.sheet};box-shadow:0 2px 8px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;font:600 17px ${FONT};color:${s.text}">Stacey St</div>`;
   html += extra;
-  html += `<div style="position:absolute;left:0;right:0;bottom:${banner}px;height:${sheetPeek}px;background:${s.sheet};border-radius:20px 20px 0 0;box-shadow:0 -4px 14px rgba(0,0,0,.12)"><div style="width:40px;height:5px;border-radius:3px;background:${s.divider};margin:8px auto"></div><div style="margin:8px 16px;height:48px;border-radius:14px;background:${s.muted};display:flex;align-items:center;padding-left:16px;font:500 17px ${FONT};color:${s.textMuted}">Where to?</div></div>`;
+  html += `<div style="position:absolute;left:0;right:0;bottom:${banner}px;height:${sheetPeek}px;background:${s.sheet};border-radius:20px 20px 0 0;box-shadow:0 -4px 14px rgba(0,0,0,.12)"><div style="width:40px;height:5px;border-radius:3px;background:${s.divider};margin:8px auto"></div><div style="margin:4px 16px;height:48px;border-radius:24px;background:${s.muted};display:flex;align-items:center;padding-left:16px;font:500 17px ${FONT};color:${s.textMuted}">Where to?</div></div>`;
   html += `<div style="position:absolute;left:0;right:0;bottom:0;height:${banner}px;background:${s.sheet};border-top:1px solid ${s.divider}"></div>`;
-  if (label) html += caption(label, H - banner - sheetPeek + 92);
+  if (label) html += caption(label, SAFE_TOP + 132);
   return { html, frames: f };
 }
 const HOME_PAD = (() => {
   const banner = BANNER_HEIGHT + SAFE_BOTTOM;
-  const p = homeMapPadding(H - banner, 150, H, homeArrowTargetY(H - banner, 150, 1));
+  const p = homeMapPadding(H - banner, SHEET_PEEK, H, homeArrowTargetY(H - banner, SHEET_PEEK, 1));
   return { ...p, bottom: p.bottom + banner };
 })();
 function pill(text: string, scheme: "light" | "dark"): string {
   const s = SURFACES[scheme];
-  const bottom = BANNER_HEIGHT + SAFE_BOTTOM + 150 + 12;
-  return `<div style="position:absolute;left:50%;transform:translateX(-50%);bottom:${bottom}px;display:flex;align-items:center;gap:10px;background:${s.sheet};border-radius:24px;padding:8px 18px 8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.22);font:600 16px ${FONT};color:${s.text};white-space:nowrap"><img src="${trackyIcon}" style="width:30px;height:30px;border-radius:15px"/>${text}</div>`;
+  // In the street pill's slot (PILL_ABOVE_SHEET = FLOATING_GAP), never wider than the gap to Report.
+  const bottom = BANNER_HEIGHT + SAFE_BOTTOM + SHEET_PEEK + 12;
+  return `<div style="position:absolute;left:50%;transform:translateX(-50%);max-width:${W - (56 + 16) * 2}px;bottom:${bottom}px;display:flex;align-items:center;gap:10px;background:${s.sheet};border-radius:24px;padding:8px 18px 8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.22);font:600 16px ${FONT};color:${s.text};white-space:nowrap"><img src="${trackyIcon}" style="width:30px;height:30px;border-radius:15px"/>${text}</div>`;
 }
 
 // ---------------------------------------------------------------- main
@@ -350,7 +357,7 @@ function pill(text: string, scheme: "light" | "dark"): string {
     for (let i = 0; i < 6; i++) people.push({ uid: `stale${i}`, lat: home[1], lng: home[0], lastActive: now - 30 * 60_000 }); // not active: not counted
     const result = trackysCore.trackysAround({ lat: home[1], lng: home[0] }, people, now, "me");
     notes.trackysCount = { seeded: people.length, active: 37, result, text: trackysPillText(result) };
-    await shoot(START, { name: "3-trackys-banner", scheme: "light", camera: { center: home, zoom: homeZoom, pitch: 45, bearing: 20, padding: HOME_PAD }, driver: { at: home, heading: 20 }, overlay: homeOverlay("light", pill(trackysPillText(result), "light"), "Count from the server's code (trackysCore) on emulator-style seed data").html });
+    await shoot(START, { name: "3-trackys-banner", scheme: "light", camera: { center: home, zoom: homeZoom, pitch: 45, bearing: 20, padding: HOME_PAD }, driver: { at: home, heading: 20 }, overlay: homeOverlay("light", pill(trackysPillText(result), "light"), "Count from the server's code (trackysCore) on emulator-style seed data", false).html });
   }
   // 3. Standing still, turning the phone 0° -> 120° (with a 1-sample magnetic spike): the arrow turns turret-smooth.
   {
@@ -368,7 +375,7 @@ function pill(text: string, scheme: "light" | "dark"): string {
     const frames = [0, 600, 900, 1200, 1500, 2400];
     for (const t of frames) {
       const s = samples.find((x) => x.t === t)!;
-      const chart = `<svg width="358" height="120" style="position:absolute;left:16px;top:${SAFE_TOP + 150}px;background:rgba(255,255,255,.92);border-radius:12px"><polyline fill="none" stroke="#C9CDD3" stroke-width="2" points="${samples.map((x) => `${10 + (x.t / 2400) * 338},${110 - (Math.min(x.raw, 140) / 140) * 100}`).join(" ")}"/><polyline fill="none" stroke="#0098FF" stroke-width="3" points="${samples.filter((x) => x.t <= t).map((x) => `${10 + (x.t / 2400) * 338},${110 - ((x.arrow ?? 0) / 140) * 100}`).join(" ")}"/><text x="14" y="16" font-size="11" font-family="Helvetica">grey: compass in · blue: arrow · spike at 1.2 s ignored</text></svg>`;
+      const chart = `<svg width="358" height="120" style="position:absolute;left:16px;top:${SAFE_TOP + 170}px;background:rgba(255,255,255,.92);border-radius:12px"><polyline fill="none" stroke="#C9CDD3" stroke-width="2" points="${samples.map((x) => `${10 + (x.t / 2400) * 338},${110 - (Math.min(x.raw, 140) / 140) * 100}`).join(" ")}"/><polyline fill="none" stroke="#0098FF" stroke-width="3" points="${samples.filter((x) => x.t <= t).map((x) => `${10 + (x.t / 2400) * 338},${110 - ((x.arrow ?? 0) / 140) * 100}`).join(" ")}"/><text x="14" y="16" font-size="11" font-family="Helvetica">grey: compass in · blue: arrow · spike at 1.2 s ignored</text></svg>`;
       await shoot(START, { name: `4-arrow-still-t${String(t).padStart(4, "0")}`, scheme: "light", camera: { center: home, zoom: homeZoom, pitch: 0, bearing: 0, padding: HOME_PAD }, driver: { at: home, heading: s.arrow ?? 0 }, overlay: homeOverlay("light", chart, `Stopped · t=${(t / 1000).toFixed(1)} s · compass ${Math.round(s.raw)}° · arrow ${Math.round(s.arrow ?? 0)}°`).html });
     }
   }
@@ -396,6 +403,19 @@ function pill(text: string, scheme: "light" | "dark"): string {
         overlay: homeOverlay("light", "", `${labels[i]} · ${seen[i] ? "shown" : "hidden (inside a 400 m private zone)"} · real route`).html,
       });
     }
+  }
+  // Next to your references: drop yours into docs/waze-match-routes/reference/<name>.png|jpg and
+  // this writes compare-<name>.png (yours left, ours right).
+  for (const name of ["route-preview-collapsed", "route-preview-pulled-up", "vehicle-picker", "home-map"]) {
+    const ref = ["png", "jpg", "jpeg"].map((e) => `${ROUTES}/reference/${name}.${e}`).find((f) => existsSync(f));
+    if (!ref) continue;
+    const mime = ref.endsWith("png") ? "image/png" : "image/jpeg";
+    const a = `data:${mime};base64,${readFileSync(ref).toString("base64")}`;
+    const b = `data:image/png;base64,${readFileSync(`${ROUTES}/${name}.png`).toString("base64")}`;
+    await page.setViewportSize({ width: W * 2 + 24, height: H + 30 });
+    await page.setContent(`<body style="margin:0;background:#fff;font:600 13px -apple-system,Helvetica,Arial"><div style="display:flex;gap:24px"><div><div style="height:30px;line-height:30px">Your reference</div><img src="${a}" style="width:${W}px;height:${H}px;object-fit:contain;background:#eee"></div><div><div style="height:30px;line-height:30px">TrackLine (drawn on real tiles)</div><img src="${b}" style="width:${W}px;height:${H}px"></div></div></body>`);
+    await page.screenshot({ path: `${ROUTES}/compare-${name}.png` });
+    await page.setViewportSize({ width: W, height: H });
   }
   writeFileSync("docs/waze-match-routes/shots.json", JSON.stringify(notes, null, 2));
   writeFileSync("docs/startup-trackys/shots.json", JSON.stringify(notes, null, 2));

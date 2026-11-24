@@ -14,8 +14,9 @@ screenshots: there is no iOS simulator on the Linux build machine.
 **Not shown as a picture:** "ghost hides instantly". It is covered by the emulator test
 `firebase/tests/trackys.test.js` ("ghost mode hides instantly") and `src/map/presenceFilter.ts`.
 
-**Home arrow position (honest note):** the spec asks for the arrow at ~72% of the screen with the
-street pill under it. On a 390×844 phone the "Where to?" sheet's peek starts at 610 pt (72.3%), so
-an arrow at 72% would sit behind the sheet with the pill under that. The app keeps the arrow
-directly above the street pill instead: 61% on 390×844, 64% on 430×932, 50% on 375×667
-(`homeArrowTargetY`). Moving it lower needs a smaller sheet peek. Say if you want that.
+**Home arrow at ~72% (done):** the "Where to?" sheet now peeks at just its search field
+(`WHERE_TO_PEEK_PT` = 81 pt; Home / Work / New are one swipe up), the street pill is 44 pt, and the
+arrow sits 22 pt above it. Measured on the rendered map: arrow at 601 pt = **71.2%** of 390×844
+(`shots.json › …arrowFraction`). Other phones: 74% on 430×932, 69% on 375×667
+(`__tests__/wazeMatch/homeArrow.test.ts`). While "N Trackys around you" shows, it takes the
+street pill's slot so it never covers the arrow.

@@ -76,7 +76,7 @@ targets runtime 1.2.0 and the app is 1.3.0, so no update could reach build 217.
 
 ## Left honestly as not done
 
-- **Home arrow at ~72% with the pill under it.** It conflicts with the sheet peek (see
-  `docs/startup-trackys/README.md`). The arrow stays directly above the pill (61% on 390×844).
+- ~~Home arrow at ~72%~~ **Done:** fixed 81 pt sheet peek, 44 pt pill, arrow at 71.2% on 390×844
+  (`__tests__/wazeMatch/homeArrow.test.ts`, `home-map.png`).
 - **Simulator recordings.** Linux build machine, no iOS simulator (BLOCKED #28). Frames are
   rendered from real tiles and the app's own code instead.

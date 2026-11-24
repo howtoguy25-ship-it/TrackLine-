@@ -1,14 +1,14 @@
 {
   "routes": [
     {
-      "minutes": 14,
-      "km": 4.9,
-      "via": "Via Wattle Street Mount Lewis; Wiley Avenue Wiley Park"
+      "minutes": 13,
+      "km": 5.4,
+      "via": "Via South Terrace Mount Lewis; Punchbowl Road Wiley Park"
     },
     {
-      "minutes": 15,
-      "km": 5.3,
-      "via": "Via South Terrace Mount Lewis; Punchbowl Road Wiley Park"
+      "minutes": 12,
+      "km": 4.9,
+      "via": "Via Wattle Street Mount Lewis; Wiley Avenue Wiley Park"
     }
   ],
   "collapsed-bubbles": {
@@ -34,14 +34,16 @@
     "inside": true,
     "anchors": [
       {
-        "x": 209.42677886075506,
-        "y": 374.34857852425057
+        "x": 196.90705027173482,
+        "y": 452.74959668126337
       },
       {
-        "x": 195.67151790245262,
-        "y": 453.79632959697295
+        "x": 209.42670571220242,
+        "y": 374.3485672496506
       }
-    ]
+    ],
+    "arrowY": 379,
+    "arrowFraction": 0.449
   },
   "collapsed-padding": {
     "top": 240,
@@ -72,14 +74,16 @@
     "inside": true,
     "anchors": [
       {
-        "x": 209.42677886075506,
-        "y": 324.34857852425057
+        "x": 196.90705027173482,
+        "y": 402.74959668126337
       },
       {
-        "x": 195.67151790245262,
-        "y": 403.79632959697295
+        "x": 209.42670571220242,
+        "y": 324.3485672496506
       }
-    ]
+    ],
+    "arrowY": 329,
+    "arrowFraction": 0.39
   },
   "pulled-up-padding": {
     "top": 240,
@@ -93,7 +97,9 @@
     "pitch": 45,
     "bearing": 20,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/1-loading-grid-light": {},
   "frames-light": {
@@ -118,15 +124,15 @@
       },
       "report": {
         "x": 318,
-        "y": 542,
+        "y": 611,
         "width": 56,
         "height": 56
       },
       "streetPill": {
         "x": 72,
-        "y": 542,
+        "y": 623,
         "width": 246,
-        "height": 56
+        "height": 44
       }
     },
     "loaded": {
@@ -150,15 +156,15 @@
       },
       "report": {
         "x": 318,
-        "y": 542,
+        "y": 611,
         "width": 56,
         "height": 56
       },
       "streetPill": {
         "x": 72,
-        "y": 542,
+        "y": 623,
         "width": 246,
-        "height": 56
+        "height": 44
       }
     },
     "same": true
@@ -168,7 +174,9 @@
     "pitch": 45,
     "bearing": 20,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/1-loading-grid-dark": {},
   "frames-dark": {
@@ -193,15 +201,15 @@
       },
       "report": {
         "x": 318,
-        "y": 542,
+        "y": 611,
         "width": 56,
         "height": 56
       },
       "streetPill": {
         "x": 72,
-        "y": 542,
+        "y": 623,
         "width": 246,
-        "height": 56
+        "height": 44
       }
     },
     "loaded": {
@@ -225,15 +233,15 @@
       },
       "report": {
         "x": 318,
-        "y": 542,
+        "y": 611,
         "width": 56,
         "height": 56
       },
       "streetPill": {
         "x": 72,
-        "y": 542,
+        "y": 623,
         "width": 246,
-        "height": 56
+        "height": 44
       }
     },
     "same": true
@@ -243,7 +251,9 @@
     "pitch": 45,
     "bearing": 20,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "trackysCount": {
     "seeded": 43,
@@ -260,7 +270,9 @@
     "pitch": 45,
     "bearing": 20,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "turret": [
     {
@@ -514,42 +526,54 @@
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/4-arrow-still-t0600": {
     "zoom": 16,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/4-arrow-still-t0900": {
     "zoom": 16,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/4-arrow-still-t1200": {
     "zoom": 16,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/4-arrow-still-t1500": {
     "zoom": 16,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "docs/startup-trackys/4-arrow-still-t2400": {
     "zoom": 16,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 601,
+    "arrowFraction": 0.712
   },
   "zoneFrames": [
     {
@@ -568,8 +592,8 @@
     },
     {
       "at": [
-        151.057746,
-        -33.917146
+        151.05855,
+        -33.915381
       ],
       "shown": true
     },
@@ -586,27 +610,35 @@
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 363,
+    "arrowFraction": 0.43
   },
   "docs/startup-trackys/5-trackys-moving-2": {
     "zoom": 12.369189353969091,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 363,
+    "arrowFraction": 0.43
   },
   "docs/startup-trackys/5-trackys-moving-3": {
     "zoom": 12.369189353969091,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 363,
+    "arrowFraction": 0.43
   },
   "docs/startup-trackys/5-trackys-moving-4": {
     "zoom": 12.369189353969091,
     "pitch": 0,
     "bearing": 0,
     "inside": null,
-    "anchors": []
+    "anchors": [],
+    "arrowY": 363,
+    "arrowFraction": 0.43
   }
 }

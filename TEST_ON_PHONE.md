@@ -696,8 +696,11 @@ new road's within a few seconds (it used to stick to the first road).
 4. **Arrow when stopped.** Parked, turn on the spot holding the phone: the arrow turns smoothly
    with you (never faster than a quarter turn per second, no twitching), and ignores a quick jolt
    near a magnet or the car's metal. Drive off: above about 8 km/h it follows the road instead.
-5. **Heading-up home map.** On the home map the map turns with you, the arrow sits just above the
-   street-name pill. Settings › Map view › Keep map north up: the map stays north-up.
+5. **Heading-up home map, arrow at ~72%.** On the home map the map turns with you. The arrow sits
+   about three-quarters of the way down the screen with the street-name pill right under it, and
+   the "Where to?" sheet shows just its search field (swipe up once for Home / Work / New).
+   "N Trackys around you" appears in the street pill's place for 5 s. Settings › Map view › Keep
+   map north up: the map stays north-up.
 
 ## 48. Route preview, route list, "What's your ride?" — NEEDS DEVICE TEST
 

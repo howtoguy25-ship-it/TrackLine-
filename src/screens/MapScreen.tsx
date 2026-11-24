@@ -125,7 +125,7 @@ import { HotelsSheet } from "@/screens/HotelsSheet";
 import { FuelStationsSheet, type FuelStationPin } from "@/screens/FuelStationsSheet";
 import { ParkingSheet } from "@/screens/ParkingSheet";
 import { NearbyPlacesSheet, type NearbyPin } from "@/components/places/NearbyPlacesSheet";
-import { WhereToSheet, WHERE_TO_SNAP_FRACTIONS, type WhereToSheetRef } from "@/screens/WhereToSheet";
+import { WhereToSheet, whereToSnapFractions, type WhereToSheetRef } from "@/screens/WhereToSheet";
 import { PlacePage, PLACE_PAGE_SHEET_FRACTION } from "@/screens/PlacePage";
 import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
 import { useLiveSpeed } from "@/hooks/useLiveSpeed";
@@ -1362,7 +1362,7 @@ export function MapScreen() {
   const bannerShown = shouldShowBanner({ navigating: !!route, choosingRoute: !!pendingDestination, placePageOpen: !!placePage });
   const bannerAreaHeight = bannerShown ? BANNER_HEIGHT + insets.bottom : 0;
   const mapAreaHeight = windowHeight - bannerAreaHeight;
-  const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, WHERE_TO_SNAP_FRACTIONS);
+  const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, whereToSnapFractions(windowHeight, insets.top, bannerAreaHeight));
   // Startup §1: starts at the sheet's peek height (where the sheet opens), not 0 -- so Report,
   // Re-centre and the street pill are in their final places on the very first frame instead of
   // jumping up once the sheet reports its height.
@@ -7399,7 +7399,8 @@ export function MapScreen() {
           sheetVisibleHeight={sheetVisibleHeight}
           sheetHalfHeight={whereToHeights.half}
           bottomInset={0}
-          streetPill={!anySheetOpen && !pannedAwayIdle ? { streetName: currentRoadName, reportsAround, stationary } : null}
+          // The info pill ("N Trackys around you") borrows the street pill's slot while it shows.
+          streetPill={!anySheetOpen && !pannedAwayIdle && !pillHead ? { streetName: currentRoadName, reportsAround, stationary } : null}
           topInset={insets.top}
           unreadCount={inboxUnreadCount}
           onMenu={() => navigation.navigate("MainMenu")}
