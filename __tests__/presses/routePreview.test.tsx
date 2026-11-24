@@ -1,4 +1,4 @@
-// Route preview, Waze-style: a dark top card, and Edit drive / Go now when it came from Plan a drive.
+// Route preview, Waze-style: a white top card (Waze-match §1), and Edit drive / Go now when it came from Plan a drive.
 import React from "react";
 import { describe, expect, it, jest } from "@jest/globals";
 import { fireEvent, render } from "@testing-library/react-native";
@@ -51,11 +51,11 @@ function sheet(overrides: Partial<React.ComponentProps<typeof RouteSelectionShee
 }
 
 describe("route preview, Waze-style", () => {
-  it("the top card is dark even over a light map", async () => {
+  it("the top card is white over the light map", async () => {
     const r = await render(<RouteSelectionTopCard {...topCard()} />);
     const card = r.getByTestId("route-preview-top");
     const bg = (Array.isArray(card.props.style) ? Object.assign({}, ...card.props.style.flat(3).filter(Boolean)) : card.props.style).backgroundColor;
-    expect(bg).not.toBe("#FFFFFF");
+    expect(bg).toBe("#FFFFFF");
     r.unmount();
   });
 

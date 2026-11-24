@@ -8,7 +8,6 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button, Chip } from "@/components/ui/Button";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
-import { SurfaceScheme, darkText } from "@/components/ui/surfaceScheme";
 import { MAX_SHEET_FRACTION } from "@/nav/previewCamera";
 import Animated, {
   Easing,
@@ -87,7 +86,7 @@ interface TopCardProps {
   onHeightChange?: (height: number) => void;
 }
 
-const TOP_TEXT = darkText(colors.text) as string;
+const TOP_TEXT = colors.text;
 
 export function RouteSelectionTopCard({
   originLabel,
@@ -112,8 +111,7 @@ export function RouteSelectionTopCard({
       pointerEvents="box-none"
       onLayout={(e) => onHeightChange?.(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
     >
-      {/* The top card is always dark (Waze-style), over light or dark maps alike. */}
-      <SurfaceScheme value="dark">
+      {/* White card over the light map (dark with the map's dark theme -- MapSurface sets the scheme). */}
       <View style={[styles.topCard, { borderRadius: 32 * k, padding: 10 * k, gap: 6 * k }]} testID="route-preview-top">
         <Button variant="ghost" icon="chevron-back" iconColor={TOP_TEXT} onPress={onBack} accessibilityLabel="Back" />
         <View style={[styles.field, { borderRadius: 22 * k, paddingHorizontal: 14 * k }]}>
@@ -150,10 +148,10 @@ export function RouteSelectionTopCard({
           />
         </View>
       </View>
-      </SurfaceScheme>
       <View style={[styles.pillRow, { gap: 8 * k, marginTop: 8 * k }]} pointerEvents="box-none">
         <Chip
           onMap
+          tone="link"
           selected={avoidActive}
           label={avoidLabel}
           trailingIcon="chevron-down"
@@ -561,7 +559,7 @@ export function RouteSelectionSheet({
                   <Text style={[styles.summaryDistance, { fontSize: 17 * k }]}>{row.distanceText}</Text>
                 </View>
                 {row.title && (
-                  <Text style={[styles.summaryVia, { fontSize: 18 * k }]} numberOfLines={1}>
+                  <Text style={[styles.summaryVia, { fontSize: 18 * k }]} numberOfLines={2} testID="route-row-via">
                     {row.title}
                   </Text>
                 )}
@@ -594,7 +592,8 @@ export function RouteSelectionSheet({
 
       <View
         onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
-        style={[styles.footer, { gap: 12 * k, paddingHorizontal: 16 * k, paddingTop: 10 * k, paddingBottom: insets.bottom + 12 * k }]}
+        testID="route-footer"
+        style={[styles.footer, styles.footerDivider, { gap: 12 * k, paddingHorizontal: 16 * k, paddingTop: 10 * k, paddingBottom: insets.bottom + 12 * k }]}
       >
         {onDetails && (
           <Button variant="secondary" size="large" label="Trip details" onPress={onDetails} disabled={!hasRoutes} style={styles.footerButton} testID="trip-details" />
@@ -732,6 +731,7 @@ const styles = StyleSheet.create({
   stopsText: { flex: 1, color: colors.text },
   footer: { flexDirection: "row" },
   footerButton: { flex: 1 },
+  footerDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   goFill: { position: "absolute", left: 0, top: 0, bottom: 0, backgroundColor: GO_BLUE_DARK },
 
   bubbleWrap: { alignItems: "center" },

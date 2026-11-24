@@ -225,6 +225,8 @@ import { routeColoursFor } from "@/map-v2/styles/mapAppearance";
 import { noteNightPosition } from "@/map/nightClock";
 import { CompassFilter, HeadingTurret, targetHeading } from "@/nav/headingTurret";
 import { loadLastLocation, saveLastLocation } from "@/map/lastLocation";
+import { viaText } from "@/map/viaText";
+import { overlaysFor } from "@/map/previewOverlays";
 import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
 import { done, enqueue, PILL_SHOW_MS, reportsPillText, type PillMessage } from "@/map/homePill";
 import { HomeInfoPill } from "@/components/HomeInfoPill";
@@ -347,6 +349,8 @@ import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type Parking
 import { withTimeout } from "@/utils/withTimeout";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
+/** The route preview's start field while it follows the live GPS (Waze-match §1). */
+const YOUR_LOCATION_LABEL = "Your location";
 
 const DIAGNOSTIC_DISABLE_MAPVIEW = false;
 
@@ -1042,7 +1046,6 @@ export function MapScreen() {
         addressFetchInFlightRef.current = false;
       });
   }, [currentLatLng]);
-  const routeOriginLabel = originOverride?.name ?? liveAddress ?? "My Location";
 
   // Live reverse-geocoded address under the fixed center pin while picking a start point by pin
   // -- debounced so it re-resolves a moment after the map settles from a pan/zoom, not on every
@@ -4330,7 +4333,7 @@ export function MapScreen() {
           key: `${travelMode}-${i}-${r.distanceMeters}-${Math.round(routeSeconds(r))}`,
           timeText: formatRouteDuration(routeSeconds(r)),
           distanceText: formatDistance(r.distanceMeters, settings.distanceUnit),
-          title: travelMode === "transit" ? transitRouteTitle(r) : viaRoadLabel(r.summary),
+          title: travelMode === "transit" ? transitRouteTitle(r) : (viaText(r.steps, r.source) ?? viaRoadLabel(r.summary)),
           subtitle,
           subtitleParts,
         };
@@ -6312,6 +6315,11 @@ export function MapScreen() {
     savedPlaces,
     parkingSpot,
   ]);
+  // Waze-match §1: a clean route-preview map (previewOverlays.ts).
+  const mapOverlays = useMemo(
+    () => overlaysFor(inRouteSelection ? "routePreview" : approachDrawing ? "approach" : "home", { pins: mapboxPinData.pins, presences: visiblePresences, badges: brandBadgesOn }),
+    [inRouteSelection, approachDrawing, mapboxPinData.pins, visiblePresences, brandBadgesOn]
+  );
   const onMapboxPinPress = useCallback(
     (pinId: string) => {
       const target = mapboxPinData.targets.get(pinId);
@@ -6486,7 +6494,8 @@ export function MapScreen() {
         <TrackLineMap
           ref={mapRef}
           driver={currentLatLng}
-          badges={brandBadgesOn}
+          // Waze-match §1: the route preview map is clean -- no POI badges, signs, report dots or Trackys.
+          badges={mapOverlays.badges}
           theme={mapTheme}
           labelLanguage={settings.mapLabels}
           roadThickness={settings.roadThickness}
@@ -6541,13 +6550,13 @@ export function MapScreen() {
                 : null
             }
             user={mapboxUser}
-            presences={approachDrawing ? [] : visiblePresences}
+            presences={mapOverlays.presences}
             presenceCellSize={presenceCellSizeDegrees}
             onSelectPresence={onSelectPresenceBubble}
             onPresenceCluster={onPlaceClusterPress}
             selection={mapboxSelection}
             arrival={destinationLatLng ?? (pendingDestination && !route && !inRouteSelection ? pendingDestination.location : null)}
-            pins={approachDrawing ? mapboxPinData.pins.filter((p) => p.id.startsWith("alert")) : mapboxPinData.pins}
+            pins={mapOverlays.pins}
             onPinPress={onMapboxPinPress}
             selectedComment={
               selectedAlert?.comment ? { coordinate: { latitude: selectedAlert.lat, longitude: selectedAlert.lng }, text: selectedAlert.comment } : null
@@ -6776,7 +6785,7 @@ export function MapScreen() {
         <>
           <MapSurface>
             <RouteSelectionTopCard
-              originLabel={routeOriginLabel}
+              originLabel={originOverride?.name ?? YOUR_LOCATION_LABEL}
               destinationLabel={pendingDestination.name}
               onBack={cancelRouteOptions}
               onEditOrigin={openOriginPicker}

@@ -243,14 +243,17 @@ export interface ChipProps extends CommonProps {
   trailingIcon?: IconName;
   /** Floating on the map: a white map control with the one shadow. */
   onMap?: boolean;
+  /** "link": blue label and chevron (the route preview's "Avoid ▾" pill), when not selected. */
+  tone?: "link";
 }
 
 /** Chips are 36pt tall; the hit area reaches 44pt with 4pt of slop above and below. */
 export const CHIP_HEIGHT = 36;
 
-export function Chip({ label, icon, selected = false, leading, trailingIcon, onMap = false, style, disabled, hitSlop, ...rest }: ChipProps) {
+export function Chip({ label, icon, selected = false, leading, trailingIcon, onMap = false, tone, style, disabled, hitSlop, ...rest }: ChipProps) {
   const scheme = useUiScheme();
-  const c = chipColours(selected, scheme, onMap);
+  const base = chipColours(selected, scheme, onMap);
+  const c = tone === "link" && !selected ? { ...base, foreground: ACTIONS[scheme].alternative.on } : base;
   return (
     <PressableScale
       {...rest}
