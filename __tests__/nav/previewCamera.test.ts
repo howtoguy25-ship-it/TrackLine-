@@ -108,7 +108,7 @@ describe("fix pass 4: preview rules", () => {
   it("the route sheet never covers more than 55% of the screen; preview is flat with no raised buildings", () => {
     expect(MAX_SHEET_FRACTION).toBe(0.55);
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
-    expect(src).toMatch(/show3DBuildings=\{settings\.show3DBuildings && !inRouteSelection\}/);
+    expect(src).toMatch(/show3DBuildings=\{settings\.show3DBuildings && !inRouteSelection && mapType !== "hybrid"\}/);
   });
 });
 

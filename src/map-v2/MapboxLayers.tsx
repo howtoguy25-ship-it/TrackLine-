@@ -23,11 +23,11 @@ import { AHEAD_COLOURS, GREEN, LAVENDER, PURPLE_BRIGHT, TRAFFIC } from "@/theme/
 // (purple/lavender lines, traffic, time bubbles, start and finish), the driver, other drivers,
 // and every icon pin. MapScreen owns the state and the handlers; this only draws.
 
-const ROUTE_PURPLE = colors.routePurple;
-const ROUTE_PURPLE_CASING = colors.routePurpleCasing;
+const DEFAULT_ROUTE_PURPLE = colors.routePurple;
+const DEFAULT_ROUTE_PURPLE_CASING = colors.routePurpleCasing;
 /** The live route is wider than in the preview so it reads at a glance while driving. */
 export const NAV_ROUTE_WIDTH = 11;
-const ROUTE_ALT = colors.routeAlt;
+const DEFAULT_ROUTE_ALT = colors.routeAlt;
 // Traffic on a route: slow amber, heavy red (free-flowing stretches aren't coloured). A faster
 // route on offer is "good" green.
 const TRAFFIC_SLOW = TRAFFIC.slow;
@@ -59,6 +59,8 @@ export interface UserDrawing {
 }
 
 interface Props {
+  /** The route colours of the current style (map styles add-on: brighter on dark and satellite). */
+  routeColours?: { route: string; routeCasing: string; routeAlt: string };
   /** The full route being driven (for the faded travelled part) and what's left of it. */
   navRoute: LatLng[] | null;
   remaining: LatLng[];
@@ -107,6 +109,9 @@ const FIXED_ICONS = [
 ];
 
 export function MapboxLayers(props: Props) {
+  const ROUTE_PURPLE = props.routeColours?.route ?? DEFAULT_ROUTE_PURPLE;
+  const ROUTE_PURPLE_CASING = props.routeColours?.routeCasing ?? DEFAULT_ROUTE_PURPLE_CASING;
+  const ROUTE_ALT = props.routeColours?.routeAlt ?? DEFAULT_ROUTE_ALT;
   const { user, selection } = props;
   // The default is our bundled arrow (UserArrow); a chosen vehicle badge is drawn by MapIcons.
   const markerIcon = user && user.markerStyle !== "default" ? `car-arrow:${user.markerStyle}` : null;

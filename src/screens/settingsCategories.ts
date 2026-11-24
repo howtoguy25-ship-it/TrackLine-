@@ -62,7 +62,7 @@ export const SETTINGS_CATEGORY_MEANING: Record<SettingsCategory, SettingsIconMea
 export const CATEGORY_SECTIONS: Record<SettingsCategory, string[]> = {
   account: ["Account", "Purchases"],
   privacy: ["Who can see you", "Reports and places"],
-  mapDisplay: ["Appearance", "Map view", "Map theme", "Road thickness", "Default map view", "Map labels", "Navigation card", "Your map marker", "Alert icons"],
+  mapDisplay: ["Appearance", "Map view", "Dark map", "Map theme", "Road thickness", "Default map view", "Map labels", "Navigation card", "Your map marker", "Alert icons"],
   // Reports (every camera, road feature and report type), the speedometer, and the map's buttons.
   mapInfo: ["Reports", "Mapped road features", "Live traffic (NSW)", "Speedometer", "Speed limit sign", "Map shortcuts"],
   navigationVoice: ["Voice guidance", "Spoken directions", "Units", "Public transport"],

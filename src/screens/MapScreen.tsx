@@ -219,7 +219,9 @@ import { aheadClipKey, roadAtAlong } from "@/nav/ahead/aheadText";
 import type { AheadRow, ParkingSection } from "@/screens/NavOptionsSheet";
 import { spokenLine } from "@/nav/ahead/aheadKinds";
 import { MAP_ICONS_AHEAD_M, MAX_MAP_ICONS, warnDistanceM } from "@/nav/ahead/aheadTiming";
-import { useMapScheme } from "@/components/ui/uiScheme";
+import { useEffectiveMapTheme, useMapScheme } from "@/components/ui/uiScheme";
+import { routeColoursFor } from "@/map-v2/styles/mapAppearance";
+import { noteNightPosition } from "@/map/nightClock";
 import { HomeMapControls } from "@/components/HomeMapControls";
 import {
   HOME_FOLLOW_ZOOM,
@@ -937,6 +939,9 @@ export function MapScreen() {
   // goes through it with a source; the state decides. followTilt is now just "driving and
   // following" (NAV_FOLLOW), and the home map's "you moved it" is FREE.
   const camera = useMemo(() => new CameraController(mapRef), []);
+  // Map styles add-on: the style drawn right now (Map theme, or Dark when the map dark mode applies).
+  const mapTheme = useEffectiveMapTheme();
+  const routeColours = useMemo(() => routeColoursFor(mapTheme, mapType === "hybrid"), [mapTheme, mapType]);
   const [cameraMode, setCameraMode] = useState<CameraMode>(camera.state);
   useEffect(() => camera.onChange(setCameraMode), [camera]);
   const followTilt = cameraMode === "NAV_FOLLOW";
@@ -970,6 +975,10 @@ export function MapScreen() {
   // never a guessed/fixed radius. Null on a fix that genuinely didn't report one (handled by the
   // render site below, which just skips drawing the circle rather than fabricating a number).
   const currentAccuracyMeters = location?.coords.accuracy ?? null;
+  // "Only at night" dark map: night by the real sun at the driver's last position.
+  useEffect(() => {
+    if (currentLatLng) noteNightPosition(currentLatLng.latitude, currentLatLng.longitude);
+  }, [currentLatLng]);
 
   // The real route origin -- a custom "From" place if one's been picked, otherwise the driver's
   // own live GPS fix (the only behavior before this existed). Only meaningful for the
@@ -6340,12 +6349,13 @@ export function MapScreen() {
           ref={mapRef}
           driver={currentLatLng}
           badges={brandBadgesOn}
-          theme={settings.mapTheme}
+          theme={mapTheme}
           labelLanguage={settings.mapLabels}
           roadThickness={settings.roadThickness}
           satellite={mapType === "hybrid"}
           dimmed={isPickingRoute}
-          show3DBuildings={settings.show3DBuildings && !inRouteSelection}
+          // Map styles §2: no raised buildings over satellite imagery.
+          show3DBuildings={settings.show3DBuildings && !inRouteSelection && mapType !== "hybrid"}
           routeShown={!!route || inRouteSelection}
           showTraffic={showsTrafficLayer}
           padding={mapPadding}
@@ -6364,6 +6374,7 @@ export function MapScreen() {
           onMapReady={() => setMapReady(true)}
         >
           <MapboxLayers
+            routeColours={routeColours}
             navRoute={mapboxNavRoute}
             navTraffic={route ? navTraffic : []}
             closedStretches={closedStretches}

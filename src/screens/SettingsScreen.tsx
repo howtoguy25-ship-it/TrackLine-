@@ -45,6 +45,7 @@ import { CATEGORY_SECTIONS, SETTINGS_CATEGORY_LABELS } from "@/screens/settingsC
 import { mapEngineLine } from "@/config/mapEngine";
 import { AU_STATES, type AuRegionCode } from "@/utils/auStates";
 import { MAP_THEME_LABELS, ROAD_THICKNESS_LABELS, type MapThemeKey, type RoadThicknessKey } from "@/utils/mapStyle";
+import { MAP_DARK_MODE_LABELS, type MapDarkMode } from "@/map-v2/styles/mapAppearance";
 import { NAV_CARD_THEME_LABELS, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { MAP_MARKER_STYLE_LABELS, type MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { ALERT_ICON_THEME_LABELS, type AlertIconThemeKey } from "@/utils/alertIconThemes";
@@ -649,6 +650,18 @@ export function SettingsScreen() {
           subtitle="Police, hazards, crashes and other reports"
           toggle={{ value: settings.alertsEnabled, onValueChange: (v) => updateSettings({ alertsEnabled: v }) }}
         />
+      </Section>
+
+      <Section title="Dark map" visible={shouldShow("Dark map")} footer="Switches the map — and the buttons on it — to TrackLine Dark. Only at night follows sunset and sunrise where you are.">
+        {(["off", "on", "night", "system"] as MapDarkMode[]).map((k) => (
+          <SettingsRow
+            key={k}
+            title={MAP_DARK_MODE_LABELS[k]}
+            selected={(settings.mapDarkMode ?? "off") === k}
+            onPress={() => updateSettings({ mapDarkMode: k })}
+            testID={`map-dark-${k}`}
+          />
+        ))}
       </Section>
 
       {shouldShow("Map theme") ? (
