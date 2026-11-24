@@ -13,6 +13,7 @@ import { activeRowIndex, directionsRows, type DirectionsRow } from "@/nav/direct
 import { formatDistance, type DistanceUnit } from "@/utils/navFormat";
 import { BLUE, GREEN_TEXT, SURFACES } from "@/theme/colors";
 import { radius, shadow, spacing } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 // Fix pass 5 §7: the directions list. One row per real manoeuvre (repeats merged,
 // nav/directionsRows.ts): a big manoeuvre picture (our roundabout for roundabouts), the distance
@@ -40,7 +41,7 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
   const current = activeRowIndex(rows, activeStepIndex);
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -121,7 +122,7 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
           />
         </>
       )}
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

@@ -27,14 +27,15 @@ export const ROAD_DRAW_ORDER: RoadClass[] = ["service", "residential", "tertiary
 
 /** Line width in px at zoom 14 and zoom 18 (Mapbox interpolates between and beyond). */
 export const ROAD_WIDTHS: Record<RoadClass, { z14: number; z18: number }> = {
-  // Main roads clearly thicker than streets, Waze-style.
-  motorway: { z14: 9, z18: 22 },
-  trunk: { z14: 8.5, z18: 21 },
-  primary: { z14: 7, z18: 17 },
-  secondary: { z14: 5.5, z18: 13 },
-  tertiary: { z14: 4, z18: 10 },
-  residential: { z14: 3, z18: 9 },
-  service: { z14: 2, z18: 6 },
+  // Main roads clearly thicker than streets, but never giant bands (fix pass 7 §3): at z16 a
+  // motorway is ~9 px plus its 2 px edge (~11 px), a street ~4 px.
+  motorway: { z14: 6, z18: 16 },
+  trunk: { z14: 5.5, z18: 15 },
+  primary: { z14: 5, z18: 13 },
+  secondary: { z14: 4, z18: 10.5 },
+  tertiary: { z14: 3.25, z18: 8.5 },
+  residential: { z14: 2.5, z18: 7.5 },
+  service: { z14: 1.5, z18: 5 },
 };
 
 /** The zoom a road class first gets its name drawn. */
@@ -102,7 +103,7 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 10;
+export const STYLE_VERSION = 11;
 
 /**
  * Clean satellite (map styles add-on §2): imagery a little less saturated and contrasty with a
@@ -329,9 +330,10 @@ export const LIGHT_PALETTE: StylePalette = {
   building: "#ECEFF3",
   road: "#D3D9E2",
   roadCasing: "#FFFFFF",
-  // Motorways: TrackLine amber with a deeper amber edge; highways keep the slate.
-  motorway: "#EBAE45",
-  motorwayCasing: "#C98A1E",
+  // Motorways: a soft warm amber with a deeper edge (fix pass 7 §3: softer than the first,
+  // brighter orange); highways keep the slate.
+  motorway: "#E9C27A",
+  motorwayCasing: "#D2A75A",
   trunk: "#A7B4C6",
   suburbLabel: "#4A6886",
   streetLabel: "#323A45",
@@ -351,8 +353,8 @@ export const DARK_PALETTE: StylePalette = {
   road: "#3D4B63",
   roadCasing: "#121722",
   // A muted amber on dark ground: clearly a motorway, not glaring at night.
-  motorway: "#B5823A",
-  motorwayCasing: "#8A5F22",
+  motorway: "#A88A5C",
+  motorwayCasing: "#7A6340",
   trunk: "#5A6B8B",
   suburbLabel: "#A9C6DC",
   streetLabel: "#EEF1F4",
@@ -425,14 +427,14 @@ function round2(n: number): number {
 
 // Bigger street names than before (Waze-style): readable at a glance while driving.
 const LABEL_SIZES: Record<RoadClass, [number, number]> = {
-  // Street names a touch larger than before, so they read first along the road (map polish §1).
-  motorway: [14, 19],
-  trunk: [14, 19],
-  primary: [13.5, 18],
-  secondary: [13, 17],
-  tertiary: [12.5, 16],
-  residential: [12.5, 16],
-  service: [11, 13.5],
+  // Readable, not oversized (fix pass 7 §3).
+  motorway: [12.5, 16],
+  trunk: [12.5, 16],
+  primary: [12, 15.5],
+  secondary: [11.5, 15],
+  tertiary: [11, 14.5],
+  residential: [11, 14.5],
+  service: [10, 12.5],
 };
 /** Main roads' names in bold. */
 const BOLD_LABEL_CLASSES: RoadClass[] = ["motorway", "trunk", "primary", "secondary", "tertiary"];
@@ -608,7 +610,7 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
   const suburbLayout = {
     "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
     "text-font": LABEL_FONT_BOLD,
-    "text-size": ["interpolate", ["linear"], ["zoom"], 9, 13, 13, 18, 16, 20],
+    "text-size": ["interpolate", ["linear"], ["zoom"], 9, 12, 13, 15.5, 16, 17],
     "text-transform": "none",
     "text-letter-spacing": 0.02,
     "text-max-width": 8,
@@ -745,8 +747,8 @@ export const THEME_PALETTES: Record<ThemeKey, StylePalette> = {
   light: LIGHT_PALETTE,
   dark: DARK_PALETTE,
   purpleBlue: { ...LIGHT_PALETTE, name: "Purple & Blue", land: "#F4F2FA", road: "#D8D3EC", trunk: "#C7BCEB", water: "#9FC6F2", suburbLabel: "#7563A8" },
-  blueGrey: { ...LIGHT_PALETTE, name: "Blue & Grey", land: "#EEF1F4", road: "#C9D2DC", trunk: "#B3C3D6", water: "#8FB7E3", suburbLabel: "#5C7690" },
-  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#DAD5A6", trunk: "#E0BC45", motorway: "#E3912B", motorwayCasing: "#B86E14", water: "#A6D2E8", suburbLabel: "#4E6B33" },
+  blueGrey: { ...LIGHT_PALETTE, name: "Blue & Grey", land: "#EEF1F4", road: "#C9D2DC", trunk: "#B3C3D6", motorway: "#E4B96C", motorwayCasing: "#CA9B4A", water: "#8FB7E3", suburbLabel: "#5C7690" },
+  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#DAD5A6", trunk: "#E0BC45", motorway: "#E2A35A", motorwayCasing: "#C2853C", water: "#A6D2E8", suburbLabel: "#4E6B33" },
   blue: { ...LIGHT_PALETTE, name: "Blue", land: "#EEF5FB", road: "#C5DCF0", trunk: "#9CC4EA", water: "#7FB6EC", suburbLabel: "#3E6E9A" },
 };
 

@@ -3,6 +3,7 @@ import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from "react-native-reanimated";
 import { colors, radius, shadow } from "@/theme/tokens";
+import { useSheetPanelStyle } from "@/layout/LayoutContext";
 
 // Real, confirmed root cause this exists to replace @gorhom/bottom-sheet for (see
 // RestaurantsSheet.tsx's own history of fixes -- enableDynamicSizing, a keyboardDidHide global-
@@ -52,6 +53,7 @@ export const SimpleBottomSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
   ref
 ) {
   const { height: screenHeight } = useWindowDimensions();
+  const panel = useSheetPanelStyle();
   const maxSheetHeight = Math.max(0, screenHeight - topInset);
   const [shortHeight, tallHeight] = useMemo(
     () => [snapFractions[0] * maxSheetHeight, snapFractions[1] * maxSheetHeight] as [number, number],
@@ -174,7 +176,7 @@ export const SimpleBottomSheet = forwardRef<SimpleBottomSheetRef, Props>(functio
   }));
 
   return (
-    <Animated.View pointerEvents="box-none" style={[styles.sheet, { height: tallHeight }, animatedStyle]}>
+    <Animated.View pointerEvents="box-none" style={[styles.sheet, { height: tallHeight }, panel, animatedStyle]}>
       <GestureDetector gesture={panGesture}>
         <View style={styles.handleWrap}>
           <View style={styles.handle} />

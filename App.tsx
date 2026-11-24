@@ -4,7 +4,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import React, { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/context/AuthContext";
 import { LocationProvider } from "@/context/LocationContext";
@@ -15,6 +14,7 @@ import { AppGates } from "@/components/AppGates";
 import { HomeWidgetSync } from "@/components/HomeWidgetSync";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import { LegalGate } from "@/components/LegalGate";
+import { ScreenLayoutProvider } from "@/layout/LayoutContext";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { installCrashReporter } from "@/services/crashReporter";
 import { initSentry, Sentry } from "@/services/sentry";
@@ -61,9 +61,9 @@ function App() {
   // to portrait -- this JS-side lock is what does that now. VehicleDetectionScreen unlocks on
   // its own mount and re-locks back to this on unmount, so this effect only ever needs to run
   // once here, not on every screen change.
-  useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-  }, []);
+  // Fix pass 7 §3: no app-wide portrait lock any more -- each screen's own native-stack
+  // `orientation` decides (RootNavigator: the map turns on every device, other phone screens stay
+  // portrait, every screen turns on a tablet).
 
   // Rubik, the app's typeface (theme/typography.ts). The four files are bundled with the app,
   // so this resolves from disk in a moment; the splash screen stays up until it does, so no
@@ -133,11 +133,13 @@ function App() {
                 </AdsErrorBoundary>
               )}
               <TouchDebugRoot>
+                <ScreenLayoutProvider>
                 <RootNavigator />
                 <AppGates />
                 <BackgroundSync />
                 <HomeWidgetSync />
                 <LegalGate />
+                </ScreenLayoutProvider>
               </TouchDebugRoot>
             </LocationProvider>
           </SettingsProvider>

@@ -14,6 +14,7 @@ import { placesErrorText } from "@/services/routingErrors";
 import { formatDistance } from "@/utils/navFormat";
 import type { LatLng } from "@/utils/polyline";
 import { colors, radius, spacing } from "@/theme/tokens";
+import { useSheetPanelStyle } from "@/layout/LayoutContext";
 
 // Search along route, while driving (the round Search button on the bottom bar): Fuel, Food,
 // Parking, Coffee, EV or a typed search, for places on the road still ahead, sorted by the extra
@@ -47,6 +48,7 @@ type State = { status: "loading" } | { status: "ok"; results: AlongResult[] } | 
 
 export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, onAddStop, onGo, onClose }: Props) {
   const insets = useSafeAreaInsets();
+  const panel = useSheetPanelStyle();
   const { height } = useWindowDimensions();
   const [category, setCategory] = useState<AlongCategory | null>("fuel");
   const [query, setQuery] = useState("");
@@ -78,7 +80,7 @@ export function SearchAlongRouteSheet({ route, origin, remainingSeconds, unit, o
 
   return (
     <SurfaceScheme value="dark">
-    <View style={[styles.sheet, { height: height * 0.62, paddingBottom: insets.bottom + spacing.sm }]} testID="search-along-route">
+    <View style={[styles.sheet, { height: height * 0.62, paddingBottom: insets.bottom + spacing.sm }, panel]} testID="search-along-route">
       <View style={styles.grabber} />
       <View style={styles.header}>
         <View style={styles.searchRow}>

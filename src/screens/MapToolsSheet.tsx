@@ -5,6 +5,7 @@ import { Text } from "@/components/AppText";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 interface Props {
   onRecenter: () => void;
@@ -54,7 +55,7 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
   const insets = useSafeAreaInsets();
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={SNAP_POINTS}
@@ -100,7 +101,7 @@ export const MapToolsSheet = forwardRef<BottomSheet, Props>(function MapToolsShe
           trailing={<Icon name="chevron-forward" size={18} color={colors.textMuted} />}
         />
       </BottomSheetScrollView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

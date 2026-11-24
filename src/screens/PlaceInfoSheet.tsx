@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { priceLevelText, type PlaceInfo } from "@/services/places";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 interface Props {
   place: PlaceInfo | null;
@@ -104,7 +105,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
   const expandSheet = () => sheetRef.current?.snapToIndex(1);
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={sheetRef}
       index={-1}
       snapPoints={snapPoints}
@@ -306,7 +307,7 @@ export const PlaceInfoSheet = forwardRef<BottomSheet, Props>(function PlaceInfoS
           </>
         )}
       </BottomSheetView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

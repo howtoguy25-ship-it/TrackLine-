@@ -7,6 +7,7 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { refreshLiveCameraImageUrl, type LiveTrafficCamera } from "@/services/liveTrafficCameras";
+import { MapSheet } from "@/components/MapSheet";
 
 interface Props {
   camera: LiveTrafficCamera | null;
@@ -76,7 +77,7 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
     updatedSecondsAgo === null ? "Loading…" : updatedSecondsAgo < 2 ? "Updated just now" : `Updated ${updatedSecondsAgo}s ago`;
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -137,7 +138,7 @@ export const LiveCameraSheet = forwardRef<BottomSheet, Props>(function LiveCamer
           </>
         )}
       </BottomSheetView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

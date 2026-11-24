@@ -8,6 +8,7 @@ import type { Route } from "@/services/directions";
 import { fareLine, timelineFor, type Realtime } from "@/travel/transitTimeline";
 import { bookingLink, ferryDetailsFor } from "@/travel/ferryDetails";
 import { colors, radius, spacing } from "@/theme/tokens";
+import { useSheetPanelStyle } from "@/layout/LayoutContext";
 
 // Trip details for a transit or ferry option: the timeline (walks and rides, line, stops, times,
 // live/late from Transport for NSW when available), the fare or how to pay (Opal in NSW), and
@@ -32,6 +33,7 @@ export function TripDetailsSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const panel = useSheetPanelStyle();
   if (!route) return null;
   const timeline = timelineFor(route, realtime);
   const ferry = ferryDetailsFor(route.transitSummary?.legs.some((l) => l.vehicleType === "FERRY") ? alternatives : [route]);
@@ -39,7 +41,7 @@ export function TripDetailsSheet({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]} testID="trip-details-sheet">
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }, panel]} testID="trip-details-sheet">
           <View style={styles.header}>
             <Text style={styles.title}>Trip details</Text>
             <Button variant="ghost" icon="close" onPress={onClose} accessibilityLabel="Close" />

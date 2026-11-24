@@ -94,7 +94,9 @@ module.exports = {
       // Phone-only -- TrackLine is a live driving/navigation app, not something meant to run
       // on an iPad mounted somewhere, and this avoids App Store Connect requiring a whole
       // separate set of iPad screenshots for a form factor the app isn't really designed for.
-      supportsTablet: false,
+      // Fix pass 7 §3: iPad is supported -- the map gets a left-panel layout there
+      // (src/layout/screenLayout.ts). App Store Connect then needs iPad screenshots too.
+      supportsTablet: true,
       bundleIdentifier: "com.trackline.navigate",
       // Required by @bacons/apple-targets (see the targets/liveActivity plugin below) to
       // resolve code signing for the new widget-extension target during prebuild/EAS Build.

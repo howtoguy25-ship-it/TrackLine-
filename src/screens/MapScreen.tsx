@@ -353,6 +353,8 @@ import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type Parking
 import { withTimeout } from "@/utils/withTimeout";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
+import { useScreenLayout } from "@/layout/LayoutContext";
+import { withPanelPadding } from "@/layout/screenLayout";
 /** The route preview's start field while it follows the live GPS (Waze-match §1). */
 const YOUR_LOCATION_LABEL = "Your location";
 
@@ -440,6 +442,8 @@ export function MapScreen() {
   const navRoute = useRoute<RouteProp<RootStackParamList, "Map">>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Fix pass 7 §3: phone / landscape phone / tablet / desktop (layout/screenLayout.ts).
+  const screenLayoutNow = useScreenLayout();
   // Shared with the home map's floating buttons, which run on the UI thread:
   //   mapBearing         -- the map's current bearing, for the compass needle
   //   sheetVisibleHeight -- how much of the "Where to?" sheet is showing, written by the sheet
@@ -1392,7 +1396,7 @@ export function MapScreen() {
   const liveViewOn = liveViewShown(settings.liveRoadView, !!route, travelMode === "driving") && !detectionOpen;
   const liveViewH = liveViewHeight(windowHeight);
   const liveViewReserved = liveViewOn ? liveViewH + 8 + bottomBarHeight + insets.bottom : 0;
-  const mapPadding = isNavChaseView
+  const mapPadding = withPanelPadding(isNavChaseView
     ? navFollowPadding(windowHeight, liveViewReserved)
     : placePage
       ? // The place sits in the middle of the 40% above the place page's sheet.
@@ -1401,7 +1405,7 @@ export function MapScreen() {
         ? previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight)
         : isHomeIdle
           ? homePadding
-          : { top: 0, right: 0, bottom: 0, left: 0 };
+          : { top: 0, right: 0, bottom: 0, left: 0 }, screenLayoutNow);
 
   // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
   // coords.speed is m/s, converted here once rather than in the display component so every
@@ -4420,10 +4424,10 @@ export function MapScreen() {
       selectedPos,
       previewFitCoordinates(fitLines, routeOriginLatLng, pendingDestination?.location ?? null),
       { width: windowWidth, height: windowHeight },
-      previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight),
+      withPanelPadding(previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight), screenLayoutNow),
       obstacles
     ).map((p, pos) => (p ? { ...p, text: routes[pos].text, compactText: routes[pos].compactText } : null));
-  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
+  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight, screenLayoutNow]);
   const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
   const selectedTrafficStretches = useMemo(() => {
     const r = selectionRoutes[selectionIndex];
@@ -6459,7 +6463,7 @@ export function MapScreen() {
         routeOriginLatLng,
         pendingDestination?.location ?? null
       );
-      const pose = previewFitCamera(coords, { width: windowWidth, height: windowHeight }, previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight));
+      const pose = previewFitCamera(coords, { width: windowWidth, height: windowHeight }, withPanelPadding(previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight), screenLayoutNow));
       if (pose) camera.move("previewFit", pose, { duration: PREVIEW_FIT_MS });
     }, 120);
     return () => clearTimeout(t);

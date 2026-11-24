@@ -118,8 +118,12 @@ export function arrowScreenY(mapHeight: number, padding: MapPadding): number {
   return padding.top + (mapHeight - padding.top - padding.bottom) / 2;
 }
 
-/** The zoom the home map opens and re-centres at (closer, street level: owner request 2026-11-24, was 17). */
-export const HOME_FOLLOW_ZOOM = 18;
+/**
+ * The zoom the home map opens and re-centres at (Google scale; Mapbox draws it at 15). Fix pass 7
+ * §3: a big, open view -- several streets around you, not one warehouse filling the screen
+ * (it was 18, and 17 before that).
+ */
+export const HOME_FOLLOW_ZOOM = 16;
 
 // ---------------------------------------------------------------------------------------------
 // Zoom and alert pins

@@ -9,6 +9,7 @@ import { useSettings } from "@/context/SettingsContext";
 import type { VisibilityMode } from "@/services/settings";
 import { Tracky } from "@/components/trackys/Tracky";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 const SNAP_POINTS = ["62%"];
 
@@ -38,7 +39,7 @@ export const VisibilitySheet = forwardRef<BottomSheet, Props>(function Visibilit
   const isGhost = settings.visibility === "ghost";
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={SNAP_POINTS}
@@ -111,7 +112,7 @@ export const VisibilitySheet = forwardRef<BottomSheet, Props>(function Visibilit
           <Icon name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
       </BottomSheetView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

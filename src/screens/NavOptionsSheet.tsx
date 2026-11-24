@@ -14,6 +14,7 @@ import { LEAVE_ERROR_TEXT, LEAVE_TIMEOUT_MS, leaveChartBars, optionsSheetHeights
 import { AheadGlyph } from "@/components/art/AheadGlyph";
 import { AHEAD_COLOURS } from "@/theme/colors";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
+import { MapSheet } from "@/components/MapSheet";
 
 export interface StopsSection {
   rows: { id: string; number: number; name: string; aheadM: number; etaSeconds: number | null; first: boolean; last: boolean }[];
@@ -159,7 +160,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
   };
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -251,7 +252,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         </View>
       </BottomSheetScrollView>
       </SurfaceScheme>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

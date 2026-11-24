@@ -91,7 +91,7 @@ describe("top bar under the status bar (§6)", () => {
   it("black runs behind the status bar, content starts below it, status-bar text light", async () => {
     const src = readFileSync("src/components/NavigationInstructionCard.tsx", "utf8");
     expect(src).toMatch(/<StatusBar style="light" \/>/);
-    expect(src).toMatch(/paddingTop: insets\.top \+ 6/);
+    expect(src).toMatch(/paddingTop: side \? 12 : insets\.top \+ 6/);
     expect(src).toMatch(/wrap: \{ position: "absolute", top: 0/);
   });
 });
