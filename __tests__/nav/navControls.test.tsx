@@ -60,8 +60,9 @@ describe("driving controls never overlap", () => {
     }
   });
 
-  it("the components use the shared layout (re-centre bottom-right, 12pt column gap)", () => {
-    expect(readFileSync("src/components/NavBottomBar.tsx", "utf8")).toMatch(/right: SIDE_MARGIN \+ \(REPORT_SIZE - RECENTER_SIZE\) \/ 2/);
+  it("the components use the shared layout (re-centre pill from the layout, 12pt column gap)", () => {
+    expect(readFileSync("src/components/NavBottomBar.tsx", "utf8")).not.toMatch(/recenter|onRecenter/i);
+    expect(readFileSync("src/components/NavMapControls.tsx", "utf8")).toMatch(/f\.recenter/);
     expect(readFileSync("src/components/LiveSpeedometer.tsx", "utf8")).toMatch(/SIGN_GAP = CONTROL_GAP/);
     expect(readFileSync("src/screens/MapScreen.tsx", "utf8")).toMatch(/controlsBottom\(insets\.bottom, bottomBarHeight\)/);
   });
@@ -78,12 +79,10 @@ describe("bottom bar", () => {
     onAddStop: jest.fn(),
     onRemoveStop: jest.fn(),
     onOptions: jest.fn(),
-    isFollowing: false,
-    onRecenter: jest.fn(),
     onOverview: jest.fn(),
     onLongPressEnd: jest.fn(),
   });
-  it("Search, the arrival time (ETA sheet), Routes, Re-centre and long-press End all work", async () => {
+  it("Search, the arrival time (ETA sheet), Routes and long-press End all work", async () => {
     const p = props();
     await render(<NavBottomBar {...p} />);
     expect(screen.getByText("10:54 pm")).toBeTruthy();
@@ -91,9 +90,8 @@ describe("bottom bar", () => {
     await fireEvent.press(screen.getByTestId("nav-search"));
     await fireEvent.press(screen.getByTestId("nav-eta"));
     await fireEvent.press(screen.getByTestId("nav-routes"));
-    await fireEvent.press(screen.getByTestId("nav-recenter"));
     await fireEvent(screen.getByTestId("nav-eta"), "longPress");
-    for (const fn of [p.onAddStop, p.onOptions, p.onOverview, p.onRecenter, p.onLongPressEnd]) expect(fn).toHaveBeenCalledTimes(1);
+    for (const fn of [p.onAddStop, p.onOptions, p.onOverview, p.onLongPressEnd]) expect(fn).toHaveBeenCalledTimes(1);
   });
 });
 

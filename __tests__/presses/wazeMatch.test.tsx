@@ -100,8 +100,6 @@ describe("navigation", () => {
           onAddStop={jest.fn()}
           onRemoveStop={jest.fn()}
           onOptions={jest.fn()}
-          isFollowing
-          onRecenter={jest.fn()}
           onOverview={onOverview}
         />
       )
@@ -111,20 +109,16 @@ describe("navigation", () => {
     expect(screen.queryByText("Overview")).toBeNull();
     expect(screen.getByTestId("nav-search")).toBeTruthy();
     expect(screen.getByTestId("nav-routes")).toBeTruthy();
-    expect(screen.queryByTestId("nav-recenter")).toBeNull(); // only after panning
+    expect(screen.queryByTestId("nav-recenter")).toBeNull(); // the bar never carries it (fix pass 5: NavMapControls' pill)
   });
 
-  it("re-centre appears above the bar (not on it) after a pan", async () => {
+  it("re-centre is no longer drawn by the bar (it's the bottom-left pill in NavMapControls)", async () => {
     await render(
       wrap(
-        <NavBottomBar etaText="25 min" arrivalClockText="10:54 pm" distanceRemainingText="28 km" roadName={null} themeKey="dark" hasStop={false} onAddStop={jest.fn()} onRemoveStop={jest.fn()} onOptions={jest.fn()} isFollowing={false} onRecenter={jest.fn()} onOverview={jest.fn()} />
+        <NavBottomBar etaText="25 min" arrivalClockText="10:54 pm" distanceRemainingText="28 km" roadName={null} themeKey="dark" hasStop={false} onAddStop={jest.fn()} onRemoveStop={jest.fn()} onOptions={jest.fn()} onOverview={jest.fn()} />
       )
     );
-    const recenter = StyleSheet.flatten(screen.getByTestId("nav-recenter").props.style);
-    // Bottom-RIGHT above the bar, over the Report button: bottom-left was the speedometer's
-    // spot and they overlapped (nav/navControlsLayout.ts).
-    expect(recenter).toMatchObject({ position: "absolute", bottom: "100%", right: 18 });
-    expect(recenter.left).toBeUndefined();
+    expect(screen.queryByTestId("nav-recenter")).toBeNull();
   });
 });
 

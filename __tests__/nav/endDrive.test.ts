@@ -62,7 +62,6 @@ describe("one end-of-drive reset", () => {
     for (const re of [
       /\{route && searchAlongOpen && \(\n\s*<SearchAlongRouteSheet/,
       /\{route && arrival && \(\n\s*<ArrivedCard/,
-      /\{route && navAlternatives && navAlternatives\.length > 0 && \(/,
       /\{route && !addingStopDuringNav && !stopPreviewRoute && !searchAlongOpen && \(\n\s*<NavMapControls/,
       /\{route \? \(\n\s*<MapSurface>\n\s*<AvoidSheet visible=\{navAvoidOpen\}/,
     ]) {

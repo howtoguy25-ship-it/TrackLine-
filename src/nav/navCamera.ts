@@ -3,15 +3,14 @@
 // place that puts the camera into the follow view (Go now, re-centre, after a manoeuvre,
 // after placing a report), so they can't drift apart again. Pure; tested in
 // __tests__/nav/navCamera.test.ts.
-import { speedZoomFor } from "@/map/speedZoom";
 import { bearingDegrees } from "@/utils/geo";
 import type { LatLng } from "@/utils/polyline";
 
 export const NAV_FOLLOW_PITCH = 45;
 /** Go now: the animation into the follow view. */
 export const NAV_START_MS = 1200;
-/** Where the arrow sits, as a share of the screen height from the top. */
-export const NAV_ARROW_FRACTION = 0.7;
+/** Where the arrow sits, as a share of the screen height from the top (fix pass 5 §4: ~72%). */
+export const NAV_ARROW_FRACTION = 0.72;
 export const NAV_FLAT_ZOOM = 17;
 
 export interface NavPose {
@@ -21,9 +20,47 @@ export interface NavPose {
   zoom: number;
 }
 
+// ---- Fix pass 5 §4: zoom by speed so ~300-500 m of road ahead is in view ----
+/** Mapbox GL's vertical field of view (radians). */
+const MAPBOX_FOV = 0.6435011087932844;
+/** Road ahead to keep in view, by speed band (changes only when a band is crossed). */
+export const AHEAD_BANDS: { maxKmh: number; metres: number }[] = [
+  { maxKmh: 40, metres: 300 },
+  { maxKmh: 80, metres: 400 },
+  { maxKmh: Infinity, metres: 500 },
+];
+export function aheadTargetMetres(speedKmh: number | null | undefined): number {
+  const v = speedKmh != null && Number.isFinite(speedKmh) ? speedKmh : 0;
+  return (AHEAD_BANDS.find((b) => v <= b.maxKmh) ?? AHEAD_BANDS[AHEAD_BANDS.length - 1]).metres;
+}
+
+/**
+ * Metres of road visible from the arrow to the top edge of the screen: the camera's geometry
+ * (Mapbox FOV, `pitch`, the arrow at `arrowFraction` of the height) at a Google-scale `zoom`.
+ */
+export function metresAheadVisible(zoom: number, pitchDeg: number, screenHeight: number, latitude: number, arrowFraction = NAV_ARROW_FRACTION): number {
+  const mapboxZoom = zoom - 1;
+  const metresPerPx = (40075016.686 * Math.cos((latitude * Math.PI) / 180)) / (512 * 2 ** mapboxZoom);
+  const d = (0.5 * screenHeight) / Math.tan(MAPBOX_FOV / 2);
+  const beta = Math.atan((arrowFraction * screenHeight) / d);
+  const p = (pitchDeg * Math.PI) / 180;
+  if (p + beta >= Math.PI / 2 - 0.01) return Infinity;
+  const aheadPx = d * Math.cos(p) * Math.tan(p + beta) - d * Math.sin(p);
+  return aheadPx * metresPerPx;
+}
+
+/** The driving zoom (Google scale, quarter steps) that shows the speed band's road ahead. */
+export function navZoomForSpeed(speedKmh: number | null | undefined, screenHeight = 844, latitude = -33.9): number {
+  const atZero = metresAheadVisible(0, NAV_FOLLOW_PITCH, screenHeight, latitude);
+  const z = Math.log2(atZero / aheadTargetMetres(speedKmh));
+  return Math.round(Math.max(14, Math.min(20, z)) * 4) / 4;
+}
+
 /** The follow view (or the flat one if the driver picked "Overhead"). */
-export function navFollowPose(center: LatLng, heading: number, speedKmh: number | null | undefined, flat = false): NavPose {
-  return flat ? { center, heading, pitch: 0, zoom: NAV_FLAT_ZOOM } : { center, heading, pitch: NAV_FOLLOW_PITCH, zoom: speedZoomFor(speedKmh) };
+export function navFollowPose(center: LatLng, heading: number, speedKmh: number | null | undefined, flat = false, screenHeight = 844): NavPose {
+  return flat
+    ? { center, heading, pitch: 0, zoom: NAV_FLAT_ZOOM }
+    : { center, heading, pitch: NAV_FOLLOW_PITCH, zoom: navZoomForSpeed(speedKmh, screenHeight, center.latitude) };
 }
 
 /**

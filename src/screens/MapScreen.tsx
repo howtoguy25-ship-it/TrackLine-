@@ -31,7 +31,6 @@ import type { ZoneShape } from "@/schoolZones/zoneMatch";
 import { communityZoneAt, type CommunityFeature } from "@/schoolZones/communityZones";
 import { communityFeaturesAround } from "@/services/roadFeatureReports";
 import { RoadReportSheet } from "@/components/RoadReportSheet";
-import { speedZoomFor } from "@/map/speedZoom";
 import { MODE_NAVIGATES_AS, MODE_ORDER, asModeId, ferryBadge, ferryModeAvailable, ferryOptions, routeHasFerry, type ModeId } from "@/travel/modes";
 import * as Haptics from "expo-haptics";
 import { ModeRouteCache, fastestSeconds, fetchRoutesForMode, type ModeRoutes } from "@/travel/modeRouting";
@@ -81,7 +80,7 @@ import BottomSheet from "@gorhom/bottom-sheet";
 import { useNavigation, useIsFocused, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, shadow, spacing, pressedOpacity, scaleFor } from "@/theme/tokens";
+import { colors, radius, shadow, spacing, scaleFor } from "@/theme/tokens";
 import { clusterPoints } from "@/utils/markerCluster";
 
 import { useLocation } from "@/context/LocationContext";
@@ -211,7 +210,7 @@ import type { LatLng } from "@/utils/polyline";
 import { createGuidanceState, evaluateGuidance, remainingStepMeters } from "@/services/navigationGuidance";
 import { buildDriveLink, parseDriveLink } from "@/services/driveLink";
 import Reanimated, { useSharedValue } from "react-native-reanimated";
-import { AheadBanner } from "@/components/AheadBanner";
+import { AheadBanner, FasterRouteBanner } from "@/components/AheadBanner";
 import { AheadBannerController } from "@/nav/ahead/bannerController";
 import { aheadOf, projectFeed, trafficSources, type AheadAlert } from "@/nav/ahead/aheadFeed";
 import { aheadSourcesFrom } from "@/nav/ahead/aheadSources";
@@ -228,6 +227,7 @@ import { viaText } from "@/map/viaText";
 import { VehiclePickerScreen } from "@/components/VehiclePicker";
 import { type VehicleType, shouldShowVehiclePicker, vehicleForMode, vehicleMode, vehicleOption, vehiclePatch, vehicleRouteNote } from "@/services/vehicle";
 import { overlaysFor } from "@/map/previewOverlays";
+import { NAV_TOAST_MS, RECENTRE_MS, compassHighlighted, compassTapAction, compassToast, showRecentrePill } from "@/nav/offCentreHint";
 import { layoutRouteBubbles, timeDifferenceText } from "@/map/bubbleLayout";
 import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
 import { done, enqueue, PILL_SHOW_MS, reportsPillText, type PillMessage } from "@/map/homePill";
@@ -252,7 +252,7 @@ import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
 import { drawnRouteIndices, previewEdgePadding, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
-import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, showManoeuvreCallout } from "@/nav/navCamera";
+import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, navZoomForSpeed, showManoeuvreCallout } from "@/nav/navCamera";
 import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
 import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
@@ -953,6 +953,11 @@ export function MapScreen() {
   const mapTheme = useEffectiveMapTheme();
   const routeColours = useMemo(() => routeColoursFor(mapTheme, mapType === "hybrid"), [mapTheme, mapType]);
   const [cameraMode, setCameraMode] = useState<CameraMode>(camera.state);
+  // The map's bearing after its last move (read back from the map): the compass ring's input.
+  const [settledBearing, setSettledBearing] = useState(0);
+  // A short message under the instruction bar ("North up" / "Heading up").
+  const [navToast, setNavToast] = useState<string | null>(null);
+  const navToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => camera.onChange(setCameraMode), [camera]);
   const followTilt = cameraMode === "NAV_FOLLOW";
 
@@ -1625,10 +1630,11 @@ export function MapScreen() {
       "navFollow",
       overviewMode
         ? { center: currentLatLng, heading: bearing, pitch: isFlatViewStyle ? 0 : 45, zoom: isFlatViewStyle ? 17 : 15 }
-        : navFollowPose(currentLatLng, bearing, currentSpeedKmhRef.current, isFlatViewStyle),
-      { duration: 700 }
+        : navFollowPose(currentLatLng, bearing, currentSpeedKmhRef.current, isFlatViewStyle, windowHeight),
+      // Fix pass 5 §4: back to the default view over 600 ms (also after Re-centre).
+      { duration: RECENTRE_MS }
     );
-  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle, currentSpeedKmhRef, camera, navBearingRef]);
+  }, [route, followTilt, detectionOpen, currentLatLng, heading, overviewMode, placingAlert, settings.defaultMapViewStyle, currentSpeedKmhRef, camera, navBearingRef, windowHeight]);
 
   // The approach view around exits, merges, splits, roundabouts, lane changes and complex turns
   // (nav/approach.ts): zoom in 200 m out (400 m above 90 km/h), confirm the manoeuvre with a
@@ -1684,7 +1690,7 @@ export function MapScreen() {
                 ? { center: cam.currentLatLng, heading: cam.heading, pitch: 0, zoom: 17 }
                 : cam.overviewMode
                   ? { center: cam.currentLatLng, heading: cam.heading, pitch: 45, zoom: 15 }
-                  : navFollowPose(cam.currentLatLng, cam.heading, currentSpeedKmhRef.current),
+                  : navFollowPose(cam.currentLatLng, cam.heading, currentSpeedKmhRef.current, false, windowHeight),
               { duration: effect.durationMs }
             );
           }
@@ -1705,7 +1711,7 @@ export function MapScreen() {
         }
       }
     },
-    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef, currentSpeedKmhRef, camera]
+    [chimePlayer, showManoeuvreChip, approachStepsRef, routeItemSettingsRef, currentSpeedKmhRef, camera, windowHeight]
   );
   const dispatchApproachRef = useRef(dispatchApproach);
   useEffect(() => {
@@ -1958,7 +1964,7 @@ export function MapScreen() {
   // already follows for pan/tilt: the instant a real pinch starts, onRegionChangeComplete's own
   // isGesture handling drops followTilt to false (see that handler's comment), which gates this
   // off immediately too, so a manual pinch is never overridden mid-gesture.
-  const speedZoom = speedZoomFor(currentSpeedKmh);
+  const speedZoom = navZoomForSpeed(currentSpeedKmh, windowHeight, currentLatLng?.latitude ?? -33.9);
   const appliedSpeedZoomRef = useRef<number | null>(null);
   useEffect(() => {
     const isFlatViewStyle = settings.defaultMapViewStyle === "flat";
@@ -2040,11 +2046,11 @@ export function MapScreen() {
       const bearing = navBearingRef.current;
       camera.move(
         "navFollow",
-        nextOverview ? { center: currentLatLng, heading: bearing, pitch: 45, zoom: 15 } : navFollowPose(currentLatLng, bearing, currentSpeedKmhRef.current),
+        nextOverview ? { center: currentLatLng, heading: bearing, pitch: 45, zoom: 15 } : navFollowPose(currentLatLng, bearing, currentSpeedKmhRef.current, false, windowHeight),
         { duration: 500 }
       );
     },
-    [currentLatLng, currentSpeedKmhRef, camera, navBearingRef]
+    [currentLatLng, currentSpeedKmhRef, camera, navBearingRef, windowHeight]
   );
 
   // The locate/recenter button, per explicit request: while already following (the common
@@ -3245,7 +3251,11 @@ export function MapScreen() {
       // The compass needle follows the map's real bearing, read back from the map itself.
       mapRef.current
         ?.getCamera()
-        .then((camera) => mapBearing.set(camera.heading ?? 0))
+        .then((camera) => {
+          mapBearing.set(camera.heading ?? 0);
+          // Fix pass 5 §4: the compass ring compares this with the way the map should face.
+          setSettledBearing(camera.heading ?? 0);
+        })
         .catch(() => {});
 
       setOsmZoomDelta(region.latitudeDelta);
@@ -4218,7 +4228,7 @@ export function MapScreen() {
           roadBearing: navStartBearing(chosen.polyline, currentLatLng),
           heading,
         });
-        camera.move("transition", navFollowPose(currentLatLng, startBearing, currentSpeedKmhRef.current, isFlatViewStyle), { duration: NAV_START_MS });
+        camera.move("transition", navFollowPose(currentLatLng, startBearing, currentSpeedKmhRef.current, isFlatViewStyle, windowHeight), { duration: NAV_START_MS });
         mapBearing.set(startBearing);
       }
       setRouteChoices(null);
@@ -4246,7 +4256,7 @@ export function MapScreen() {
           .catch((err) => console.warn("[nav] Mapbox route unavailable, staying on the picked route", err));
       }
     },
-    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.keepNorthUp, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef, camera, mapBearing]
+    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.keepNorthUp, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef, camera, mapBearing, windowHeight]
   );
 
   // Development builds: Settings › Developer › test drives start a recorded motorway drive here
@@ -4980,7 +4990,7 @@ export function MapScreen() {
         "navFollow",
         overviewMode
           ? { center: currentLatLng, heading, pitch: 45, zoom: 15 }
-          : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current),
+          : navFollowPose(currentLatLng, heading, currentSpeedKmhRef.current, false, windowHeight),
         { duration: 400 }
       );
     }
@@ -5595,10 +5605,19 @@ export function MapScreen() {
       .then((choices) => {
         const alts = pickAlternatives(choices, current);
         setNavAlternatives(alts);
-        if (!alts.length) showManoeuvreChip("No other routes right now", "neutral", 3000);
+        showManoeuvreChip(alts.length ? "Tap a route to switch · Re-centre to keep yours" : "No other routes right now", "neutral", 3000);
       })
       .catch((err) => showManoeuvreChip(`Couldn't load other routes: ${routeErrorText(err)}`, "neutral", 4000));
   }, [showRouteOverview, currentLatLng, destinationLatLng, travelMode, remainingPolyline, settings.routeAvoid, stopWaypoints, showManoeuvreChip]);
+  // Back to following (Re-centre, or a tap on your own route): you kept your route, so the
+  // other routes and their time labels go.
+  useEffect(
+    () =>
+      camera.onChange((m) => {
+        if (m === "NAV_FOLLOW") setNavAlternatives(null);
+      }),
+    [camera]
+  );
   const switchToAlternative = useCallback((alt: Route) => {
     guidanceRef.current = createGuidanceState();
     setActiveStepIndex(0);
@@ -5734,13 +5753,30 @@ export function MapScreen() {
       if (here) {
         // Picking a view is asking to see the drive: following again, in that view.
         camera.recentre();
-        const pose = navFollowPose(here, next === "northUp" || settings.keepNorthUp ? 0 : navBearingRef.current, currentSpeedKmhRef.current, flat);
-        if (camera.move("navFollow", pose, { duration: 500 })) mapBearing.set(pose.heading);
+        const pose = navFollowPose(here, next === "northUp" || settings.keepNorthUp ? 0 : navBearingRef.current, currentSpeedKmhRef.current, flat, windowHeight);
+        if (camera.move("navFollow", pose, { duration: RECENTRE_MS })) mapBearing.set(pose.heading);
       }
     },
-    [settings.defaultMapViewStyle, settings.keepNorthUp, updateSettings, currentLatLngRef, currentSpeedKmhRef, mapBearing, camera, navBearingRef]
+    [settings.defaultMapViewStyle, settings.keepNorthUp, updateSettings, currentLatLngRef, currentSpeedKmhRef, mapBearing, camera, navBearingRef, windowHeight]
   );
   const nextNavView: Record<NavView, NavView> = { "3d": "2d", "2d": "northUp", northUp: "3d" };
+
+  // Fix pass 5 §4: the compass while driving. Ringed (map turned away in FREE): back to the
+  // default view. Otherwise heading-up <-> north-up, with a short toast.
+  const navCompassRing = compassHighlighted({ mode: cameraMode, mapBearing: settledBearing, northUp: navNorthUp || settings.keepNorthUp, roadBearing: navBearing });
+  const onNavCompass = useCallback(() => {
+    const action = compassTapAction({ highlighted: navCompassRing, northUp: navNorthUp || settings.keepNorthUp });
+    if (action === "recentre") {
+      onRecenter();
+      return;
+    }
+    if (action === "headingUp" && settings.keepNorthUp) updateSettings({ keepNorthUp: false });
+    applyNavView(action === "northUp" ? "northUp" : settings.defaultMapViewStyle === "flat" ? "2d" : "3d");
+    const text = compassToast(action);
+    if (navToastTimerRef.current) clearTimeout(navToastTimerRef.current);
+    setNavToast(text);
+    navToastTimerRef.current = setTimeout(() => setNavToast(null), NAV_TOAST_MS);
+  }, [navCompassRing, navNorthUp, settings.keepNorthUp, settings.defaultMapViewStyle, onRecenter, applyNavView, updateSettings]);
 
   // "Go" in Search along route: that place becomes the destination, routed from here now (the
   // stop, if any, is dropped -- going somewhere else instead).
@@ -6958,8 +6994,6 @@ export function MapScreen() {
             ])
           }
           onHeightChange={setBottomBarHeight}
-          isFollowing={followTilt}
-          onRecenter={onRecenter}
           onOverview={showNavRoutes}
         />
       )}
@@ -6976,8 +7010,12 @@ export function MapScreen() {
           bottomBarHeight={liveViewOn ? bottomBarHeight + 8 + liveViewH : bottomBarHeight}
           showSpeedLimit={!!speedLimitKmh}
           bearing={mapBearing}
-          northUp={navNorthUp}
-          onCompass={() => applyNavView(navNorthUp ? (settings.defaultMapViewStyle === "flat" ? "2d" : "3d") : "northUp")}
+          northUp={navNorthUp || settings.keepNorthUp}
+          onCompass={onNavCompass}
+          showRecenter={showRecentrePill(cameraMode, !!route)}
+          onRecenter={onRecenter}
+          compassHighlighted={navCompassRing}
+          toast={navToast}
           showAudioPlayer={settings.showAudioPlayer}
           onAudioPlayer={openAudioPlayer}
           soundOff={settings.spokenDirections === "off"}
@@ -7049,7 +7087,14 @@ export function MapScreen() {
           onNotThere={() => voteOnAhead(false)}
           fasterRoute={
             trafficSuggestionRoute && trafficSuggestionSavedSeconds >= 60
-              ? { savesMin: Math.round(trafficSuggestionSavedSeconds / 60), onSwitch: acceptTrafficSuggestion, onKeep: () => aheadCtl.swipe() }
+              ? {
+                  savesMin: Math.round(trafficSuggestionSavedSeconds / 60),
+                  onSwitch: acceptTrafficSuggestion,
+                  onKeep: () => {
+                    dismissTrafficSuggestion();
+                    aheadCtl.swipe();
+                  },
+                }
               : null
           }
         />
@@ -7139,11 +7184,8 @@ export function MapScreen() {
           }}
         />
       )}
-      {route && navAlternatives && navAlternatives.length > 0 && (
-        <View pointerEvents="box-none" style={[styles.altBar, { top: insets.top + instructionCardHeight + spacing.md }]}>
-          <Button variant="secondary" label="Keep current route" onPress={() => setNavAlternatives(null)} testID="nav-keep-route" />
-        </View>
-      )}
+      {/* Fix pass 5 §5: no floating "keep" pill over the map. The other routes go away when you
+          re-centre (the bottom-left pill) or tap your own route -- see the NAV_FOLLOW effect. */}
 
       {/* Report while driving: bottom-right, 12pt above the bar (Re-centre sits over it only
           after panning). See nav/navControlsLayout.ts for the whole column layout. */}
@@ -7210,56 +7252,17 @@ export function MapScreen() {
           left untouched, and gives three distinct real controls: Yes (accept), No (decline),
           and a separate X close -- all three just call through to accept/dismiss, kept as
           separate elements because that's what was explicitly asked for. */}
-      {route && trafficSuggestionRoute && !stopPreviewRoute && !addingStopDuringNav && !placingAlert && (
-        <View
-          style={[
-            styles.trafficSuggestionBanner,
-            { top: insets.top + spacing.md + instructionCardHeight + spacing.md },
-          ]}
-        >
-          <View style={styles.trafficSuggestionTopRow}>
-            <View style={styles.trafficSuggestionIconWrap}>
-              <Icon name="flash" size={18} color="#FFFFFF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              {/* "Back-lane shortcut" / "Side-street shortcut" / "Faster route found", then
-                  "Save 4 min via Smith Ln — arrive 5:42 pm": the real saving, the road it takes
-                  you onto and the real arrival time (nav/shortcuts.ts shortcutText). */}
-              <Text style={styles.trafficSuggestionTitle} testID="shortcut-title">
-                {trafficSuggestionInfo.slowAhead ? "Traffic ahead · " : ""}
-                {shortcutTitle.title}
-              </Text>
-              <Text style={styles.trafficSuggestionBody} testID="shortcut-body">
-                {shortcutTitle.body}
-              </Text>
-            </View>
-            <Pressable
-              onPress={dismissTrafficSuggestion}
-              hitSlop={10}
-              style={({ pressed }) => [styles.trafficSuggestionClose, pressed && { opacity: pressedOpacity }]}
-              accessibilityLabel="Close — not wanted, keep current route"
-            >
-              <Icon name="close" size={16} color={colors.text} />
-            </Pressable>
-          </View>
-          <View style={styles.trafficSuggestionActionRow}>
-            <Button
-              variant="secondary"
-              label="No"
-              onPress={dismissTrafficSuggestion}
-              accessibilityLabel="No — keep current route"
-              style={{ flex: 1 }}
-            />
-            <Button
-              variant="primary"
-              icon="checkmark"
-              label="Yes"
-              onPress={acceptTrafficSuggestion}
-              accessibilityLabel={`Yes — switch to the faster route, save about ${Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))} minutes`}
-              style={{ flex: 1 }}
-            />
-          </View>
-        </View>
+      {/* Fix pass 5 §5: a faster route is offered in the ahead banner (inside a jam alert, or as its
+          own banner when none is up) -- no separate floating card. Not taken within 10 s: kept. */}
+      {route && trafficSuggestionRoute && trafficSuggestionSavedSeconds >= 60 && !aheadBannerUp && !stopPreviewRoute && !addingStopDuringNav && !placingAlert && (
+        <FasterRouteBanner
+          top={insets.top + instructionCardHeight}
+          savesMin={Math.max(1, Math.round(trafficSuggestionSavedSeconds / 60))}
+          detail={(trafficSuggestionInfo.slowAhead ? "Traffic ahead · " : "") + shortcutTitle.body}
+          scheme={mapScheme}
+          onSwitch={acceptTrafficSuggestion}
+          onKeep={dismissTrafficSuggestion}
+        />
       )}
 
       {/* "End suggested route" -- only shown while actually driving an accepted suggestion (see
@@ -8158,7 +8161,6 @@ const styles = StyleSheet.create({
   // is a real live NSW government camera feed, an entirely separate dataset from the mapped
   // OSM traffic-light/speed-camera layer, and shouldn't visually read as a third variant of it.
   navReport: { position: "absolute", right: SIDE_MARGIN },
-  altBar: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   topRightControls: {
     position: "absolute",
     // Hugs the true right edge (rather than floating inward) so this reads as a compact,
@@ -8203,56 +8205,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     ...shadow.medium,
-  },
-  trafficSuggestionBanner: {
-    position: "absolute",
-    left: spacing.md,
-    right: spacing.md,
-    // "Clear but transparent but not too transparent" per explicit request -- a translucent
-    // dark glass tab rather than the fully opaque colors.surface it used to be, so the map
-    // stays visible through it while the text stays readable.
-    backgroundColor: "rgba(17, 24, 39, 0.82)",
-    borderRadius: radius.lg,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.sm + 2,
-    gap: spacing.sm,
-    ...shadow.high,
-  },
-  trafficSuggestionTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  trafficSuggestionIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.warning,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  trafficSuggestionTitle: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-  trafficSuggestionBody: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.75)",
-    marginTop: 1,
-  },
-  trafficSuggestionClose: {
-    width: 26,
-    height: 26,
-    borderRadius: radius.pill,
-    backgroundColor: "rgba(255, 255, 255, 0.16)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  trafficSuggestionActionRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
   },
   endSuggestedRouteWrap: {
     position: "absolute",

@@ -1,7 +1,7 @@
 // Permanent fix §5: controls never overlap. Home map: Re-centre (only in FREE) sits ABOVE the
 // yellow Report with a 12pt gap in the bottom-right column; Menu/Compass top-left, Audio/Sound
-// top-right. Driving: speed sign above the speedometer bottom-left, Re-centre above Report
-// bottom-right, mic and sound top-right, and the ahead banner never on top of any of them.
+// top-right. Driving: speed sign above the speedometer bottom-left, the Re-centre pill under them
+// (bottom-left, only in FREE), Report bottom-right, mic and sound top-right, and the ahead banner never on top of any of them.
 import { describe, expect, it } from "@jest/globals";
 import { readFileSync } from "fs";
 import { homeControlFrames, type HomeFrame } from "@/map/homeMapLogic";
@@ -89,11 +89,13 @@ describe("driving controls with the ahead banner (§5)", () => {
           aheadBanner: { height: 88, progress: 1 },
         });
         expect([p.width, showRecenter, showSpeedLimit, overlaps(frames)]).toEqual([p.width, showRecenter, showSpeedLimit, []]);
-        // Speed sign above the speedometer (bottom-left); Re-centre above Report (bottom-right); mic + sound top-right.
+        // Speed sign above the speedometer (bottom-left); Re-centre pill bottom-left under the
+        // speedometer (fix pass 5 §4); Report bottom-right; mic + sound top-right.
         if (showSpeedLimit && frames.speedLimit!.x <= frames.speedometer!.x + 1) expect(frames.speedLimit!.y + frames.speedLimit!.height).toBeLessThanOrEqual(frames.speedometer!.y);
         if (showRecenter) {
-          expect(frames.recenter!.y + frames.recenter!.height).toBeLessThanOrEqual(frames.report!.y);
-          expect(frames.recenter!.x).toBeGreaterThan(p.width / 2);
+          expect(frames.recenter!.x + frames.recenter!.width).toBeLessThan(p.width / 2);
+          expect(frames.speedometer!.y + frames.speedometer!.height).toBeLessThanOrEqual(frames.recenter!.y);
+          expect(frames.recenter!.y + frames.recenter!.height).toBeCloseTo(frames.report!.y + frames.report!.height);
         }
         // Mic and sound top-right. (On a 320 x 568 phone there's no room under a dropped banner:
         // they step aside for the few seconds it shows -- never on top of anything.)

@@ -8,7 +8,7 @@ import type { BannerState } from "@/nav/ahead/bannerController";
 import { aheadSourceLine, aheadSubtitle } from "@/nav/ahead/aheadText";
 import { closingProgress, distanceText, ENTER_MS, LEAVE_MS } from "@/nav/ahead/aheadTiming";
 import { AHEAD_BANNER_MARGIN, AHEAD_BANNER_SLIDE, CONTROL_GAP } from "@/nav/navControlsLayout";
-import { AHEAD_COLOURS, SURFACES } from "@/theme/colors";
+import { AHEAD_COLOURS, BLUE, SURFACES } from "@/theme/colors";
 import { shadow } from "@/theme/tokens";
 import type { DistanceUnit } from "@/utils/navFormat";
 
@@ -207,3 +207,33 @@ const styles = StyleSheet.create({
   track: { position: "absolute", left: 0, right: 0, bottom: 0, height: 4 },
   bar: { height: 4 },
 });
+
+/**
+ * Fix pass 5 §5: a faster route when no jam alert is up -- the same banner (same place under the
+ * instruction bar, same card) instead of a separate floating card: "Faster route · saves 2 min"
+ * with the road / arrival line, [Switch] [Keep]; MapScreen keeps the current route after 10 s.
+ */
+export function FasterRouteBanner(p: { top: number; savesMin: number; detail: string | null; scheme: "light" | "dark"; onSwitch: () => void; onKeep: () => void; onHeight?: (h: number) => void }) {
+  const surface = SURFACES[p.scheme];
+  return (
+    <View style={[styles.wrap, { top: p.top + CONTROL_GAP }]} onLayout={(e) => p.onHeight?.(e.nativeEvent.layout.height)} testID="faster-route-banner">
+      <View style={[styles.card, { backgroundColor: surface.raised }]} accessibilityLabel={`Faster route, saves ${p.savesMin} minutes. ${p.detail ?? ""}`}>
+        <View style={[styles.stripe, { backgroundColor: BLUE }]} />
+        <View style={styles.row}>
+          <View style={styles.textCol}>
+            <Text style={[styles.title, { color: surface.text }]} numberOfLines={1} testID="faster-route-title">{`Faster route · saves ${p.savesMin} min`}</Text>
+            {p.detail ? (
+              <Text style={[styles.subtitle, { color: surface.textMuted }]} numberOfLines={2} testID="faster-route-detail">
+                {p.detail}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.actions}>
+          <Button variant="primary" label="Switch" onPress={p.onSwitch} style={styles.action} testID="faster-switch" />
+          <Button variant="secondary" label="Keep" onPress={p.onKeep} style={styles.action} testID="faster-keep" />
+        </View>
+      </View>
+    </View>
+  );
+}
