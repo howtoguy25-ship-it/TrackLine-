@@ -78,7 +78,7 @@ describe("route preview fit (§1)", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
     expect(src).toMatch(/!mapReady \|\| placePage \|\| pendingDestination\) return;/);
     // ...and it is a "follow" move, which the camera controller refuses in ROUTE_PREVIEW.
-    expect(src).toMatch(/camera\.move\("follow", \{ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM \}/);
+    expect(src).toMatch(/camera\.move\("follow", \{ center: at, heading: bearing, zoom: HOME_FOLLOW_ZOOM \}/); // the calm position (fix pass 7 §2)
     // And the fit re-runs when the top card or the sheet changes size.
     expect(src).toMatch(/\[previewFit, drawnSelection, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight, windowWidth, windowHeight\]/);
   });
