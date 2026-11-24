@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
 import { displayKmh, rawSpeedKmh } from "@/utils/gpsSpeed";
 import { isGpsReplayActive, subscribeGpsReplay, subscribeGpsReplayActiveChange, type ReplayFix } from "@/dev/gpsReplay";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 // Real, explicit request -- a dedicated GPS watch for the live speedometer, separate from
 // LocationContext's own shared watchPositionAsync (timeInterval 2000ms, distanceInterval 5m,
@@ -132,7 +133,9 @@ export function useLiveSpeed(active: boolean): LiveSpeedState {
     let cancelled = false;
 
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await askPermission("location", () => Location.requestForegroundPermissionsAsync(), {
+        decided: async () => answered(await Location.getForegroundPermissionsAsync()),
+      });
       if (status !== "granted" || cancelled) return;
 
       subscription = await Location.watchPositionAsync(

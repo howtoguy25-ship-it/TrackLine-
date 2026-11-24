@@ -47,6 +47,7 @@ import { formatDistance } from "@/utils/navFormat";
 import { radius, shadow, spacing } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
+import { askPermission } from "@/services/permissionQueue";
 
 // PHASE 2 (see the diagnostic protocol this followed): primary vehicle detection now runs
 // through a real Frame Processor calling a native TFLite model (react-native-fast-tflite)
@@ -1290,7 +1291,7 @@ export function VehicleDetectionScreen({ onClose, isNavigating = false }: Props)
         <Text style={styles.permissionText}>
           TrackLine needs camera access to detect vehicles in view.
         </Text>
-        <Button variant="primary" label="Grant camera access" onPress={requestPermission} />
+        <Button variant="primary" label="Grant camera access" onPress={() => askPermission("camera", requestPermission)} />
         <Pressable onPress={onClose}>
           <Text style={styles.closeLink}>Close</Text>
         </Pressable>

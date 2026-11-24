@@ -1,8 +1,9 @@
-import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
+import { AudioModule, RecordingPresets, getRecordingPermissionsAsync, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
 import { YamnetSiren, canStreamYamnet, isYamnetAvailable, type StreamWindow } from "@/native/yamnetNative";
 import { setMicInUse } from "@/services/audioSession";
 import { SirenTracker, type SirenEvent } from "@/services/sirenTracker";
 import { File } from "expo-file-system";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 const WINDOW_MS = 1000;
 
@@ -71,7 +72,9 @@ class SirenDetectionEngine {
   }
 
   private async startNow(): Promise<void> {
-    const { status } = await requestRecordingPermissionsAsync();
+    const { status } = await askPermission("microphone", () => requestRecordingPermissionsAsync(), {
+      decided: async () => answered(await getRecordingPermissionsAsync()),
+    });
     if (status !== "granted") {
       console.warn("[siren] Microphone permission denied; EV Radar disabled.");
       return;

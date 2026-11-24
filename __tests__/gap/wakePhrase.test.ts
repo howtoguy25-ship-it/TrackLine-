@@ -11,6 +11,7 @@ const mockRec = {
   isRecognitionAvailable: () => true,
   supportsOnDeviceRecognition: () => true,
   requestPermissionsAsync: async () => ({ granted: true }),
+  getPermissionsAsync: async () => ({ granted: true }),
   start(opts: Record<string, unknown>) {
     this.started.push(opts);
   },

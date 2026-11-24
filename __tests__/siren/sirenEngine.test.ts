@@ -21,6 +21,7 @@ jest.mock("expo-audio", () => ({
     },
   },
   RecordingPresets: { HIGH_QUALITY: {} },
+  getRecordingPermissionsAsync: async () => ({ status: "granted", granted: true }),
   requestRecordingPermissionsAsync: async () => {
     await mockPermissionGate;
     return { status: "granted" };

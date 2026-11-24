@@ -2,6 +2,7 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { saveExpoPushToken } from "@/services/deviceSession";
+import { askPermission } from "@/services/permissionQueue";
 
 // Real push registration backing the Owner Dashboard's broadcast-notification feature (see
 // deviceSession.ts/OwnerDashboardScreen.tsx) -- every device that grants permission gets a real
@@ -37,7 +38,7 @@ export async function registerForPushNotifications(uid: string): Promise<void> {
     const existing = await Notifications.getPermissionsAsync();
     let finalStatus = existing.status;
     if (finalStatus !== "granted") {
-      const requested = await Notifications.requestPermissionsAsync();
+      const requested = await askPermission("notifications", () => Notifications.requestPermissionsAsync());
       finalStatus = requested.status;
     }
     if (finalStatus !== "granted") return;

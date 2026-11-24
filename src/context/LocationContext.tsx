@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { AppState } from "react-native";
 import * as Location from "expo-location";
 import { isGpsReplayActive, subscribeGpsReplay, subscribeGpsReplayActiveChange, type ReplayFix } from "@/dev/gpsReplay";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 interface LocationContextValue {
   location: Location.LocationObject | null;
@@ -87,7 +88,9 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     (async () => {
-      const { status, canAskAgain: realCanAskAgain } = await Location.requestForegroundPermissionsAsync();
+      const { status, canAskAgain: realCanAskAgain } = await askPermission("location", () => Location.requestForegroundPermissionsAsync(), {
+        decided: async () => answered(await Location.getForegroundPermissionsAsync()),
+      });
       if (cancelled) return;
       if (status !== "granted") {
         setErrorMsg("Location permission is required for navigation and nearby alerts.");

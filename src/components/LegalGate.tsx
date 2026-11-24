@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { colors, spacing } from "@/theme/tokens";
 import { db } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
+import { useHoldPrompts } from "@/services/permissionQueue";
 
 // Privacy & legal: the owner publishes versioned Privacy Policy / Terms text from the dashboard
 // (legalDocs/{kind}). A "major" version is shown once to every user to accept.
@@ -24,6 +25,9 @@ export function pendingAcceptance(docs: Partial<Record<Kind, LegalDoc>>, accepte
   }
   return null;
 }
+
+/** How long the terms check may hold the permission prompts back while it loads. */
+export const LEGAL_CHECK_HOLD_MS = 3000;
 
 export function LegalGate() {
   const { user } = useAuth();
@@ -49,7 +53,17 @@ export function LegalGate() {
 
   const kind = accepted ? pendingAcceptance(docs, accepted) : null;
   const d = kind ? docs[kind] : null;
-  if (!kind || !d || !user) return null;
+  const visible = !!(kind && d && user);
+  // Updated terms come before any permission prompt: hold the prompts while they're up, and for
+  // a moment at start-up while we find out whether they're needed (never longer than
+  // LEGAL_CHECK_HOLD_MS, so a slow network can't hold them back).
+  const [checking, setChecking] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setChecking(false), LEGAL_CHECK_HOLD_MS);
+    return () => clearTimeout(t);
+  }, []);
+  useHoldPrompts(visible || (checking && !!user && accepted === null));
+  if (!visible || !kind || !d || !user) return null;
   return (
     <Modal visible animationType="slide" onRequestClose={() => undefined}>
       <View style={styles.root} testID="legal-gate">

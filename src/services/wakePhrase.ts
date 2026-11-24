@@ -8,6 +8,7 @@ import { parseVoiceReport, type VoiceReport } from "@/nav/voiceReport";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
 import { sirenDetection } from "@/services/sirenDetection";
 import { isVoiceSearchActive } from "@/services/voiceSearch";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 const WAKE = /\b(hey|hi|ok|okay)[,\s]+track ?line\b[,.!\s]*/i;
 
@@ -67,7 +68,9 @@ export async function startWakeListener(
     onStatus("unavailable");
     return () => {};
   }
-  const perm = await rec.requestPermissionsAsync().catch(() => ({ granted: false }));
+  const perm = await askPermission("speech", () => rec.requestPermissionsAsync(), {
+    decided: async () => answered(await rec.getPermissionsAsync()),
+  }).catch(() => ({ granted: false }));
   if (!perm.granted) {
     onStatus("denied");
     return () => {};

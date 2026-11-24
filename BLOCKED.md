@@ -1,5 +1,8 @@
 # Blocked — what only you can unblock
 
+**Step-by-step for every key: KEYS_SETUP.md.** Since 2026-11-24 the server deploy needs only the
+`FIREBASE_SERVICE_ACCOUNT` secret (the Mapbox server token became optional).
+
 Each row: what's missing, where you add it, and how to check it works. Keys are never put in the
 repo: GitHub secrets → "Deploy Firebase" workflow with *Copy API keys* ticked (DEPLOY.md).
 

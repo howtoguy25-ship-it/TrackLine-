@@ -10,6 +10,7 @@ import { loadBoxedTFLiteModel, TFLITE_INPUT_SIZE } from "@/services/tfliteVehicl
 import { createBoxTracker, DEFAULT_TRACKER_PARAMS, iou } from "@/detection/boxTracker";
 import { createSpeedTracker } from "@/utils/speedTracker";
 import type { CameraTrack, LiveStatus, SceneKind } from "@/nav/liveScene";
+import { askPermission } from "@/services/permissionQueue";
 
 // The camera half of the live road view: the back camera, the same on-device SSD MobileNet model
 // and the same trained box tracker + distance estimate as the AI vehicle detection screen
@@ -66,7 +67,7 @@ export function LiveVehicleCamera({
   });
 
   useEffect(() => {
-    if (!hasPermission) requestPermission().then((ok) => !ok && onStatusRef.current("noPermission"));
+    if (!hasPermission) askPermission("camera", requestPermission).then((ok) => !ok && onStatusRef.current("noPermission"));
   }, [hasPermission, requestPermission]);
   useEffect(() => {
     if (!device) onStatusRef.current("noCamera");

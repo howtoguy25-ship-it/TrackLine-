@@ -739,6 +739,12 @@ exports.broadcastNotification = onCall(async (request) => {
 // build-time secrets never reach this separate Cloud Functions runtime). Set once with
 // `firebase functions:secrets:set MAPBOX_SERVER_TOKEN` -- see DEPLOY.md's own step for this.
 const MAPBOX_SERVER_TOKEN = defineSecret("MAPBOX_SERVER_TOKEN");
+/** The server Mapbox token, or null while it's the deploy's "unset" placeholder (or empty). */
+function mapboxServerToken() {
+  const v = String(MAPBOX_SERVER_TOKEN.value() || "").trim();
+  return v && v !== "unset" ? v : null;
+}
+exports._mapboxServerTokenForTest = mapboxServerToken;
 
 // Real, explicit request -- "only visible+driving... speed>15km/h."
 const PRESENCE_MIN_SPEED_KMH = 15;
@@ -863,11 +869,14 @@ exports.updatePresence = onCall({ secrets: [MAPBOX_SERVER_TOKEN] }, async (reque
   }
 
   let batch = samples;
-  try {
+  // No server token yet (the deploy creates an "unset" placeholder so everything else can go
+  // live): skip the road-snapping and use the real fixes as they are.
+  const mapboxToken = mapboxServerToken();
+  if (mapboxToken) try {
     const coordinates = samples.map((p) => `${p.lng},${p.lat}`).join(";");
     const url =
       `https://api.mapbox.com/matching/v5/mapbox/driving/${coordinates}` +
-      `?geometries=geojson&overview=full&access_token=${MAPBOX_SERVER_TOKEN.value()}`;
+      `?geometries=geojson&overview=full&access_token=${mapboxToken}`;
     const res = await fetch(url);
     const json = await res.json();
     const matchedCoords = json?.matchings?.[0]?.geometry?.coordinates;

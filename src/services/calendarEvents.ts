@@ -1,4 +1,5 @@
 import * as Calendar from "expo-calendar";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- main menu's upcoming-events row).
 // Reads the device's own real calendars/events via expo-calendar -- never writes/modifies
@@ -15,7 +16,9 @@ export interface UpcomingDriveEvent {
 }
 
 export async function requestCalendarAccess(): Promise<boolean> {
-  const { status } = await Calendar.requestCalendarPermissions();
+  const { status } = await askPermission("calendar", () => Calendar.requestCalendarPermissions(), {
+    decided: async () => answered(await Calendar.getCalendarPermissions()),
+  });
   return status === "granted";
 }
 

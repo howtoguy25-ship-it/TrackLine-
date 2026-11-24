@@ -1,5 +1,6 @@
 import { sirenDetection } from "@/services/sirenDetection";
 import type { NavLanguage } from "@/services/navLanguage";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 // Voice search for the "Where to?" sheet: tap the microphone, say a place, and the words land
 // in the search box. Recognition is the phone's own speech service (iOS Speech / Android's
@@ -111,7 +112,9 @@ export async function startVoiceSearch(
       handlers.onError("unavailable");
       return null;
     }
-    const permission = await recognizer.requestPermissionsAsync();
+    const permission = await askPermission("speech", () => recognizer.requestPermissionsAsync(), {
+      decided: async () => answered(await recognizer.getPermissionsAsync()),
+    });
     if (!permission.granted) {
       handlers.onError("denied");
       return null;

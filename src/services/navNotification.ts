@@ -4,6 +4,7 @@
 // Live Activity); without notification permission nothing is shown (never an error).
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import { askPermission } from "@/services/permissionQueue";
 
 export const NAV_NOTIFICATION_ID = "trackline-navigation";
 export const NAV_CHANNEL_ID = "navigation";
@@ -39,7 +40,7 @@ async function prepare(): Promise<boolean> {
     const perm = await Notifications.getPermissionsAsync();
     if (perm.granted) return true;
     if (!perm.canAskAgain) return false;
-    return (await Notifications.requestPermissionsAsync()).granted;
+    return (await askPermission("notifications", () => Notifications.requestPermissionsAsync())).granted;
   } catch {
     return false;
   }

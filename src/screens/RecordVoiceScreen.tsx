@@ -34,6 +34,7 @@ import {
   type VoiceClipDef,
 } from "@/services/recordedVoices";
 import { colors, spacing } from "@/theme/tokens";
+import { askPermission } from "@/services/permissionQueue";
 
 // Real, explicit request (Waze-style redesign, Phase 3) -- the guided recorder: every real clip
 // is MAX 6 SECONDS, auto-stop, with a countdown ring, real playback, re-record and delete. No
@@ -81,7 +82,7 @@ export function RecordVoiceScreen() {
 
   const startRecording = useCallback(
     async (key: string) => {
-      const { granted } = await requestRecordingPermissionsAsync();
+      const { granted } = await askPermission("microphone", () => requestRecordingPermissionsAsync());
       if (!granted) {
         Alert.alert(
           "Microphone access needed",

@@ -8,6 +8,7 @@ import { expectedAnnouncements } from "@/services/navigationGuidance";
 import type { RouteStep } from "@/services/directions";
 import type { SpokenDirectionsMode } from "@/services/settings";
 import type { NavLanguage } from "@/services/navLanguage";
+import { isPermissionPromptOpen, permissionQueue } from "@/services/permissionQueue";
 import {
   earlyAnnouncementThresholds,
   parseVoiceIdentifier,
@@ -73,6 +74,8 @@ function releasePlayer(): void {
 // call-out about a report from a minute ago isn't worth saying late.
 let waiting: { plan: SpeechPlan; options: SpeakOptions } | null = null;
 let speaking = false;
+// What to say once a permission prompt on screen closes (only the newest).
+let heldForPrompt: { plan: SpeechPlan; options: SpeakOptions } | null = null;
 /** True while the app itself is talking (the siren radar ignores what it hears then). */
 export function isNavSpeaking(): boolean {
   return speaking;
@@ -81,6 +84,7 @@ export function isNavSpeaking(): boolean {
 export function stopNavSpeech(): void {
   generation++;
   waiting = null;
+  heldForPrompt = null;
   speaking = false;
   Speech.stop();
   releasePlayer();
@@ -195,6 +199,19 @@ async function speakPersona(personaId: string, text: string, volume: number, min
  * call-out, which must never talk over "turn left".
  */
 export function speakPlan(plan: SpeechPlan, options: SpeakOptions, politely = false): void {
+  // A system permission prompt is on screen: don't talk over it. Keep only the newest thing to
+  // say and say it the moment the prompt closes.
+  if (isPermissionPromptOpen()) {
+    const waitingForPrompt = !heldForPrompt;
+    heldForPrompt = { plan, options };
+    if (waitingForPrompt)
+      permissionQueue.whenNoPromptOpen().then(() => {
+        const next = heldForPrompt;
+        heldForPrompt = null;
+        if (next) speakPlan(next.plan, next.options);
+      });
+    return;
+  }
   if (politely && speaking) {
     waiting = { plan, options };
     return;
