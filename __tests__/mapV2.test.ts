@@ -53,17 +53,17 @@ describe("map style", () => {
   });
 
   it("uses the requested colours (map polish §1)", () => {
-    expect(layer("land").paint!["background-color"]).toBe("#FAFAF9");
-    expect(layer("parks").paint!["fill-color"]).toBe("#D3F0CC");
-    // Bright clear water, in the #9EDBFA range.
-    expect(layer("water").paint!["fill-color"]).toBe("#9EDBFA");
+    expect(layer("land").paint!["background-color"]).toBe("#F5F6F8");
+    expect(layer("parks").paint!["fill-color"]).toBe("#D2EED8");
+    // Clear sky-blue water (map look 3).
+    expect(layer("water").paint!["fill-color"]).toBe("#A3D2F3");
     // Very light flat buildings, light grey roads with crisp white casing, darker motorways.
-    expect(layer("buildings").paint!["fill-color"]).toBe("#F0F1F3");
-    expect(layer("road-residential").paint!["line-color"]).toBe("#DDE1E6");
-    expect(layer("road-motorway").paint!["line-color"]).toBe("#B4BBC4");
+    expect(layer("buildings").paint!["fill-color"]).toBe("#ECEFF3");
+    expect(layer("road-residential").paint!["line-color"]).toBe("#D3D9E2");
+    expect(layer("road-motorway").paint!["line-color"]).toBe("#A7B4C6");
     expect(layer("road-casing-residential").paint!["line-color"]).toBe("#FFFFFF");
-    expect(layer("suburb-labels").paint!["text-color"]).toBe("#4F6F8A");
-    expect(layer("road-label-primary").paint!["text-color"]).toBe("#3A3F44");
+    expect(layer("suburb-labels").paint!["text-color"]).toBe("#4A6886");
+    expect(layer("road-label-primary").paint!["text-color"]).toBe("#323A45");
   });
 
   it("suburbs in mixed case, semi-bold, white halo -- never ALL CAPS", () => {
@@ -81,8 +81,8 @@ describe("map style", () => {
     ["primary", 11],
     ["secondary", 12.5],
     ["tertiary", 13.5],
-    ["residential", 14.5],
-    ["service", 16],
+    ["residential", 15], // map look 3: a calmer mid-zoom map
+    ["service", 17],
   ] as [RoadClass, number][])("%s street names appear from zoom %s", (cls, zoom) => {
     expect(LABEL_MIN_ZOOM[cls]).toBe(zoom);
     expect(layer(`road-label-${cls}`).minzoom).toBe(zoom);
@@ -379,8 +379,8 @@ describe("Waze-style look (Pass 3 §4)", () => {
   it("dark style: navy-grey roads on a dark background", () => {
      
     const { DARK_PALETTE } = require("../src/map-v2/styles/buildStyle");
-    expect(DARK_PALETTE.road).toBe("#3F4D66");
-    expect(DARK_PALETTE.land).toBe("#1B2230");
+    expect(DARK_PALETTE.road).toBe("#3D4B63");
+    expect(DARK_PALETTE.land).toBe("#18202B");
     expect(DARK_PALETTE.streetLabel).toBe("#EEF1F4");
   });
   it("3D buildings: off by default; when on, low and see-through", () => {

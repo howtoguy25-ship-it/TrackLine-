@@ -44,8 +44,8 @@ export const LABEL_MIN_ZOOM: Record<RoadClass, number> = {
   primary: 11,
   secondary: 12.5,
   tertiary: 13.5,
-  residential: 14.5,
-  service: 16,
+  residential: 15,
+  service: 17,
 };
 
 /** Road lines are drawn from this zoom up (the tiles decide which roads exist that far out). */
@@ -99,7 +99,7 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 8;
+export const STYLE_VERSION = 9;
 
 /**
  * Clean satellite (map styles add-on §2): imagery a little less saturated and contrasty with a
@@ -311,18 +311,18 @@ const ROUTE_SATELLITE = { route: "#8F45FF", routeCasing: "#FFFFFF", routeAlt: "#
 
 export const LIGHT_PALETTE: StylePalette = {
   name: "TrackLine Light",
-  // Near-white land, light grey roads with crisp white casing, darker grey motorways, bright
-  // clear water, soft green parks (map polish §1).
-  land: "#FAFAF9",
-  park: "#D3F0CC",
-  water: "#9EDBFA",
+  // Map look 3: TrackLine's own light look -- a cool, airy off-white ground, blue-grey streets
+  // with crisp white edges, slate main roads, fresh mint parks and a clear sky-blue water.
+  land: "#F5F6F8",
+  park: "#D2EED8",
+  water: "#A3D2F3",
   // Very light, flat buildings so the roads read first.
-  building: "#F0F1F3",
-  road: "#DDE1E6",
+  building: "#ECEFF3",
+  road: "#D3D9E2",
   roadCasing: "#FFFFFF",
-  motorway: "#B4BBC4",
-  suburbLabel: "#4F6F8A",
-  streetLabel: "#3A3F44",
+  motorway: "#A7B4C6",
+  suburbLabel: "#4A6886",
+  streetLabel: "#323A45",
   labelHalo: "#FFFFFF",
   shieldText: "#FFD400",
   ...ROUTE_LIGHT,
@@ -331,14 +331,14 @@ export const LIGHT_PALETTE: StylePalette = {
 export const DARK_PALETTE: StylePalette = {
   name: "TrackLine Dark",
   // Dark slate background, readable navy-grey roads, bright labels: clear, not murky.
-  land: "#1B2230",
-  park: "#1E3229",
+  land: "#18202B",
+  park: "#1B3127",
   // Clearly water on the dark ground (it was #12304F: 1.18:1, too close to the land).
   water: "#1F4E80",
   building: "#232B39",
-  road: "#3F4D66",
+  road: "#3D4B63",
   roadCasing: "#121722",
-  motorway: "#566683",
+  motorway: "#5A6B8B",
   suburbLabel: "#A9C6DC",
   streetLabel: "#EEF1F4",
   labelHalo: "#14171B",
@@ -622,9 +622,10 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     type: "symbol",
     source: "composite",
     "source-layer": "poi_label",
-    minzoom: 15.5,
+    // Map look 3: only the most notable places, and only right up close -- a calmer map.
+    minzoom: 16.5,
     // Places that get a brand badge (below) aren't labelled twice.
-    filter: ["all", ["<=", ["get", "filterrank"], 2], ["!", isBadgeFeature()]],
+    filter: ["all", ["<=", ["get", "filterrank"], 1], ["!", isBadgeFeature()]],
     layout: {
       "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
       "text-font": LABEL_FONT,

@@ -16,7 +16,7 @@ declare const mapboxgl: any; // eslint-disable-line @typescript-eslint/no-explic
 
 const W = 390;
 const H = 844;
-const OUT = "docs/map-look-2";
+const OUT = process.env.OUT_DIR ?? "docs/map-look-2";
 const token = readFileSync(process.env.MAPBOX_TOKEN_FILE!, "utf8").trim();
 const gl = path.join(process.env.MAPBOX_GL_DIR!, "node_modules/mapbox-gl/dist");
 const lib = readFileSync(path.join(gl, "mapbox-gl.js"), "utf8");

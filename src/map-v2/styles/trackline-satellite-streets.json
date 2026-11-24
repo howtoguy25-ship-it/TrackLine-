@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Satellite Streets",
   "metadata": {
-    "trackline:styleVersion": 8
+    "trackline:styleVersion": 9
   },
   "sources": {
     "composite": {
@@ -1162,7 +1162,7 @@
       "type": "symbol",
       "source": "composite",
       "source-layer": "road",
-      "minzoom": 14.5,
+      "minzoom": 15,
       "filter": [
         "all",
         [
@@ -1210,7 +1210,7 @@
           [
             "zoom"
           ],
-          14.5,
+          15,
           12.5,
           18,
           16
@@ -1233,7 +1233,7 @@
       "type": "symbol",
       "source": "composite",
       "source-layer": "road",
-      "minzoom": 16,
+      "minzoom": 17,
       "filter": [
         "all",
         [
@@ -1280,7 +1280,7 @@
           [
             "zoom"
           ],
-          16,
+          17,
           11,
           18,
           13.5
@@ -1565,7 +1565,7 @@
       "type": "symbol",
       "source": "composite",
       "source-layer": "poi_label",
-      "minzoom": 15.5,
+      "minzoom": 16.5,
       "filter": [
         "all",
         [
@@ -1574,7 +1574,7 @@
             "get",
             "filterrank"
           ],
-          2
+          1
         ],
         [
           "!",

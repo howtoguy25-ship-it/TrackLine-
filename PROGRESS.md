@@ -6,6 +6,10 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Map look 3 — TrackLine's own cleaner light look — 2026-11-24
+
+A cooler, airier off-white ground (#F5F6F8), blue-grey streets (#D3D9E2) with white edges, slate main roads (#A7B4C6), fresh mint parks, clear sky-blue water; dark theme gently refreshed. Calmer: side-street names from zoom 15, service roads from 17, small place names only the most notable and only from 16.5. Every contrast rule still passes (`__tests__/map/styleContrast.test.ts`). Renders: `docs/map-look-3`. Launch status: `LAUNCH_READINESS.md`.
+
 ## Map look 2 — lean by zoom, cleaner map, grey disc under the arrow — 2026-11-24
 
 From your phone screenshots vs your Waze references (feel, not copied). The home map now leans by zoom on one smooth curve (`src/map/tiltCurve.ts`): 44° at street level, most lean (58°) around zoom 14.5, easing to flat by zoom 10.5. Live while pinching, eased at rest, never fighting a hand-set tilt (Re-centre resets it); home map only. Style: soft horizon haze, building footprints only from street level, softer, no outline. A soft grey disc under the arrow. Tests: `__tests__/mapLook2/tiltCurve.test.ts`. Renders: `docs/map-look-2`. NEEDS DEVICE TEST (TEST_ON_PHONE §50).
