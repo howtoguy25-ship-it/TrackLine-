@@ -3,6 +3,7 @@ import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
 import { RouteTimeBubble } from "@/components/RouteSelection";
+import { RoundaboutIcon } from "@/components/icons/RoundaboutIcon";
 import { markerAnchorFor, type BubbleSide } from "@/map/bubbleLayout";
 import { Tracky } from "@/components/trackys/Tracky";
 import { RouteLine } from "@/map-v2/layers/RouteLine";
@@ -69,7 +70,8 @@ interface Props {
   navRoute: LatLng[] | null;
   remaining: LatLng[];
   onRoutePress?: () => void;
-  turnCallouts: { key: string; coordinate: LatLng; text: string }[];
+  /** `roundabout`: our roundabout picture beside the street (fix pass 5 §6). */
+  turnCallouts: { key: string; coordinate: LatLng; text: string; roundabout?: { exit: number | null; angle: number; drivingSide: "left" | "right" } | null }[];
   /** The next turn point, for the arrow drawn on the route. */
   nextTurn: LatLng | null;
   stopPreview: LatLng[] | null;
@@ -249,7 +251,8 @@ export function MapboxLayers(props: Props) {
       {/* The few things that are text: callouts, bubbles, a report's comment. */}
       {props.turnCallouts.map((c) => (
         <MarkerPin key={c.key} coordinate={c.coordinate} anchor={{ x: 0.5, y: 1 }}>
-          <View style={styles.turnCallout}>
+          <View style={[styles.turnCallout, c.roundabout ? styles.turnCalloutWithIcon : null]}>
+            {c.roundabout ? <RoundaboutIcon size={22} color="#FFFFFF" dim="rgba(255,255,255,0.4)" exit={c.roundabout.exit} angle={c.roundabout.angle} drivingSide={c.roundabout.drivingSide} /> : null}
             <Text style={styles.turnCalloutText} numberOfLines={1}>
               {c.text}
             </Text>
@@ -320,7 +323,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.25)",
     ...shadow.medium,
   },
-  turnCalloutText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  turnCalloutWithIcon: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 4 },
+  turnCalloutText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF", flexShrink: 1 },
   suggestionPill: {
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 4,

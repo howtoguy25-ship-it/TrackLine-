@@ -1,7 +1,7 @@
-import React, { forwardRef, useState } from "react";
+import React, { forwardRef, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
-import { StyleSheet } from "react-native";
+import { StyleSheet, useWindowDimensions } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
 import { SurfaceScheme } from "@/components/ui/surfaceScheme";
 import { DRIVE_TILE, SURFACES, type DriveTileKind } from "@/theme/colors";
@@ -10,7 +10,7 @@ import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, spacing } from "@/theme/tokens";
 import { formatArrivalClock, formatDistance, formatDurationText, type DistanceUnit } from "@/utils/navFormat";
-import { quickestSlot, type LeavePrediction, type RouteEvent } from "@/travel/etaSheet";
+import { LEAVE_ERROR_TEXT, LEAVE_TIMEOUT_MS, leaveChartBars, optionsSheetHeights, withTimeout, type LeavePrediction, type RouteEvent } from "@/travel/etaSheet";
 import { AheadGlyph } from "@/components/art/AheadGlyph";
 import { AHEAD_COLOURS } from "@/theme/colors";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
@@ -89,6 +89,8 @@ interface Props {
   onSheetChange?: (index: number) => void;
   // Advisory only, never disables the row.
   detectionBatteryLow?: boolean;
+  /** Bottom of the turn instruction bar (status bar included, pt): the sheet stays 120pt under it. */
+  topBarBottom?: number;
 }
 
 type LeaveState = { status: "idle" } | { status: "loading" } | { status: "done"; predictions: LeavePrediction[] } | { status: "failed"; reason: string };
@@ -132,15 +134,22 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     onClose,
     onSheetChange,
     detectionBatteryLow,
+    topBarBottom,
   },
   ref
 ) {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
+  // Half and full; full never reaches the guidance (screen - bar - 120). Content scrolls inside.
+  const snapPoints = useMemo(() => {
+    const { half, full } = optionsSheetHeights(screenHeight, topBarBottom ?? insets.top + 120);
+    return half < full ? [half, full] : [full];
+  }, [screenHeight, topBarBottom, insets.top]);
   const [leave, setLeave] = useState<LeaveState>({ status: "idle" });
 
   const fetchLeaveTimes = () => {
     setLeave({ status: "loading" });
-    loadLeaveTimes()
+    withTimeout(loadLeaveTimes(), LEAVE_TIMEOUT_MS)
       .then((predictions) =>
         predictions.some((p) => p.durationSeconds != null)
           ? setLeave({ status: "done", predictions })
@@ -153,7 +162,8 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     <BottomSheet
       ref={ref}
       index={-1}
-      snapPoints={SNAP_POINTS}
+      snapPoints={snapPoints}
+      enableDynamicSizing={false}
       enablePanDownToClose
       onChange={(index) => {
         if (index >= 0 && leave.status !== "loading") fetchLeaveTimes();
@@ -244,8 +254,6 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     </BottomSheet>
   );
 });
-
-const SNAP_POINTS = ["72%"];
 
 function StopsList({ section, unit }: { section: StopsSection; unit: DistanceUnit }) {
   return (
@@ -380,6 +388,7 @@ function RouteEventsBar({ events, unit }: { events: RouteEvent[]; unit: Distance
 }
 
 const CHART_HEIGHT = 72;
+const BAR_WIDTH = 24;
 
 function LeaveTimesChart({ state, onRetry }: { state: LeaveState; onRetry: () => void }) {
   if (state.status === "idle" || state.status === "loading") {
@@ -396,48 +405,37 @@ function LeaveTimesChart({ state, onRetry }: { state: LeaveState; onRetry: () =>
   }
   if (state.status === "failed") {
     return (
-      <Pressable onPress={onRetry} accessibilityRole="button" testID="eta-sheet-leave-error">
-        <Text style={styles.errorText}>Couldn&apos;t load drive times: {state.reason}. Tap to try again.</Text>
+      <Pressable onPress={onRetry} accessibilityRole="button" accessibilityLabel={`${LEAVE_ERROR_TEXT} (${state.reason})`} testID="eta-sheet-leave-error">
+        <Text style={styles.errorText}>{LEAVE_ERROR_TEXT}</Text>
       </Pressable>
     );
   }
-  const known = state.predictions.filter((p) => p.durationSeconds != null).map((p) => p.durationSeconds as number);
-  const max = Math.max(...known);
-  const min = Math.min(...known);
-  const best = quickestSlot(state.predictions);
+  const bars = leaveChartBars(state.predictions, CHART_HEIGHT, formatArrivalClock);
   return (
     <View testID="eta-sheet-leave">
       <View style={styles.chart}>
-        {state.predictions.map((p, i) => {
-          const label = i === 0 ? "Now" : formatArrivalClock(p.departMs);
-          if (p.durationSeconds == null) {
-            return (
-              <View key={p.departMs} style={styles.chartCol} accessible accessibilityLabel={`Leave ${label}: no prediction`}>
-                <View style={[styles.bar, styles.barMissing, { height: 8 }]} />
-                <Text style={styles.chartLabel}>{label}</Text>
+        {bars.map((b) => (
+          <View
+            key={b.departMs}
+            style={styles.chartCol}
+            accessible
+            accessibilityLabel={b.minutes == null ? `Leave ${b.label}: no prediction` : `Leave ${b.label}: ${b.minutes} min${b.best ? ", best" : ""}`}
+            testID={b.best ? "eta-sheet-leave-best" : undefined}
+          >
+            {b.best ? (
+              <View style={styles.bestTag} testID="eta-sheet-best-tag">
+                <Text style={styles.bestTagText}>Best</Text>
               </View>
-            );
-          }
-          // Taller bar = longer drive. Scaled between the shortest and longest so small
-          // differences still show.
-          const h = max === min ? CHART_HEIGHT * 0.6 : CHART_HEIGHT * (0.3 + (0.7 * (p.durationSeconds - min)) / (max - min));
-          const isBest = best?.departMs === p.departMs;
-          return (
-            <View
-              key={p.departMs}
-              style={styles.chartCol}
-              accessible
-              accessibilityLabel={`Leave ${label}: ${formatDurationText(p.durationSeconds)}${isBest ? ", quickest" : ""}`}
-              testID={isBest ? "eta-sheet-leave-best" : undefined}
-            >
-              <Text style={styles.chartValue}>{Math.round(p.durationSeconds / 60)}</Text>
-              <View style={[styles.bar, { height: h, backgroundColor: p.durationSeconds > (min + max) / 2 ? colors.chartSlow : colors.chartFast }]} />
-              <Text style={[styles.chartLabel, isBest && styles.chartLabelBest]}>{isBest ? `${label} ✓` : label}</Text>
-            </View>
-          );
-        })}
+            ) : null}
+            {b.minutes != null ? <Text style={styles.chartValue}>{b.minutes}</Text> : null}
+            <View style={[styles.bar, b.minutes == null ? styles.barMissing : { backgroundColor: b.slow ? colors.chartSlow : colors.chartFast }, { height: b.height }, b.best && styles.barBest]} />
+            <Text style={[styles.chartLabel, b.best && styles.chartLabelBest]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {b.label}
+            </Text>
+          </View>
+        ))}
       </View>
-      <Text style={styles.quiet}>Minutes of driving if you leave then: red slower, yellow faster. Predictions from Google traffic data.</Text>
+      <Text style={styles.quiet}>Minutes of driving if you leave then. Predictions from Google traffic data.</Text>
     </View>
   );
 }
@@ -528,7 +526,8 @@ const styles = StyleSheet.create({
   toText: { flex: 1 },
   toName: { fontSize: 16, fontWeight: "700", color: colors.text },
   toSub: { fontSize: 13, color: colors.textMuted },
-  sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.textMuted, marginTop: spacing.sm, textTransform: "uppercase", letterSpacing: 0.4 },
+  // Sentence case, as written ("On your route", "Find the best time to leave").
+  sectionLabel: { fontSize: 15, fontWeight: "700", color: colors.textMuted, marginTop: spacing.sm },
   quiet: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
   errorText: { fontSize: 14, color: colors.danger, paddingVertical: spacing.sm },
   track: { height: 8, borderRadius: 4, backgroundColor: colors.routePurple, marginVertical: spacing.sm, justifyContent: "center" },
@@ -537,9 +536,13 @@ const styles = StyleSheet.create({
   eventDot: { width: 10, height: 10, borderRadius: 5 },
   eventLabel: { flex: 1, fontSize: 15, color: colors.text },
   eventDist: { fontSize: 15, fontWeight: "700", color: colors.text },
-  chart: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", height: CHART_HEIGHT + 40, gap: 6 },
-  chartCol: { flex: 1, alignItems: "center", justifyContent: "flex-end" },
-  bar: { width: "70%", borderRadius: 6 },
+  chart: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", height: CHART_HEIGHT + 64, gap: 6 },
+  // Every column and every bar the same width.
+  chartCol: { flex: 1, flexBasis: 0, alignItems: "center", justifyContent: "flex-end" },
+  bar: { width: BAR_WIDTH, borderRadius: 6 },
+  barBest: { borderWidth: 2, borderColor: colors.goodText },
+  bestTag: { backgroundColor: colors.goodText, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1, marginBottom: 3 },
+  bestTagText: { fontSize: 11, fontWeight: "800", color: "#FFFFFF" },
   barMissing: { backgroundColor: colors.border },
   skeleton: { backgroundColor: colors.surfaceMuted },
   skeletonLabel: { width: 32, height: 10, borderRadius: 4, marginTop: 6 },

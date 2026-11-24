@@ -227,6 +227,7 @@ import { viaText } from "@/map/viaText";
 import { VehiclePickerScreen } from "@/components/VehiclePicker";
 import { type VehicleType, shouldShowVehiclePicker, vehicleForMode, vehicleMode, vehicleOption, vehiclePatch, vehicleRouteNote } from "@/services/vehicle";
 import { overlaysFor } from "@/map/previewOverlays";
+import { isRoundabout, roundaboutExitAngle } from "@/nav/roundabout";
 import { NAV_TOAST_MS, RECENTRE_MS, compassHighlighted, compassTapAction, compassToast, showRecentrePill } from "@/nav/offCentreHint";
 import { layoutRouteBubbles, timeDifferenceText } from "@/map/bubbleLayout";
 import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
@@ -276,7 +277,7 @@ import {
   shouldSpeakStep,
   type NavPhrase,
 } from "@/services/navSpeechPlan";
-import { formatArrivalClock, formatDurationText, formatDistance } from "@/utils/navFormat";
+import { formatArrivalClock, formatDurationText, formatDistance, extractRoundaboutExitNumber } from "@/utils/navFormat";
 import {
   subscribeVisibleAlerts,
   submitReport,
@@ -6447,7 +6448,18 @@ export function MapScreen() {
   const mapboxTurnCallouts = useMemo(
     () =>
       route && !addingStopDuringNav && !stopPreviewRoute && calloutVisible && activeStepIndex < route.steps.length - 1
-        ? [route.steps[activeStepIndex]].map((step) => ({ key: `turn-${activeStepIndex}`, coordinate: step.endLocation, text: step.targetStreetName ?? step.instruction }))
+        ? [route.steps[activeStepIndex]].map((step) => ({
+            key: `turn-${activeStepIndex}`,
+            coordinate: step.endLocation,
+            text: step.targetStreetName ?? step.instruction,
+            roundabout: isRoundabout(step.maneuver)
+              ? (() => {
+                  const exit = extractRoundaboutExitNumber(step.instruction) ?? null;
+                  const drivingSide = step.drivingSide ?? "left";
+                  return { exit, drivingSide, angle: roundaboutExitAngle({ exit, drivingSide, approach: step.polyline, after: route.steps[activeStepIndex + 1]?.polyline }) };
+                })()
+              : null,
+          }))
         : [],
     [route, addingStopDuringNav, stopPreviewRoute, activeStepIndex, calloutVisible]
   );
@@ -7742,9 +7754,12 @@ export function MapScreen() {
         activeStepIndex={activeStepIndex}
         onClose={() => directionsSheetRef.current?.close()}
         onSheetChange={(index) => setDirectionsSheetOpen(index >= 0)}
+        scheme={mapScheme}
+        distanceUnit={settings.distanceUnit}
       />
       <NavOptionsSheet
         ref={navOptionsSheetRef}
+        topBarBottom={insets.top + instructionCardHeight}
         arrivalClockText={arrivalClockText}
         etaText={formatDurationText(remainingDurationSeconds)}
         distanceText={formatDistance(remainingDistanceMeters, settings.distanceUnit)}

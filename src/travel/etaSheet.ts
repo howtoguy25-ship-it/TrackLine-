@@ -101,3 +101,68 @@ export function quickestSlot(predictions: LeavePrediction[]): LeavePrediction | 
   }
   return best;
 }
+
+// ---- Fix pass 5 §8: the options/ETA sheet never covers the guidance, and the best-time chart.
+
+/** The sheet never comes closer than this under the turn instruction bar. */
+export const SHEET_GAP_BELOW_BAR = 120;
+
+/**
+ * Snap heights (pt): half, and full = screen - (status bar + instruction bar) - 120, so the
+ * instruction and the road just under it always stay in view. Content scrolls inside.
+ */
+export function optionsSheetHeights(screenHeight: number, topBarBottom: number): { half: number; full: number } {
+  const full = Math.max(240, Math.round(screenHeight - topBarBottom - SHEET_GAP_BELOW_BAR));
+  const half = Math.min(full, Math.round(screenHeight * 0.45));
+  return { half, full };
+}
+
+export const LEAVE_TIMEOUT_MS = 10_000;
+export const LEAVE_ERROR_TEXT = "Couldn't load traffic predictions — tap to retry";
+
+/** Rejects after `ms` (the request may still finish; its answer is then ignored). */
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timed out")), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
+export interface LeaveBar {
+  departMs: number;
+  /** One line, short: "Now", "9:15", "10:45". */
+  label: string;
+  minutes: number | null;
+  /** Bar height (pt). Every bar has the same width. */
+  height: number;
+  best: boolean;
+  slow: boolean;
+}
+
+/** "9:15 am" -> "9:15": the slots are 15 minutes apart, so the label fits on one line. */
+export function shortClock(text: string): string {
+  return text.replace(/\s*[ap]\.?m\.?$/i, "").trim();
+}
+
+/** Bars from Google's real predictions only; a slot with no prediction gets a stub, no number. */
+export function leaveChartBars(predictions: LeavePrediction[], chartHeight: number, clock: (ms: number) => string): LeaveBar[] {
+  const known = predictions.filter((p) => p.durationSeconds != null).map((p) => p.durationSeconds as number);
+  const max = Math.max(...known);
+  const min = Math.min(...known);
+  const best = quickestSlot(predictions);
+  return predictions.map((p, i) => {
+    const label = i === 0 ? "Now" : shortClock(clock(p.departMs));
+    if (p.durationSeconds == null) return { departMs: p.departMs, label, minutes: null, height: 8, best: false, slow: false };
+    const h = max === min ? chartHeight * 0.6 : chartHeight * (0.3 + (0.7 * (p.durationSeconds - min)) / (max - min));
+    return { departMs: p.departMs, label, minutes: Math.round(p.durationSeconds / 60), height: Math.round(h), best: best?.departMs === p.departMs, slow: p.durationSeconds > (min + max) / 2 };
+  });
+}

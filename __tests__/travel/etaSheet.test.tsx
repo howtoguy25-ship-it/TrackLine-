@@ -135,18 +135,19 @@ describe("ETA sheet", () => {
     await act(async () => ref.current?.expand());
     expect(props.loadLeaveTimes).toHaveBeenCalledTimes(1);
     const best = screen.getByTestId("eta-sheet-leave-best");
-    expect(best.props.accessibilityLabel).toMatch(/22 min.*quickest/);
+    expect(best.props.accessibilityLabel).toMatch(/22 min.*best/);
     expect(screen.getByLabelText(/no prediction/)).toBeTruthy();
   });
 
-  it("a failed load says why and retries on tap", async () => {
+  it("a failed load says so (the reason is read out) and retries on tap", async () => {
     const loadLeaveTimes = jest.fn(async () => {
       throw new Error("No internet");
     });
     const { el, ref } = renderSheet({ loadLeaveTimes: loadLeaveTimes as never });
     await render(el);
     await act(async () => ref.current?.expand());
-    expect(screen.getByTestId("eta-sheet-leave-error")).toHaveTextContent(/No internet\. Tap to try again/);
+    expect(screen.getByTestId("eta-sheet-leave-error")).toHaveTextContent("Couldn't load traffic predictions — tap to retry");
+    expect(screen.getByTestId("eta-sheet-leave-error").props.accessibilityLabel).toMatch(/No internet/);
     await act(async () => fireEvent.press(screen.getByTestId("eta-sheet-leave-error")));
     expect(loadLeaveTimes).toHaveBeenCalledTimes(2);
   });

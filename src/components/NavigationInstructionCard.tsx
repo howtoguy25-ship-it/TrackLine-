@@ -5,10 +5,13 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { View, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
 import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { ManeuverIcon } from "@/components/icons/RoundaboutIcon";
 import type { RouteStep } from "@/services/directions";
 import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import { GREEN_TEXT } from "@/theme/colors";
 import { formatDistance, extractRoundaboutExitNumber, type DistanceUnit } from "@/utils/navFormat";
+import { barStreetName, splitRouteShield } from "@/components/navBarText";
 
 // Real, confirmed fix for "generic arrow for every turn shape" -- Google's own MaterialIcons
 // font (bundled via @expo/vector-icons, verified directly against its installed glyphmap, not
@@ -61,26 +64,14 @@ interface Props {
   metersToManoeuvre?: number | null;
 }
 
-/** "A6/Stacey St" -> shield "A6" + name "Stacey St"; "M5 Motorway" -> shield "M5" + "Motorway". */
-export function splitRouteShield(name: string | null | undefined): { shield: string | null; street: string } {
-  const n = (name ?? "").trim();
-  const m = n.match(/^([AMB]\d{1,3})(?:\s*\/\s*|\s+)(.+)$/);
-  if (m) return { shield: m[1], street: m[2] };
-  if (/^[AMB]\d{1,3}$/.test(n)) return { shield: n, street: "" };
-  return { shield: null, street: n };
-}
-
-/** The street the manoeuvre leads onto, from the step (never the long instruction sentence). */
-export function barStreetName(step: RouteStep, isFinalStep: boolean): string {
-  if (isFinalStep) return "Arrive at your destination";
-  return step.targetStreetName?.trim() || "Continue";
-}
+export { splitRouteShield, barStreetName };
 
 export const NAV_BAR_BG = "#000000";
 export const NAV_BAR_STREET = "#41D8F5";
 
 /**
- * The navigation top bar (Waze-style): full width from the very top of the screen, black, a big
+ * The navigation top bar: full width from the very top of the screen (its black runs up behind
+ * the status bar, whose text is light while it shows; the content starts below it), a big
  * white manoeuvre icon on the left, the distance huge and bold with the street in bold cyan
  * under it on one line. The long instruction sentence is spoken, never printed here.
  */
@@ -97,7 +88,6 @@ export function NavigationInstructionCard({
 }: Props) {
   const insets = useSafeAreaInsets();
   if (!step) return null;
-  const icon: IconName = (step.maneuver && MANEUVER_ICONS[step.maneuver]) || "straight";
   const roundaboutExit =
     step.maneuver === "roundabout-left" || step.maneuver === "roundabout-right" ? extractRoundaboutExitNumber(step.instruction) : undefined;
   const { shield, street } = splitRouteShield(barStreetName(step, isFinalStep));
@@ -110,6 +100,8 @@ export function NavigationInstructionCard({
 
   return (
     <View style={styles.wrap} onLayout={onLayout} testID="nav-top-bar">
+      {/* The black bar runs up behind the status bar: its text goes light while the bar shows. */}
+      <StatusBar style="light" />
       <Pressable
         onPress={onExpandDirections}
         style={[styles.bar, { paddingTop: insets.top + 6 }]}
@@ -117,12 +109,21 @@ export function NavigationInstructionCard({
         accessibilityLabel={`${formatDistance(meters, distanceUnit)}, ${step.instruction}. Show all directions.`}
       >
         <Pressable onPress={onRepeatInstruction} disabled={!onRepeatInstruction} hitSlop={8} accessibilityLabel="Say the instruction again" style={styles.iconSlot}>
-          <Icon name={isFinalStep ? "flag" : icon} size={64} color="#FFFFFF" strokeWidth={2.6} />
-          {roundaboutExit != null ? (
-            <View style={styles.exitBadge}>
-              <Text style={styles.exitBadgeText}>{roundaboutExit}</Text>
-            </View>
-          ) : null}
+          {isFinalStep ? (
+            <Icon name="flag" size={64} color="#FFFFFF" strokeWidth={2.6} />
+          ) : (
+            <ManeuverIcon
+              maneuver={step.maneuver}
+              icons={MANEUVER_ICONS}
+              size={64}
+              color="#FFFFFF"
+              dim="rgba(255,255,255,0.38)"
+              exit={roundaboutExit ?? null}
+              drivingSide={step.drivingSide}
+              approach={step.polyline}
+              after={nextStep?.polyline}
+            />
+          )}
         </Pressable>
         <View style={styles.textCol}>
           <Text style={styles.distance} numberOfLines={1} testID="nav-distance">
@@ -161,8 +162,6 @@ const styles = StyleSheet.create({
   wrap: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 },
   bar: { backgroundColor: NAV_BAR_BG, flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 14, gap: 14 },
   iconSlot: { width: 72, height: 72, alignItems: "center", justifyContent: "center" },
-  exitBadge: { position: "absolute", bottom: 2, right: 2, minWidth: 22, height: 22, borderRadius: 11, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" },
-  exitBadgeText: { fontSize: 13, fontWeight: "800", color: "#000000" },
   textCol: { flex: 1, minWidth: 0 },
   distance: { fontSize: 38, fontWeight: "800", color: "#FFFFFF", lineHeight: 44 },
   streetRow: { flexDirection: "row", alignItems: "center", gap: 8 },
