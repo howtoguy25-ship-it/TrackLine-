@@ -782,3 +782,9 @@ Delete TrackLine first, then install the new build so every permission is asked 
 4. Start a drive and answer a prompt that appears then (e.g. notifications for the lock-screen turn card): the voice doesn't talk over the prompt; it says the instruction once you've answered.
 5. Siren radar / Hey TrackLine / voice search / record your voice / add a photo / scan a plate: each asks once, on its own.
 6. Close and reopen the app: no prompts again, and the map's location is there straight away.
+
+## 53. Map camera height — NEEDS DEVICE TEST
+
+1. Open the app / tap Re-centre: the map is closer than before (street level, street names big), still gently leaning.
+2. Start a drive: the camera is higher and further back than before; at 50-80 km/h you see roughly the next 500 m of road ahead, on the motorway about 700 m.
+3. Tell me if either should go further (closer / higher) — each is one number.
