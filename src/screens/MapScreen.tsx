@@ -229,6 +229,7 @@ import { viaText } from "@/map/viaText";
 import { VehiclePickerScreen } from "@/components/VehiclePicker";
 import { type VehicleType, shouldShowVehiclePicker, vehicleForMode, vehicleMode, vehicleOption, vehiclePatch, vehicleRouteNote } from "@/services/vehicle";
 import { overlaysFor } from "@/map/previewOverlays";
+import { layoutRouteBubbles, timeDifferenceText } from "@/map/bubbleLayout";
 import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
 import { done, enqueue, PILL_SHOW_MS, reportsPillText, type PillMessage } from "@/map/homePill";
 import { HomeInfoPill } from "@/components/HomeInfoPill";
@@ -250,7 +251,7 @@ import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/serv
 import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
 import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
-import { bubbleSize, previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
+import { drawnRouteIndices, previewEdgePadding, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, showManoeuvreCallout } from "@/nav/navCamera";
 import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
@@ -265,7 +266,7 @@ import { pickShortcut, shortcutText, slowTrafficAhead, throughPointsAhead, withS
 import { ReportIcon } from "@/components/icons/MapControlIcons";
 import { SearchAlongRouteSheet } from "@/components/SearchAlongRouteSheet";
 import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
-import { presencesToShow } from "@/map/presenceFilter";
+import { presencesToShow, othersOnly } from "@/map/presenceFilter";
 import { rememberOwnUid } from "@/services/ownUids";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { homeRoadSigns, roadFeatureReportIcon, signIcon, signKind, type SignPoint } from "@/map/roadSignVisibility";
@@ -393,7 +394,6 @@ const NEAR_TERM_TRAFFIC_CHECK_METERS = 1000;
 
 // At most this many route lines on the route-selection map (transit can offer many more
 // itineraries in the list; the selected one is always drawn).
-const MAX_DRAWN_ROUTES = 3;
 
 // Index-based (not distance-based) point along a polyline -- good enough for placing a small
 // floating label roughly along a route's own path without needing real cumulative-distance
@@ -2893,7 +2893,7 @@ export function MapScreen() {
           setRouteAvoidNote(allHaveUturns ? "Every route here has a U-turn, so they're shown anyway." : null);
           setModeRoute(null);
           setModeRouteOptions([]);
-          fitRoutesOnScreen(choices.map(detailedRoutePolyline));
+          fitRoutesOnScreen(previewFitLines(choices, 0, detailedRoutePolyline));
           if (!autoGoArmedRef.current) {
             autoGoArmedRef.current = true;
             setAutoGoRunning(true);
@@ -2911,7 +2911,7 @@ export function MapScreen() {
           setModeRoute(results[0]);
           setRouteChoices(null);
           setRouteAvoidNote(null);
-          fitRoutesOnScreen(results.slice(0, 3).map(detailedRoutePolyline));
+          fitRoutesOnScreen(previewFitLines(results, 0, detailedRoutePolyline));
         }
       } catch (err) {
         Sentry.logger.error("map: failed to fetch route options", { error: String(err), mode });
@@ -2925,7 +2925,7 @@ export function MapScreen() {
           setModeRoute(null);
           setModeRouteOptions([]);
           setRouteOfflineNote(`No internet. Using the route saved ${savedAgo(saved.savedAt)}; traffic isn't live.`);
-          fitRoutesOnScreen(saved.routes.map(detailedRoutePolyline));
+          fitRoutesOnScreen(previewFitLines(saved.routes, 0, detailedRoutePolyline));
           return;
         }
         // Same underlying cause as the destination search billing check below -- the
@@ -2992,7 +2992,7 @@ export function MapScreen() {
           setModeRoute(routes[0]);
           setRouteChoices(null);
           setRouteAvoidNote(null);
-          fitRoutesOnScreen(routes.slice(0, 3).map(detailedRoutePolyline));
+          fitRoutesOnScreen(previewFitLines(routes, 0, detailedRoutePolyline));
         };
         const showDriveRoutes = (routes: Route[], note: string | null) => {
           setTravelMode("driving");
@@ -3002,7 +3002,7 @@ export function MapScreen() {
           setRouteAvoidNote(note);
           setModeRoute(null);
           setModeRouteOptions([]);
-          fitRoutesOnScreen(choices.map(detailedRoutePolyline));
+          fitRoutesOnScreen(previewFitLines(choices, 0, detailedRoutePolyline));
         };
         if (mode === "ferry") {
           const [drive, transit] = await Promise.all([modeCache.get("drive", req), modeCache.get("transit", req)]);
@@ -4134,9 +4134,8 @@ export function MapScreen() {
   const onSelectChoice = useCallback(
     (index: number) => {
       if (!routeChoices) return;
-      // The picked route is fitted (the others stay drawn, faded); picking it again shows them all.
-      if (index === selectedChoiceIndex) fitRoutesOnScreen(routeChoices.map(detailedRoutePolyline));
-      else if (routeChoices[index]) fitRoutesOnScreen([detailedRoutePolyline(routeChoices[index])]);
+      // Fix pass 5 §1: every drawn route stays in view when one is picked (never just that one).
+      if (routeChoices[index]) fitRoutesOnScreen(previewFitLines(routeChoices, index, detailedRoutePolyline));
       setSelectedChoiceIndex(index);
     },
     [routeChoices, selectedChoiceIndex, fitRoutesOnScreen]
@@ -4150,8 +4149,8 @@ export function MapScreen() {
       setSelectedModeRouteIndex(index);
       const picked = modeRouteOptions[index];
       if (picked) setModeRoute(picked);
-      if (!reselectingSame || !picked) return;
-      fitRoutesOnScreen(modeRouteOptions.slice(0, 3).map(detailedRoutePolyline));
+      if (!picked) return;
+      fitRoutesOnScreen(previewFitLines(modeRouteOptions, index, detailedRoutePolyline));
     },
     [modeRouteOptions, selectedModeRouteIndex, fitRoutesOnScreen]
   );
@@ -4371,27 +4370,36 @@ export function MapScreen() {
 
   // The lines drawn: the first few routes plus the selected one, each with its index in the list.
   const drawnSelection = useMemo(() => {
-    const indices = selectionRoutes.map((_, i) => i).filter((i) => i < MAX_DRAWN_ROUTES || i === selectionIndex);
+    const indices = drawnRouteIndices(selectionRoutes.length, selectionIndex);
     return indices.map((index) => ({ index, line: detailedRoutePolyline(selectionRoutes[index]) }));
   }, [selectionRoutes, selectionIndex]);
   // Placed on screen, not just on the ground: inside the area the camera fits the routes into
   // (the top card and the sheet's current height left out) and never on top of each other.
-  const selectionBubbleAnchors = useMemo(() => {
-    const lines = drawnSelection.map((d) => d.line);
+  // Fix pass 5 §2: one solver places every bubble beside its own stretch of route, never on another
+  // line, bubble, the flag or the start dot (map/bubbleLayout.ts). Alternatives show "+N min".
+  const selectionBubbles = useMemo(() => {
+    const selected = selectionRoutes[selectionIndex];
     const selectedPos = Math.max(0, drawnSelection.findIndex((d) => d.index === selectionIndex));
-    const fitLines = previewFit.lines.length ? previewFit.lines : lines;
-    return screenBubbleAnchors(
-      lines,
+    const fitLines = previewFit.lines.length ? previewFit.lines : drawnSelection.map((d) => d.line);
+    const routes = drawnSelection.map((d) => {
+      const r = selectionRoutes[d.index];
+      const diff = selected && d.index !== selectionIndex ? timeDifferenceText(routeSeconds(r), routeSeconds(selected)) : null;
+      const text = diff ?? selectionRows[d.index]?.timeText ?? "";
+      return { line: d.line, text, compactText: diff ?? text };
+    });
+    const obstacles = [
+      ...(pendingDestination ? [{ at: pendingDestination.location, box: { x0: -11, x1: 33, y0: -50, y1: 2 } }] : []),
+      ...(routeOriginLatLng ? [{ at: routeOriginLatLng, box: { x0: -22, x1: 22, y0: -22, y1: 22 } }] : []),
+    ];
+    return layoutRouteBubbles(
+      routes,
       selectedPos,
       previewFitCoordinates(fitLines, routeOriginLatLng, pendingDestination?.location ?? null),
       { width: windowWidth, height: windowHeight },
       previewEdgePadding(routeTopCardBottom, routeSheetHeight),
-      undefined,
-      undefined,
-      // Each bubble's real size: its own time text, and the selected one is taller (its tag line).
-      drawnSelection.map((d) => bubbleSize(selectionRows[d.index]?.timeText ?? "", d.index === selectionIndex))
-    );
-  }, [drawnSelection, selectionIndex, selectionRows, previewFit, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
+      obstacles
+    ).map((p, pos) => (p ? { ...p, text: routes[pos].text, compactText: routes[pos].compactText } : null));
+  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, previewFit, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
   const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
   const selectedTrafficStretches = useMemo(() => {
     const r = selectionRoutes[selectionIndex];
@@ -5351,9 +5359,9 @@ export function MapScreen() {
   const trackySlowdownAt = useMemo(
     () =>
       route && navMatch?.onRoute && alertsWhileDriving(settings, "suddenSlowdown")
-        ? trackySlowdownAhead(presenceList, { polyline: route.polyline, alongM: navMatch.along }, location?.timestamp ?? 0)
+        ? trackySlowdownAhead(othersOnly(presenceList, user?.uid ?? null, ownUidSet), { polyline: route.polyline, alongM: navMatch.along }, location?.timestamp ?? 0)
         : null,
-    [route, navMatch, settings, presenceList, location?.timestamp]
+    [route, navMatch, settings, presenceList, location?.timestamp, user?.uid, ownUidSet]
   );
   useEffect(() => {
     // An on-route chip stays until the feature is passed; any other goes after 6 s.
@@ -6418,10 +6426,10 @@ export function MapScreen() {
             selectedLine: selectedSelectionLine,
             trafficStretches: selectedTrafficStretches,
             bubbles: drawnSelection.flatMap(({ index }, pos) => {
-              const anchor = selectionBubbleAnchors[pos];
+              const b = selectionBubbles[pos];
               const row = selectionRows[index];
-              return anchor && row
-                ? [{ index, key: row.key, coordinate: anchor, timeText: row.timeText, tag: selectionTags[index] ?? null, selected: index === selectionIndex }]
+              return b && row
+                ? [{ index, key: row.key, coordinate: b.anchor, timeText: b.compact ? b.compactText : b.text, tag: selectionTags[index] ?? null, selected: index === selectionIndex, side: b.side, compact: b.compact }]
                 : [];
             }),
             start: routeOriginLatLng,
@@ -6435,7 +6443,7 @@ export function MapScreen() {
       selectionIndex,
       selectedSelectionLine,
       selectedTrafficStretches,
-      selectionBubbleAnchors,
+      selectionBubbles,
       selectionRows,
       selectionTags,
       routeOriginLatLng,

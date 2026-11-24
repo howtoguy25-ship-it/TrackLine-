@@ -639,15 +639,45 @@ export function RouteSelectionSheet({
 // Map pieces
 
 /** A route's time bubble, with a tail pointing at its line. */
-export function RouteTimeBubble({ timeText, tag, selected }: { timeText: string; tag: string | null; selected: boolean }) {
+/**
+ * A route's time bubble. `side` is where the bubble sits relative to the line (map/bubbleLayout.ts):
+ * the tail points back at the line from that side. Compact: the small "+2 min" chip used when a
+ * full bubble has no room.
+ */
+export function RouteTimeBubble({
+  timeText,
+  tag,
+  selected,
+  side = "above",
+  compact = false,
+}: {
+  timeText: string;
+  tag: string | null;
+  selected: boolean;
+  side?: "above" | "below" | "left" | "right";
+  compact?: boolean;
+}) {
   const bg = selected ? colors.bestTag : "#FFFFFF";
+  const tail =
+    side === "above"
+      ? [styles.bubbleTail, { borderTopColor: bg }]
+      : side === "below"
+        ? [styles.bubbleTailUp, { borderBottomColor: bg }]
+        : side === "right"
+          ? [styles.bubbleTailLeft, { borderRightColor: bg }]
+          : [styles.bubbleTailRight, { borderLeftColor: bg }];
+  const body = (
+    <View style={[styles.bubble, compact && styles.bubbleCompact, { backgroundColor: bg }, !selected && styles.bubbleBorder]} testID="route-bubble">
+      <Text style={[styles.bubbleTime, compact && styles.bubbleTimeCompact, { color: selected ? "#FFFFFF" : colors.text }]}>{timeText}</Text>
+      {selected && tag && !compact ? <Text style={styles.bubbleTag}>{tag}</Text> : null}
+    </View>
+  );
+  const vertical = side === "above" || side === "below";
   return (
-    <View style={styles.bubbleWrap}>
-      <View style={[styles.bubble, { backgroundColor: bg }, !selected && styles.bubbleBorder]}>
-        <Text style={[styles.bubbleTime, { color: selected ? "#FFFFFF" : colors.text }]}>{timeText}</Text>
-        {selected && tag ? <Text style={styles.bubbleTag}>{tag}</Text> : null}
-      </View>
-      <View style={[styles.bubbleTail, { borderTopColor: bg }]} />
+    <View style={[styles.bubbleWrap, !vertical && { flexDirection: "row" }]}>
+      {side === "below" || side === "right" ? <View style={tail} /> : null}
+      {body}
+      {side === "above" || side === "left" ? <View style={tail} /> : null}
     </View>
   );
 }
@@ -756,6 +786,11 @@ const styles = StyleSheet.create({
   bubble: { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6, alignItems: "center", ...shadow.low },
   bubbleBorder: { borderWidth: 1, borderColor: colors.chipBorder },
   bubbleTime: { fontSize: 17, fontWeight: "700" },
+  bubbleCompact: { borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  bubbleTimeCompact: { fontSize: 14 },
+  bubbleTailUp: { width: 0, height: 0, borderLeftWidth: 7, borderRightWidth: 7, borderBottomWidth: 8, borderLeftColor: "transparent", borderRightColor: "transparent", marginBottom: -1 },
+  bubbleTailLeft: { width: 0, height: 0, borderTopWidth: 7, borderBottomWidth: 7, borderRightWidth: 8, borderTopColor: "transparent", borderBottomColor: "transparent", marginRight: -1 },
+  bubbleTailRight: { width: 0, height: 0, borderTopWidth: 7, borderBottomWidth: 7, borderLeftWidth: 8, borderTopColor: "transparent", borderBottomColor: "transparent", marginLeft: -1 },
   bubbleTag: { fontSize: 14, fontWeight: "500", color: "#FFFFFF" },
   bubbleTail: {
     width: 0,

@@ -3,6 +3,7 @@ import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
 import { RouteTimeBubble } from "@/components/RouteSelection";
+import { markerAnchorFor, type BubbleSide } from "@/map/bubbleLayout";
 import { Tracky } from "@/components/trackys/Tracky";
 import { RouteLine } from "@/map-v2/layers/RouteLine";
 import { PinLayer } from "@/map-v2/layers/PinLayer";
@@ -40,7 +41,7 @@ export interface RouteSelectionDrawing {
   selectedIndex: number;
   selectedLine: LatLng[] | null;
   trafficStretches: { coordinates: LatLng[]; speed: "SLOW" | "TRAFFIC_JAM" }[];
-  bubbles: { index: number; coordinate: LatLng; timeText: string; tag: string | null; selected: boolean; key: string }[];
+  bubbles: { index: number; coordinate: LatLng; timeText: string; tag: string | null; selected: boolean; key: string; side: BubbleSide; compact: boolean }[];
   start: LatLng | null;
   destination: LatLng | null;
   onSelect: (index: number) => void;
@@ -264,8 +265,8 @@ export function MapboxLayers(props: Props) {
         ) : null;
       })}
       {selection?.bubbles.map((b) => (
-        <MarkerPin key={`bubble-${b.key}-${b.selected ? "on" : "off"}`} coordinate={b.coordinate} anchor={{ x: 0.5, y: 1 }} onPress={() => selection.onSelect(b.index)}>
-          <RouteTimeBubble timeText={b.timeText} tag={b.tag} selected={b.selected} />
+        <MarkerPin key={`bubble-${b.key}-${b.selected ? "on" : "off"}-${b.side}`} coordinate={b.coordinate} anchor={markerAnchorFor(b.side)} onPress={() => selection.onSelect(b.index)}>
+          <RouteTimeBubble timeText={b.timeText} tag={b.tag} selected={b.selected} side={b.side} compact={b.compact} />
         </MarkerPin>
       ))}
       {props.trafficSuggestion?.labelPoint && (

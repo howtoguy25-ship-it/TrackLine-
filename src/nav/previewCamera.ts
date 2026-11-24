@@ -106,3 +106,23 @@ export function bubblesOverlap(anchors: { x: number; y: number }[], size = BUBBL
   }
   return false;
 }
+
+// ---- Fix pass 5 §1: one rule for what the preview fits, in every mode ----
+/** At most this many routes are drawn (the selected one always is, even if it's further down). */
+export const MAX_DRAWN_ROUTES = 3;
+
+/** The routes the preview draws: the first MAX_DRAWN_ROUTES, plus the selected one. */
+export function drawnRouteIndices(count: number, selected: number, max = MAX_DRAWN_ROUTES): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) if (i < max || i === selected) out.push(i);
+  return out;
+}
+
+/**
+ * Every line the preview fits: exactly the drawn routes -- never one route on its own and never
+ * just the user. Root cause of routes off-screen: bike / walk / transit fitted the first 3 of
+ * their routes while the selected one could be 4th, and selecting a route fitted only that route.
+ */
+export function previewFitLines<R>(routes: readonly R[], selected: number, line: (r: R) => LatLng[]): LatLng[][] {
+  return drawnRouteIndices(routes.length, selected).map((i) => line(routes[i]));
+}

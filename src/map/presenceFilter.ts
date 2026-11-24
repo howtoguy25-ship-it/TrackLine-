@@ -12,14 +12,23 @@ import type { LatLng } from "@/utils/polyline";
  */
 export const ON_MY_ARROW_M = 20;
 
+/**
+ * Fix pass 5 §3: everyone but you (current uid and every id this phone has used). Shared by the
+ * drawn layer (presencesToShow) and anything else that reads other drivers -- e.g. "Trackys
+ * slowing down ahead", which used the raw list and could count your own position.
+ */
+export function othersOnly<T extends { uid: string }>(list: readonly T[], ownUid: string | null, ownUids?: ReadonlySet<string>): T[] {
+  if (!ownUid) return [];
+  return list.filter((p) => p.uid !== ownUid && !ownUids?.has(p.uid));
+}
+
 export function presencesToShow<T extends { uid: string; lat: number; lng: number }>(
   list: readonly T[],
   o: { ownUid: string | null; blocked: ReadonlySet<string>; here: LatLng; max: number; ownUids?: ReadonlySet<string>; /** Your own position (default: `here`): nobody is drawn on your arrow. */ me?: LatLng | null }
 ): T[] {
   // Until we know who you are, we can't tell which one is you: draw none.
-  if (!o.ownUid) return [];
-  return list
-    .filter((p) => p.uid !== o.ownUid && !o.ownUids?.has(p.uid) && !o.blocked.has(p.uid))
+  return othersOnly(list, o.ownUid, o.ownUids)
+    .filter((p) => !o.blocked.has(p.uid))
     .filter((p) => {
       const me = o.me ?? o.here;
       return distanceKm(me.latitude, me.longitude, p.lat, p.lng) * 1000 > ON_MY_ARROW_M;

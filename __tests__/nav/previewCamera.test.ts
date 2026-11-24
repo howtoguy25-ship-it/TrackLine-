@@ -170,7 +170,7 @@ describe("fix pass 4: every route and every bubble, at both sheet heights", () =
   it("the sheet starts collapsed (the list only shows when pulled up) and MapScreen places bubbles on screen", () => {
     const sheet = readFileSync("src/components/RouteSelection.tsx", "utf8");
     expect(sheet).toMatch(/const \[expanded, setExpanded\] = useState\(false\)/);
-    expect(readFileSync("src/screens/MapScreen.tsx", "utf8")).toMatch(/screenBubbleAnchors\(/);
+    expect(readFileSync("src/screens/MapScreen.tsx", "utf8")).toMatch(/layoutRouteBubbles\(/);
   });
 });
 
