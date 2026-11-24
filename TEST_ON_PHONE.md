@@ -771,3 +771,14 @@ failed and what you saw instead.
 3. Pinch right out (city / state view): the motorway network is still drawn as fine amber lines.
 4. Dark mode: muted amber, not glaring. Satellite: bright amber over the imagery.
 5. Green M-shields (yellow numbers) still sit on the motorways. Your purple route is still clearly on top when it uses a motorway.
+
+## 52. Permissions one by one — NEEDS DEVICE TEST
+
+Delete TrackLine first, then install the new build so every permission is asked fresh.
+
+1. First open: **location** is asked first, on its own. Answer it.
+2. Then, a moment later, **notifications** (if you're signed in), then **"Allow TrackLine to track your activity…"** last. Never two at once, never one flashing over another.
+3. No ad appears over a prompt or straight after you answer one; an app-open ad (if any) only after all the prompts are done.
+4. Start a drive and answer a prompt that appears then (e.g. notifications for the lock-screen turn card): the voice doesn't talk over the prompt; it says the instruction once you've answered.
+5. Siren radar / Hey TrackLine / voice search / record your voice / add a photo / scan a plate: each asks once, on its own.
+6. Close and reopen the app: no prompts again, and the map's location is there straight away.

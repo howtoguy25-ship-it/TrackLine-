@@ -11,6 +11,7 @@ jest.mock("expo-audio", () => ({
   AudioModule: { AudioRecorder: class {} },
   RecordingPresets: { HIGH_QUALITY: {} },
   requestRecordingPermissionsAsync: async () => ({ status: "granted" }),
+  getRecordingPermissionsAsync: async () => ({ status: "granted", granted: true }),
   setAudioModeAsync: async () => {},
 }));
 jest.mock("@/services/audioSession", () => ({ setMicInUse: () => {} }));

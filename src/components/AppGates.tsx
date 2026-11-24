@@ -13,6 +13,7 @@ import { shouldShowWhatsNew, updateState } from "@/remote/appConfig";
 import { useAuth } from "@/context/AuthContext";
 import { activeAnnouncement, activeBanner, localised, phoneLanguage, reportInboxEvent, subscribeInbox, type InboxMessage } from "@/services/inboxMessages";
 import { openDeepLink } from "@/navigation/deepLinks";
+import { useHoldPrompts, usePermissionQueue } from "@/services/permissionQueue";
 
 // Everything the owner dashboard can put in front of a user without a new build: a forced or
 // soft "update available", maintenance (banner or block), What's New once after updating, a
@@ -37,6 +38,7 @@ export function AppGates() {
   const [softDismissed, setSoftDismissed] = useState<string | null>(null);
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const lang = phoneLanguage();
+  const queue = usePermissionQueue();
 
   useEffect(() => {
     AsyncStorage.multiGet([WHATS_NEW_KEY, SOFT_UPDATE_KEY])
@@ -51,6 +53,16 @@ export function AppGates() {
   const banner = useMemo(() => activeBanner(inbox), [inbox]);
   const announcement = useMemo(() => activeAnnouncement(inbox), [inbox]);
   const softKey = `${Platform.OS}:${(cfg.minVersion as Record<string, { soft: string | null } | undefined>)[Platform.OS]?.soft ?? ""}`;
+
+  // One at a time (permissionQueue.ts): a card waits while a permission prompt is on screen or
+  // about to be, and while it's up it holds the prompts back. Once up, prompts asked meanwhile
+  // wait for it (the queue is held), so the card doesn't flicker away. What's new first, then an
+  // announcement.
+  const promptTurn = queue.open !== null || (queue.waiting.length > 0 && queue.holds === 0);
+  const wantWhatsNew = whatsNewSeen !== undefined && shouldShowWhatsNew(cfg, version, whatsNewSeen);
+  const showWhatsNew = wantWhatsNew && !promptTurn;
+  const ann = !wantWhatsNew && !promptTurn ? announcement : null;
+  useHoldPrompts(showWhatsNew || !!ann);
 
   if (upd === "force") {
     return (
@@ -114,8 +126,7 @@ export function AppGates() {
     );
   }
 
-  const showWhatsNew = whatsNewSeen !== undefined && shouldShowWhatsNew(cfg, version, whatsNewSeen);
-  const ann = !showWhatsNew ? announcement : null;
+
   const annText = ann ? localised(ann, lang) : null;
 
   return (

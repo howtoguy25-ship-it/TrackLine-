@@ -11,6 +11,7 @@ import { recognizeVinFromPhoto, recognizePlateFromPhoto } from "@/services/docum
 import { AU_STATES, DEFAULT_AU_STATE } from "@/utils/auStates";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import { askPermission } from "@/services/permissionQueue";
 
 // vision-camera's PhotoFile.path is a bare filesystem path, not a URI -- same fix
 // VehicleDetectionScreen's own toFileUri already applies for the same reason.
@@ -87,7 +88,7 @@ export function DocumentScanScreen() {
         <Text style={styles.permissionText}>
           TrackLine needs camera access to scan a {isVin ? "VIN" : "plate"}.
         </Text>
-        <Button variant="primary" label="Grant camera access" onPress={requestPermission} />
+        <Button variant="primary" label="Grant camera access" onPress={() => askPermission("camera", requestPermission)} />
         <Pressable onPress={onClose}>
           <Text style={styles.closeLink}>Close</Text>
         </Pressable>

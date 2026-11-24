@@ -67,7 +67,7 @@ The GitHub app can't edit secrets, so use the phone browser:
 
 | Secret name | Needed for | Where to get it |
 |---|---|---|
-| `MAPBOX_SERVER_TOKEN` | **Required** -- other drivers' Trackys snapped to roads | account.mapbox.com › Tokens (the same token as the app's `MAPBOX_PUBLIC_TOKEN` works) |
+| `MAPBOX_SERVER_TOKEN` | Recommended -- other drivers' Trackys follow the road shape (without it they move in straight lines between their real positions) | account.mapbox.com › Tokens (the same token as the app's `MAPBOX_PUBLIC_TOKEN` works) |
 | `TFNSW_API_KEY` | Live Traffic NSW incidents and congestion | opendata.transport.nsw.gov.au › sign up › My account › Applications › Create › copy the API key (free) |
 | `ELEVENLABS_API_KEY` | The four character voices (paid service) | elevenlabs.io › profile › API keys |
 | `CARJAM_API_KEY` | Vehicle full check: details, VIN, rego, stolen, written-off | dev.carjam.co.nz › sign up (consumer resale connection) |
@@ -77,7 +77,8 @@ The GitHub app can't edit secrets, so use the phone browser:
 | `PPSR_API_KEY` | Vehicle full check: PPSR (government B2G) | ppsr.gov.au B2G access |
 | `PPSR_BUSINESSAPI_KEY` | Vehicle full check: PPSR via BusinessAPI (already built) | businessapi.com.au |
 
-Only `MAPBOX_SERVER_TOKEN` is required. Skip the others and the deploy still works; those
+None of these is required: with just `FIREBASE_SERVICE_ACCOUNT` the deploy works and everything
+between users goes live. Skip any of them and those
 features say "not set up" in the app (vehicle check sections say BLOCKED). Which vehicle-check
 keys you need, the store products and how to switch the check on: **PROVIDERS.md**.
 Add a key later and re-run with **Copy API keys** ticked -- no app update needed.

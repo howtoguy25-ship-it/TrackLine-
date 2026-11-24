@@ -34,9 +34,9 @@ speedometer, dashcam/AI detection, siren radar, offline route start.
 
 | What | Why | Who / how |
 |---|---|---|
-| **Everything between users**: reports from other drivers, Trackys around you, private zones, school-zone alerts from the server, points board, fuel prices, account recovery, the owner dashboard | **The Firebase backend has never been deployed** (BLOCKED #1/#27/#30). Its tests pass; the deploy stops because the GitHub secret `FIREBASE_SERVICE_ACCOUNT` is empty | **You**: add the secret (DEPLOY.md step 3). Then I run the deploy (≈30 min) |
-| **Ads show "Test mode"** and earn nothing | No real AdMob IDs set, so the app uses Google's test ads | **You**: create the app + a banner and an app-open ad unit in AdMob, put `ADMOB_IOS_APP_ID`, `ADMOB_BANNER_IOS_UNIT_ID`, `ADMOB_APP_OPEN_IOS_UNIT_ID` (and Android ones) in EAS env. Then I rebuild |
-| Live NSW traffic, character voices, SMS codes, emails, AI support summaries, popularity badges | Optional keys not added (BLOCKED #5–#12) | Can come after launch; the app says plainly when each is off |
+| **Everything between users**: reports from other drivers, Trackys around you, private zones, school-zone alerts from the server, points board, fuel prices, account recovery, the owner dashboard | **The Firebase backend has never been deployed** (BLOCKED #1/#27/#30). Its tests pass; the deploy stops because the GitHub secret `FIREBASE_SERVICE_ACCOUNT` is empty | **You**: add that one secret (KEYS_SETUP.md §1, no other key needed now). Then I run the deploy (≈15 min) |
+| **Ads show "Test mode"** and earn nothing | No real AdMob IDs set, so the app uses Google's test ads | **You**: create the app + a banner and an app-open ad unit in AdMob (KEYS_SETUP.md §2); paste the IDs to me (they aren't secret) or add them in EAS. Then I rebuild |
+| Live NSW traffic, character voices, SMS codes, emails, AI support summaries, popularity badges | Optional keys not added (BLOCKED #5–#12) | Can come after launch; the app says plainly when each is off. Steps for every key: KEYS_SETUP.md |
 | CarPlay, home-screen widget, music mini-player, EV/truck routing | Apple/Spotify approvals or no provider (BLOCKED #17, #24, #25, #29) | After launch |
 
 ## Before you press "Submit for review"

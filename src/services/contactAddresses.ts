@@ -1,4 +1,5 @@
 import * as Contacts from "expo-contacts";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 // Real, explicit request (Waze-style redesign Phase 4 -- "Drive to friends & family via
 // Contacts", the "More options" row WhereToSheet.tsx previously had to honestly defer since no
@@ -21,7 +22,9 @@ function formatAddress(a: Contacts.Address): string {
 }
 
 export async function requestContactsAccess(): Promise<boolean> {
-  const { status } = await Contacts.requestPermissionsAsync();
+  const { status } = await askPermission("contacts", () => Contacts.requestPermissionsAsync(), {
+    decided: async () => answered(await Contacts.getPermissionsAsync()),
+  });
   return status === "granted";
 }
 

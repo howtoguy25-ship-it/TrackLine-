@@ -204,8 +204,6 @@ jobs:
               fi
             elif secret_exists "$NAME"; then
               echo "$NAME: already set in Firebase, left as it is."
-            elif [ "$NAME" = "MAPBOX_SERVER_TOKEN" ]; then
-              echo "::warning::MAPBOX_SERVER_TOKEN is not set. Add it as a GitHub secret and re-run with 'Copy API keys' ticked, or the deploy below will fail -- see DEPLOY.md."
             else
               if printf 'unset' | set_secret "$NAME"; then
                 echo "$NAME: not provided -- created a placeholder so the deploy can proceed. The feature stays locked until a real key is added."

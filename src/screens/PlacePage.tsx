@@ -33,6 +33,7 @@ import { isLookupablePlaceId, summarizeParking, todaysHours, type ParkingSummary
 import { metersBetween } from "@/map/homeMapLogic";
 import { formatDistance } from "@/utils/navFormat";
 import { colors, shadow, spacing, pressedOpacity, scaleFor } from "@/theme/tokens";
+import { askPermission } from "@/services/permissionQueue";
 
 // The place page (UI pass 2, section 4): what you see after choosing a search result, before
 // any route is fetched. The map behind it is the real map, moved so the place sits in the top
@@ -158,7 +159,7 @@ export function PlacePage({ place, origin, onBack, onClose, onViewRoutes, onSeeM
       Alert.alert("Sign in to add a photo");
       return;
     }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const permission = await askPermission("photos", () => ImagePicker.requestMediaLibraryPermissionsAsync());
     if (!permission.granted) {
       Alert.alert("Photo access is off", "You can allow it for TrackLine in your phone's Settings.");
       return;
