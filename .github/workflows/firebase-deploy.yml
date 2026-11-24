@@ -33,11 +33,18 @@ on:
         description: "After deploying functions, load the official NSW school zones now (instead of waiting for Monday)"
         type: boolean
         default: true
+  # Also: a push to the session branch whose commit message contains [firebase-deploy] deploys
+  # functions + Firestore rules/indexes + Storage rules (keys left as they are, no school-zone
+  # refresh). workflow_dispatch only works for workflows on the default branch, and the project
+  # owner asked for the deploy to be run from here. Any other push does nothing.
+  push:
+    branches: [claude/go-session-0d5bup]
 
 jobs:
   # The Firestore/Storage rules and Cloud Functions tests, on the real emulators, with placeholder
   # keys only. If any test fails, nothing is deployed.
   emulator-tests:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[firebase-deploy]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -68,6 +75,13 @@ jobs:
     needs: emulator-tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Manual run: the ticked boxes. Marked push: functions + rules, nothing else.
+      DEPLOY_FUNCTIONS: ${{ github.event_name == 'push' || inputs.deployFunctions }}
+      DEPLOY_FIRESTORE: ${{ github.event_name == 'push' || inputs.deployFirestoreRules }}
+      DEPLOY_STORAGE: ${{ github.event_name == 'push' || inputs.deployStorageRules }}
+      COPY_KEYS: ${{ github.event_name != 'push' && inputs.updateApiKeys }}
+      REFRESH_ZONES: ${{ github.event_name != 'push' && inputs.refreshSchoolZones }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -96,11 +110,11 @@ jobs:
         id: targets
         run: |
           TARGETS=""
-          if [ "${{ inputs.deployFunctions }}" = "true" ]; then TARGETS="functions"; fi
-          if [ "${{ inputs.deployFirestoreRules }}" = "true" ]; then
+          if [ "$DEPLOY_FUNCTIONS" = "true" ]; then TARGETS="functions"; fi
+          if [ "$DEPLOY_FIRESTORE" = "true" ]; then
             TARGETS="${TARGETS:+$TARGETS,}firestore:rules,firestore:indexes"
           fi
-          if [ "${{ inputs.deployStorageRules }}" = "true" ]; then
+          if [ "$DEPLOY_STORAGE" = "true" ]; then
             TARGETS="${TARGETS:+$TARGETS,}storage"
           fi
           if [ -z "$TARGETS" ]; then
@@ -140,11 +154,11 @@ jobs:
       # Values are passed through environment variables and piped to the CLI; they are never
       # put on a command line or echoed, and GitHub redacts them from the log regardless.
       - name: Sync API keys into Firebase secrets
-        if: ${{ inputs.deployFunctions }}
+        if: ${{ env.DEPLOY_FUNCTIONS == 'true' }}
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
           PROJECT_ID: ${{ steps.project.outputs.id }}
-          UPDATE_KEYS: ${{ inputs.updateApiKeys }}
+          UPDATE_KEYS: ${{ env.COPY_KEYS }}
           KEY_MAPBOX_SERVER_TOKEN: ${{ secrets.MAPBOX_SERVER_TOKEN }}
           KEY_ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           KEY_TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
@@ -209,15 +223,15 @@ jobs:
       # Running that job once loads the official NSW school zones now. The service account needs
       # the "Cloud Scheduler Admin" role (DEPLOY.md).
       - name: Authenticate gcloud with the same service account
-        if: ${{ inputs.deployFunctions && inputs.refreshSchoolZones }}
+        if: ${{ env.DEPLOY_FUNCTIONS == 'true' && env.REFRESH_ZONES == 'true' }}
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Set up gcloud
-        if: ${{ inputs.deployFunctions && inputs.refreshSchoolZones }}
+        if: ${{ env.DEPLOY_FUNCTIONS == 'true' && env.REFRESH_ZONES == 'true' }}
         uses: google-github-actions/setup-gcloud@v2
       - name: Load the NSW school zones now (refreshSchoolZones, once)
-        if: ${{ inputs.deployFunctions && inputs.refreshSchoolZones }}
+        if: ${{ env.DEPLOY_FUNCTIONS == 'true' && env.REFRESH_ZONES == 'true' }}
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-service-account.json
           PROJECT_ID: ${{ steps.project.outputs.id }}
