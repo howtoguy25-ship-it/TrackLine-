@@ -754,3 +754,12 @@ failed and what you saw instead.
 8. Options sheet never covers the instruction; it scrolls; headings in sentence case; the best-time chart has equal bars, labels on one line, "Best" above; with no signal: "Couldn't load traffic predictions — tap to retry".
 9. Change Map view, Satellite, Sound & voice, Avoid, vehicle, alerts, units, dark mode: each takes effect at once, survives a restart, and appears on a second phone signed in to the same account.
 
+## 50. Map look 2 — NEEDS DEVICE TEST
+
+1. Home map at street level: gently tilted, your arrow on a soft grey disc you can spot at a glance.
+2. Pinch out slowly: the map leans further (more perspective, the distance fading softly), then straightens to flat, top-down, around city / region level. Smooth, no jumps, no fighting your fingers.
+3. Pinch back in: the same curve in reverse.
+4. Two-finger tilt the map yourself: it stays as you left it while you zoom; tap Re-centre and the automatic lean comes back.
+5. Settings › Map view › Flat: no automatic lean. While driving, previewing routes or placing a report: unchanged.
+6. Zoomed out, the map is calmer: no grey building blocks until street level.
+

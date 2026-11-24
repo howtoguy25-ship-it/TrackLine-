@@ -99,7 +99,7 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 7;
+export const STYLE_VERSION = 8;
 
 /**
  * Clean satellite (map styles add-on §2): imagery a little less saturated and contrasty with a
@@ -532,9 +532,11 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
         type: "fill",
         source: "composite",
         "source-layer": "building",
-        minzoom: 14,
+        // Map look 2: quieter mid-zoom map -- footprints fade in from 15.5 (street level), soft
+        // and with no outline, so the roads and labels read first when zoomed out.
+        minzoom: 15.5,
         filter: ["==", ["get", "underground"], "false"],
-        paint: { "fill-color": p.building, "fill-outline-color": dim(p.building, 0.12), "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.5, 16, 1] },
+        paint: { "fill-color": p.building, "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15.5, 0, 16.5, 0.75, 18, 0.9] },
       }
     );
   }
@@ -672,8 +674,39 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
     metadata: { "trackline:styleVersion": STYLE_VERSION },
     sources,
     glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+    // Map look 2: a soft haze toward the horizon when the map is tilted, so the far distance
+    // fades out cleanly instead of ending in a hard line or a wall of tiny labels.
+    fog: fogFor(p, options.satellite),
     layers,
   };
+}
+
+/**
+ * Distance haze (Mapbox style "fog"): starts a little way into the tilted view and blends into a
+ * pale sky above the horizon -- the land colour lightened on light themes, darkened on dark ones.
+ */
+export function fogFor(p: StylePalette, satellite = false): Json {
+  const dark = isDarkColour(p.land) && !satellite;
+  return {
+    range: [0.8, 7],
+    color: dark ? "#1E2533" : satellite ? "#DCE4EE" : mix(p.land, "#EEF3F9", 0.6),
+    "high-color": dark ? "#161C27" : "#E9EEF4",
+    "space-color": dark ? "#121722" : "#EEF2F6",
+    "horizon-blend": 0.12,
+    "star-intensity": 0,
+  };
+}
+
+function isDarkColour(hex: string): boolean {
+  const n = parseInt(hex.slice(1), 16);
+  return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114 < 110;
+}
+
+function mix(a: string, b: string, t: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ch = (shift: number) => Math.round(((pa >> shift) & 255) * (1 - t) + ((pb >> shift) & 255) * t);
+  return `#${[16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }
 
 // ---------------------------------------------------------------------------------------------

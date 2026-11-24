@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Light",
   "metadata": {
-    "trackline:styleVersion": 7
+    "trackline:styleVersion": 8
   },
   "sources": {
     "composite": {
@@ -11,6 +11,17 @@
     }
   },
   "glyphs": "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+  "fog": {
+    "range": [
+      0.8,
+      7
+    ],
+    "color": "#F3F6F9",
+    "high-color": "#E9EEF4",
+    "space-color": "#EEF2F6",
+    "horizon-blend": 0.12,
+    "star-intensity": 0
+  },
   "layers": [
     {
       "id": "land",
@@ -100,7 +111,7 @@
       "type": "fill",
       "source": "composite",
       "source-layer": "building",
-      "minzoom": 14,
+      "minzoom": 15.5,
       "filter": [
         "==",
         [
@@ -111,7 +122,6 @@
       ],
       "paint": {
         "fill-color": "#F0F1F3",
-        "fill-outline-color": "#E9EAEB",
         "fill-opacity": [
           "interpolate",
           [
@@ -120,10 +130,12 @@
           [
             "zoom"
           ],
-          14,
-          0.5,
-          16,
-          1
+          15.5,
+          0,
+          16.5,
+          0.75,
+          18,
+          0.9
         ]
       }
     },

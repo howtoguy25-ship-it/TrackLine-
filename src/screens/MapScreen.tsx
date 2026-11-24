@@ -251,6 +251,7 @@ import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/serv
 import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
 import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
+import { tiltForZoom } from "@/map/tiltCurve";
 import { PREVIEW_FIT_MS, drawnRouteIndices, previewEdgePadding, previewFitCamera, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, navZoomForSpeed, showManoeuvreCallout } from "@/nav/navCamera";
@@ -374,7 +375,8 @@ const AHEAD_TRAFFIC_REFRESH_MS = 30_000;
 /** The camera eases to a tapped pin, and back, over this long. */
 const ALERT_CARD_CAMERA_MS = 600;
 // Permanent fix §6: the map is never tilted past 45° -- the home map, 3D on, and placing a report.
-const DEFAULT_IDLE_PITCH = 45;
+// Map look 2: the home map's lean at street level comes from the one tilt curve.
+const DEFAULT_IDLE_PITCH = Math.round(tiltForZoom(HOME_FOLLOW_ZOOM));
 const HOME_3D_PITCH = 45;
 const PLACEMENT_PITCH = 45;
 /** The alert card that's up: a community report or an official Live Traffic NSW incident. */
@@ -2013,8 +2015,11 @@ export function MapScreen() {
   // browsing the map with no destination picked included, so panning/zooming away always has a
   // way back. While actively navigating it just resumes the existing chase-cam follow instead
   // of animating the camera itself, so it doesn't fight/duplicate that effect's own camera work.
+  // Re-centre also forgets a hand-set tilt, so the map leans by zoom again.
+  const [autoTiltResetKey, setAutoTiltResetKey] = useState(0);
   const onRecenter = useCallback(() => {
     if (!currentLatLng) return;
+    setAutoTiltResetKey((k) => k + 1);
     // Recentre: the one way out of FREE (and out of the route overview while driving).
     camera.recentre();
     // Driving: NAV_FOLLOW re-applies the chase pose (chaseCamAppliedRef resets on the change).
@@ -6602,6 +6607,10 @@ export function MapScreen() {
           routeShown={!!route || inRouteSelection}
           showTraffic={showsTrafficLayer}
           padding={mapPadding}
+          // Map look 2: the home map leans by zoom (map/tiltCurve.ts); off for the flat Map view,
+          // while driving, previewing or placing a report.
+          autoTilt={isHomeIdle && settings.defaultMapViewStyle !== "flat"}
+          autoTiltResetKey={autoTiltResetKey}
           initialCenter={currentLatLng ?? { latitude: -33.8688, longitude: 151.2093 }}
           initialZoom={17}
           onRegionChangeComplete={onRegionChangeComplete}

@@ -4,7 +4,6 @@ exports[`style snapshot the colours of every style 1`] = `
 {
   "blue": {
     "buildings.fill-color": "#F0F1F3",
-    "buildings.fill-outline-color": "#E9EAEB",
     "land.background-color": "#EEF5FB",
     "national-parks.fill-color": "#D3F0CC",
     "parks.fill-color": "#D3F0CC",
@@ -51,7 +50,6 @@ exports[`style snapshot the colours of every style 1`] = `
   },
   "blueGrey": {
     "buildings.fill-color": "#F0F1F3",
-    "buildings.fill-outline-color": "#E9EAEB",
     "land.background-color": "#EEF1F4",
     "national-parks.fill-color": "#D3F0CC",
     "parks.fill-color": "#D3F0CC",
@@ -98,7 +96,6 @@ exports[`style snapshot the colours of every style 1`] = `
   },
   "dark": {
     "buildings.fill-color": "#232B39",
-    "buildings.fill-outline-color": "#343B48",
     "land.background-color": "#1B2230",
     "national-parks.fill-color": "#1E3229",
     "parks.fill-color": "#1E3229",
@@ -145,7 +142,6 @@ exports[`style snapshot the colours of every style 1`] = `
   },
   "greenYellow": {
     "buildings.fill-color": "#F0F1F3",
-    "buildings.fill-outline-color": "#E9EAEB",
     "land.background-color": "#F4F6EC",
     "national-parks.fill-color": "#BFE6A8",
     "parks.fill-color": "#BFE6A8",
@@ -192,7 +188,6 @@ exports[`style snapshot the colours of every style 1`] = `
   },
   "light": {
     "buildings.fill-color": "#F0F1F3",
-    "buildings.fill-outline-color": "#E9EAEB",
     "land.background-color": "#FAFAF9",
     "national-parks.fill-color": "#D3F0CC",
     "parks.fill-color": "#D3F0CC",
@@ -239,7 +234,6 @@ exports[`style snapshot the colours of every style 1`] = `
   },
   "normal": {
     "buildings.fill-color": "#F0F1F3",
-    "buildings.fill-outline-color": "#E9EAEB",
     "land.background-color": "#FAFAF9",
     "national-parks.fill-color": "#D3F0CC",
     "parks.fill-color": "#D3F0CC",
@@ -286,7 +280,6 @@ exports[`style snapshot the colours of every style 1`] = `
   },
   "purpleBlue": {
     "buildings.fill-color": "#F0F1F3",
-    "buildings.fill-outline-color": "#E9EAEB",
     "land.background-color": "#F4F2FA",
     "national-parks.fill-color": "#D3F0CC",
     "parks.fill-color": "#D3F0CC",

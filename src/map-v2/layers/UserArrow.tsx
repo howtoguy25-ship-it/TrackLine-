@@ -1,3 +1,4 @@
+import { USER_HALO } from "@/map-v2/layers/userHalo";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { loadMapbox } from "@/map-v2/mapbox";
 import { collection, metersRadiusExpression, pointFeature, type LatLng } from "@/map-v2/geo";
@@ -16,6 +17,9 @@ import { MotionSmoother, type Pose } from "@/map-v2/userMotion";
 
 export const USER_ARROW_ICON = "user-arrow";
 const USER_ARROW_PNG = require("../../../assets/map/user-arrow.png");
+
+
+export { USER_HALO };
 
 /** A little smaller zoomed out, full size at street level. */
 export const ARROW_SCALE = ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 0.8, 17, 1.0, 20, 1.15];
@@ -107,7 +111,7 @@ export function UserArrow({ coordinate, heading, accuracyMeters, markerIcon, fix
     <>
       <Images images={{ [USER_ARROW_ICON]: USER_ARROW_PNG }} />
       <ShapeSource id="me-src" shape={shape as never}>
-        {/* Two children, always: Mapbox's ShapeSource wants elements, not null. */}
+        {/* Children always present: Mapbox's ShapeSource wants elements, not null. Accuracy ring, grey disc, arrow -- bottom to top. */}
         <CircleLayer
             id="me-accuracy"
             style={{
@@ -118,6 +122,16 @@ export function UserArrow({ coordinate, heading, accuracyMeters, markerIcon, fix
               circlePitchAlignment: "map",
             }}
           />
+        <CircleLayer
+          id="me-halo"
+          style={{
+            circleRadius: USER_HALO.radius as never,
+            circleColor: USER_HALO.color,
+            circleStrokeColor: USER_HALO.stroke,
+            circleStrokeWidth: 1,
+            circlePitchAlignment: "map",
+          }}
+        />
         <SymbolLayer
           id="me-arrow"
           style={{

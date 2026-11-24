@@ -1,4 +1,5 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { AutoTilt, TILT_SETTLE_MS } from "@/map/tiltCurve";
 import { useLatest } from "@/hooks/useLatest";
 import { BADGE_CANDIDATE_LAYER_ID, RANKED_BADGE_LAYER_ID, withRankedBadges } from "@/map/poiBadges";
 import { candidateFromFeature, rankBadges, rankedBadgeCollection, type BadgeCandidate } from "@/map/poiRanking";
@@ -97,6 +98,13 @@ interface Props {
   driver?: LatLng | null;
   /** Brand / popular-place badges (owner dashboard can switch them off). Default on. */
   badges?: boolean;
+  /**
+   * Map look 2: lean the map by zoom (map/tiltCurve.ts) -- live while the driver pinches, eased
+   * in when the map comes to rest. Home map only; off while driving, previewing or placing.
+   */
+  autoTilt?: boolean;
+  /** Bump to forget a hand-set tilt (Re-centre). */
+  autoTiltResetKey?: number;
   children?: React.ReactNode;
 }
 
@@ -210,9 +218,26 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
 
   type CameraState = {
     properties: { center: number[]; zoom: number; heading: number; pitch: number; bounds: { ne: number[]; sw: number[] } };
+    gestures?: { isGestureActive?: boolean };
+  };
+  // Map look 2: lean by zoom. Live only during the driver's own pinch (never during the app's own
+  // camera animations, which it would cut short), eased in once the map is at rest.
+  const autoTilt = useRef(new AutoTilt());
+  const autoTiltOn = useLatest(!!props.autoTilt);
+  useEffect(() => {
+    autoTilt.current.reset();
+  }, [props.autoTiltResetKey, props.autoTilt]);
+  const applyAutoTilt = (state: CameraState, atRest: boolean) => {
+    if (!autoTiltOn.current) return;
+    const gesture = !!state.gestures?.isGestureActive;
+    if (!gesture && !atRest) return;
+    const pitch = autoTilt.current.frame({ zoom: googleZoomFromMapbox(state.properties.zoom), pitch: state.properties.pitch, gesture, timeMs: Date.now() });
+    if (pitch == null) return;
+    cameraRef.current?.setCamera({ pitch, animationDuration: gesture ? 0 : TILT_SETTLE_MS, animationMode: gesture ? "none" : "easeTo" });
   };
   const remember = (state: CameraState) => {
     const { center, zoom, heading, pitch } = state.properties;
+    applyAutoTilt(state, false);
     lastCamera.current = { center: fromPosition(center), zoom: googleZoomFromMapbox(zoom), heading, pitch };
     const shouldRaise = props.show3DBuildings && pitch > BUILDING_EXTRUSION_MIN_PITCH;
     if (shouldRaise !== raised) setRaised(shouldRaise);
@@ -270,6 +295,7 @@ export const TrackLineMap = forwardRef<MapHandle, Props>(function TrackLineMap(p
 
   const onMapIdle = (state: CameraState) => {
     remember(state);
+    applyAutoTilt(state, true);
     rankBadgesNow(state.properties.zoom);
     const region = regionFromBounds(state.properties.bounds.ne, state.properties.bounds.sw);
     props.onRegionChangeComplete?.(region, { isGesture: gestures.current.idle() });
