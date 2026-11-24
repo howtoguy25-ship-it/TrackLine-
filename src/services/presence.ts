@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   limit,
+  where,
   arrayUnion,
   arrayRemove,
   serverTimestamp,
@@ -17,6 +18,7 @@ import {
 import { httpsCallable } from "@firebase/functions";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, functions } from "@/services/firebase";
+import { geohashCellAndNeighbours, viewportGeohashPrecision } from "@/utils/geo";
 import type { TrackyMoodKey } from "@/components/trackys/moods";
 import type { TrackyCustomization } from "@/components/trackys/customization";
 import type { PathPoint } from "@/services/presencePlayback";
@@ -105,6 +107,83 @@ export function subscribeNearbyPresence(
     },
     () => onChange([])
   );
+}
+
+/** At most this many Trackys per geohash cell query; the map then shows the nearest 50. */
+export const VIEWPORT_PRESENCE_LIMIT = 50;
+
+/** The cells (geohash prefixes) a map view reads Trackys from -- a stable key for resubscribing. */
+export function viewportPresenceCells(view: { latitude: number; longitude: number; latitudeDelta: number }): string[] {
+  return geohashCellAndNeighbours(view.latitude, view.longitude, viewportGeohashPrecision(view.latitudeDelta));
+}
+
+/**
+ * Startup §3: the Trackys in the map view as you drive or move the map -- no fixed radius. One
+ * live query per geohash cell around the view (presence docs carry a 6-character geohash written
+ * by the server), each capped at 50; the caller keeps the nearest 50 overall. Ghost-mode drivers
+ * and anyone inside a private zone have no presence doc at all (the server withholds it), so they
+ * can't appear here however the query is made.
+ */
+export function subscribeViewportPresence(
+  selfUid: string,
+  cells: string[],
+  onChange: (presences: PresenceDoc[]) => void
+): Unsubscribe {
+  const byCell = new Map<string, PresenceDoc[]>();
+  const firstSeen = new Map<string, { w: number; receivedAtLocalMs: number }>();
+  const emit = () => {
+    const seen = new Set<string>();
+    const all: PresenceDoc[] = [];
+    for (const list of byCell.values()) {
+      for (const p of list) {
+        if (seen.has(p.uid)) continue;
+        seen.add(p.uid);
+        all.push(p);
+      }
+    }
+    onChange(all);
+  };
+  const unsubs = cells.map((cell) =>
+    onSnapshot(
+      query(collection(db, "presence"), where("geohash", ">=", cell), where("geohash", "<=", `${cell}\uf8ff`), limit(VIEWPORT_PRESENCE_LIMIT)),
+      (snap) => {
+        const list: PresenceDoc[] = [];
+        snap.forEach((docSnap) => {
+          if (docSnap.id === selfUid) return;
+          const parsed = parsePresenceDoc(docSnap.id, docSnap.data(), firstSeen);
+          if (parsed) list.push(parsed);
+        });
+        byCell.set(cell, list);
+        emit();
+      },
+      () => {
+        byCell.set(cell, []);
+        emit();
+      }
+    )
+  );
+  return () => unsubs.forEach((u) => u());
+}
+
+function parsePresenceDoc(uid: string, data: Record<string, unknown>, firstSeen: Map<string, { w: number; receivedAtLocalMs: number }>): PresenceDoc | null {
+  if (typeof data.lat !== "number" || typeof data.lng !== "number") return null;
+  const w = typeof data.w === "number" ? data.w : 0;
+  const seen = firstSeen.get(uid);
+  const receivedAtLocalMs = seen && seen.w === w ? seen.receivedAtLocalMs : Date.now();
+  firstSeen.set(uid, { w, receivedAtLocalMs });
+  return {
+    uid,
+    lat: data.lat,
+    lng: data.lng,
+    headingDeg: typeof data.headingDeg === "number" ? data.headingDeg : null,
+    mood: typeof data.mood === "string" ? (data.mood as TrackyMoodKey) : "happy",
+    displayName: typeof data.displayName === "string" ? data.displayName : undefined,
+    updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toMillis() : Date.now(),
+    look: data.look && typeof data.look === "object" ? (data.look as TrackyCustomization) : undefined,
+    path: parsePath(data.path),
+    w,
+    receivedAtLocalMs,
+  };
 }
 
 function parsePath(raw: unknown): PathPoint[] {

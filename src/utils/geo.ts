@@ -278,3 +278,52 @@ export function distanceKm(lat1: number, lon1: number, lat2: number, lon2: numbe
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
+/** The bounds of a geohash cell. */
+export function decodeGeohashBounds(hash: string): { latMin: number; latMax: number; lngMin: number; lngMax: number } {
+  let even = true;
+  const lat = [-90, 90];
+  const lng = [-180, 180];
+  for (const ch of hash) {
+    const v = BASE32.indexOf(ch);
+    for (let bit = 4; bit >= 0; bit--) {
+      const r = even ? lng : lat;
+      const mid = (r[0] + r[1]) / 2;
+      if ((v >> bit) & 1) r[0] = mid;
+      else r[1] = mid;
+      even = !even;
+    }
+  }
+  return { latMin: lat[0], latMax: lat[1], lngMin: lng[0], lngMax: lng[1] };
+}
+
+/** A geohash cell and its 8 neighbours (deduplicated): what a viewport query reads. */
+export function geohashCellAndNeighbours(latitude: number, longitude: number, precision: number): string[] {
+  const b = decodeGeohashBounds(encodeGeohash(latitude, longitude, precision));
+  const dLat = b.latMax - b.latMin;
+  const dLng = b.lngMax - b.lngMin;
+  const out = new Set<string>();
+  for (const y of [-1, 0, 1]) {
+    for (const x of [-1, 0, 1]) {
+      const la = Math.max(-89.999, Math.min(89.999, (b.latMin + b.latMax) / 2 + y * dLat));
+      let lo = (b.lngMin + b.lngMax) / 2 + x * dLng;
+      if (lo > 180) lo -= 360;
+      if (lo < -180) lo += 360;
+      out.add(encodeGeohash(la, lo, precision));
+    }
+  }
+  return [...out].sort();
+}
+
+/**
+ * The geohash length for a map view: the cell (with its neighbours) must cover the screen, so a
+ * wide view reads a few big cells and a street view a few small ones. Presence docs carry a
+ * 6-character geohash; a shorter prefix matches every doc inside the bigger cell.
+ */
+export function viewportGeohashPrecision(latitudeDelta: number): number {
+  if (latitudeDelta > 3) return 2;
+  if (latitudeDelta > 0.6) return 3;
+  if (latitudeDelta > 0.15) return 4;
+  if (latitudeDelta > 0.02) return 5;
+  return 6;
+}

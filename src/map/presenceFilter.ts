@@ -14,14 +14,17 @@ export const ON_MY_ARROW_M = 20;
 
 export function presencesToShow<T extends { uid: string; lat: number; lng: number }>(
   list: readonly T[],
-  o: { ownUid: string | null; blocked: ReadonlySet<string>; here: LatLng; max: number; ownUids?: ReadonlySet<string> }
+  o: { ownUid: string | null; blocked: ReadonlySet<string>; here: LatLng; max: number; ownUids?: ReadonlySet<string>; /** Your own position (default: `here`): nobody is drawn on your arrow. */ me?: LatLng | null }
 ): T[] {
   // Until we know who you are, we can't tell which one is you: draw none.
   if (!o.ownUid) return [];
   return list
     .filter((p) => p.uid !== o.ownUid && !o.ownUids?.has(p.uid) && !o.blocked.has(p.uid))
+    .filter((p) => {
+      const me = o.me ?? o.here;
+      return distanceKm(me.latitude, me.longitude, p.lat, p.lng) * 1000 > ON_MY_ARROW_M;
+    })
     .map((p) => ({ p, d: distanceKm(o.here.latitude, o.here.longitude, p.lat, p.lng) }))
-    .filter((x) => x.d * 1000 > ON_MY_ARROW_M)
     .sort((a, b) => a.d - b.d)
     .slice(0, o.max)
     .map((x) => x.p);

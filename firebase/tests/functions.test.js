@@ -186,7 +186,7 @@ describe("updatePresence", () => {
     expect((await adminDb.doc(`presence/${uid}`).get()).data().look).toBeUndefined();
   });
 
-  test("suppresses presence (and withdraws doc + pending buffer) within 500m of the trip destination", async () => {
+  test("suppresses presence (and withdraws doc + pending buffer) within 400m of the trip destination", async () => {
     const uid = await signInNewAnonymousUser();
     await adminDb.doc(`presence/${uid}`).set({ lat: -33.87, lng: 151.21, headingDeg: 0, mood: "happy", updatedAt: new Date() });
     await adminDb.doc(`presencePending/${uid}`).set({ points: [{ lat: -33.87, lng: 151.21, t: Date.now() }] });
@@ -227,7 +227,7 @@ describe("updatePresence", () => {
     const path = (await adminDb.doc(`presence/${uid}`).get()).data().path;
     for (const p of path) {
       const metersFromStart = Math.abs(p.lat - sourceLat) * 111320;
-      expect(metersFromStart).toBeGreaterThan(500);
+      expect(metersFromStart).toBeGreaterThan(400);
     }
   });
 });

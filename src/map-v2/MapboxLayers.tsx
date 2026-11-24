@@ -1,3 +1,4 @@
+import type { HeadingTurret } from "@/nav/headingTurret";
 import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "@/components/AppText";
@@ -56,6 +57,8 @@ export interface UserDrawing {
   ghost: boolean;
   /** The fix's own timestamp (orders fixes for the arrow's easing). */
   fixTimeMs?: number;
+  /** Off a drive: the heading turret (startup §4) turns the arrow. */
+  turret?: HeadingTurret | null;
 }
 
 interface Props {
@@ -239,7 +242,7 @@ export function MapboxLayers(props: Props) {
       />
 
       {user && (
-        <UserArrow coordinate={user.coordinate} heading={user.heading} accuracyMeters={user.accuracyMeters} markerIcon={markerIcon} fixTimeMs={user.fixTimeMs} />
+        <UserArrow coordinate={user.coordinate} heading={user.heading} accuracyMeters={user.accuracyMeters} markerIcon={markerIcon} fixTimeMs={user.fixTimeMs} turret={user.turret} />
       )}
 
       {/* The few things that are text: callouts, bubbles, a report's comment. */}

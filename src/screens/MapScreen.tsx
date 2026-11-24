@@ -3,7 +3,7 @@ import { remoteGated } from "@/remote/appConfig";
 import { recordTripEnd } from "@/guest/savePrompt";
 import { useReduceMotion } from "@/hooks/useReduceMotion";
 import { useLatest } from "@/hooks/useLatest";
-import { compassAllowed, initialHeadingState, stepCompass, stepHeading, type HeadingState } from "@/nav/headingFilter";
+import { compassAllowed, initialHeadingState, shortestDelta, stepCompass, stepHeading, type HeadingState } from "@/nav/headingFilter";
 import { MapSurface } from "@/components/ui/Surface";
 import { showLaneStrip } from "@/nav/lanes";
 import {
@@ -144,7 +144,8 @@ import { ReportItemIcon } from "@/components/settings/ReportItemIcon";
 import { useTrackyAppearance } from "@/hooks/useTrackyAppearance";
 import { PresenceCard } from "@/screens/PresenceCard";
 import {
-  subscribeNearbyPresence,
+  subscribeViewportPresence,
+  viewportPresenceCells,
   callUpdatePresence,
   callClearPresence,
   callSendWave,
@@ -222,7 +223,11 @@ import { MAP_ICONS_AHEAD_M, MAX_MAP_ICONS, warnDistanceM } from "@/nav/ahead/ahe
 import { useEffectiveMapTheme, useMapScheme } from "@/components/ui/uiScheme";
 import { routeColoursFor } from "@/map-v2/styles/mapAppearance";
 import { noteNightPosition } from "@/map/nightClock";
+import { CompassFilter, HeadingTurret, targetHeading } from "@/nav/headingTurret";
 import { loadLastLocation, saveLastLocation } from "@/map/lastLocation";
+import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
+import { done, enqueue, PILL_SHOW_MS, reportsPillText, type PillMessage } from "@/map/homePill";
+import { HomeInfoPill } from "@/components/HomeInfoPill";
 import { HomeMapControls } from "@/components/HomeMapControls";
 import {
   HOME_FOLLOW_ZOOM,
@@ -1226,22 +1231,29 @@ export function MapScreen() {
   // calibration level: 3 = under 20° on iOS, 2 = under 35°, 1 = under 50°.
   const [compassReading, setCompassReading] = useState<{ heading: number; accuracyDeg: number | null; timeMs: number } | null>(null);
   if (!route && deviceHeading !== null) setDeviceHeading(null);
+  // Startup §4: the heading turret -- compass when still, GPS course when moving, blended between,
+  // at most 90°/s. Fed straight from the compass callback (no re-render per reading); the arrow's
+  // own frame loop and the heading-up map ticker below read it.
+  const turret = useMemo(() => new HeadingTurret(), []);
+  const compassFilterRef = useRef(new CompassFilter());
+  const turretInputsRef = useRef<{ speedKmh: number | null; gps: number | null }>({ speedKmh: null, gps: null });
+  const navigatingRef = useLatest(!!route);
   useEffect(() => {
-    if (!route) return;
     let subscription: Location.LocationSubscription | null = null;
     let cancelled = false;
     Location.watchHeadingAsync((headingData) => {
       // trueHeading is -1 when the OS can't derive it yet (no location fix for magnetic
       // declination) -- magHeading is still a real, live compass reading in that case, just
-      // relative to magnetic north instead of true north, close enough for a visual cone.
+      // relative to magnetic north instead of true north.
       const value = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
-      if (!cancelled && value >= 0) {
+      if (cancelled || value < 0) return;
+      const accuracyDeg = headingData.accuracy === 3 ? 20 : headingData.accuracy === 2 ? 35 : headingData.accuracy === 1 ? 50 : null;
+      const now = Date.now();
+      const good = compassFilterRef.current.push({ timeMs: now, heading: value, accuracyDeg });
+      turret.setTarget(targetHeading({ ...turretInputsRef.current, compass: good }));
+      if (navigatingRef.current) {
         setDeviceHeading(value);
-        setCompassReading({
-          heading: value,
-          accuracyDeg: headingData.accuracy === 3 ? 20 : headingData.accuracy === 2 ? 35 : headingData.accuracy === 1 ? 50 : null,
-          timeMs: Date.now(),
-        });
+        setCompassReading({ heading: value, accuracyDeg, timeMs: now });
       }
     }).then((sub) => {
       if (cancelled) sub.remove();
@@ -1251,7 +1263,7 @@ export function MapScreen() {
       cancelled = true;
       subscription?.remove();
     };
-  }, [route]);
+  }, [turret, navigatingRef]);
 
   // GPS "course" heading (location.coords.heading) is a real device/OS-reported value, but a
   // genuinely unreliable one -- iOS commonly reports it as -1 ("invalid") at low speed, right
@@ -1437,8 +1449,30 @@ export function MapScreen() {
     roadFixRef.current = currentLatLng
       ? { latitude: currentLatLng.latitude, longitude: currentLatLng.longitude, heading, speedKmh: currentSpeedKmh }
       : null;
-    followHeadingRef.current = heading;
+    // Off a drive the map faces where the turret points (compass when still, course when moving).
+    followHeadingRef.current = !route && turret.heading !== null ? turret.heading : heading;
   });
+  // The GPS side of the turret's target: each fix's course (after the no-flip filter) and speed.
+  useEffect(() => {
+    turretInputsRef.current = { speedKmh: currentSpeedKmh, gps: headingTrack.filter.target };
+    turret.setTarget(targetHeading({ speedKmh: currentSpeedKmh, gps: headingTrack.filter.target, compass: compassFilterRef.current.good }));
+  }, [turret, currentSpeedKmh, headingTrack.filter.target]);
+  // Heading-up home map: while following (and not north-up), the map turns with the turret, so
+  // the arrow keeps pointing up the screen as you turn on the spot. 10 times a second at most,
+  // only when it changed by a degree; nothing while you've moved the map (FREE) or are driving.
+  useEffect(() => {
+    if (route || northUp) return;
+    let lastSent: number | null = null;
+    const t = setInterval(() => {
+      const h = turret.heading;
+      if (h === null || (lastSent !== null && Math.abs(shortestDelta(lastSent, h)) < 1)) return;
+      if (camera.move("follow", { heading: h }, { duration: 100 })) {
+        lastSent = h;
+        mapBearing.set(h);
+      }
+    }, 100);
+    return () => clearInterval(t);
+  }, [route, northUp, turret, camera, mapBearing]);
   const evaluateRoad = useCallback(() => {
     const fix = roadFixRef.current;
     if (!fix) return;
@@ -2105,13 +2139,19 @@ export function MapScreen() {
   // isSignedIn() -- see firestore.rules). See presence.ts's own subscribeNearbyPresence for why
   // this is a broad, recency-ordered fetch rather than a geo-bounded one.
   const [presenceList, setPresenceList] = useState<PresenceDoc[]>([]);
+  // Startup §3: the Trackys in the map view (geohash cells around it), re-queried as you drive
+  // or move the map -- no fixed radius. While driving the view is where you are.
+  const presenceView = route ? currentLatLng : (viewCentre ?? currentLatLng);
+  const presenceCellsKey = presenceView
+    ? viewportPresenceCells({ latitude: presenceView.latitude, longitude: presenceView.longitude, latitudeDelta: osmZoomDelta }).join(",")
+    : "";
   useEffect(() => {
     // No synchronous reset here -- visiblePresences below already gates on
     // settings.showTrackysOnMap, so a stale presenceList from before it was toggled off (or
     // before a real sign-in existed) simply never renders anything.
-    if (!user || !settings.showTrackysOnMap) return;
-    return subscribeNearbyPresence(user.uid, setPresenceList);
-  }, [user, settings.showTrackysOnMap]);
+    if (!user || !settings.showTrackysOnMap || !presenceCellsKey) return;
+    return subscribeViewportPresence(user.uid, presenceCellsKey.split(","), setPresenceList);
+  }, [user, settings.showTrackysOnMap, presenceCellsKey]);
 
   // Real, explicit request -- "Block/report from card." Loaded once per real sign-in change
   // (blockUser/unblockUser in presence.ts write the same doc this reads) and kept in a Set for
@@ -2172,8 +2212,10 @@ export function MapScreen() {
     if (!settings.showTrackysOnMap || !currentLatLng) return [];
     // Never the driver's own Tracky / ghost: the server's list includes their own entry, and it
     // used to be drawn on top of their arrow. Their own visibility shows only in the Menu.
-    return presencesToShow(presenceList, { ownUid: user?.uid ?? null, ownUids: ownUidSet, blocked: blockedUids, here: currentLatLng, max: MAX_VISIBLE_TRACKYS });
-  }, [presenceList, blockedUids, currentLatLng, settings.showTrackysOnMap, user?.uid, ownUidSet]);
+    // Nearest the middle of the view first (it's the view's Trackys), never on top of your arrow.
+    const centre = presenceView ?? currentLatLng;
+    return presencesToShow(presenceList, { ownUid: user?.uid ?? null, ownUids: ownUidSet, blocked: blockedUids, here: centre, me: currentLatLng, max: MAX_VISIBLE_TRACKYS });
+  }, [presenceList, blockedUids, currentLatLng, presenceView, settings.showTrackysOnMap, user?.uid, ownUidSet]);
   const presenceCellSizeDegrees = Math.max(osmZoomDelta / 30, 0.0012);
 
   const ownAppearance = useTrackyAppearance(settings.visibility === "ghost");
@@ -5137,6 +5179,69 @@ export function MapScreen() {
         : countReportsAround(visibleAlerts, { latitude: reportsLat, longitude: reportsLng }),
     [visibleAlerts, reportsLat, reportsLng]
   );
+  // ---- Startup §2: "N Trackys around you" and other real messages in the pill, one at a time ----
+  const [pillQueue, setPillQueue] = useState<PillMessage[]>([]);
+  const [greetTick, setGreetTick] = useState(1);
+  const greetDoneTickRef = useRef(0);
+  const lastBackgroundAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        if (shouldGreet(lastBackgroundAtRef.current, Date.now())) setGreetTick((t) => t + 1);
+      } else if (lastBackgroundAtRef.current == null || next === "background") {
+        lastBackgroundAtRef.current = Date.now();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+  const greetInputsRef = useLatest({ here: currentLatLng, ghost: settings.visibility === "ghost", speed: currentSpeedKmh, reportsAround });
+  useEffect(() => {
+    // On open (and coming back after 10 min+), once signed in with a fix: say we're here, then
+    // show the real count; then the reports near you, if any.
+    if (!user || !currentLatLng || greetDoneTickRef.current === greetTick) return;
+    greetDoneTickRef.current = greetTick;
+    const { here, ghost, speed } = greetInputsRef.current;
+    if (!here) return;
+    let cancelled = false;
+    noteActive({ lat: here.latitude, lng: here.longitude, ghost, stationary: (speed ?? 0) < 2 })
+      .catch((err) => Sentry.logger.warn("trackys: noteActive failed", { error: String(err) }))
+      .then(() => fetchTrackysAround(here.latitude, here.longitude))
+      .then((r) => {
+        if (cancelled || !r) return;
+        setPillQueue((q) => enqueue(enqueue(q, { kind: "trackys", text: trackysPillText(r) }), (() => {
+          const t = reportsPillText(greetInputsRef.current.reportsAround);
+          return t ? { kind: "reports" as const, text: t } : null;
+        })()));
+      })
+      .catch((err) => Sentry.logger.warn("trackys: count failed", { error: String(err) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, currentLatLng, greetTick, greetInputsRef]);
+  // Still using the app: tell the server every 5 minutes (counts are "active in the last 15").
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => {
+      const { here, ghost, speed } = greetInputsRef.current;
+      if (here && AppState.currentState === "active") noteActive({ lat: here.latitude, lng: here.longitude, ghost, stationary: (speed ?? 0) < 2 }).catch(() => {});
+    }, HEARTBEAT_MS);
+    return () => clearInterval(t);
+  }, [user, greetInputsRef]);
+  const pillHead = pillQueue[0] ?? null;
+  useEffect(() => {
+    if (!pillHead) return;
+    const t = setTimeout(() => setPillQueue((q) => done(q)), PILL_SHOW_MS);
+    return () => clearTimeout(t);
+  }, [pillHead]);
+  const onPillPress = useCallback(() => {
+    // Zoom out a little to show the Trackys nearby (you asked to look: the camera stays there).
+    setPillQueue((q) => done(q));
+    mapRef.current
+      ?.getCamera()
+      .then((c) => camera.move("focus", { zoom: Math.max(11, (c.zoom ?? HOME_FOLLOW_ZOOM) - 2) }, { duration: 600 }))
+      .catch(() => {});
+  }, [camera]);
+
   const uiScale = scaleFor(windowWidth);
   // The Audio player button (Settings > Map shortcuts) opens the driver's music app.
   const openAudioPlayer = useCallback(() => {
@@ -6315,6 +6420,7 @@ export function MapScreen() {
             coordinate: currentLatLng,
             // No heading yet: null, so the arrow keeps its last direction (UserArrow), never a dot.
             heading: headingTrack.filter.shown ?? null,
+            turret: route ? null : turret,
             fixTimeMs: location?.timestamp,
             accuracyMeters: currentAccuracyMeters,
             deviceHeading: route && compassConeAllowed ? deviceHeading : null,
@@ -6323,7 +6429,7 @@ export function MapScreen() {
             ghost: settings.visibility === "ghost",
           }
         : null,
-    [currentLatLng, headingTrack.filter.shown, location?.timestamp, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility]
+    [currentLatLng, headingTrack.filter.shown, location?.timestamp, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility, turret]
   );
 
   // A tap on a named place drawn by the Mapbox map: find it with Google Places (same details,
@@ -7248,6 +7354,9 @@ export function MapScreen() {
           Report, Re-centre -- lives in HomeMapControls. Report and Re-centre ride 12pt above
           the "Where to?" sheet and all of them fade out as it rises past half height, so none
           can overlap it. Navigation has its own controls and shows none of these. */}
+      {isHomeIdle && !anySheetOpen && pillHead ? (
+        <HomeInfoPill key={pillHead.kind} message={pillHead} sheetVisibleHeight={sheetVisibleHeight} scheme={mapScheme} onPress={onPillPress} />
+      ) : null}
       {isHomeIdle && !anySheetOpen && (
         <HomeMapControls
           sheetVisibleHeight={sheetVisibleHeight}
