@@ -93,9 +93,10 @@ describe("driving controls with the ahead banner (§5)", () => {
         // speedometer (fix pass 5 §4); Report bottom-right; mic + sound top-right.
         if (showSpeedLimit && frames.speedLimit!.x <= frames.speedometer!.x + 1) expect(frames.speedLimit!.y + frames.speedLimit!.height).toBeLessThanOrEqual(frames.speedometer!.y);
         if (showRecenter) {
-          expect(frames.recenter!.x + frames.recenter!.width).toBeLessThan(p.width / 2);
-          expect(frames.speedometer!.y + frames.speedometer!.height).toBeLessThanOrEqual(frames.recenter!.y);
-          expect(frames.recenter!.y + frames.recenter!.height).toBeCloseTo(frames.report!.y + frames.report!.height);
+          // Fix pass 7 §4: right column, right above Report (12pt gap), never near the speedometer.
+          expect(frames.recenter!.x).toBe(frames.report!.x);
+          expect(frames.recenter!.y + frames.recenter!.height + 12).toBeCloseTo(frames.report!.y);
+          expect(frames.recenter!.x).toBeGreaterThan(frames.speedometer!.x + frames.speedometer!.width);
         }
         // Mic and sound top-right. (On a 320 x 568 phone there's no room under a dropped banner:
         // they step aside for the few seconds it shows -- never on top of anything.)

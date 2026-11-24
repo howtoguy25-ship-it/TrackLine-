@@ -5,21 +5,22 @@ import { Text } from "@/components/AppText";
 import { RouteTimeBubble } from "@/components/RouteSelection";
 import { RoundaboutIcon } from "@/components/icons/RoundaboutIcon";
 import { markerAnchorFor, type BubbleSide } from "@/map/bubbleLayout";
-import { Tracky } from "@/components/trackys/Tracky";
 import { RouteLine } from "@/map-v2/layers/RouteLine";
+import { loadMapbox } from "@/map-v2/mapbox";
 import { PinLayer } from "@/map-v2/layers/PinLayer";
 import { MarkerPin } from "@/map-v2/layers/MarkerPin";
 import { SchoolZoneLayer, type SchoolZoneDrawing } from "@/map-v2/layers/SchoolZoneLayer";
 import { MapIcons, type IconExtras } from "@/map-v2/layers/MapIcons";
 import { UserArrow } from "@/map-v2/layers/UserArrow";
 import { PresenceLayerV2, presenceIconName } from "@/map-v2/layers/PresenceLayerV2";
-import { turnArrowAt, type LatLng } from "@/map-v2/geo";
+import { type LatLng } from "@/map-v2/geo";
 import { iconsUsed, type MapPin } from "@/map-v2/pins";
 import { BADGE_CATEGORIES, badgeIconName } from "@/map/poiBadges";
 import type { PresenceDoc } from "@/services/presence";
 import type { MapMarkerStyleKey } from "@/utils/mapMarkerStyles";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { AHEAD_COLOURS, GREEN, LAVENDER, PURPLE_BRIGHT, TRAFFIC } from "@/theme/colors";
+import { CALLOUT_TAIL, calloutAnchor, type CalloutSide } from "@/nav/turnCallout";
 
 // Everything drawn on the Mapbox map, from plain data the map screen already works out: the
 // route being driven (travelled part faded, turn callouts, the turn arrow), route choices
@@ -71,7 +72,7 @@ interface Props {
   remaining: LatLng[];
   onRoutePress?: () => void;
   /** `roundabout`: our roundabout picture beside the street (fix pass 5 §6). */
-  turnCallouts: { key: string; coordinate: LatLng; text: string; roundabout?: { exit: number | null; angle: number; drivingSide: "left" | "right" } | null }[];
+  turnCallouts: { key: string; coordinate: LatLng; text: string; side?: CalloutSide; roundabout?: { exit: number | null; angle: number; drivingSide: "left" | "right" } | null }[];
   /** The next turn point, for the arrow drawn on the route. */
   nextTurn: LatLng | null;
   stopPreview: LatLng[] | null;
@@ -133,10 +134,6 @@ export function MapboxLayers(props: Props) {
     [props.presences]
   );
 
-  const turnArrow = useMemo(
-    () => (props.nextTurn && props.remaining.length > 1 ? turnArrowAt(props.remaining, props.nextTurn) : []),
-    [props.nextTurn, props.remaining]
-  );
 
   const start = selection?.start ?? null;
   const finish = selection?.destination ?? null;
@@ -189,9 +186,8 @@ export function MapboxLayers(props: Props) {
             <RouteLine key={`nav-closed-${i}`} id={`nav-closed-${i}`} coordinates={line} color={AHEAD_COLOURS.closure.fill} width={NAV_ROUTE_WIDTH} casingColor="#FFFFFF" casingWidth={NAV_ROUTE_WIDTH + 4} aboveLayerID="nav-route-line" />
           ) : null
         )}
-      {turnArrow.length > 1 && (
-        <RouteLine id="nav-turn-arrow" coordinates={turnArrow} color="#FFFFFF" width={5} casingColor={ROUTE_PURPLE_CASING} casingWidth={9} aboveLayerID="nav-route-line" />
-      )}
+      {/* Fix pass 7 §4: no white turn-arrow stripe on the route any more -- one solid purple line
+          with one darker casing. The turn is shown by the callout and the instruction bar. */}
       {props.schoolZones && props.schoolZones.length > 0 && <SchoolZoneLayer zones={props.schoolZones} />}
       {/* Approach view: a soft glow on the road being taken, and the route through the split
           wider and brighter on top of the normal route. */}
@@ -204,8 +200,8 @@ export function MapboxLayers(props: Props) {
           coordinates={props.manoeuvre.through}
           color={PURPLE_BRIGHT}
           width={12}
-          casingColor="#FFFFFF"
-          casingWidth={18}
+          casingColor={ROUTE_PURPLE_CASING}
+          casingWidth={16}
           aboveLayerID="nav-route-line"
         />
       )}
@@ -249,16 +245,27 @@ export function MapboxLayers(props: Props) {
       )}
 
       {/* The few things that are text: callouts, bubbles, a report's comment. */}
-      {props.turnCallouts.map((c) => (
-        <MarkerPin key={c.key} coordinate={c.coordinate} anchor={{ x: 0.5, y: 1 }}>
-          <View style={[styles.turnCallout, c.roundabout ? styles.turnCalloutWithIcon : null]}>
-            {c.roundabout ? <RoundaboutIcon size={22} color="#FFFFFF" dim="rgba(255,255,255,0.4)" exit={c.roundabout.exit} angle={c.roundabout.angle} drivingSide={c.roundabout.drivingSide} /> : null}
-            <Text style={styles.turnCalloutText} numberOfLines={1}>
-              {c.text}
-            </Text>
-          </View>
-        </MarkerPin>
-      ))}
+      {/* Street callouts beside the turn, on its outside, with a tail to the corner
+          (nav/turnCallout.ts); POI labels are hidden while one shows so they never collide. */}
+      {props.turnCallouts.length > 0 ? <HidePoiLabels /> : null}
+      {props.turnCallouts.map((c) => {
+        const side = c.side ?? "right";
+        const tail = <View style={[styles.calloutTail, side === "left" ? styles.calloutTailRight : styles.calloutTailLeft]} />;
+        return (
+          <MarkerPin key={c.key} coordinate={c.coordinate} anchor={calloutAnchor(side)}>
+            <View style={styles.calloutRow} testID={`turn-callout-${side}`}>
+              {side === "right" ? tail : null}
+              <View style={[styles.turnCallout, c.roundabout ? styles.turnCalloutWithIcon : null]}>
+                {c.roundabout ? <RoundaboutIcon size={22} color="#FFFFFF" dim="rgba(255,255,255,0.4)" exit={c.roundabout.exit} angle={c.roundabout.angle} drivingSide={c.roundabout.drivingSide} /> : null}
+                <Text style={styles.turnCalloutText} numberOfLines={1}>
+                  {c.text}
+                </Text>
+              </View>
+              {side === "left" ? tail : null}
+            </View>
+          </MarkerPin>
+        );
+      })}
       {(props.navAlternatives ?? []).map((a) => {
         const at = a.line[Math.floor(a.line.length / 2)];
         return at ? (
@@ -297,19 +304,18 @@ export function MapboxLayers(props: Props) {
           </View>
         </MarkerPin>
       )}
-      {user?.ghost && (
-        <MarkerPin coordinate={user.coordinate} anchor={{ x: -0.1, y: 1.4 }}>
-          <View style={styles.ghostSlot}>
-            <GhostBadge />
-          </View>
-        </MarkerPin>
-      )}
+      {/* Fix pass 7 §4: no Tracky at your own position, ever. A spooky Tracky used to be drawn
+          beside the arrow in ghost mode -- and ghost is the default visibility, so every new
+          driver saw "their own Tracky" next to the arrow. Your visibility shows in the Menu. */}
     </>
   );
 }
 
-function GhostBadge() {
-  return <Tracky mood="spooky" size={28} animated={false} reactOnTap={false} translucent />;
+/** Turns the style's own POI labels off while mounted (rnmapbox `existing` layer override). */
+function HidePoiLabels() {
+  const Mapbox = loadMapbox();
+  if (!Mapbox) return null;
+  return <Mapbox.SymbolLayer id="poi-labels" existing style={{ visibility: "none" }} />;
 }
 
 const styles = StyleSheet.create({
@@ -323,6 +329,11 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.25)",
     ...shadow.medium,
   },
+  calloutRow: { flexDirection: "row", alignItems: "center" },
+  // A small diamond half-hidden under the pill: reads as a tail pointing at the turn.
+  calloutTail: { width: CALLOUT_TAIL * 1.4, height: CALLOUT_TAIL * 1.4, backgroundColor: "#3B0764", transform: [{ rotate: "45deg" }] },
+  calloutTailLeft: { marginRight: -CALLOUT_TAIL * 0.7 },
+  calloutTailRight: { marginLeft: -CALLOUT_TAIL * 0.7 },
   turnCalloutWithIcon: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 4 },
   turnCalloutText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF", flexShrink: 1 },
   suggestionPill: {
@@ -341,7 +352,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(31,33,37,0.78)",
   },
   commentText: { fontSize: 12, color: "#FFFFFF" },
-  ghostSlot: { width: 28, height: 28 },
   manoeuvreCallout: {
     maxWidth: 200,
     paddingHorizontal: spacing.md,

@@ -39,6 +39,7 @@ import {
 } from "@/map/routeChoices";
 import { SELECTED_ROUTE_TIME, TRAFFIC_TEXT } from "@/theme/colors";
 import { useUiScheme } from "@/components/ui/uiScheme";
+import { useSheetPanelStyle } from "@/layout/LayoutContext";
 
 // The Go now fill: the go blue, pressed shade.
 const GO_BLUE_DARK = colors.primaryPressed;
@@ -182,10 +183,11 @@ export function RouteSelectionTopCard({
 
 function SheetFrame({ visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
+  const panel = useSheetPanelStyle();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Close" />
-      <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+      <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }, panel]}>
         <View style={styles.grabber} />
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{title}</Text>
@@ -443,6 +445,7 @@ export function RouteSelectionSheet({
 }: SheetProps) {
   const insets = useSafeAreaInsets();
   const { width, height: windowHeight } = useWindowDimensions();
+  const panel = useSheetPanelStyle();
   const k = scaleFor(width);
   const scheme = useUiScheme();
   const [expanded, setExpanded] = useState(false);
@@ -500,7 +503,7 @@ export function RouteSelectionSheet({
   const listMaxHeight = Math.max(120, windowHeight * MAX_SHEET_FRACTION - collapsedHeight);
 
   return (
-    <View style={[styles.sheet, { borderTopLeftRadius: 28 * k, borderTopRightRadius: 28 * k }]}>
+    <View style={[styles.sheet, { borderTopLeftRadius: 28 * k, borderTopRightRadius: 28 * k }, panel]}>
       <GestureDetector gesture={swipe}>
         <View onLayout={(e) => setSummaryHeight(e.nativeEvent.layout.height)}>
           <Pressable

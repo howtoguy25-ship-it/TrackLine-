@@ -1,3 +1,4 @@
+import { Dimensions, Platform } from "react-native";
 import { RUBIK } from "@/theme/typography";
 import { colors } from "@/theme/tokens";
 import React from "react";
@@ -41,6 +42,10 @@ import { TrackyCustomizerScreen } from "@/screens/TrackyCustomizerScreen";
 import type { PlaceDetails } from "@/services/places";
 import { MODAL_SCREENS, screensHiddenBehindModal } from "@/navigation/modalStack";
 import { logNavigation } from "@/debug/touchDebug";
+import { screenOrientation, TABLET_MIN_SHORT_SIDE } from "@/layout/screenLayout";
+
+/** iPad (or a large Android tablet): every screen may turn. */
+const IS_TABLET = (Platform.OS === "ios" && Platform.isPad) || Math.min(Dimensions.get("screen").width, Dimensions.get("screen").height) >= TABLET_MIN_SHORT_SIDE;
 
 export type RevCheckParams = {
   // Prefilled plate -- from tapping a saved vehicle history entry, or a "Run REV Check" tap in
@@ -198,6 +203,8 @@ export function RootNavigator() {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
+          // Fix pass 7 §3: portrait on phones, any way up on tablets (layout/screenLayout.ts).
+          orientation: screenOrientation("", IS_TABLET),
           // The native header draws its own title, outside the app's Text wrapper -- so it's
           // told about the app font here. Applies to every screen that shows a header.
           headerTitleStyle: { fontFamily: RUBIK.semiBold, color: colors.text },
@@ -205,7 +212,7 @@ export function RootNavigator() {
           headerTintColor: colors.accent,
         }}
       >
-        <Stack.Screen name="Map" component={MapScreen} options={{ title: "Map" }} />
+        <Stack.Screen name="Map" component={MapScreen} options={{ title: "Map", orientation: screenOrientation("Map", IS_TABLET) }} />
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}

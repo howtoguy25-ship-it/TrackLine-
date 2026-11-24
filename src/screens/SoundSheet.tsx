@@ -17,6 +17,7 @@ import {
 } from "audio-route";
 import { SPOKEN_DIRECTIONS_OPTIONS } from "@/settings/choiceLists";
 import { colors, radius, spacing, pressedOpacity } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 // Taller than it was, to fit the "Listening on" row without clipping the voice row below it.
 const SNAP_POINTS = ["58%"];
@@ -88,7 +89,7 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
   }, [voiceIdentifier]);
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={SNAP_POINTS}
@@ -176,7 +177,7 @@ export const SoundSheet = forwardRef<BottomSheet, Props>(function SoundSheet(
           <Icon name="chevron-forward" size={18} color={colors.textMuted} />
         </Pressable>
       </BottomSheetView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

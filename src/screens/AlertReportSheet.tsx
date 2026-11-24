@@ -11,6 +11,7 @@ import { ReportItemIcon } from "@/components/settings/ReportItemIcon";
 import { REPORT_ITEM_BY_ID, type ReportItemId } from "@/settings/reportCatalog";
 import { GRID_LABEL, REPORT_CATEGORIES, type ReportCategory } from "@/settings/reportGrid";
 import { colors, radius, shadow, spacing, pressedOpacity } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 // The report grid: categories (Police, Crash, Traffic, Camera, Hazard, Road feature...), each
 // opening its own items -- every item in Settings > Reports can be reported here, each with its
@@ -53,7 +54,7 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
   };
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -108,7 +109,7 @@ export const AlertReportSheet = forwardRef<BottomSheet, Props>(function AlertRep
         </ScrollView>
       </BottomSheetView>
       </SurfaceScheme>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

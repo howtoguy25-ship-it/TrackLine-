@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ALERT_COLORS, ALERT_PIN, ALERT_LABELS, type AlertDoc } from "@/types/alert";
 import { AlertTypeGlyph } from "@/components/AlertTypeGlyph";
 import { colors, radius, shadow, spacing } from "@/theme/tokens";
+import { MapSheet } from "@/components/MapSheet";
 
 interface Props {
   alert: AlertDoc | null;
@@ -35,7 +36,7 @@ export const AlertDetailSheet = forwardRef<BottomSheet, Props>(function AlertDet
   const isOwner = !!alert && !!currentUid && alert.createdBy === currentUid;
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -95,7 +96,7 @@ export const AlertDetailSheet = forwardRef<BottomSheet, Props>(function AlertDet
           </>
         )}
       </BottomSheetView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

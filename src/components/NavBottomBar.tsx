@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
+import { useScreenLayout } from "@/layout/LayoutContext";
 
 interface Props {
   etaText: string;
@@ -50,6 +51,9 @@ export function NavBottomBar({
   onLongPressEnd,
 }: Props) {
   const insets = useSafeAreaInsets();
+  // Landscape phones, tablets, desktop: the bar sits under the left panel's width (fix pass 7 §3).
+  const layout = useScreenLayout();
+  const side = layout.panel.side === "left";
   const theme = NAV_CARD_THEMES[themeKey];
   const bg = theme.bottomBarBackground ?? theme.background;
   const roundBg = theme.actionBg;
@@ -62,10 +66,14 @@ export function NavBottomBar({
     });
 
   return (
-    <View style={styles.wrap} pointerEvents="box-none" testID="nav-bottom-bar">
+    <View
+      style={[styles.wrap, side && { left: layout.etaBar.left, width: layout.etaBar.width, right: undefined, bottom: insets.bottom + 8, borderRadius: 18, overflow: "hidden" }]}
+      pointerEvents="box-none"
+      testID="nav-bottom-bar"
+    >
       {/* Re-centre: the bottom-left pill in NavMapControls (fix pass 5 §4). */}
       <GestureDetector gesture={swipeUp}>
-      <View style={[styles.bar, { backgroundColor: bg, paddingBottom: insets.bottom + 10, minHeight: NAV_BOTTOM_BAR_HEIGHT + insets.bottom }]} onLayout={onLayout}>
+      <View style={[styles.bar, { backgroundColor: bg, paddingBottom: side ? 10 : insets.bottom + 10, minHeight: side ? NAV_BOTTOM_BAR_HEIGHT : NAV_BOTTOM_BAR_HEIGHT + insets.bottom }]} onLayout={onLayout}>
         <Pressable
           onPress={hasStop ? onRemoveStop : onAddStop}
           style={[styles.round, { backgroundColor: roundBg }]}

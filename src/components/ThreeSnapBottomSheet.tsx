@@ -13,6 +13,7 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { colors, shadow } from "@/theme/tokens";
+import { useSheetPanelStyle } from "@/layout/LayoutContext";
 
 // Real, explicit request (Waze-style redesign Phase 2) -- the persistent "Where to?" sheet has
 // three real snap points (peek/half/full), none of which is "closed": unlike SimpleBottomSheet's
@@ -73,6 +74,7 @@ export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(f
   ref
 ) {
   const { height: screenHeight } = useWindowDimensions();
+  const panel = useSheetPanelStyle();
   const maxSheetHeight = Math.max(0, screenHeight - topInset - bottomInset);
   const [peekHeight, halfHeight, fullHeight] = useMemo(
     () => snapFractions.map((f) => f * maxSheetHeight) as [number, number, number],
@@ -198,7 +200,7 @@ export const ThreeSnapBottomSheet = forwardRef<ThreeSnapBottomSheetRef, Props>(f
   return (
     <Animated.View
       pointerEvents="box-none"
-      style={[styles.sheet, { height: fullHeight, backgroundColor: sheetColour }, animatedStyle]}
+      style={[styles.sheet, { height: fullHeight, backgroundColor: sheetColour }, panel, animatedStyle]}
     >
       <GestureDetector gesture={panGesture}>
         <View style={styles.handleWrap}>

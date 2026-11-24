@@ -112,7 +112,7 @@ import { AlertStillHereCard } from "@/components/AlertStillHereCard";
 import { ExitLaneGuidance } from "@/components/ExitLaneGuidance";
 import { AlertBanner } from "@/components/AlertBanner";
 import { NearbyAlertToast, type NearbyAlertNotification } from "@/components/NearbyAlertToast";
-import { BannerAdBar, BANNER_HEIGHT, shouldShowBanner } from "@/components/BannerAdBar";
+import { BannerAdBar, shouldShowBanner, useBannerHeight } from "@/components/BannerAdBar";
 import { AdsErrorBoundary } from "@/components/AdsErrorBoundary";
 import { AlertReportSheet, itemLabel } from "@/screens/AlertReportSheet";
 import { AlertDetailSheet } from "@/screens/AlertDetailSheet";
@@ -255,7 +255,7 @@ import { tiltForZoom } from "@/map/tiltCurve";
 import { PREVIEW_FIT_MS, drawnRouteIndices, previewEdgePadding, previewFitCamera, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, navZoomForSpeed, showManoeuvreCallout } from "@/nav/navCamera";
-import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
+import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames, topBadgeLane } from "@/nav/navControlsLayout";
 import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
@@ -353,6 +353,9 @@ import { rankParking, shouldOfferParking, walkLeft, PARKING_NEAR_M, type Parking
 import { withTimeout } from "@/utils/withTimeout";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { Sentry } from "@/services/sentry";
+import { useScreenLayout } from "@/layout/LayoutContext";
+import { withPanelPadding } from "@/layout/screenLayout";
+import { calloutSide } from "@/nav/turnCallout";
 /** The route preview's start field while it follows the live GPS (Waze-match §1). */
 const YOUR_LOCATION_LABEL = "Your location";
 
@@ -440,6 +443,8 @@ export function MapScreen() {
   const navRoute = useRoute<RouteProp<RootStackParamList, "Map">>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Fix pass 7 §3: phone / landscape phone / tablet / desktop (layout/screenLayout.ts).
+  const screenLayoutNow = useScreenLayout();
   // Shared with the home map's floating buttons, which run on the UI thread:
   //   mapBearing         -- the map's current bearing, for the compass needle
   //   sheetVisibleHeight -- how much of the "Where to?" sheet is showing, written by the sheet
@@ -1376,7 +1381,8 @@ export function MapScreen() {
   // Hidden on the route-selection screen and during navigation (as asked), and on the place
   // page, whose own sheet and "View routes" button take the whole bottom of the screen.
   const bannerShown = shouldShowBanner({ navigating: !!route, choosingRoute: !!pendingDestination, placePageOpen: !!placePage });
-  const bannerAreaHeight = bannerShown ? BANNER_HEIGHT + insets.bottom : 0;
+  const bannerHeight = useBannerHeight();
+  const bannerAreaHeight = bannerShown ? bannerHeight + insets.bottom : 0;
   const mapAreaHeight = windowHeight - bannerAreaHeight;
   const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, whereToSnapFractions(windowHeight, insets.top, bannerAreaHeight));
   // Startup §1: starts at the sheet's peek height (where the sheet opens), not 0 -- so Report,
@@ -1392,7 +1398,7 @@ export function MapScreen() {
   const liveViewOn = liveViewShown(settings.liveRoadView, !!route, travelMode === "driving") && !detectionOpen;
   const liveViewH = liveViewHeight(windowHeight);
   const liveViewReserved = liveViewOn ? liveViewH + 8 + bottomBarHeight + insets.bottom : 0;
-  const mapPadding = isNavChaseView
+  const mapPadding = withPanelPadding(isNavChaseView
     ? navFollowPadding(windowHeight, liveViewReserved)
     : placePage
       ? // The place sits in the middle of the 40% above the place page's sheet.
@@ -1401,7 +1407,7 @@ export function MapScreen() {
         ? previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight)
         : isHomeIdle
           ? homePadding
-          : { top: 0, right: 0, bottom: 0, left: 0 };
+          : { top: 0, right: 0, bottom: 0, left: 0 }, screenLayoutNow);
 
   // Real live GPS speed for the nav card's speed dial (see CurrentSpeedDial) -- expo-location's
   // coords.speed is m/s, converted here once rather than in the display component so every
@@ -4420,10 +4426,10 @@ export function MapScreen() {
       selectedPos,
       previewFitCoordinates(fitLines, routeOriginLatLng, pendingDestination?.location ?? null),
       { width: windowWidth, height: windowHeight },
-      previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight),
+      withPanelPadding(previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight), screenLayoutNow),
       obstacles
     ).map((p, pos) => (p ? { ...p, text: routes[pos].text, compactText: routes[pos].compactText } : null));
-  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
+  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight, screenLayoutNow]);
   const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
   const selectedTrafficStretches = useMemo(() => {
     const r = selectionRoutes[selectionIndex];
@@ -6459,7 +6465,7 @@ export function MapScreen() {
         routeOriginLatLng,
         pendingDestination?.location ?? null
       );
-      const pose = previewFitCamera(coords, { width: windowWidth, height: windowHeight }, previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight));
+      const pose = previewFitCamera(coords, { width: windowWidth, height: windowHeight }, withPanelPadding(previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight), screenLayoutNow));
       if (pose) camera.move("previewFit", pose, { duration: PREVIEW_FIT_MS });
     }, 120);
     return () => clearTimeout(t);
@@ -6477,6 +6483,7 @@ export function MapScreen() {
             key: `turn-${activeStepIndex}`,
             coordinate: step.endLocation,
             text: step.targetStreetName ?? step.instruction,
+            side: calloutSide(step.maneuver, step.drivingSide ?? "left"),
             roundabout: isRoundabout(step.maneuver)
               ? (() => {
                   const exit = extractRoundaboutExitNumber(step.instruction) ?? null;
@@ -7307,27 +7314,16 @@ export function MapScreen() {
         />
       )}
 
-      {/* "End suggested route" -- only shown while actually driving an accepted suggestion (see
-          acceptedSuggestionOriginalRoute), per explicit request. Restores the exact route the
-          driver was on before they accepted. */}
-      {route && acceptedSuggestionOriginalRoute && !stopPreviewRoute && !addingStopDuringNav && !placingAlert && (
-        <View style={[styles.endSuggestedRouteWrap, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}>
-          <Button
-            variant="secondary"
-            icon="return-up-back"
-            label="End suggested route"
-            onPress={endSuggestedRoute}
-            accessibilityLabel="End suggested route — return to your original route"
-          />
-        </View>
-      )}
+      {/* "End suggested route" moved off the map into the ETA sheet (fix pass 7 §4): nothing
+          floats over the compass or the route; ending or switching routes lives in the sheet and
+          the faster-route banner. */}
 
       {/* Off-route auto-reroute is silent otherwise -- a fresh route fetch (a real network
           call) can take a moment, and with zero feedback that gap could easily read as the app
           having frozen or missed the miss entirely, right when trust in the nav matters most. */}
       {rerouting && (
         <View
-          style={[styles.reroutingBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
+          style={[styles.reroutingBadge, topBadgeLane(windowWidth), { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
           accessibilityLabel="Rerouting"
         >
           <ActivityIndicator size="small" color="#FFFFFF" />
@@ -7339,7 +7335,7 @@ export function MapScreen() {
           own alternates search found (see the off-route effect above). Auto-dismisses itself;
           never blocks anything underneath. */}
       {rideText && (
-        <View style={[styles.reroutingBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]} accessibilityRole="alert" accessibilityLabel={rideText} testID="ride-chip">
+        <View style={[styles.reroutingBadge, topBadgeLane(windowWidth), { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]} accessibilityRole="alert" accessibilityLabel={rideText} testID="ride-chip">
           <Icon name="bus" size={16} color="#FFFFFF" />
           <Text style={styles.reroutingBadgeText}>{rideText}</Text>
         </View>
@@ -7359,7 +7355,7 @@ export function MapScreen() {
 
       {!rerouting && fasterRouteBanner && (
         <Pressable
-          style={[styles.reroutingBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
+          style={[styles.reroutingBadge, topBadgeLane(windowWidth), { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
           onPress={() => setFasterRouteBanner(null)}
           accessibilityLabel={fasterRouteBanner}
         >
@@ -7376,7 +7372,7 @@ export function MapScreen() {
           Directions-derived ETAs. */}
       {atTransitBoardingStop && firstBoardingStop && (
         <View
-          style={[styles.transitWaitBadge, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
+          style={[styles.transitWaitBadge, { left: topBadgeLane(windowWidth).left, right: windowWidth - topBadgeLane(windowWidth).left - topBadgeLane(windowWidth).maxWidth }, { top: insets.top + spacing.md + instructionCardHeight + spacing.md }]}
           accessibilityLabel="Waiting at boarding stop"
         >
           <Icon name="bus" size={18} color="#FFFFFF" />
@@ -7789,6 +7785,7 @@ export function MapScreen() {
       />
       <NavOptionsSheet
         ref={navOptionsSheetRef}
+        onEndSuggestedRoute={route && acceptedSuggestionOriginalRoute ? () => (navOptionsSheetRef.current?.close(), endSuggestedRoute()) : null}
         topBarBottom={insets.top + instructionCardHeight}
         arrivalClockText={arrivalClockText}
         etaText={formatDurationText(remainingDurationSeconds)}
@@ -8250,11 +8247,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     ...shadow.medium,
-  },
-  endSuggestedRouteWrap: {
-    position: "absolute",
-    left: spacing.md,
-    alignItems: "flex-start",
   },
   reroutingBadgeText: {
     color: "#FFFFFF",

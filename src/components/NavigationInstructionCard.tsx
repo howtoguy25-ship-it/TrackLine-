@@ -12,6 +12,7 @@ import type { NavCardThemeKey } from "@/utils/navCardTheme";
 import { GREEN_TEXT } from "@/theme/colors";
 import { formatDistance, extractRoundaboutExitNumber, type DistanceUnit } from "@/utils/navFormat";
 import { barStreetName, splitRouteShield } from "@/components/navBarText";
+import { useScreenLayout } from "@/layout/LayoutContext";
 
 // Real, confirmed fix for "generic arrow for every turn shape" -- Google's own MaterialIcons
 // font (bundled via @expo/vector-icons, verified directly against its installed glyphmap, not
@@ -90,6 +91,10 @@ export function NavigationInstructionCard({
   roundaboutGeometry,
 }: Props) {
   const insets = useSafeAreaInsets();
+  // Landscape phones, tablets, desktop: a narrower card at the top-left, above the panel
+  // (fix pass 7 §3); full width on a phone.
+  const layout = useScreenLayout();
+  const side = layout.panel.side === "left";
   if (!step) return null;
   const roundaboutExit =
     step.maneuver === "roundabout-left" || step.maneuver === "roundabout-right" ? extractRoundaboutExitNumber(step.instruction) : undefined;
@@ -102,12 +107,16 @@ export function NavigationInstructionCard({
   const onLayout = (e: LayoutChangeEvent) => onHeightChange?.(Math.max(0, e.nativeEvent.layout.height - insets.top));
 
   return (
-    <View style={styles.wrap} onLayout={onLayout} testID="nav-top-bar">
+    <View
+      style={[styles.wrap, side && { left: layout.instructionBar.left, width: layout.instructionBar.width, right: undefined, top: insets.top + 8, borderRadius: 18, overflow: "hidden" }]}
+      onLayout={onLayout}
+      testID="nav-top-bar"
+    >
       {/* The black bar runs up behind the status bar: its text goes light while the bar shows. */}
       <StatusBar style="light" />
       <Pressable
         onPress={onExpandDirections}
-        style={[styles.bar, { paddingTop: insets.top + 6 }]}
+        style={[styles.bar, { paddingTop: side ? 12 : insets.top + 6 }]}
         accessibilityRole="button"
         accessibilityLabel={`${formatDistance(meters, distanceUnit)}, ${step.instruction}. Show all directions.`}
       >

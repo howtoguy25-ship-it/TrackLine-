@@ -6,12 +6,13 @@
 
 /** [zoom, tilt degrees] -- the curve passes through these, eased in between. */
 export const TILT_KEYS: readonly (readonly [number, number])[] = [
+  // Fix pass 7 §3: 45° at the home view (zoom 16), a little more lean further out, flat by 10.5.
   [10.5, 0],
   [12, 28],
-  [13.5, 52],
-  [14.5, 58],
-  [16, 50],
-  [17, 44],
+  [13.5, 50],
+  [14.5, 55],
+  [16, 45],
+  [17, 42],
   [19, 40],
 ];
 

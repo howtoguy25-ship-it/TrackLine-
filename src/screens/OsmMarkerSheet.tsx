@@ -12,6 +12,7 @@ import { colors, radius, shadow, spacing } from "@/theme/tokens";
 import { TRAFFIC_LIGHT_MARKER, SPEED_CAMERA_MARKER } from "@/utils/osmMarkerStyle";
 import type { OsmFeatureKind } from "@/services/osmTrafficData";
 import { REPORT_ITEM_BY_ID } from "@/settings/reportCatalog";
+import { MapSheet } from "@/components/MapSheet";
 
 /** A tapped OpenStreetMap pin: a traffic light, a speed camera, or another Reports item. */
 export type OsmMarkerKind = "traffic_light" | "speed_camera" | OsmFeatureKind;
@@ -126,7 +127,7 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
   }, [location, baseLocation, findingAngle, fetchPanoId]);
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -200,7 +201,7 @@ export const OsmMarkerSheet = forwardRef<BottomSheet, Props>(function OsmMarkerS
           </>
         )}
       </BottomSheetView>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 

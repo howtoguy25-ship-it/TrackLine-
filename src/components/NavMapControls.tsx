@@ -133,7 +133,7 @@ export function NavMapControls(p: Props) {
       ) : null}
       {f.recenter && p.showRecenter && p.onRecenter ? (
         <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={at(f.recenter)}>
-          <Button variant="secondary" icon="navigate" label="Re-centre" onPress={p.onRecenter} accessibilityLabel="Re-centre on my location" style={styles.recenterPill} testID="nav-recenter" />
+          <Button variant="secondary" icon="navigate" size="large" onPress={p.onRecenter} accessibilityLabel="Re-centre on my location" style={styles.recenterButton} testID="nav-recenter" />
         </Animated.View>
       ) : null}
       {p.toast ? (
@@ -175,7 +175,8 @@ const styles = StyleSheet.create({
   chipText: { color: WHITE, fontSize: 13, fontWeight: "700" },
   banner: { flex: 1, paddingHorizontal: 12 },
   compassRing: { borderWidth: 3, borderColor: BLUE },
-  recenterPill: { flex: 1, borderRadius: 22 },
+  // Round, the Report button's size, in the right column above it (fix pass 7 §4).
+  recenterButton: { flex: 1, borderRadius: 28 },
   toastWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   toast: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: "rgba(20,22,26,0.88)" },
   toastText: { color: WHITE, fontSize: 15, fontWeight: "600" },

@@ -14,6 +14,7 @@ import { LEAVE_ERROR_TEXT, LEAVE_TIMEOUT_MS, leaveChartBars, optionsSheetHeights
 import { AheadGlyph } from "@/components/art/AheadGlyph";
 import { AHEAD_COLOURS } from "@/theme/colors";
 import type { AheadKind } from "@/nav/ahead/aheadKinds";
+import { MapSheet } from "@/components/MapSheet";
 
 export interface StopsSection {
   rows: { id: string; number: number; name: string; aheadM: number; etaSeconds: number | null; first: boolean; last: boolean }[];
@@ -77,6 +78,11 @@ interface Props {
   /** Satellite imagery under the drive (the route stays bright purple). */
   satelliteOn?: boolean;
   onToggleSatellite?: () => void;
+  /**
+   * Driving an accepted faster route: go back to the route you were on (fix pass 7 §4 -- this was
+   * a pill floating on the map; ending or switching routes lives here and in the banner now).
+   */
+  onEndSuggestedRoute?: (() => void) | null;
   /** Avoid tolls / motorways / ferries: the switches, and the route is worked out again. */
   avoidSummary: string;
   onAvoid: () => void;
@@ -125,6 +131,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     onMapView,
     satelliteOn,
     onToggleSatellite,
+    onEndSuggestedRoute,
     avoidSummary,
     onAvoid,
     onHelp,
@@ -159,7 +166,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
   };
 
   return (
-    <BottomSheet
+    <MapSheet
       ref={ref}
       index={-1}
       snapPoints={snapPoints}
@@ -224,6 +231,9 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
 
         {/* The trip's options: one 56pt row each, our own line icons in coloured discs. */}
         <View style={styles.card} testID="eta-sheet-options">
+          {onEndSuggestedRoute ? (
+            <OptionRow kind="routes" icon="return-up-back" label="Back to your original route" subtitle="End the faster route you switched to" onPress={onEndSuggestedRoute} testID="eta-sheet-end-suggested" />
+          ) : null}
           <OptionRow kind="share" icon="share" label="Share drive" subtitle="Send a live arrival-time link" onPress={onShareDrive} testID="eta-sheet-share" />
           <OptionRow kind="addStop" icon="add-circle" label="Add a stop" subtitle="Fuel, food, coffee, parking on the way" onPress={onAddStop} testID="eta-sheet-add-stop" />
           <OptionRow kind="report" icon="warning" label="Report" subtitle="Police, crash, hazard, traffic" onPress={onReportAlert} testID="eta-sheet-report" />
@@ -251,7 +261,7 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
         </View>
       </BottomSheetScrollView>
       </SurfaceScheme>
-    </BottomSheet>
+    </MapSheet>
   );
 });
 
@@ -440,8 +450,9 @@ function LeaveTimesChart({ state, onRetry }: { state: LeaveState; onRetry: () =>
   );
 }
 
-type RowKind = "share" | "addStop" | "report" | "sound" | "map" | "dashcam" | "avoid" | "help";
+type RowKind = "routes" | "share" | "addStop" | "report" | "sound" | "map" | "dashcam" | "avoid" | "help";
 const ROW_TILE: Record<RowKind, DriveTileKind> = {
+  routes: "map",
   share: "share",
   addStop: "addStop",
   report: "report",
