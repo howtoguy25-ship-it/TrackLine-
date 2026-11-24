@@ -74,6 +74,9 @@ interface Props {
   /** The driving view now ("3D", "2D", "North up"); the row cycles to the next one. */
   mapViewLabel: string;
   onMapView: () => void;
+  /** Satellite imagery under the drive (the route stays bright purple). */
+  satelliteOn?: boolean;
+  onToggleSatellite?: () => void;
   /** Avoid tolls / motorways / ferries: the switches, and the route is worked out again. */
   avoidSummary: string;
   onAvoid: () => void;
@@ -118,6 +121,8 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
     onSoundVoice,
     mapViewLabel,
     onMapView,
+    satelliteOn,
+    onToggleSatellite,
     avoidSummary,
     onAvoid,
     onHelp,
@@ -214,6 +219,9 @@ export const NavOptionsSheet = forwardRef<BottomSheet, Props>(function NavOption
           <OptionRow kind="report" icon="warning" label="Report" subtitle="Police, crash, hazard, traffic" onPress={onReportAlert} testID="eta-sheet-report" />
           <OptionRow kind="sound" icon="volume-high" label="Sound & voice" onPress={onSoundVoice} testID="eta-sheet-sound" />
           <OptionRow kind="map" icon="layers" label="Map view" value={mapViewLabel} onPress={onMapView} testID="eta-sheet-map-view" />
+          {onToggleSatellite ? (
+            <OptionRow kind="map" icon="earth" label="Satellite" value={satelliteOn ? "On" : "Off"} onPress={onToggleSatellite} testID="eta-sheet-satellite" />
+          ) : null}
           <OptionRow
             kind="dashcam"
             icon="videocam"

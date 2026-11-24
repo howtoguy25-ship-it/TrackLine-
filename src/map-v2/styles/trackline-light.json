@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Light",
   "metadata": {
-    "trackline:styleVersion": 6
+    "trackline:styleVersion": 7
   },
   "sources": {
     "composite": {

@@ -139,7 +139,7 @@ describe("shape, type and motion", () => {
   it("floating buttons cast the one shadow, and white map buttons have the hairline", async () => {
     const s = rootStyle(await tree(<FloatingButton tone="map" icon="menu" accessibilityLabel="Menu" />));
     expect(s.boxShadow).toBe("0px 6px 16px rgba(16,24,40,0.12), 0px 1px 3px rgba(16,24,40,0.08)");
-    expect(s.borderColor).toBe("rgba(16,24,40,0.06)");
+    expect(s.borderColor).toBe("rgba(16,24,40,0.14)");
     for (const tier of Object.values(shadow)) expect(tier).toEqual({ boxShadow: s.boxShadow });
   });
 

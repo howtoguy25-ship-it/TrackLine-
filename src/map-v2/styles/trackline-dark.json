@@ -2,7 +2,7 @@
   "version": 8,
   "name": "TrackLine Dark",
   "metadata": {
-    "trackline:styleVersion": 6
+    "trackline:styleVersion": 7
   },
   "sources": {
     "composite": {
@@ -70,7 +70,7 @@
       "source": "composite",
       "source-layer": "water",
       "paint": {
-        "fill-color": "#12304F"
+        "fill-color": "#1F4E80"
       }
     },
     {
@@ -79,7 +79,7 @@
       "source": "composite",
       "source-layer": "waterway",
       "paint": {
-        "line-color": "#12304F",
+        "line-color": "#1F4E80",
         "line-width": [
           "interpolate",
           [

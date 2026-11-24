@@ -139,6 +139,9 @@ export interface AppSettings {
   // Settings > Map view > Keep map north up: while driving the map stays north-up (the arrow
   // still turns). Off: the map turns with the road ahead (permanent fix §4).
   keepNorthUp: boolean;
+  // Settings > Map display > Dark map: Off / On / Only at night / Same as phone. When it applies,
+  // the map (and the controls on it) switch to TrackLine Dark; otherwise the Map theme shows.
+  mapDarkMode: "off" | "on" | "night" | "system";
   // Settings > Map view > Recentre automatically: while driving, after you've moved the map, the
   // camera goes back to following you after 15 s untouched if you're moving over 10 km/h. Never on
   // the home map (permanent fix §2).
@@ -243,6 +246,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   settingsVersion: SETTINGS_VERSION,
   show3DBuildings: false,
   keepNorthUp: false,
+  mapDarkMode: "off",
   navAutoRecentre: true,
   routeAvoid: DEFAULT_ROUTE_AVOID,
   spokenDirections: "normal",

@@ -30,6 +30,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { title: "Satellite view", category: "mapDisplay", keywords: ["aerial", "imagery"] },
   { title: "3D buildings", category: "mapDisplay", keywords: ["buildings", "3d"] },
   { title: "Alerts on the map", category: "mapDisplay", keywords: ["reports on map", "hide alerts"] },
+  { title: "Dark map", category: "mapDisplay", keywords: ["dark mode", "night", "night mode map", "same as phone", "automatic dark"] },
   { title: "Map theme", category: "mapDisplay", keywords: ["colours", "colors", "dark map", "light map", "style"] },
   { title: "Road thickness", category: "mapDisplay", keywords: ["road width", "bold roads", "thin roads"] },
   { title: "Default map view", category: "mapDisplay", keywords: ["tilted", "overhead", "2d", "satellite 3d", "camera"] },

@@ -7,6 +7,7 @@
 // and a test checks they're up to date. The other colour themes in Settings are built at runtime
 // with the same function. No React Native imports -- unit-tested directly.
 
+import { LAVENDER, PURPLE } from "../../theme/colors";
 import { BADGE_LAYER_IDS, BADGE_MIN_ZOOM, BADGE_PADDING_PX, EARLY_MIN_ZOOM, badgeFilter, badgeIconExpression, isBadgeFeature } from "../../map/poiBadges";
 export type RoadClass = "motorway" | "trunk" | "primary" | "secondary" | "tertiary" | "residential" | "service";
 
@@ -98,7 +99,24 @@ export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
 
 /** Bumped whenever the style's rules change (shown in Settings > About). */
-export const STYLE_VERSION = 6;
+export const STYLE_VERSION = 7;
+
+/**
+ * Clean satellite (map styles add-on §2): imagery a little less saturated and contrasty with a
+ * soft lift, so roads and labels stand out instead of busy rooftops; tiles fade in over a neutral
+ * ground (no grey flashes).
+ */
+export const SATELLITE_RASTER_PAINT = {
+  "raster-saturation": -0.35,
+  "raster-contrast": -0.12,
+  "raster-brightness-min": 0.08,
+  "raster-brightness-max": 0.96,
+  "raster-fade-duration": 300,
+} as const;
+export const SATELLITE_GROUND = "#3B4249";
+/** Main roads get a thin dark casing over imagery; the rest are light lines only. */
+export const SATELLITE_CASED: RoadClass[] = ["motorway", "trunk", "primary"];
+export const SATELLITE_ROAD_OPACITY = { main: 0.7, other: 0.5, casing: 0.4 } as const;
 
 /** Australian suburb names with postcodes (ABS data) are drawn from this zoom up to 16. */
 export const AU_SUBURB_MIN_ZOOM = 11;
@@ -279,7 +297,17 @@ export interface StylePalette {
   streetLabel: string;
   labelHalo: string;
   shieldText: string;
+  /** The route line, its casing and the other routes (preview / alternatives), per theme. */
+  route: string;
+  routeCasing: string;
+  routeAlt: string;
 }
+
+// Route colours: our purple on the light themes; a brighter purple on dark ground and imagery,
+// so the route always passes the contrast rules (styleContrast.ts).
+const ROUTE_LIGHT = { route: PURPLE, routeCasing: "#3B0E7A", routeAlt: LAVENDER } as const;
+const ROUTE_DARK = { route: "#B48CFF", routeCasing: "#2A0F63", routeAlt: "#6F5C9E" } as const;
+const ROUTE_SATELLITE = { route: "#8F45FF", routeCasing: "#FFFFFF", routeAlt: "#D9C6FF" } as const;
 
 export const LIGHT_PALETTE: StylePalette = {
   name: "TrackLine Light",
@@ -297,6 +325,7 @@ export const LIGHT_PALETTE: StylePalette = {
   streetLabel: "#3A3F44",
   labelHalo: "#FFFFFF",
   shieldText: "#FFD400",
+  ...ROUTE_LIGHT,
 };
 
 export const DARK_PALETTE: StylePalette = {
@@ -304,7 +333,8 @@ export const DARK_PALETTE: StylePalette = {
   // Dark slate background, readable navy-grey roads, bright labels: clear, not murky.
   land: "#1B2230",
   park: "#1E3229",
-  water: "#12304F",
+  // Clearly water on the dark ground (it was #12304F: 1.18:1, too close to the land).
+  water: "#1F4E80",
   building: "#232B39",
   road: "#3F4D66",
   roadCasing: "#121722",
@@ -313,6 +343,7 @@ export const DARK_PALETTE: StylePalette = {
   streetLabel: "#EEF1F4",
   labelHalo: "#14171B",
   shieldText: "#FFD400",
+  ...ROUTE_DARK,
 };
 
 /** Satellite imagery underneath, with the road names and shields drawn on top of it. */
@@ -322,6 +353,11 @@ export const SATELLITE_LABEL_PALETTE: StylePalette = {
   streetLabel: "#FFFFFF",
   labelHalo: "#1F2125",
   suburbLabel: "#FFFFFF",
+  // Roads over imagery: light, semi-transparent lines (buildStyle sets the opacity).
+  road: "#F2F4F7",
+  motorway: "#FFE9A8",
+  roadCasing: "#1F2125",
+  ...ROUTE_SATELLITE,
 };
 
 export interface BuildOptions {
@@ -459,7 +495,10 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
   const layers: Json[] = [];
 
   if (options.satellite) {
-    layers.push({ id: "satellite", type: "raster", source: "satellite" });
+    layers.push(
+      { id: "satellite-ground", type: "background", paint: { "background-color": SATELLITE_GROUND } },
+      { id: "satellite", type: "raster", source: "satellite", paint: { ...SATELLITE_RASTER_PAINT } }
+    );
   } else {
     layers.push(
       { id: "land", type: "background", paint: { "background-color": p.land } },
@@ -512,8 +551,8 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": p.roadCasing,
-        "line-width": roadWidthExpression(cls, roadScale, options.satellite ? 0 : 2),
-        "line-opacity": options.satellite ? 0 : 1,
+        "line-width": options.satellite ? roadWidthExpression(cls, roadScale * 0.5, 1.5) : roadWidthExpression(cls, roadScale, 2),
+        "line-opacity": options.satellite ? (SATELLITE_CASED.includes(cls) ? SATELLITE_ROAD_OPACITY.casing : 0) : 1,
       },
     });
   }
@@ -528,8 +567,8 @@ export function buildStyle(input: StylePalette, options: BuildOptions = {}): Jso
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": cls === "motorway" || cls === "trunk" ? p.motorway : p.road,
-        "line-width": roadWidthExpression(cls, options.satellite ? roadScale * 0.4 : roadScale),
-        "line-opacity": options.satellite ? 0.55 : 1,
+        "line-width": roadWidthExpression(cls, options.satellite ? roadScale * 0.5 : roadScale),
+        "line-opacity": options.satellite ? (SATELLITE_CASED.includes(cls) ? SATELLITE_ROAD_OPACITY.main : SATELLITE_ROAD_OPACITY.other) : 1,
       },
     });
   }
@@ -648,7 +687,7 @@ export const THEME_PALETTES: Record<ThemeKey, StylePalette> = {
   dark: DARK_PALETTE,
   purpleBlue: { ...LIGHT_PALETTE, name: "Purple & Blue", land: "#F4F2FA", road: "#D8D3EC", motorway: "#C7BCEB", water: "#9FC6F2", suburbLabel: "#7563A8" },
   blueGrey: { ...LIGHT_PALETTE, name: "Blue & Grey", land: "#EEF1F4", road: "#C9D2DC", motorway: "#B3C3D6", water: "#8FB7E3", suburbLabel: "#5C7690" },
-  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#E3DFB8", motorway: "#F1D97A", water: "#A6D2E8", suburbLabel: "#6E8A4E" },
+  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#DAD5A6", motorway: "#E0BC45", water: "#A6D2E8", suburbLabel: "#4E6B33" },
   blue: { ...LIGHT_PALETTE, name: "Blue", land: "#EEF5FB", road: "#C5DCF0", motorway: "#9CC4EA", water: "#7FB6EC", suburbLabel: "#3E6E9A" },
 };
 

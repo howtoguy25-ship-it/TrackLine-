@@ -210,7 +210,9 @@ describe("map style", () => {
 
   it("satellite style draws imagery under the labels; every theme builds", () => {
     const sat = buildStyle(SATELLITE_LABEL_PALETTE, { satellite: true }) as { layers: Layer[]; sources: Record<string, unknown> };
-    expect(sat.layers[0].type).toBe("raster");
+    // A neutral ground first (no grey flashes while tiles load), then the softened imagery.
+    expect(sat.layers[0]).toMatchObject({ id: "satellite-ground", type: "background" });
+    expect(sat.layers[1].type).toBe("raster");
     expect(sat.sources.satellite).toBeDefined();
     for (const palette of Object.values(THEME_PALETTES)) {
       expect((buildStyle(palette) as { version: number }).version).toBe(8);
