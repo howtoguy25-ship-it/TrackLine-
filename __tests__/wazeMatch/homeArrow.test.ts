@@ -8,8 +8,7 @@ jest.mock("@/services/firebase", () => ({ db: {}, functions: {} }));
 jest.mock("@firebase/functions", () => ({ httpsCallable: () => () => Promise.resolve({ data: {} }) }));
 
 import { threeSnapHeights } from "@/components/ThreeSnapBottomSheet";
-import { whereToSnapFractions } from "@/map/homeMapLogic";
-import { ARROW_ABOVE_PILL, FLOATING_GAP, STREET_PILL_HEIGHT, WHERE_TO_PEEK_PT, homeArrowTargetY, homeControlFrames, streetPillTopY } from "@/map/homeMapLogic";
+import { ARROW_ABOVE_PILL, FLOATING_GAP, STREET_PILL_HEIGHT, WHERE_TO_PEEK_PT, homeArrowTargetY, homeControlFrames, streetPillTopY, whereToSnapFractions } from "@/map/homeMapLogic";
 import { PILL_ABOVE_SHEET } from "@/components/HomeInfoPill";
 
 const BANNER = 50;
