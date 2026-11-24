@@ -219,10 +219,11 @@ export class PromptQueue {
 const appDeps: QueueDeps = {
   now: () => Date.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  isActive: () => AppState.currentState === "active",
+  // No AppState (a test environment, or very early start-up): treat the app as in front.
+  isActive: () => !AppState || AppState.currentState == null || AppState.currentState === "active",
   whenActive: () =>
     new Promise((resolve) => {
-      if (AppState.currentState === "active") return resolve();
+      if (!AppState || AppState.currentState == null || AppState.currentState === "active") return resolve();
       const sub = AppState.addEventListener("change", (s) => {
         if (s === "active") {
           sub.remove();

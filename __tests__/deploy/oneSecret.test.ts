@@ -3,16 +3,11 @@
 // use -- snapping other drivers' Trackys to the road -- already falls back to their real
 // positions when the snapping fails.) Without the token the deploy now creates the same
 // "unset" placeholder as every other optional key, and the server skips the snapping.
-import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 import { describe, expect, it } from "@jest/globals";
 
-const tokenFor = (value: string) =>
-  execFileSync("node", ["-e", "process.stdout.write(String(require('./index.js')._mapboxServerTokenForTest()))"], {
-    cwd: "firebase/functions",
-    env: { ...process.env, MAPBOX_SERVER_TOKEN: value },
-    encoding: "utf8",
-  });
+const { mapboxServerTokenFrom } = require("../../firebase/functions/mapboxToken") as { mapboxServerTokenFrom: (v: unknown) => string | null };
+const tokenFor = (value: string) => String(mapboxServerTokenFrom(value));
 
 describe("the server Mapbox token is optional", () => {
   it("placeholder or empty: no snapping (null); a real token is used", () => {
@@ -24,6 +19,7 @@ describe("the server Mapbox token is optional", () => {
   it("updatePresence only calls Map Matching with a real token, and keeps the real fixes otherwise", () => {
     const src = readFileSync("firebase/functions/index.js", "utf8");
     expect(src).toMatch(/const mapboxToken = mapboxServerToken\(\);\n\s*if \(mapboxToken\) try \{/);
+    expect(src).toMatch(/require\("\.\/mapboxToken"\)\.mapboxServerTokenFrom\(MAPBOX_SERVER_TOKEN\.value\(\)\)/);
     expect(src).toMatch(/access_token=\$\{mapboxToken\}/);
     expect(src).not.toMatch(/access_token=\$\{MAPBOX_SERVER_TOKEN\.value\(\)\}/);
   });

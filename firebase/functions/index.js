@@ -741,10 +741,8 @@ exports.broadcastNotification = onCall(async (request) => {
 const MAPBOX_SERVER_TOKEN = defineSecret("MAPBOX_SERVER_TOKEN");
 /** The server Mapbox token, or null while it's the deploy's "unset" placeholder (or empty). */
 function mapboxServerToken() {
-  const v = String(MAPBOX_SERVER_TOKEN.value() || "").trim();
-  return v && v !== "unset" ? v : null;
+  return require("./mapboxToken").mapboxServerTokenFrom(MAPBOX_SERVER_TOKEN.value());
 }
-exports._mapboxServerTokenForTest = mapboxServerToken;
 
 // Real, explicit request -- "only visible+driving... speed>15km/h."
 const PRESENCE_MIN_SPEED_KMH = 15;
