@@ -4,7 +4,7 @@
   "private": true,
   "description": "Real Firebase Emulator Suite tests -- Firestore/Storage rules + Cloud Functions (presence/ghost-mode system). Run via `npm --prefix firebase/tests test` from inside `firebase emulators:exec`, see TEST_RESULTS.md for how this was actually run and the real results.",
   "scripts": {
-    "test": "jest --runInBand"
+    "test": "jest --runInBand --forceExit"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
