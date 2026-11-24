@@ -22,7 +22,7 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 
 Checks (real output, branch `startup-trackys` at 3cddc30): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·
 `jest` Test Suites 118 passed / 118, Tests 1474 passed / 1474, Snapshots 1 passed · emulator suite Test Suites 18 passed / 18,
-Tests 314 passed / 314 · `expo export --platform ios` exit 0, 3164 modules. TestFlight: BUILD_PENDING.
+Tests 314 passed / 314 · `expo export --platform ios` exit 0, 3164 modules. TestFlight: **build 218 (97ce13f) — FINISHED and on TestFlight** (not submitted for review).
 
 | Requirement | Status | Evidence | What you must do |
 |---|---|---|---|
