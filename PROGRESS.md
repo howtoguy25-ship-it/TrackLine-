@@ -6,6 +6,19 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Map styles: every style Waze-level, clean satellite — 2026-11-24
+
+All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §46).
+
+| § | What | Evidence |
+|---|---|---|
+| 1 One style system | Every style comes from `buildStyle` with a small palette per theme. Palettes now carry the route colours too. A test proves every theme has the light style's exact layout (only colours differ) and that buildings are flat by default. | `__tests__/map/styleContrast.test.ts` (layout identity + colour snapshot) |
+| 1 Contrast | `styleContrast.ts` rules checked in every theme and on satellite: streets/main roads vs land, water vs land, labels vs halo and land, suburb labels, route vs roads/land/casing. Fixed along the way: dark water (1.18:1 → 1.87), dark route vs roads (1.7 → 3.3), Green & Yellow motorways, streets and suburb labels. | same |
+| 1 Dark map | Settings › Map display › Dark map: Off / On / Only at night (real sunset where you are) / Same as phone. The map, its route colours and every control on it switch together. | `__tests__/map/mapAppearance.test.ts` |
+| 2 Clean satellite | Imagery with saturation -0.35, contrast -0.12 and a brightness lift, fading in over a neutral ground. Light semi-transparent road lines; thin casings on main roads only; white labels on dark halos; vivid purple route with a white casing; no 3D. A Satellite row in the driving options. | `styleContrast.test.ts` (satellite block), `docs/map-styles/satellite-*` |
+| 3 Around the map | Floating controls get a visible edge on every theme and on satellite (tested against each ground). The theme picker tiles are real-tile renders (`scripts/build-theme-previews.ts`), with a live map of the chosen theme above them. The map re-styles in place without a remount. | `__tests__/map/themePicker.test.tsx`, `mapAppearance.test.ts` |
+| 4 Proof | Every style at z11 / z14 / z17 + driving, Sydney and London, real tiles. | `docs/map-styles/README.md`, `shots.json` |
+
 ## Permanent fix: location marker, camera control, route fit, nav orientation, 3D, controls — 2026-11-23
 
 All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §45).

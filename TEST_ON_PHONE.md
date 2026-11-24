@@ -653,6 +653,33 @@ new road's within a few seconds (it used to stick to the first road).
 9. **Ad bar.** On the home map the ad fills the full width under the sheet. No black strips at
    its sides, in light or dark.
 
+## 46. Map styles and clean satellite — NEEDS DEVICE TEST
+
+1. **Themes.** Settings › Map display › Map theme: each tile is a real map picture (streets,
+   water, a purple route), not colour blocks. Above the tiles there's a live map in the chosen
+   theme, at your position. Pick each theme in turn. The tick moves, and going back to the map it
+   has re-coloured in place. Start a route first: the route and the camera stay put while you
+   change theme.
+2. **Readable everywhere.** In every theme, main roads are thicker than streets, street names
+   are bold with halos, suburb names are in mixed case, water is clearly water, and the purple
+   route stands out from the roads.
+3. **Dark map.** Settings › Map display › Dark map: On → the map and its buttons and sheets go
+   dark at once. Off → back to your theme. Only at night → dark after sunset where you are.
+   Same as phone → follows iPhone Settings › Display › Dark.
+4. **Dark is clear.** Dark slate ground, lighter blue-grey roads, bright labels, and blue water you
+   can tell from the land. Nothing near-black or murky.
+5. **Satellite.** Home map: Satellite. The imagery is calmer (less saturated) with light road lines,
+   white street names with dark halos, and shields. No grey tiles flash while panning. No raised
+   buildings even with 3D buildings on.
+6. **Satellite while driving.** Start a route → bottom bar › options › Satellite: On. The route
+   stays bright purple with a white edge. The arrow, alerts and speed sign stay readable. Turn it
+   Off again from the same row.
+7. **Controls.** On every theme and on satellite, the round buttons, the yellow Report button,
+   Re-centre, the speedometer and the bars all have a visible edge or shadow and never blend into
+   the map.
+8. **Overseas.** Search a place in London (or anywhere abroad): street and suburb names show and
+   roads are drawn the same way.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the
