@@ -580,6 +580,15 @@ export function MapScreen() {
     setSeenMapViewStyle(appliedMapViewStyle);
     setMapType(appliedMapViewStyle === "satellite3d" ? "hybrid" : "standard");
   }
+  // Fix pass 5 §9: the Satellite rows (ETA sheet, map tools) are the setting -- shown at once and
+  // saved + synced (Settings > Map view > Satellite), not a switch that's forgotten next launch.
+  const toggleSatelliteSetting = useCallback(() => {
+    const on = mapType !== "hybrid";
+    setMapType(on ? "hybrid" : "standard");
+    const style = on ? "satellite3d" : settings.defaultMapViewStyle === "satellite3d" ? "tilted3d" : settings.defaultMapViewStyle;
+    setSeenMapViewStyle(style);
+    if (style !== settings.defaultMapViewStyle) updateSettings({ defaultMapViewStyle: style });
+  }, [mapType, settings.defaultMapViewStyle, updateSettings]);
 
   // Route-choice flow: destination picked -> fetch all 3 profiles -> user picks one (with a
   // live preview of that profile's line on the map) -> Start commits it into `route` above.
@@ -7801,7 +7810,7 @@ export function MapScreen() {
         mapViewLabel={NAV_VIEW_LABEL[navView]}
         onMapView={() => applyNavView(nextNavView[navView])}
         satelliteOn={mapType === "hybrid"}
-        onToggleSatellite={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
+        onToggleSatellite={toggleSatelliteSetting}
         avoidSummary={avoidCount(settings.routeAvoid) ? avoidPillLabel(settings.routeAvoid) : "None"}
         onAvoid={() => {
           navOptionsSheetRef.current?.close();
@@ -7984,7 +7993,7 @@ export function MapScreen() {
           updateSettings({ show3DBuildings: !show3D });
         }}
         satelliteOn={mapType === "hybrid"}
-        onToggleSatellite={() => setMapType((v) => (v === "standard" ? "hybrid" : "standard"))}
+        onToggleSatellite={toggleSatelliteSetting}
         onOpenDetection={onToolsSheetOpenDetection}
         detectionBatteryLow={detectionBatteryLow}
         alertsEnabled={settings.alertsEnabled}

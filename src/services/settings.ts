@@ -30,7 +30,18 @@ export const ALL_ALERT_TYPES: AlertType[] = [
   "traffic_light",
 ];
 
+/** Sound & voice, copied into the account so another phone picks them up (fix pass 5 §9). The
+ *  phone's own copy lives in services/voice.ts; this is the synced mirror of it. */
+export interface SyncedVoice {
+  enabled: boolean;
+  volume: number;
+  identifier: string | null;
+  language: string;
+}
+
 export interface AppSettings {
+  /** Sound & voice as last set on any phone (absent until it's first changed). */
+  voice?: SyncedVoice;
   // Real Australian state/territory selection -- replaces the old 1-200km alertRadiusKm
   // slider, per explicit request. A driver sees every non-expired alert in every region they've
   // toggled on, regardless of how far away it is; toggling off a region stops showing its

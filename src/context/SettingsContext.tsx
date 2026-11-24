@@ -6,6 +6,7 @@ import {
   pushSettingsToProfile,
   pullSettingsFromProfile,
   type AppSettings,
+  type SyncedVoice,
 } from "@/services/settings";
 import {
   getVoiceEnabled,
@@ -20,6 +21,7 @@ import {
 import { setDirectionsLanguage } from "@/services/directions";
 import type { NavLanguage } from "@/services/navLanguage";
 import { useAuth } from "@/context/AuthContext";
+import { useLatest } from "@/hooks/useLatest";
 
 interface SettingsContextValue {
   settings: AppSettings;
@@ -52,7 +54,14 @@ const SettingsContext = createContext<SettingsContextValue>({
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettingsState] = useState<AppSettings>(DEFAULT_SETTINGS);
+  // The settings as of the last write, updated the moment it's made (not on the next render), so
+  // two changes in a row both survive -- each write starts from the one before it.
+  const latest = useRef<AppSettings>(DEFAULT_SETTINGS);
+  const setSettings = useCallback((next: AppSettings) => {
+    latest.current = next;
+    setSettingsState(next);
+  }, []);
   const [voiceEnabled, setVoiceEnabledState] = useState(true);
   const [voiceVolume, setVoiceVolumeState] = useState(1);
   const [voiceIdentifier, setVoiceIdentifierState] = useState<string | null>(null);
@@ -84,11 +93,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setDirectionsLanguage(language);
       setLoaded(true);
     })();
-  }, []);
+  }, [setSettings]);
 
   const updateSettings = useCallback(
     async (patch: Partial<AppSettings>) => {
-      const next = { ...settings, ...patch };
+      const next = { ...latest.current, ...patch };
       setSettings(next);
       await saveSettings(next);
       // Fire-and-forget, never awaited -- a toggle in Settings should never wait on a network
@@ -100,7 +109,30 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         );
       }
     },
-    [settings, user]
+    [setSettings, user]
+  );
+
+  const applyVoice = useCallback((v: SyncedVoice) => {
+    setVoiceEnabledState(v.enabled);
+    setVoiceVolumeState(v.volume);
+    setVoiceIdentifierState(v.identifier);
+    setNavLanguageState(v.language as NavLanguage);
+    setDirectionsLanguage(v.language as NavLanguage);
+    Promise.all([persistVoiceEnabled(v.enabled), persistVoiceVolume(v.volume), persistVoiceIdentifier(v.identifier), setStoredNavLanguage(v.language as NavLanguage)]).catch(() => {});
+  }, []);
+
+  // Fix pass 5 §9: Sound & voice changes go to the account like every other setting (they used
+  // to stay on this phone only). Saved locally first; the push is fire-and-forget.
+  const voiceRef = useLatest<SyncedVoice>({ enabled: voiceEnabled, volume: voiceVolume, identifier: voiceIdentifier, language: navLanguage });
+  const syncVoice = useCallback(
+    (patch: Partial<SyncedVoice>) => {
+      const voice = { ...voiceRef.current, ...patch };
+      const next = { ...latest.current, voice };
+      setSettings(next);
+      saveSettings(next).catch(() => {});
+      if (user) pushSettingsToProfile(user.uid, next).catch((err) => console.warn("[settings] Firestore sync failed", err));
+    },
+    [user, setSettings, voiceRef]
   );
 
   // Real cross-device sync -- the instant a driver actually signs in with a real (non-
@@ -118,32 +150,38 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     pullSettingsFromProfile(user.uid)
       .then((remote) => {
         if (!remote) return;
-        setSettings((current) => {
-          const merged = { ...current, ...remote };
-          saveSettings(merged).catch(() => {});
-          return merged;
-        });
+        const merged = { ...latest.current, ...remote };
+        setSettings(merged);
+        saveSettings(merged).catch(() => {});
+        // Sound & voice from the account (fix pass 5 §9): into this phone's own voice store too.
+        if (remote.voice) applyVoice(remote.voice);
       })
       .catch((err) => console.warn("[settings] Firestore pull failed", err));
-  }, [loaded, user]);
+  }, [loaded, user, applyVoice, setSettings]);
 
   const toggleVoiceEnabled = useCallback(async () => {
     const next = !voiceEnabled;
     setVoiceEnabledState(next);
     await persistVoiceEnabled(next);
-  }, [voiceEnabled]);
+    syncVoice({ enabled: next });
+  }, [voiceEnabled, syncVoice]);
 
-  const setVoiceVolume = useCallback(async (value: number) => {
-    setVoiceVolumeState(value);
-    await persistVoiceVolume(value);
-  }, []);
+  const setVoiceVolume = useCallback(
+    async (value: number) => {
+      setVoiceVolumeState(value);
+      await persistVoiceVolume(value);
+      syncVoice({ volume: value });
+    },
+    [syncVoice]
+  );
 
   const setVoiceIdentifier = useCallback(async (identifier: string | null, language: NavLanguage = "en") => {
     setVoiceIdentifierState(identifier);
     setNavLanguageState(language);
     setDirectionsLanguage(language);
     await Promise.all([persistVoiceIdentifier(identifier), setStoredNavLanguage(language)]);
-  }, []);
+    syncVoice({ identifier, language });
+  }, [syncVoice]);
 
   // Without this, the object literal below was a brand-new reference on every single render of
   // this provider -- meaning every consumer (MapScreen chief among them, a very large component
