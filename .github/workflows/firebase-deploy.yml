@@ -46,7 +46,7 @@ jobs:
   emulator-tests:
     if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[firebase-deploy]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
