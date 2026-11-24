@@ -146,7 +146,8 @@ describe("route preview (§3)", () => {
   it("MapScreen: an explicit fit re-enters ROUTE_PREVIEW; the fit effect uses the previewFit source", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
     expect(src).toMatch(/camera\.setMode\("ROUTE_PREVIEW", false\);\s*setPreviewFit/);
-    expect(src).toMatch(/camera\.fit\("previewFit", coords, \{ animated: true \}\)/);
+    // Fix pass 6: the camera is computed (previewFitCamera) and moved with the previewFit source.
+    expect(src).toMatch(/camera\.move\("previewFit", pose, \{ duration: PREVIEW_FIT_MS \}\)/);
   });
 });
 

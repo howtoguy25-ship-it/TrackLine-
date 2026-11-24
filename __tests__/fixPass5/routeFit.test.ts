@@ -80,6 +80,6 @@ describe("one place decides the fit (regression guard)", () => {
     expect(map).not.toMatch(/fitRoutesOnScreen\(\[/);
   });
   it("the sheet height and the top card are part of the fit, and location updates aren't", () => {
-    expect(map).toMatch(/previewEdgePadding\(routeTopCardBottom, routeSheetHeight\)/);
+    expect(map).toMatch(/previewEdgePadding\(routeTopCardBottom, routeSheetHeight, windowHeight\)/);
   });
 });

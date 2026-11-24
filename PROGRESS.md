@@ -6,6 +6,10 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Fix pass 6 — route preview: every route really on screen (phone screenshots, build 220) — 2026-11-24
+
+Root causes: (1) the preview camera fitted the lines captured when the fit was asked for, so a route that arrived or was re-ordered afterwards was drawn but not fitted (it ran off the left edge; the start arrow was clipped); (2) with the sheet pulled up, the map's own bounds fit had almost no room and zoomed right in on the middle of the trip. Fix, in one place: the camera always fits exactly the drawn lines, and its centre + zoom are worked out by `previewFitCamera` (the same Web Mercator maths the tests check) inside the space the card and sheet leave (never below 100 pt), with room for the flag (56 pt) and the start dot (40 pt sides). Tests: `__tests__/fixPass6/previewFit.test.ts` (the Bankstown → Liverpool case on 320/390/430 phones, sheet down / half / pulled up). NEEDS DEVICE TEST (TEST_ON_PHONE §49.1).
+
 ## Fix pass 5 — route fit, ETA bubbles, nav camera + re-centre hint, controls, directions, options sheet, settings wiring — 2026-11-24
 
 All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §49). Proof images: `docs/fix-pass-5`.

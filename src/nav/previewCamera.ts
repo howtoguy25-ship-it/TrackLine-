@@ -8,7 +8,13 @@ import type { LatLng } from "@/utils/polyline";
 export const PREVIEW_PITCH = 0;
 export const PREVIEW_HEADING = 0;
 export const PREVIEW_FIT_MS = 600;
-export const FIT_MARGIN = { top: 24, bottom: 24, side: 32 } as const;
+/**
+ * Room around the fitted routes: the flag stands ~50 pt above its point (top), the start dot is
+ * 40 pt across (sides / bottom), so neither is ever clipped by the edge, the card or the sheet.
+ */
+export const FIT_MARGIN = { top: 56, bottom: 28, side: 40 } as const;
+/** Only when the card and sheet leave less than this (a 4-inch phone, sheet fully up) is the fit area kept at this height; otherwise it is exactly the space left, so nothing is under the sheet. */
+export const MIN_FIT_HEIGHT = 100;
 /** The route sheet never covers more than this share of the screen, so the map stays visible. */
 export const MAX_SHEET_FRACTION = 0.55;
 
@@ -20,13 +26,39 @@ export interface EdgePadding {
 }
 
 /** Map padding while previewing: the measured UI + the fit margins. */
-export function previewEdgePadding(topCardBottom: number, sheetHeight: number): EdgePadding {
-  return {
-    top: Math.round(topCardBottom + FIT_MARGIN.top),
-    bottom: Math.round(sheetHeight + FIT_MARGIN.bottom),
-    left: FIT_MARGIN.side,
-    right: FIT_MARGIN.side,
-  };
+export function previewEdgePadding(topCardBottom: number, sheetHeight: number, viewportHeight?: number): EdgePadding {
+  const top = Math.round(topCardBottom + FIT_MARGIN.top);
+  let bottom = Math.round(sheetHeight + FIT_MARGIN.bottom);
+  // Fix pass 6: a pulled-up sheet used to leave the map almost no height, and Mapbox then zoomed
+  // right in on the middle of the route. The fit area never shrinks below MIN_FIT_HEIGHT.
+  if (viewportHeight != null) bottom = Math.max(0, Math.min(bottom, Math.round(viewportHeight - top - MIN_FIT_HEIGHT)));
+  return { top, bottom, left: FIT_MARGIN.side, right: FIT_MARGIN.side };
+}
+
+/**
+ * The preview camera, worked out here instead of by the map's own bounds fit: the centre of the
+ * points (Web Mercator) placed in the middle of the free area, and the zoom (Google scale, as the
+ * app's camera calls use) at which every point fits inside it -- the same maths projectFitted and
+ * the tests check. Flat and north-up.
+ */
+export function previewFitCamera(
+  points: LatLng[],
+  viewport: { width: number; height: number },
+  padding: EdgePadding
+): { center: LatLng; zoom: number; heading: number; pitch: number } | null {
+  const fit = boundsOf(points);
+  if (!fit) return null;
+  const innerW = Math.max(40, viewport.width - padding.left - padding.right);
+  const innerH = Math.max(40, viewport.height - padding.top - padding.bottom);
+  const spanX = Math.max(1e-9, ((fit.east - fit.west) * Math.PI) / 180);
+  const spanY = Math.max(1e-9, mercY(fit.north) - mercY(fit.south));
+  const scale = Math.min(innerW / spanX, innerH / spanY); // screen points per radian
+  // Mapbox: a 512 pt world at zoom 0, so points per radian = 512 * 2^z / (2 pi). Google = Mapbox + 1.
+  const mapboxZoom = Math.log2((scale * 2 * Math.PI) / 512);
+  const zoom = Math.max(3, Math.min(18, mapboxZoom + 1));
+  const midY = (mercY(fit.north) + mercY(fit.south)) / 2;
+  const latitude = ((2 * Math.atan(Math.exp(midY)) - Math.PI / 2) * 180) / Math.PI;
+  return { center: { latitude, longitude: (fit.east + fit.west) / 2 }, zoom, heading: PREVIEW_HEADING, pitch: PREVIEW_PITCH };
 }
 
 /** Everything the preview must show: every point of every route, the start and the destination. */

@@ -2,6 +2,7 @@
 // in the space the measured UI leaves, flat and north-up; bubbles never overlap; the selected
 // route stays fully visible above the sheet at both snap points; the camera no longer snaps back
 // to the driver on every GPS fix while choosing a route.
+import { layoutRouteBubbles, rectsOverlap } from "@/map/bubbleLayout";
 import { describe, expect, it } from "@jest/globals";
 import { readFileSync } from "fs";
 import {
@@ -39,10 +40,12 @@ describe("route preview fit (§1)", () => {
     for (const line of ROUTES) for (const p of line) expect(coords).toContainEqual(p);
   });
 
-  it("padding is the measured top card + 24, the sheet's current height + 24, and 32 at the sides", () => {
-    expect(previewEdgePadding(180, 300)).toEqual({ top: 204, bottom: 324, left: 32, right: 32 });
+  it("padding is the measured top card + room for the flag, the sheet's current height + 28, and 40 at the sides (fix pass 6)", () => {
+    expect(previewEdgePadding(180, 300)).toEqual({ top: 236, bottom: 328, left: 40, right: 40 });
     // Recomputed when the sheet grows.
-    expect(previewEdgePadding(180, 480).bottom).toBe(504);
+    expect(previewEdgePadding(180, 480).bottom).toBe(508);
+    // ...but never leaves the map less than 100 pt to fit into.
+    expect(previewEdgePadding(180, 600, 844).bottom).toBe(844 - 236 - 100);
   });
 
   it("after the fit, every route point is inside the free area, on every phone size", () => {
@@ -77,7 +80,7 @@ describe("route preview fit (§1)", () => {
     // ...and it is a "follow" move, which the camera controller refuses in ROUTE_PREVIEW.
     expect(src).toMatch(/camera\.move\("follow", \{ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM \}/);
     // And the fit re-runs when the top card or the sheet changes size.
-    expect(src).toMatch(/\[previewFit, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight\]/);
+    expect(src).toMatch(/\[previewFit, drawnSelection, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight, windowWidth, windowHeight\]/);
   });
 });
 
@@ -135,24 +138,23 @@ describe("fix pass 4: every route and every bubble, at both sheet heights", () =
   });
 
   it("bubbles never overlap and sit fully on screen, on every phone (320 included) at both heights", () => {
+    // The live solver (fix pass 5: layoutRouteBubbles), not the retired screenBubbleAnchors.
     for (const routes of [ROUTES, CLOSE]) {
       const coords = previewFitCoordinates(routes, START, END);
-      const fit = boundsOf(coords)!;
       for (const vp of PHONES) {
         for (const sheet of heights(vp)) {
           for (const selected of routes.map((_, i) => i)) {
-            const pad = previewEdgePadding(140, sheet);
-            const anchors = screenBubbleAnchors(routes, selected, coords, vp, pad);
+            const pad = previewEdgePadding(140, sheet, vp.height);
+            const placed = layoutRouteBubbles(routes.map((line) => ({ line, text: "12 min", compactText: "+2 min" })), selected, coords, vp, pad);
             // The selected route always has its time.
-            expect(anchors[selected]).not.toBeNull();
-            const placed = anchors.filter((a): a is { latitude: number; longitude: number } => !!a);
-            const screen = projectFitted(placed, fit, vp, pad);
-            expect(bubblesOverlap(screen)).toBe(false);
-            for (const p of screen) {
-              expect(p.x - 42).toBeGreaterThanOrEqual(pad.left - 0.5);
-              expect(p.x + 42).toBeLessThanOrEqual(vp.width - pad.right + 0.5);
-              expect(p.y - 40).toBeGreaterThanOrEqual(pad.top - 0.5);
-              expect(p.y).toBeLessThanOrEqual(vp.height - pad.bottom + 0.5);
+            expect(placed[selected]).not.toBeNull();
+            const rects = placed.flatMap((p) => (p ? [p.rect] : []));
+            for (let a = 0; a < rects.length; a++) for (let b = a + 1; b < rects.length; b++) expect(rectsOverlap(rects[a], rects[b])).toBe(false);
+            for (const r of rects) {
+              expect(r.x0).toBeGreaterThanOrEqual(pad.left - 0.5);
+              expect(r.x1).toBeLessThanOrEqual(vp.width - pad.right + 0.5);
+              expect(r.y0).toBeGreaterThanOrEqual(pad.top - 0.5);
+              expect(r.y1).toBeLessThanOrEqual(vp.height - pad.bottom + 0.5);
             }
           }
         }

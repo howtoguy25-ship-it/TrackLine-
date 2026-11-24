@@ -251,7 +251,7 @@ import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/serv
 import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
 import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
-import { drawnRouteIndices, previewEdgePadding, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
+import { PREVIEW_FIT_MS, drawnRouteIndices, previewEdgePadding, previewFitCamera, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, navZoomForSpeed, showManoeuvreCallout } from "@/nav/navCamera";
 import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
@@ -1396,7 +1396,7 @@ export function MapScreen() {
       ? // The place sits in the middle of the 40% above the place page's sheet.
         { top: insets.top, right: 0, bottom: windowHeight * PLACE_PAGE_SHEET_FRACTION, left: 0 }
       : inRouteSelection
-        ? previewEdgePadding(routeTopCardBottom, routeSheetHeight)
+        ? previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight)
         : isHomeIdle
           ? homePadding
           : { top: 0, right: 0, bottom: 0, left: 0 };
@@ -4398,7 +4398,8 @@ export function MapScreen() {
   const selectionBubbles = useMemo(() => {
     const selected = selectionRoutes[selectionIndex];
     const selectedPos = Math.max(0, drawnSelection.findIndex((d) => d.index === selectionIndex));
-    const fitLines = previewFit.lines.length ? previewFit.lines : drawnSelection.map((d) => d.line);
+    // The same lines the camera fits: exactly what's drawn now (fix pass 6).
+    const fitLines = drawnSelection.map((d) => d.line);
     const routes = drawnSelection.map((d) => {
       const r = selectionRoutes[d.index];
       const diff = selected && d.index !== selectionIndex ? timeDifferenceText(routeSeconds(r), routeSeconds(selected)) : null;
@@ -4414,10 +4415,10 @@ export function MapScreen() {
       selectedPos,
       previewFitCoordinates(fitLines, routeOriginLatLng, pendingDestination?.location ?? null),
       { width: windowWidth, height: windowHeight },
-      previewEdgePadding(routeTopCardBottom, routeSheetHeight),
+      previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight),
       obstacles
     ).map((p, pos) => (p ? { ...p, text: routes[pos].text, compactText: routes[pos].compactText } : null));
-  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, previewFit, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
+  }, [drawnSelection, selectionIndex, selectionRoutes, selectionRows, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
   const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
   const selectedTrafficStretches = useMemo(() => {
     const r = selectionRoutes[selectionIndex];
@@ -6440,15 +6441,25 @@ export function MapScreen() {
   // Route preview camera: flat and north-up, fitted to every route (or the picked one) plus the
   // start and destination, inside the space the top card and the sheet leave (mapPadding). Runs
   // again when the routes, the mode, Avoid, the top card or the sheet's height change.
+  // Fix pass 6 root causes: (1) the fit used the lines captured when it was asked for, so routes
+  // that arrived or were re-ordered afterwards were drawn but not fitted (off the side of the
+  // screen); (2) the map's own bounds fit zoomed right in once a pulled-up sheet left it almost no
+  // room. Now it always fits exactly the drawn lines, and the camera (centre + zoom) is worked out
+  // by previewFitCamera inside a fit area that never drops below MIN_FIT_HEIGHT.
   useEffect(() => {
-    if (!inRouteSelection || !mapReady || previewFit.lines.length === 0) return;
+    if (!inRouteSelection || !mapReady || previewFit.tick === 0 || drawnSelection.length === 0) return;
     const t = setTimeout(() => {
-      const coords = previewFitCoordinates(previewFit.lines, routeOriginLatLng, pendingDestination?.location ?? null);
-      camera.fit("previewFit", coords, { animated: true });
+      const coords = previewFitCoordinates(
+        drawnSelection.map((d) => d.line),
+        routeOriginLatLng,
+        pendingDestination?.location ?? null
+      );
+      const pose = previewFitCamera(coords, { width: windowWidth, height: windowHeight }, previewEdgePadding(routeTopCardBottom, routeSheetHeight, windowHeight));
+      if (pose) camera.move("previewFit", pose, { duration: PREVIEW_FIT_MS });
     }, 120);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the fit request and the UI sizes
-  }, [previewFit, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the fit request, the drawn routes and the UI sizes
+  }, [previewFit, drawnSelection, inRouteSelection, mapReady, routeTopCardBottom, routeSheetHeight, windowWidth, windowHeight]);
 
   const mapboxNavRoute = useMemo(() => (route ? detailedRoutePolyline(route) : null), [route]);
   // The purple street callout: only at the NEXT manoeuvre, and hidden once it's close enough

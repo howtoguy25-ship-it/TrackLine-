@@ -744,7 +744,7 @@ failed and what you saw instead.
 
 ## 49. Fix pass 5 — NEEDS DEVICE TEST
 
-1. Route preview in Drive, Walk, Bike, Transit: every route, your start and the flag fit on screen; switch mode, change Avoid, tap another route, drag the sheet up — still all visible.
+1. Route preview in Drive, Walk, Bike, Transit: every route, your start and the flag fit on screen with a margin (nothing off an edge, nothing under the top card); switch mode, change Avoid, tap another route, drag the sheet up — still all visible, just smaller when the sheet is up (build 221+: no more zooming into the middle).
 2. Time bubbles sit beside their own route with a small tail, never on top of a line, each other, the flag, the top card or the sheet. Alternatives say "+1 min"; the selected one its time and "Best".
 3. Your own Tracky never appears on the map (home, preview, driving).
 4. Start driving: heading-up, tilted, your arrow about three-quarters down. Pan or rotate: "Re-centre" fades in bottom-left and the compass gets a blue ring; tap either → back in about half a second. Tap the compass when not ringed: "North up" / "Heading up".
