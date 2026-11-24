@@ -227,15 +227,28 @@ check("a real turn (moved and heading changed > 30 degrees) looks up before 25m"
   tracker.resolve(turned, "Pitt St");
   assert.equal(tracker.name, "Pitt St");
 });
-check("a stretch of road already named is answered from memory, with no lookup", () => {
+// Since addf4bb the tracker no longer copies one answer into nearby grid squares: that copy gave a
+// service road beside a main road the main road's name and limit. A stretch driven again is looked
+// up again (the lookup re-picks from roads already fetched around the driver, so no network), and
+// the answer comes from that lookup, never from a remembered spot.
+check("a stretch driven again is looked up again (no answer copied from another spot)", () => {
   const tracker = new StreetNameTracker();
   for (let m = 0; m <= 300; m += 5) {
     const fix = fixAt(m);
     if (tracker.update(fix)) tracker.resolve(fix, m < 150 ? "George St" : "Pitt St");
   }
   const after = tracker.lookupsStarted;
-  for (let m = 0; m <= 300; m += 5) tracker.update(fixAt(m)); // drive it again
-  assert.equal(tracker.lookupsStarted, after);
+  let asked = 0;
+  for (let m = 0; m <= 300; m += 5) {
+    const fix = fixAt(m);
+    if (tracker.update(fix)) {
+      asked++;
+      tracker.resolve(fix, m < 150 ? "George St" : "Pitt St");
+    }
+  }
+  assert.equal(tracker.lookupsStarted, after + asked);
+  assert.equal(asked > 0, true);
+  assert.equal(tracker.name, "Pitt St");
 });
 check("only one lookup is ever in flight at a time", () => {
   const tracker = new StreetNameTracker();
