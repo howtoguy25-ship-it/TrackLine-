@@ -1,7 +1,10 @@
 # Blocked — what only you can unblock
 
 **Step-by-step for every key: KEYS_SETUP.md.** Since 2026-11-24 the server deploy needs only the
-`FIREBASE_SERVICE_ACCOUNT` secret (the Mapbox server token became optional).
+`FIREBASE_SERVICE_ACCOUNT` secret (the Mapbox server token became optional). **Re-checked
+2026-11-24 20:25 UTC:** run 45480239661 passed all server tests, then stopped at the credential
+step: the secret is still empty or missing in Actions. No `ADMOB_*` variable exists in any EAS
+environment either, so builds still use Google's test ads.
 
 Each row: what's missing, where you add it, and how to check it works. Keys are never put in the
 repo: GitHub secrets → "Deploy Firebase" workflow with *Copy API keys* ticked (DEPLOY.md).
