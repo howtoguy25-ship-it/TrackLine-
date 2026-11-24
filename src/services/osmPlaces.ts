@@ -153,7 +153,7 @@ const OVERPASS_RETRY_DELAY_MS = 1500;
 // of being cut off early by an outer timeout sized for only one attempt.
 const OVERPASS_QUERY_MAX_MS = FETCH_TIMEOUT_MS * OVERPASS_RETRY_ATTEMPTS + OVERPASS_RETRY_DELAY_MS * (OVERPASS_RETRY_ATTEMPTS - 1);
 
-async function runOverpassQuery(query: string): Promise<OverpassResponse> {
+export async function runOverpassQuery(query: string): Promise<OverpassResponse> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= OVERPASS_RETRY_ATTEMPTS; attempt++) {
     try {

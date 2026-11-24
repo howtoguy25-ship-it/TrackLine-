@@ -7,7 +7,8 @@ import { useStaff } from "@/components/AuthGate";
 import { Page, Status, useAction, useData } from "@/components/ui";
 
 type Report = { id: string; type: string; item: string | null; lat: number; lng: number; comment: string | null; createdBy: string | null; createdAtMs: number | null; confirmCount: number; notThere: number; needsConfirmation: boolean; awaitingApproval: boolean; permanent: boolean; profanity: string | null; reporterTrust: number | null };
-const TABS = ["Reports", "Map edits", "User content", "Spam"] as const;
+const TABS = ["Reports", "Map edits", "Site exits", "User content", "Spam"] as const;
+type SiteExit = { gateId: string; siteId: string | null; label: string | null; lat: number | null; lng: number | null; answers: number; patterns: Record<string, { state: string; open: number; closed: number }>; summary: string | null; hours: string | null; hoursConfirmed: boolean; updatedAtMs: number | null };
 const osm = (lat: number, lng: number) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
 
 export default function ModerationPage() {
@@ -19,6 +20,7 @@ export default function ModerationPage() {
   const reports = useData(() => api<{ reports: Report[] }>("adminModeration", "reports", { filter: { type: filter.type || undefined, maxAgeHours: filter.maxAgeHours ? Number(filter.maxAgeHours) : undefined } }), [filter]);
   const edits = useData(() => api<{ roadReports: { id: string; kind: string; lat: number; lng: number; confirmCount: number; detail: string | null; speedLimit: number | null }[]; placeReports: { id: string; placeId: string; reason: string; note: string | null }[] }>("adminModeration", "mapEdits"));
   const content = useData(() => api<{ photos: { id: string; placeId: string; storagePath: string }[]; mapChats: { id: string; comment: string; createdBy: string; flagged: string | null }[]; names: { uid: string; name: string; flagged: string }[] }>("adminModeration", "content"));
+  const exits = useData(() => api<{ exits: SiteExit[] }>("adminModeration", "siteExits"));
   const spam = useData(() => api<{ hittingLimits: { uid: string; reportsToday: number; blockedUntil: number | null; trust: number | null }[]; burstBlocked: number; shadowLimited: { uid: string; trust: number | null }[]; banned: number }>("adminModeration", "spam"));
   const op = (name: string, data: Record<string, unknown>, title: string, reload: () => void) => act(title, (reason) => api("adminModeration", name, { ...data, reason }), reload);
   return (
@@ -75,6 +77,30 @@ export default function ModerationPage() {
           </table>
           <div className="label pt-4">&ldquo;This place is wrong&rdquo; reports</div>
           <table className="table"><tbody>{edits.data?.placeReports.map((p) => <tr key={p.id}><td>{p.reason}</td><td className="font-mono text-xs">{p.placeId}</td><td>{p.note}</td></tr>)}</tbody></table>
+        </div>
+      )}
+      {tab === "Site exits" && (
+        <div className="card overflow-x-auto">
+          <Status busy={exits.busy} error={exits.error} />
+          <div className="label">Warehouse / depot / car-park exits drivers have answered &ldquo;open or closed?&rdquo; for. A pattern needs 3 agreeing answers at that time of day.</div>
+          <table className="table">
+            <thead><tr><th>Exit</th><th>Where</th><th>Answers</th><th>Pattern</th><th>Opening hours</th><th /></tr></thead>
+            <tbody>
+              {exits.data?.exits.map((x) => (
+                <tr key={x.gateId}>
+                  <td><b>{x.label ?? x.gateId}</b><div className="font-mono text-xs">{x.gateId}{x.siteId ? ` · site ${x.siteId}` : ""}</div><div className="text-xs">{fmtTime(x.updatedAtMs)}</div></td>
+                  <td>{x.lat != null && x.lng != null && <a className="text-brand underline" href={osm(x.lat, x.lng)} target="_blank" rel="noreferrer">Map</a>}</td>
+                  <td>{x.answers}</td>
+                  <td className="text-xs">{x.summary ?? "—"}<div>{Object.entries(x.patterns).map(([b, p]) => `${b}: ${p.state} (${p.open} open / ${p.closed} closed)`).join(" · ")}</div></td>
+                  <td>{x.hours ?? "—"}{x.hoursConfirmed && <span className="pill ml-1">confirmed</span>}</td>
+                  <td className="space-x-2 whitespace-nowrap">
+                    {can && <button className="underline" onClick={() => { const hours = window.prompt("Opening hours (e.g. Mon-Fri 6am-6pm), empty to clear", x.hours ?? ""); if (hours !== null) op("setSiteExitHours", { gateId: x.gateId, hours, confirmed: true }, `Set hours for ${x.label ?? x.gateId}`, exits.reload); }}>Set hours</button>}
+                    {can && x.hours && !x.hoursConfirmed && <button className="text-green-700 underline" onClick={() => op("setSiteExitHours", { gateId: x.gateId, hours: x.hours, confirmed: true }, "Confirm opening hours", exits.reload)}>Confirm</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {tab === "User content" && (

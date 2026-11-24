@@ -271,7 +271,7 @@ import { presencesToShow, othersOnly } from "@/map/presenceFilter";
 import { rememberOwnUid } from "@/services/ownUids";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
 import { homeRoadSigns, roadFeatureReportIcon, signIcon, signKind, type SignPoint } from "@/map/roadSignVisibility";
-import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech, isNavSpeaking } from "@/services/navSpeech";
+import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech, isNavSpeaking, speakInSelectedVoice } from "@/services/navSpeech";
 import {
   earlyAnnouncementThresholds,
   planStepAnnouncement,
@@ -357,6 +357,9 @@ import { useScreenLayout } from "@/layout/LayoutContext";
 import { withPanelPadding } from "@/layout/screenLayout";
 import { calloutSide } from "@/nav/turnCallout";
 import { HeadingHold, INITIAL_STILL, smoothAlong, stillLockStep, type AlongState, type StillState } from "@/nav/stillLock";
+import { alternativeExit, bucketFor, canAskNow, decideExit, exitAnswerPlan, exitLabel, exitQuestion as exitQuestionText, gatesOnRouteStart, patternFor, privateRoadExit, siteAt, siteGates, type ExitDoc, type Gate, type Site } from "@/nav/exitGates";
+import { answerExit, fetchSiteData, loadExitDocs, myLastAnswer } from "@/services/siteExits";
+import { ExitGateCard } from "@/components/ExitGateCard";
 /** The route preview's start field while it follows the live GPS (Waze-match §1). */
 const YOUR_LOCATION_LABEL = "Your location";
 
@@ -4233,12 +4236,99 @@ export function MapScreen() {
   // destination pair without needing routeOptions/selectedProfile/pendingDestination state to
   // have gone through the full picker flow first -- it takes both as real parameters instead of
   // reading them off state, so there's no race with whatever just resolved them.
+  // ---- Smart exit gates (fix pass 7 §1, nav/exitGates.ts) ----
+  // At the start of a drive: the large site you're leaving (and the one you're going to). If
+  // drivers agree the exit the route uses is closed at this time, the route goes out another
+  // exit straight away; if it's uncertain, we ask (only while stopped or under 10 km/h).
+  const [exitQuestion, setExitQuestion] = useState<{ exit: Gate; site: Site; gates: Gate[]; docs: Record<string, ExitDoc | null>; label: string; bucket: string; from: LatLng; destination: LatLng; arrivalVia: Gate | null } | null>(null);
+  const sayIfVoice = useCallback(
+    (text: string) => {
+      if (navVoiceRef.current.enabled && navVoiceRef.current.mode !== "off") speakInSelectedVoice(text, { voiceIdentifier: voiceIdentifierRef.current, volume: voiceVolumeRef.current });
+    },
+    [voiceIdentifierRef, voiceVolumeRef]
+  );
+  const rerouteVia = useCallback(
+    async (vias: Gate[], from: LatLng, destination: LatLng) => {
+      const stops = (stopWaypointsLiveRef.current ?? []).map((p: LatLng) => ({ point: p, via: false }));
+      const fresh = await getRouteThrough(from, destination, [...vias.map((g) => ({ point: g.point, via: true })), ...stops]);
+      guidanceRef.current = createGuidanceState();
+      setActiveStepIndex(0);
+      setRoute(fresh);
+    },
+    [stopWaypointsLiveRef]
+  );
+  const checkSiteExits = useCallback(
+    async (chosen: Route, from: LatLng, destination: LatLng) => {
+      try {
+        const now = new Date();
+        const nowMs = now.getTime();
+        const bucket = bucketFor(now);
+        // Arriving: the entrance the route uses, if drivers agree it's closed now -> another one.
+        let arrivalVia: Gate | null = null;
+        const endData = await fetchSiteData(destination);
+        const endSite = siteAt(destination, endData.sites);
+        if (endSite) {
+          const gates = siteGates(endSite, endData.gates);
+          const entrance = gatesOnRouteStart([...chosen.polyline].reverse(), gates)[0]?.gate ?? null;
+          if (entrance) {
+            const docs = await loadExitDocs(gates.map((g) => g.id));
+            if (patternFor(docs[entrance.id]?.answers, bucket, nowMs).state === "closed") arrivalVia = alternativeExit(gates, entrance.id, docs, destination, bucket, nowMs);
+          }
+        }
+        // Leaving.
+        const startData = await fetchSiteData(from);
+        const site = siteAt(from, startData.sites);
+        let departureVia: Gate | null = null;
+        if (site) {
+          const gates = siteGates(site, startData.gates);
+          const exit = gatesOnRouteStart(chosen.polyline, gates)[0]?.gate ?? privateRoadExit(chosen.polyline, startData.privateRoads);
+          const docs = await loadExitDocs([...gates.map((g) => g.id), ...(exit && !gates.some((g) => g.id === exit.id) ? [exit.id] : [])]);
+          const decision = decideExit({ site, exit, doc: exit ? docs[exit.id] : null, myLast: exit ? await myLastAnswer(exit.id) : null, nowMs, bucket });
+          if (decision.kind === "avoid") {
+            departureVia = alternativeExit(gates, decision.exit.id, docs, from, bucket, nowMs);
+          } else if (decision.kind === "ask") {
+            const road = chosen.steps.find((st) => st.targetStreetName)?.targetStreetName ?? null;
+            setExitQuestion({ exit: decision.exit, site, gates, docs, label: exitLabel(decision.exit, site, road), bucket, from, destination, arrivalVia });
+          }
+        }
+        const vias = [departureVia, arrivalVia].filter((g): g is Gate => !!g);
+        if (vias.length > 0) {
+          await rerouteVia(vias, from, destination);
+          sayIfVoice(departureVia ? "Using another exit" : "Using another entrance");
+        }
+      } catch (err) {
+        // OSM or the network unavailable: no question, the route stays as it is.
+        console.warn("[exits] check skipped", err);
+      }
+    },
+    [rerouteVia, sayIfVoice]
+  );
+  const answerExitQuestion = useCallback(
+    (open: boolean) => {
+      const q = exitQuestion;
+      setExitQuestion(null);
+      if (!q) return;
+      void answerExit({ exitId: q.exit.id, siteId: q.site.id, open, bucket: q.bucket, point: q.exit.point, label: q.label });
+      const plan = exitAnswerPlan(open, q, Date.now());
+      if (plan.action === "keep") return;
+      sayIfVoice(plan.say);
+      if (plan.action === "reroute") rerouteVia(plan.via, currentLatLngRef.current ?? q.from, q.destination).catch((err) => console.warn("[exits] reroute failed", err));
+    },
+    [exitQuestion, rerouteVia, sayIfVoice, currentLatLngRef]
+  );
+
+  // No answer in 8 s: keep the route. Driving off (10 km/h+) or ending the drive: drop it.
+  const dismissExitQuestion = useCallback(() => setExitQuestion(null), []);
+  if (exitQuestion && (!route || !canAskNow(currentSpeedKmh))) setExitQuestion(null);
+
   const startRoute = useCallback(
     (chosen: Route, destination: PlaceDetails) => {
       guidanceRef.current = createGuidanceState();
       setActiveStepIndex(0);
       setRoute(chosen);
       announcePhrase({ kind: "start" });
+      // Smart exit gates: the site you're leaving / arriving at (driving only).
+      if (currentLatLng && travelMode === "driving") void checkSiteExits(chosen, currentLatLng, destination.location);
       // Real Tracky auto-mood driving-streak tracker -- the one real "a trip actually started
       // today" signal (see trackyMood.ts's own header). Fire-and-forget: never blocks/affects
       // the real navigation start below.
@@ -4320,7 +4410,7 @@ export function MapScreen() {
           .catch((err) => console.warn("[nav] Mapbox route unavailable, staying on the picked route", err));
       }
     },
-    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.keepNorthUp, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef, camera, mapBearing, windowHeight]
+    [currentLatLng, heading, travelMode, settings.defaultMapViewStyle, settings.keepNorthUp, settings.routeAvoid, announcePhrase, currentSpeedKmhRef, stopWaypointsLiveRef, camera, mapBearing, windowHeight, checkSiteExits]
   );
 
   // Development builds: Settings › Developer › test drives start a recorded motorway drive here
@@ -7358,6 +7448,18 @@ export function MapScreen() {
           onKeep={dismissTrafficSuggestion}
         />
       )}
+
+      {/* Smart exit gates (fix pass 7 §1): only while stopped or under 10 km/h. */}
+      {route && exitQuestion && canAskNow(currentSpeedKmh) ? (
+        <ExitGateCard
+          question={exitQuestionText(exitQuestion.label)}
+          bottom={controlsBottom(insets.bottom, bottomBarHeight) + Math.max(REPORT_SIZE, SPEEDOMETER_SIZE) + 12}
+          scheme={mapScheme}
+          onOpen={() => answerExitQuestion(true)}
+          onClosed={() => answerExitQuestion(false)}
+          onTimeout={dismissExitQuestion}
+        />
+      ) : null}
 
       {/* "End suggested route" moved off the map into the ETA sheet (fix pass 7 §4): nothing
           floats over the compass or the route; ending or switching routes lives in the sheet and
