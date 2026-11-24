@@ -222,6 +222,7 @@ import { MAP_ICONS_AHEAD_M, MAX_MAP_ICONS, warnDistanceM } from "@/nav/ahead/ahe
 import { useEffectiveMapTheme, useMapScheme } from "@/components/ui/uiScheme";
 import { routeColoursFor } from "@/map-v2/styles/mapAppearance";
 import { noteNightPosition } from "@/map/nightClock";
+import { loadLastLocation, saveLastLocation } from "@/map/lastLocation";
 import { HomeMapControls } from "@/components/HomeMapControls";
 import {
   HOME_FOLLOW_ZOOM,
@@ -430,7 +431,6 @@ export function MapScreen() {
   //   mapBearing         -- the map's current bearing, for the compass needle
   //   sheetVisibleHeight -- how much of the "Where to?" sheet is showing, written by the sheet
   const mapBearing = useSharedValue(0);
-  const sheetVisibleHeight = useSharedValue(0);
   // Which snap point the "Where to?" sheet is at: 0 peek, 1 half, 2 full.
   const [whereToSheetIndex, setWhereToSheetIndex] = useState<0 | 1 | 2>(0);
 
@@ -975,10 +975,29 @@ export function MapScreen() {
   // never a guessed/fixed radius. Null on a fix that genuinely didn't report one (handled by the
   // render site below, which just skips drawing the circle rather than fabricating a number).
   const currentAccuracyMeters = location?.coords.accuracy ?? null;
-  // "Only at night" dark map: night by the real sun at the driver's last position.
+  // "Only at night" dark map: night by the real sun at the driver's last position; and the
+  // last position cached for the next launch (startup §1).
   useEffect(() => {
-    if (currentLatLng) noteNightPosition(currentLatLng.latitude, currentLatLng.longitude);
+    if (!currentLatLng) return;
+    noteNightPosition(currentLatLng.latitude, currentLatLng.longitude);
+    void saveLastLocation(currentLatLng.latitude, currentLatLng.longitude);
   }, [currentLatLng]);
+  // Startup §1: open on the last known place (no live fix yet), then the follow camera eases to the
+  // live fix when it lands (a 500 ms move, not a snap).
+  const startPlaceRef = useRef(false);
+  const liveFixRef = useLatest(currentLatLng);
+  useEffect(() => {
+    if (!mapReady || startPlaceRef.current) return;
+    startPlaceRef.current = true;
+    let cancelled = false;
+    void loadLastLocation().then((cached) => {
+      if (cancelled || !cached || liveFixRef.current) return;
+      camera.move("follow", { center: { latitude: cached.latitude, longitude: cached.longitude }, zoom: HOME_FOLLOW_ZOOM }, { duration: 0 });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mapReady, camera, liveFixRef]);
 
   // The real route origin -- a custom "From" place if one's been picked, otherwise the driver's
   // own live GPS fix (the only behavior before this existed). Only meaningful for the
@@ -1327,6 +1346,10 @@ export function MapScreen() {
   const bannerAreaHeight = bannerShown ? BANNER_HEIGHT + insets.bottom : 0;
   const mapAreaHeight = windowHeight - bannerAreaHeight;
   const whereToHeights = threeSnapHeights(windowHeight, insets.top, bannerAreaHeight, WHERE_TO_SNAP_FRACTIONS);
+  // Startup §1: starts at the sheet's peek height (where the sheet opens), not 0 -- so Report,
+  // Re-centre and the street pill are in their final places on the very first frame instead of
+  // jumping up once the sheet reports its height.
+  const sheetVisibleHeight = useSharedValue(whereToHeights.peek);
   // Home: the sheet's peek height is padded off the bottom (keeping the arrow and the Google
   // logo clear of it) and the arrow sits at 62% of the screen -- see homeMapPadding.
   // The arrow sits directly above the street pill, which rides the sheet's peek edge.
