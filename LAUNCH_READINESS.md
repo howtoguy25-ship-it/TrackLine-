@@ -22,7 +22,7 @@ setting (live + saved + synced), sign-in flows, the map styles and contrast rule
 server rules and functions (on the emulators).
 
 What they **can't** cover: a real phone, real GPS, real sound, real touch. That's your phone
-test (TEST_ON_PHONE.md §47–50 + one real drive).
+test (TEST_ON_PHONE.md §47–54 + one real drive).
 
 ## Works now on your phone (no setup needed)
 
@@ -43,8 +43,9 @@ speedometer, dashcam/AI detection, siren radar, offline route start.
 
 1. **You:** add `FIREBASE_SERVICE_ACCOUNT` → I deploy Firebase and check a report appears on a second phone.
 2. **You:** real AdMob IDs in EAS → I make a release build.
-3. **You:** phone test (TEST_ON_PHONE §47–50 + one real drive) on that build; tell me anything off.
-4. **You (App Store Connect):** screenshots (6.7" and 6.1"), description, keywords, support URL,
+3. **You:** phone test (TEST_ON_PHONE §47–54 + one real drive) on that build; tell me anything off.
+4. **You (App Store Connect):** screenshots (6.7" and 6.1" iPhone, **and 13" iPad** — the app now
+   runs full-screen on iPad, fix pass 7, so Apple asks for iPad screenshots too), description, keywords, support URL,
    privacy policy URL, App Privacy answers (location, account info, usage data, ads/tracking —
    the app asks permission to track), age rating. I can draft the text for all of these.
 5. Submit. Apple review ≈ 1–2 days.

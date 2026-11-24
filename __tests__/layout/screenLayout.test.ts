@@ -8,6 +8,7 @@ import { layoutKind, PANEL_MAX, PANEL_MIN, screenLayout, screenOrientation, shee
 import { HOME_FOLLOW_ZOOM } from "@/map/homeMapLogic";
 import { tiltForZoom } from "@/map/tiltCurve";
 import { roadWidthExpression } from "@/map-v2/styles/buildStyle";
+import { mapboxZoomFromGoogle } from "@/map-v2/geo";
 
 const notch = { top: 47, bottom: 34, left: 0, right: 0 };
 const landscapeNotch = { top: 0, bottom: 21, left: 47, right: 47 };
@@ -102,9 +103,13 @@ describe("a big, open view (fix pass 7 §3)", () => {
     }
     return stops[stops.length - 1][1];
   };
-  it("at z16 a motorway is 10-12 px including its edge, clearly wider than a street, never a giant band", () => {
-    const motorway = widthAt(roadWidthExpression("motorway", 1, 2), 16);
-    const street = widthAt(roadWidthExpression("residential", 1, 2), 16);
+  // Root cause of the first miss: this measured at Mapbox z16, but the home view's zoom 16 is on
+  // the app's (Google) scale -- Mapbox 15, where the motorway was only ~9 px.
+  it("at the home view (zoom 16 = Mapbox 15) a motorway is 10-12 px including its edge, clearly wider than a street, never a giant band", () => {
+    const z = mapboxZoomFromGoogle(HOME_FOLLOW_ZOOM);
+    expect(z).toBe(15);
+    const motorway = widthAt(roadWidthExpression("motorway", 1, 2), z);
+    const street = widthAt(roadWidthExpression("residential", 1, 2), z);
     expect(motorway).toBeGreaterThanOrEqual(10);
     expect(motorway).toBeLessThanOrEqual(12);
     expect(motorway / street).toBeGreaterThan(1.6);

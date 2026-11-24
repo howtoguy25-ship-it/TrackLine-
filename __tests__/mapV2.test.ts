@@ -111,13 +111,13 @@ describe("map style", () => {
     expect(MOTORWAY_LINE_MIN_ZOOM).toBe(6);
   });
 
-  it("road widths (fix pass 7: never giant bands): motorway 6->16, primary 5->13, secondary 4->10.5, residential 2.5->7.5, service 1.5->5 (z14->z18)", () => {
+  it("road widths (fix pass 7: never giant bands): motorway 8->16, primary 5->13, secondary 4->10.5, residential 2.5->7.5, service 1.5->5 (z14->z18)", () => {
     const at = (cls: RoadClass) => {
       const e = roadWidthExpression(cls) as number[];
       const stop = (z: number) => e[e.indexOf(z, 3) + 1];
       return [stop(14), stop(18)];
     };
-    expect(at("motorway")).toEqual([6, 16]);
+    expect(at("motorway")).toEqual([8, 16]);
     expect(at("primary")).toEqual([5, 13]);
     expect(at("secondary")).toEqual([4, 10.5]);
     expect(at("residential")).toEqual([2.5, 7.5]);
@@ -126,7 +126,7 @@ describe("map style", () => {
     expect((layer("road-casing-primary").paint!["line-width"] as number[])[6]).toBe(7);
     // Motorways start as a fine line at zoom 6 and reach their z9 width.
     const m = roadWidthExpression("motorway") as number[];
-    expect(m.slice(3, 7)).toEqual([6, 0.9, 9, 1.5]);
+    expect(m.slice(3, 7)).toEqual([6, 0.9, 9, 2]);
   });
 
   it("motorways draw over the streets they cross", () => {

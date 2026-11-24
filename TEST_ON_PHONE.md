@@ -788,3 +788,31 @@ Delete TrackLine first, then install the new build so every permission is asked 
 1. Open the app / tap Re-centre: the map is closer than before (street level, street names big), still gently leaning.
 2. Start a drive: the camera is higher and further back than before; at 50-80 km/h you see roughly the next 500 m of road ahead, on the motorway about 700 m.
 3. Tell me if either should go further (closer / higher) — each is one number.
+
+## 54. Fix pass 7 — exit gates, calm arrow, map scale on every screen, nav overlaps — NEEDS DEVICE TEST
+
+**Exit gates** (needs Firebase deployed for the shared answers; the question itself works without it)
+1. Park inside a warehouse yard / industrial lot / big car park that has a gate on the map (OpenStreetMap), then start a drive that leaves through that gate. While you're still stopped (or under 10 km/h) a card asks "Is the exit on <street> open?" with our gate icon, [Open] [Closed].
+2. Tap **Closed**: you hear "Using another exit" and the route changes to leave through another gate of the same site. If the site has no other gate: "No other exit found" and the route stays.
+3. Tap **Open**, or ignore it for 8 s: the route stays and the card goes. Start rolling (10 km/h+): the card goes.
+4. Start the same drive again within 7 days at a similar time of day: you're not asked again.
+5. A drive that starts on a public street, or leaves a site without passing a gate: no card at all.
+6. (After Firebase is deployed) three drivers saying Closed at the same time of day → the next driver is routed out the other exit without being asked. Owner dashboard › Moderation › Site exits shows the exit, its answers and pattern, and lets you set its opening hours.
+
+**Calm arrow**
+7. Parked with the screen on for a minute: the arrow stays dead still (no drifting, no twitching, no spinning). Turn the phone in your hand a little: it doesn't follow every wobble; turn it right round: it follows after a moment.
+8. Drive off: from about walking pace the arrow moves at once and follows the road smoothly, no surging ahead and dropping back.
+
+**Map scale on every screen**
+9. Home map opens at street level, leaning about 45°: motorways clearly thicker than streets but slim (not giant bands), in a softer amber. Street names readable, not huge.
+10. Turn the phone sideways on the home map: the map fills the screen and the Where to? sheet becomes a panel on the left; the arrow stays centred in the visible map. Other screens (settings, etc.) stay upright on a phone.
+11. On an iPad (portrait and landscape): the sheet is a left panel, the map fills the rest; navigation's instruction bar and ETA bar sit over that left column.
+12. Web (tracklinemaps.com) in a wide window: the same left panel layout.
+
+**Navigation overlaps**
+13. While driving: no "End suggested route" pill on the map. It's in the options sheet (tap the ETA bar) as "Back to your original route" when a suggested route is active.
+14. Pan the map: the round Re-centre button appears in the right column, just above Report, never over the speedometer or the street name.
+15. The route line is solid purple with one darker edge — no white stripe through it at turns.
+16. The street-name callout for the next turn sits beside the turn on its outside (left of a right turn), with a little tail to the corner — never on top of the turn or the arrow; shop/place names hide while it shows.
+17. You never see your own Tracky on the map — only the arrow.
+18. Home screen: the ad bar spans the full width and nothing is cut off at the bottom (above the home indicator).

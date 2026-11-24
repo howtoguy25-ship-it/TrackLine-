@@ -27,10 +27,11 @@ export const ROAD_DRAW_ORDER: RoadClass[] = ["service", "residential", "tertiary
 
 /** Line width in px at zoom 14 and zoom 18 (Mapbox interpolates between and beyond). */
 export const ROAD_WIDTHS: Record<RoadClass, { z14: number; z18: number }> = {
-  // Main roads clearly thicker than streets, but never giant bands (fix pass 7 §3): at z16 a
-  // motorway is ~9 px plus its 2 px edge (~11 px), a street ~4 px.
-  motorway: { z14: 6, z18: 16 },
-  trunk: { z14: 5.5, z18: 15 },
+  // Main roads clearly thicker than streets, but never giant bands (fix pass 7 §3). The home view
+  // is zoom 16 on the app's (Google) scale = Mapbox 15: there a motorway is ~9 px plus its 2 px
+  // edge (~11 px), a street ~5 px.
+  motorway: { z14: 8, z18: 16 },
+  trunk: { z14: 7, z18: 15 },
   primary: { z14: 5, z18: 13 },
   secondary: { z14: 4, z18: 10.5 },
   tertiary: { z14: 3.25, z18: 8.5 },

@@ -7,7 +7,6 @@ jest.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 describe("permission queue without AppState", () => {
   it("runs the request instead of crashing", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { askPermission } = require("@/services/permissionQueue") as typeof import("@/services/permissionQueue");
     await expect(askPermission("location", async () => ({ granted: true }))).resolves.toEqual({ granted: true });
   });
