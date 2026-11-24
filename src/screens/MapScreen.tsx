@@ -172,7 +172,6 @@ import {
   avoidPillLabel,
   avoidCount,
   avoidRouteOptions,
-  screenBubbleAnchors,
   distinctRoutes,
   formatRouteDuration,
   routeHasUturn,
@@ -4138,21 +4137,20 @@ export function MapScreen() {
       if (routeChoices[index]) fitRoutesOnScreen(previewFitLines(routeChoices, index, detailedRoutePolyline));
       setSelectedChoiceIndex(index);
     },
-    [routeChoices, selectedChoiceIndex, fitRoutesOnScreen]
+    [routeChoices, fitRoutesOnScreen]
   );
 
   // Same "reselecting the highlighted one re-fits the camera" gesture as onSelectChoice above,
   // applied to the real Google alternatives list for walking/bicycling/transit.
   const onSelectModeRoute = useCallback(
     (index: number) => {
-      const reselectingSame = index === selectedModeRouteIndex;
       setSelectedModeRouteIndex(index);
       const picked = modeRouteOptions[index];
       if (picked) setModeRoute(picked);
       if (!picked) return;
       fitRoutesOnScreen(previewFitLines(modeRouteOptions, index, detailedRoutePolyline));
     },
-    [modeRouteOptions, selectedModeRouteIndex, fitRoutesOnScreen]
+    [modeRouteOptions, fitRoutesOnScreen]
   );
 
   // Real, shared commit logic -- extracted from confirmRoute (the RouteOptionsCard "Start"
