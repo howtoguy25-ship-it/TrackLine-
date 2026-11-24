@@ -258,7 +258,7 @@ import { altDeltaLabel, pickAlternatives } from "@/nav/navAlternatives";
 import { presencesToShow } from "@/map/presenceFilter";
 import { rememberOwnUid } from "@/services/ownUids";
 import { TrafficIncidentCard } from "@/screens/TrafficIncidentCard";
-import { homeRoadSigns, signIcon, signKind, type SignPoint } from "@/map/roadSignVisibility";
+import { homeRoadSigns, roadFeatureReportIcon, signIcon, signKind, type SignPoint } from "@/map/roadSignVisibility";
 import { speakPlan, speakNavPhrase, stopNavSpeech, prefetchUpcomingSpeech, isNavSpeaking } from "@/services/navSpeech";
 import {
   earlyAnnouncementThresholds,
@@ -6036,6 +6036,14 @@ export function MapScreen() {
       );
     }
     for (const { alert, size, mid } of alertPins.singles) {
+      // A reported road feature (speed bump, crossing...) is drawn like the mapped ones: small
+      // grey icon / tiny mark / hidden by zoom -- never a big coloured badge.
+      const feature = roadFeatureReportIcon(itemOfAlert(alert), mapZoom);
+      if (feature === "hidden") continue;
+      if (feature) {
+        add({ id: `alert:${alert.id}`, coordinate: { latitude: alert.lat, longitude: alert.lng }, icon: feature, priority: 3 }, { kind: "alert", alert });
+        continue;
+      }
       add(
         {
           id: `alert:${alert.id}`,
@@ -6050,6 +6058,7 @@ export function MapScreen() {
       );
     }
     for (const { alert, colour } of alertPins.dots) {
+      if (roadFeatureReportIcon(itemOfAlert(alert), mapZoom)) continue; // road features: no far dots
       add({ id: `alert:${alert.id}`, coordinate: { latitude: alert.lat, longitude: alert.lng }, icon: `dot:${colour}`, anchor: "center", priority: 20 }, { kind: "alert", alert });
     }
     // Off a drive: cameras (and traffic lights at street level) in view, as road-sign icons.
