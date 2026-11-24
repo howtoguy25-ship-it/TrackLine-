@@ -881,6 +881,18 @@ export function SettingsScreen() {
       </Section>
 
       {/* ---------------- Navigation & voice ---------------- */}
+      <Section title="Driving preferences" visible={shouldShow("Driving preferences")} footer={CHOICE_LISTS.vehicleType.footer}>
+        <SettingsRow icon="car" meaning="routes" title="Vehicle type" subtitle="What you drive" />
+        {CHOICE_LISTS.vehicleType.options(settings).map((o) => (
+          <SettingsRow
+            key={o.key}
+            title={o.label}
+            selected={settings.vehicleType === o.key}
+            onPress={() => updateSettings(CHOICE_LISTS.vehicleType.patch(o.key, settings))}
+            testID={`vehicle-type-${o.key}`}
+          />
+        ))}
+      </Section>
       <Section title="Voice guidance" visible={shouldShow("Voice guidance")}>
         <SettingsRow
           icon="volume-high"

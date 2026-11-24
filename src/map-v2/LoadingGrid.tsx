@@ -7,11 +7,8 @@ import { StyleSheet } from "react-native";
 import Animated, { FadeOut } from "react-native-reanimated";
 import Svg, { Defs, Path, Pattern, Rect } from "react-native-svg";
 
-export const MAP_LOADING_GRID = {
-  light: { ground: "#EEF0F3", line: "#E0E4E9", major: "#D5DAE1" },
-  dark: { ground: "#1B2230", line: "#232C3C", major: "#2B3547" },
-} as const;
-export const GRID_STEP = 24;
+import { GRID_STEP, MAP_LOADING_GRID } from "@/map-v2/loadingGridColours";
+export { GRID_STEP, MAP_LOADING_GRID };
 
 export function LoadingGrid({ dark }: { dark: boolean }) {
   const c = dark ? MAP_LOADING_GRID.dark : MAP_LOADING_GRID.light;

@@ -226,6 +226,8 @@ import { noteNightPosition } from "@/map/nightClock";
 import { CompassFilter, HeadingTurret, targetHeading } from "@/nav/headingTurret";
 import { loadLastLocation, saveLastLocation } from "@/map/lastLocation";
 import { viaText } from "@/map/viaText";
+import { VehiclePickerScreen } from "@/components/VehiclePicker";
+import { type VehicleType, shouldShowVehiclePicker, vehicleForMode, vehicleMode, vehicleOption, vehiclePatch, vehicleRouteNote } from "@/services/vehicle";
 import { overlaysFor } from "@/map/previewOverlays";
 import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
 import { done, enqueue, PILL_SHOW_MS, reportsPillText, type PillMessage } from "@/map/homePill";
@@ -248,7 +250,7 @@ import { incidentsNear, type NearbyIncident, type TrafficIncident } from "@/serv
 import { departureSlots, eventsAlongRoute, predictLeaveTimes, type RoutePoint } from "@/travel/etaSheet";
 import { rememberRoutes, savedAgo, savedRoutesFor } from "@/nav/routeCache";
 import { downloadRouteArea } from "@/map-v2/offlineArea";
-import { previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
+import { bubbleSize, previewEdgePadding, previewFitCoordinates } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, showManoeuvreCallout } from "@/nav/navCamera";
 import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames } from "@/nav/navControlsLayout";
@@ -417,7 +419,7 @@ type PinTarget =
   | { kind: "saved"; place: SavedPinPlace };
 
 export function MapScreen() {
-  const { location, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
+  const { location, permissionGranted, permissionDenied, canAskAgain, requestPermission: requestLocationPermission } = useLocation();
   const { user } = useAuth();
   const { settings: rawSettings, loaded: settingsLoaded, updateSettings, voiceEnabled, voiceVolume, voiceIdentifier, navLanguage } =
     useSettings();
@@ -2982,7 +2984,7 @@ export function MapScreen() {
       setLoadingRouteOptions(true);
       setRouteOptionsError(null);
       try {
-        const req = { origin, destination, avoid };
+        const req = { origin, destination, avoid, region: deviceRegion() };
         const showModeRoutes = (routes: Route[], navMode: "walking" | "bicycling" | "transit") => {
           setTravelMode(navMode);
           setModeRouteOptions(routes);
@@ -3033,7 +3035,7 @@ export function MapScreen() {
   useEffect(() => {
     if (!modeSheetOpen || !pendingDestination || !routeOriginLatLng) return;
     let live = true;
-    const req = { origin: routeOriginLatLng, destination: pendingDestination.location, avoid: settings.routeAvoid };
+    const req = { origin: routeOriginLatLng, destination: pendingDestination.location, avoid: settings.routeAvoid, region: deviceRegion() };
     const order = [selectedMode, ...MODE_ORDER.filter((m) => m !== selectedMode && m !== "ferry")].filter((m) => m !== "ferry");
     for (const m of order) {
       modeCache.get(m, req).then((r) => {
@@ -3627,9 +3629,11 @@ export function MapScreen() {
       const last = asModeId(settings.lastTravelMode);
       setModeSummaries({});
       setModeResults({});
-      requestRoutes(routeOriginLatLng, place.location, undefined, last === "ferry" ? "drive" : last);
+      // Waze-match §3: driving opens as your vehicle (a motorcycle opens in Motorbike).
+      const start = last === "ferry" || last === "drive" || last === "motorbike" ? vehicleMode(settings.vehicleType) : last;
+      requestRoutes(routeOriginLatLng, place.location, undefined, start);
     },
-    [routeOriginLatLng, requestRoutes, closeAllPlaceSheets, settings.lastTravelMode]
+    [routeOriginLatLng, requestRoutes, closeAllPlaceSheets, settings.lastTravelMode, settings.vehicleType]
   );
 
   // "Find my car": a walking route back to the parking spot (Walk mode, not remembered as the
@@ -4101,14 +4105,28 @@ export function MapScreen() {
     if (next) applyStopsDuringNav(removeStop(stops, next.id));
   }, [stops, applyStopsDuringNav]);
 
+  /** The vehicle pill / Getting there sheet: switch vehicle and re-request the routes. */
+  const onSelectVehicle = useCallback(
+    (v: VehicleType) => {
+      void updateSettings(vehiclePatch(settings, v));
+      const mode = vehicleMode(v);
+      if (pendingDestination && routeOriginLatLng) requestRoutes(routeOriginLatLng, pendingDestination.location, stopWaypoints ?? undefined, mode);
+      else setSelectedMode(mode);
+    },
+    [settings, updateSettings, pendingDestination, routeOriginLatLng, stopWaypoints, requestRoutes]
+  );
+
   const onSelectTravelMode = useCallback(
     (mode: ModeId) => {
+      // Picking Motorbike / Drive here is picking your vehicle too (Waze-match §3).
+      const v = vehicleForMode(mode, settings.vehicleType);
+      if (v && v !== settings.vehicleType) void updateSettings(vehiclePatch(settings, v));
       // From/To and the stop stay as they are; only the mode changes.
       if (pendingDestination && routeOriginLatLng) {
         requestRoutes(routeOriginLatLng, pendingDestination.location, stopWaypoints ?? undefined, mode);
       } else setSelectedMode(mode);
     },
-    [pendingDestination, stopWaypoints, routeOriginLatLng, requestRoutes]
+    [pendingDestination, stopWaypoints, routeOriginLatLng, requestRoutes, settings, updateSettings]
   );
 
   // Tapping a route (its line, its bubble, or its row) selects it; tapping the selected one
@@ -4367,9 +4385,13 @@ export function MapScreen() {
       selectedPos,
       previewFitCoordinates(fitLines, routeOriginLatLng, pendingDestination?.location ?? null),
       { width: windowWidth, height: windowHeight },
-      previewEdgePadding(routeTopCardBottom, routeSheetHeight)
+      previewEdgePadding(routeTopCardBottom, routeSheetHeight),
+      undefined,
+      undefined,
+      // Each bubble's real size: its own time text, and the selected one is taller (its tag line).
+      drawnSelection.map((d) => bubbleSize(selectionRows[d.index]?.timeText ?? "", d.index === selectionIndex))
     );
-  }, [drawnSelection, selectionIndex, previewFit, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
+  }, [drawnSelection, selectionIndex, selectionRows, previewFit, routeOriginLatLng, pendingDestination, windowWidth, windowHeight, routeTopCardBottom, routeSheetHeight]);
   const selectedSelectionLine = drawnSelection.find((d) => d.index === selectionIndex)?.line ?? null;
   const selectedTrafficStretches = useMemo(() => {
     const r = selectionRoutes[selectionIndex];
@@ -6795,6 +6817,7 @@ export function MapScreen() {
               avoidActive={avoidCount(settings.routeAvoid) > 0}
               onOpenAvoid={() => setAvoidSheetOpen(true)}
               travelMode={selectedMode}
+              vehicle={selectedMode === "drive" || selectedMode === "motorbike" ? vehicleOption(selectedMode === "motorbike" ? "motorcycle" : settings.vehicleType) : null}
               onOpenMode={() => setModeSheetOpen(true)}
               onHeightChange={setRouteTopCardBottom}
             />
@@ -6806,7 +6829,7 @@ export function MapScreen() {
               onSelect={onSelectRouteRow}
               loading={loadingRouteOptions}
               errorText={routeOptionsError}
-              notice={routeOfflineNote}
+              notice={routeOfflineNote ?? (selectedMode === "motorbike" ? modeResults.motorbike?.note ?? null : vehicleRouteNote(settings.vehicleType, selectedMode))}
               loadingText={
                 travelMode === "driving"
                   ? "Finding the best routes…"
@@ -6857,6 +6880,11 @@ export function MapScreen() {
               onSelect={(mode) => {
                 setModeSheetOpen(false);
                 onSelectTravelMode(mode);
+              }}
+              vehicle={settings.vehicleType}
+              onSelectVehicle={(v) => {
+                setModeSheetOpen(false);
+                onSelectVehicle(v);
               }}
               onClose={() => setModeSheetOpen(false)}
             />
@@ -7985,6 +8013,10 @@ export function MapScreen() {
           onNotHere={() => onStillHereRespond(stillHerePrompt, false)}
           bottom={route ? insets.bottom + bottomBarHeight + spacing.sm : undefined}
         />
+      )}
+      {/* Waze-match §3: "What's your ride?" once, after the location question, over the map. */}
+      {shouldShowVehiclePicker({ settingsLoaded, chosen: settings.vehicleChosen, locationAnswered: permissionGranted || permissionDenied }) && (
+        <VehiclePickerScreen onDone={(v) => void updateSettings(vehiclePatch(settings, v))} />
       )}
     </View>
   );

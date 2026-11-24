@@ -9,6 +9,8 @@ import { Button, Chip } from "@/components/ui/Button";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, useWindowDimensions, type StyleProp, type TextStyle } from "react-native";
 import { Pressable, View } from "@/components/ui/Surface";
 import { MAX_SHEET_FRACTION } from "@/nav/previewCamera";
+import { VehicleChoiceList } from "@/components/VehiclePicker";
+import type { VehicleType } from "@/services/vehicle";
 import Animated, {
   Easing,
   cancelAnimation,
@@ -82,6 +84,8 @@ interface TopCardProps {
   onOpenAvoid: () => void;
   travelMode: ModeId;
   onOpenMode: () => void;
+  /** Driving (Drive / Motorbike): the vehicle pill shows your vehicle ("Private car", "Taxi"). */
+  vehicle?: { label: string; icon: IconName } | null;
   /** Distance from the top of the screen to the bottom of the pills, for fitting the routes. */
   onHeightChange?: (height: number) => void;
 }
@@ -100,6 +104,7 @@ export function RouteSelectionTopCard({
   onOpenAvoid,
   travelMode,
   onOpenMode,
+  vehicle,
   onHeightChange,
 }: TopCardProps) {
   const insets = useSafeAreaInsets();
@@ -160,11 +165,12 @@ export function RouteSelectionTopCard({
         />
         <Chip
           onMap
-          icon={MODE_ICONS[travelMode]}
-          label={MODE_LABELS[travelMode]}
+          icon={vehicle?.icon ?? MODE_ICONS[travelMode]}
+          label={vehicle?.label ?? MODE_LABELS[travelMode]}
           trailingIcon="chevron-down"
           onPress={onOpenMode}
-          accessibilityLabel={`${MODE_LABELS[travelMode]}. Change how you're getting there.`}
+          testID="route-vehicle-pill"
+          accessibilityLabel={`${vehicle?.label ?? MODE_LABELS[travelMode]}. Change how you're getting there or your vehicle.`}
         />
       </View>
     </View>
@@ -247,6 +253,8 @@ export function TravelModeSheet({
   note,
   onSelect,
   onClose,
+  vehicle,
+  onSelectVehicle,
 }: {
   visible: boolean;
   mode: ModeId;
@@ -255,9 +263,18 @@ export function TravelModeSheet({
   note?: string | null;
   onSelect: (mode: ModeId) => void;
   onClose: () => void;
+  /** Waze-match §3: your vehicle, switchable here (re-requests the routes). */
+  vehicle?: VehicleType;
+  onSelectVehicle?: (v: VehicleType) => void;
 }) {
   return (
     <SheetFrame visible={visible} title="Getting there" onClose={onClose}>
+      {vehicle && onSelectVehicle ? (
+        <View testID="mode-sheet-vehicle" style={{ marginBottom: 8 }}>
+          <Text style={styles.sectionLabel}>Your vehicle</Text>
+          <VehicleChoiceList value={vehicle} onChange={onSelectVehicle} />
+        </View>
+      ) : null}
       <ModeIconRow mode={mode} summaries={summaries} ferryAvailable={ferryAvailable} onSelect={onSelect} />
       {visibleModes(ferryAvailable).map((m, i) => {
         const active = m === mode;
@@ -697,6 +714,7 @@ const styles = StyleSheet.create({
   avoidHint: { fontSize: 14, color: colors.textFaint, marginTop: 2 },
   avoidNote: { fontSize: 15, color: colors.textMuted, marginTop: 8 },
   modeRow: { flexDirection: "row", alignItems: "center", gap: 14, minHeight: 56 },
+  sectionLabel: { fontSize: 14, fontWeight: "600", color: colors.textMuted, marginTop: 4 },
   modeReason: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   modeTime: { fontSize: 15, fontWeight: "600", color: colors.text },
   modeIconRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8, gap: 4 },

@@ -50,6 +50,7 @@ jest.mock("@/context/LocationContext", () => ({
   }),
 }));
 jest.mock("@/services/firebase", () => require("../support/stubs").stubService());
+jest.mock("@firebase/functions", () => require("../support/stubs").stubService());
 jest.mock("firebase/firestore", () => require("../support/stubs").stubService());
 jest.mock("expo-audio", () => require("../support/stubs").stubService());
 jest.mock("expo-speech", () => require("../support/stubs").stubService());

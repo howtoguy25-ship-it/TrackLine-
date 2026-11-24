@@ -25,6 +25,7 @@ import CalendarIcon from "lucide-react-native/icons/calendar";
 import CameraIcon from "lucide-react-native/icons/camera";
 import CarIcon from "lucide-react-native/icons/car";
 import CarFrontIcon from "lucide-react-native/icons/car-front";
+import CarTaxiFrontIcon from "lucide-react-native/icons/car-taxi-front";
 import CctvIcon from "lucide-react-native/icons/cctv";
 import CheckIcon from "lucide-react-native/icons/check";
 import ChevronDownIcon from "lucide-react-native/icons/chevron-down";
@@ -179,6 +180,7 @@ const ICONS = {
   "car-info": CarFrontIcon,
   "car-search": ScanSearchIcon,
   "car-sport": CarIcon,
+  "taxi": CarTaxiFrontIcon,
   "cart": ShoppingCartIcon,
   "cctv": CctvIcon,
   "cellphone": SmartphoneIcon,

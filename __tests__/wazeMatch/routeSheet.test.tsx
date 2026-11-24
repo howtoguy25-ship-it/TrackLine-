@@ -11,7 +11,8 @@ jest.mock("react-native-safe-area-context", () => ({
 import { RouteSelectionSheet, RouteSelectionTopCard, type RouteChoiceRow } from "@/components/RouteSelection";
 import { travelledRoads, viaText, suburbNear } from "@/map/viaText";
 import { overlaysFor } from "@/map/previewOverlays";
-import { previewEdgePadding } from "@/nav/previewCamera";
+import { bubbleSize, boundsOf, previewEdgePadding, projectFitted } from "@/nav/previewCamera";
+import { screenBubbleAnchors } from "@/map/routeChoices";
 import { ACTIONS } from "@/theme/colors";
 
 const flat = (style: unknown) => (Array.isArray(style) ? Object.assign({}, ...(style as unknown[]).flat(3).filter(Boolean)) : (style as Record<string, unknown>));
@@ -137,5 +138,35 @@ describe("route sheet", () => {
     const expanded = previewEdgePadding(180, 520);
     expect(expanded.bottom - collapsed.bottom).toBe(260);
     expect(collapsed.top).toBe(expanded.top);
+  });
+});
+
+describe("time bubbles never overlap (real sizes)", () => {
+  // Root cause: placement assumed every bubble is 84 x 40, but the selected one carries a second
+  // line ("Best") and is ~60 tall, and "1 h 12 min" is wider than 84 -- so two could still touch.
+  it("the selected bubble is taller and long times are wider", () => {
+    expect(bubbleSize("12 min", true)).toEqual({ width: 84, height: 60 });
+    expect(bubbleSize("1 h 12 min", false).width).toBeGreaterThan(84);
+  });
+  it("placed with their real sizes, no two bubble boxes overlap", () => {
+    const line = (lat: number) => Array.from({ length: 30 }, (_, i) => ({ latitude: lat - i * 0.0004, longitude: 151.0 + i * 0.003 }));
+    const lines = [line(-33.9), line(-33.9006), line(-33.9012)];
+    const viewport = { width: 390, height: 844 };
+    const padding = previewEdgePadding(216, 263);
+    const fitPoints = lines.flat();
+    const sizes = [bubbleSize("12 min", true), bubbleSize("1 h 13 min", false), bubbleSize("14 min", false)];
+    const anchors = screenBubbleAnchors(lines, 0, fitPoints, viewport, padding, undefined, 6, sizes);
+    const fit = boundsOf(fitPoints)!;
+    const boxes = anchors
+      .map((a, i) => (a ? { p: projectFitted([a], fit, viewport, padding)[0], z: sizes[i] } : null))
+      .filter((b): b is { p: { x: number; y: number }; z: { width: number; height: number } } => !!b)
+      .map(({ p, z }) => ({ x0: p.x - z.width / 2, x1: p.x + z.width / 2, y0: p.y - z.height, y1: p.y }));
+    expect(anchors[0]).not.toBeNull(); // the selected route always gets its bubble
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        expect(a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0).toBe(true);
+      }
   });
 });

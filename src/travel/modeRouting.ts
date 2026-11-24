@@ -21,6 +21,7 @@ import type { RouteAvoidPrefs } from "@/map/routeChoices";
 import type { ModeId } from "@/travel/modes";
 import { mapboxTokenState } from "@/config/mapboxToken";
 import { recordDirections } from "@/diagnostics/diagnostics";
+import { MOTORCYCLE_BETA_NOTE, twoWheelerSupported } from "@/services/vehicle";
 import { ROUTING_ERROR_TEXT, RoutingError, shouldFallBack } from "@/services/routingErrors";
 
 export const MODE_CACHE_MS = 2 * 60 * 1000;
@@ -39,6 +40,8 @@ export interface ModeRequest {
   destination: LatLng;
   avoid?: Partial<RouteAvoidPrefs>;
   heading?: number | null;
+  /** The phone's ISO region: skips a (billed) TWO_WHEELER request where Google doesn't offer it. */
+  region?: string | null;
 }
 
 export interface ModeDeps {
@@ -77,7 +80,7 @@ export const MOTORBIKE_FIELD_MASK =
   "routes.duration,routes.staticDuration,routes.distanceMeters,routes.description,routes.polyline.encodedPolyline,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.startLocation,routes.legs.steps.endLocation,routes.legs.steps.polyline.encodedPolyline";
 
 async function motorbikeRoutes(req: ModeRequest, deps: ModeDeps): Promise<Route[] | null> {
-  if (!deps.googleKey) return null;
+  if (!deps.googleKey || !twoWheelerSupported(req.region)) return null;
   try {
     const res = await (deps.fetchImpl ?? fetch)(ROUTES_API_URL, {
       method: "POST",
@@ -133,7 +136,7 @@ export async function fetchRoutesForMode(mode: ModeId, req: ModeRequest, deps: M
     }
     if (mode === "motorbike") {
       const bike = await motorbikeRoutes(req, deps);
-      if (bike) return { routes: bike, note: null, unavailable: null };
+      if (bike) return { routes: bike, note: MOTORCYCLE_BETA_NOTE, unavailable: null };
       if (!canRoute) return { routes: [], note: null, unavailable: ROUTING_ERROR_TEXT.key_missing };
       const car = await mapboxFor("drive", req, deps);
       return { routes: car, note: car.length ? MOTORBIKE_FALLBACK_NOTE : null, unavailable: car.length ? null : NO_ROUTE.motorbike! };
