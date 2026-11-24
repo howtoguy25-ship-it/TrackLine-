@@ -18,6 +18,25 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 | Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
 | TestFlight | 212 (ce48702) · 213 (ace575b) · 214 (4633690) · 215 (a9b1f86) gaps 15-18 · **216 (5b5e064) permanent fix — FINISHED, on TestFlight** — all on TestFlight only (not submitted for review) |
 
+## 2026-11-24: startup + Trackys around you + private zones + arrow heading; Waze-match route preview / list / "What's your ride?"
+
+Checks (real output, branch `startup-trackys` at 3cddc30): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·
+`jest` Test Suites 118 passed / 118, Tests 1474 passed / 1474, Snapshots 1 passed · emulator suite Test Suites 18 passed / 18,
+Tests 314 passed / 314 · `expo export --platform ios` exit 0, 3164 modules. TestFlight: BUILD_PENDING.
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| W0 No big blue speed-bump dots; commit in About | DONE (root cause: reported road features) | `__tests__/wazeMatch/noFeatureDots.test.ts`, `docs/waze-match-routes/CHECKLIST.md` | Phone test §48.8–9 |
+| W0 MAP POLISH + PERMANENT FIX line by line | DONE except the home arrow at 72% (conflicts with the sheet peek) | `docs/waze-match-routes/CHECKLIST.md` | Say if you want a smaller sheet peek |
+| S1 Loading grid, controls in place, cached camera | DONE | `__tests__/startup/startup.test.tsx`, `docs/startup-trackys/1-*`, `2-*` | §47.1 |
+| S2 "N Trackys around you" (server count, rounding, areas, cache, re-greet) | DONE in code, needs deploy | `firebase/tests/trackys*.test.js`, `__tests__/startup/trackysPill.test.tsx` | Firebase deploy (BLOCKED #30) |
+| S3 Viewport Trackys + 400 m private zones + night zone | DONE in code, needs deploy | `firebase/tests/trackys.test.js` (emulator: inside zone, leaving, arrival, ghost) | Firebase deploy (BLOCKED #30) |
+| S4 Turret-smooth arrow heading, heading-up home map | DONE | `__tests__/startup/headingTurret.test.ts`, `docs/startup-trackys/4-*` | §47.4–5 |
+| W1 Route preview card / pills / clean flat map / bubbles | DONE | `__tests__/wazeMatch/routeSheet.test.tsx` | §48.3–5 |
+| W2 Route sheet + Via roads with suburbs | DONE | same | §48.6 |
+| W3 "What's your ride?", vehicle type setting, vehicle pill, per-vehicle routing | DONE; EV + Truck/Van hidden, Taxi = car routes with a note | `__tests__/wazeMatch/vehiclePicker.test.tsx` | §48.1–2, 7; BLOCKED #29 |
+| Screenshots | DONE as real-tile renders with drawn app screens (no iOS simulator on Linux) | `docs/startup-trackys`, `docs/waze-match-routes` | — |
+
 ## 2026-11-24: map styles — every style Waze-level + clean satellite
 
 Checks (real output): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·
