@@ -18,6 +18,22 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 | Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
 | TestFlight | 212 (ce48702) · 213 (ace575b) · 214 (4633690) · 215 (a9b1f86) gaps 15-18 · **216 (5b5e064) permanent fix — FINISHED, on TestFlight** — all on TestFlight only (not submitted for review) |
 
+## 2026-11-24: map styles — every style Waze-level + clean satellite
+
+Checks (real output): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·
+`jest` Test Suites 112 passed / 112, Tests 1415 passed / 1415, Snapshots 1 passed ·
+`expo export --platform ios` exit 0, 3151 modules. TestFlight: MAP_STYLES_BUILD.
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| §1 One generator for every style; themes change colours only | DONE | `__tests__/map/styleContrast.test.ts` (identical layout, flat buildings, colour snapshot) | — |
+| §1 Contrast in every theme (roads/land, labels/halo, water, route vs roads/land) | DONE — fixed dark water, dark route, Green & Yellow roads/labels | `styleContrast.test.ts`, `src/map-v2/styles/styleContrast.ts` | — |
+| §1 Dark map Off / On / Only at night / Same as phone; controls follow | DONE | `__tests__/map/mapAppearance.test.ts` | TEST_ON_PHONE §46.3 |
+| §2 Clean satellite (softened imagery, fade-in, light road overlay, casings on main roads, white labels, no 3D, route bright) + Satellite while driving | DONE | `styleContrast.test.ts` satellite block, `docs/map-styles/satellite-*` | §46.5-6 |
+| §3 Controls readable on every theme and satellite | DONE | `mapAppearance.test.ts` (edge or contrast vs every ground) | §46.7 |
+| §3 Theme picker: real-tile previews, live map of the chosen theme, instant apply, route kept | DONE | `__tests__/map/themePicker.test.tsx`, `assets/map/theme-previews` | §46.1 |
+| §4 Screenshots: every style z11/14/17 + driving, Sydney + London | DONE (rendered from the app's style + real tiles; no iOS simulator — BLOCKED #28) | `docs/map-styles/README.md` (56 frames) | Phone test §46 |
+
 ## 2026-11-23: permanent fix — marker, camera, route fit, nav orientation, 3D, controls
 
 | Requirement | Status | Evidence | What you must do |
