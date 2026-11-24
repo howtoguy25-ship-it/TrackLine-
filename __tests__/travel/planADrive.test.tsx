@@ -250,6 +250,9 @@ describe("fix pass 4: the Plan a drive look", () => {
     expect(screen.getByTestId("plan-days")).toBeTruthy();
     // The old hour-chip row is gone: no chip reads like a bare hour ("8:00 am").
     expect(screen.queryAllByRole("button", { name: /^\d{1,2}:00\s?(am|pm)$/i })).toHaveLength(0);
+    // Tomorrow, not today: today's times stop at midnight, so from ~23:30 (CI runs on UTC) today
+    // has a single time left and this check failed late at night (CI run 45512029173).
+    await fireEvent.press(screen.getByTestId("plan-day-Tomorrow"));
     await fireEvent.press(screen.getByTestId("plan-mode-leave"));
     await waitFor(() => expect(screen.getByTestId("plan-best")).toBeTruthy());
     expect(screen.getAllByTestId(/^plan-bar-/).length).toBeGreaterThan(1);
