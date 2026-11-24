@@ -22,7 +22,7 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 
 Checks (real output): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·
 `jest` Test Suites 112 passed / 112, Tests 1415 passed / 1415, Snapshots 1 passed ·
-`expo export --platform ios` exit 0, 3151 modules. TestFlight: **build 217 (95c9bc5)**, auto-submitted to TestFlight only (not for review).
+`expo export --platform ios` exit 0, 3151 modules. TestFlight: **build 217 (95c9bc5) — FINISHED and on TestFlight** (not submitted for review).
 
 | Requirement | Status | Evidence | What you must do |
 |---|---|---|---|
