@@ -278,9 +278,17 @@ export function canAskNow(speedKmh: number | null | undefined): boolean {
  * Another way out of the site: a gate that isn't the closed one and isn't itself known closed at
  * this time; open-by-pattern first, then the nearest to `from`. null = no other exit.
  */
+/**
+ * Gates this close to the closed one are the same way out (a double gate, in + out side by side):
+ * never offered as "another exit". Found in the proof run on a real Wetherill Park lot, whose two
+ * OSM gates are 20 m apart -- "another exit" went out through the same opening.
+ */
+export const SAME_EXIT_M = 40;
+
 export function alternativeExit(gates: Gate[], closedId: string, docs: Record<string, ExitDoc | null>, from: LatLng, bucket: string, nowMs: number): Gate | null {
+  const closed = gates.find((g) => g.id === closedId);
   const candidates = gates
-    .filter((g) => g.id !== closedId && g.access !== "no")
+    .filter((g) => g.id !== closedId && g.access !== "no" && (!closed || metres(g.point, closed.point) > SAME_EXIT_M))
     .map((g) => ({ g, p: patternFor(docs[g.id]?.answers, bucket, nowMs).state }))
     .filter((c) => c.p !== "closed");
   candidates.sort((a, b) => (a.p === "open" ? 0 : 1) - (b.p === "open" ? 0 : 1) || metres(from, a.g.point) - metres(from, b.g.point));

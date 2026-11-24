@@ -133,6 +133,13 @@ describe("the answer", () => {
   it("no other exit -> 'No other exit found', the route stays", () => {
     expect(exitAnswerPlan(false, { ...q, gates: [north] }, now)).toEqual({ action: "noOtherExit", say: "No other exit found" });
   });
+  it("a gate right beside the closed one (a double gate, 20 m apart) is the same exit: 'No other exit found'", () => {
+    const twin = { id: "n503", point: ll(at(100, 95)), barrier: "gate", access: null, openingHours: null }; // 20 m east of n501
+    expect(alternativeExit([north, twin], "n501", {}, parked, bucket, now)).toBeNull();
+    expect(exitAnswerPlan(false, { ...q, gates: [north, twin] }, now)).toEqual({ action: "noOtherExit", say: "No other exit found" });
+    // With the real other exit there too, that one is chosen.
+    expect(alternativeExit([north, twin, ...gates.filter((g) => g.id === "n502")], "n501", {}, parked, bucket, now)?.id).toBe("n502");
+  });
   it("an exit that's itself known closed now is never offered as the other way out", () => {
     const docs = { n502: { answers: [ans(false), ans(false), ans(false)] } };
     expect(alternativeExit(gates, "n501", docs, parked, bucket, now)).toBeNull();

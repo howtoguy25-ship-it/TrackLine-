@@ -7,6 +7,7 @@ import Svg, { Circle, Line, Rect } from "react-native-svg";
 import { Text } from "@/components/AppText";
 import { Button } from "@/components/ui/Button";
 import { ASK_SECONDS } from "@/nav/exitGates";
+import { EXIT_CARD_HEIGHT } from "@/nav/navControlsLayout";
 import { SURFACES } from "@/theme/colors";
 import { radius, shadow, spacing } from "@/theme/tokens";
 
@@ -28,6 +29,8 @@ export function GateIcon({ size = 36, color = "#E0A53A" }: { size?: number; colo
 interface Props {
   question: string;
   bottom: number;
+  /** Right inset: wider on a short phone, so the card stops short of the top-right buttons. */
+  right?: number;
   scheme: "light" | "dark";
   onOpen: () => void;
   onClosed: () => void;
@@ -35,14 +38,14 @@ interface Props {
   onTimeout: () => void;
 }
 
-export function ExitGateCard({ question, bottom, scheme, onOpen, onClosed, onTimeout }: Props) {
+export function ExitGateCard({ question, bottom, right, scheme, onOpen, onClosed, onTimeout }: Props) {
   const s = SURFACES[scheme];
   useEffect(() => {
     const t = setTimeout(onTimeout, ASK_SECONDS * 1000);
     return () => clearTimeout(t);
   }, [onTimeout]);
   return (
-    <View style={[styles.card, { bottom, backgroundColor: s.sheet }]} testID="exit-gate-card" accessibilityRole="alert">
+    <View style={[styles.card, { bottom, backgroundColor: s.sheet }, right != null ? { right } : null]} testID="exit-gate-card" accessibilityRole="alert">
       <View style={styles.row}>
         <GateIcon />
         <Text style={[styles.text, { color: s.text }]} numberOfLines={2}>
@@ -58,9 +61,11 @@ export function ExitGateCard({ question, bottom, scheme, onOpen, onClosed, onTim
 }
 
 const styles = StyleSheet.create({
-  card: { position: "absolute", left: spacing.md, right: spacing.md, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm, ...shadow.medium },
+  // Kept within EXIT_CARD_HEIGHT (nav/navControlsLayout.ts) so it fits between the bottom and top
+  // control columns even on a 667 pt phone.
+  card: { position: "absolute", left: spacing.md, right: spacing.md, maxHeight: EXIT_CARD_HEIGHT, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm, ...shadow.medium },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  text: { flex: 1, fontSize: 16, fontWeight: "700" },
+  text: { flex: 1, fontSize: 16, lineHeight: 20, fontWeight: "700" },
   actions: { flexDirection: "row", gap: spacing.sm },
   btn: { flex: 1 },
 });

@@ -9,6 +9,7 @@
 //                 ahead · 800 m") above that, between the two bottom columns
 // The re-centre button used to sit bottom-LEFT above the bar, exactly where the speedometer is.
 // Pure, tested on 320 / 375 / 390 / 430 pt widths (__tests__/nav/navControls.test.tsx).
+import { NAV_ARROW_FRACTION } from "@/nav/navCamera";
 
 export const CONTROL_GAP = 12;
 export const SIDE_MARGIN = 16;
@@ -218,3 +219,40 @@ export function topBadgeLane(width: number): { left: number; maxWidth: number } 
   const left = SIDE_MARGIN + COMPASS_SIZE + CONTROL_GAP;
   return { left, maxWidth: Math.max(120, width - left - (SIDE_MARGIN + SOUND_SIZE + CONTROL_GAP)) };
 }
+
+/** Half the driving arrow's height (assets/map/user-arrow is 44 pt square). */
+export const ARROW_HALF = 22;
+
+/**
+ * Fix pass 7 §5: where the exit-gate question card sits (distance from the screen bottom to its
+ * bottom edge). It is full width, so it goes above BOTH bottom columns at their tallest (speed
+ * sign over speedometer; Re-centre over Report), and above the driving arrow (centred at
+ * NAV_ARROW_FRACTION of the map height), 12 pt clear of each. Root cause found in the proof
+ * render: it was placed above one control height only, so it covered the speed sign and
+ * Re-centre, and on an 844 pt phone its bottom edge (y 592) clipped the arrow (586-630).
+ */
+export function exitCardBottom(i: { windowHeight: number; safeBottom: number; bottomBarHeight: number; reservedBottom?: number }): number {
+  const leftColumn = SPEEDOMETER_SIZE + CONTROL_GAP + SPEED_SIGN_SIZE;
+  const rightColumn = REPORT_SIZE + CONTROL_GAP + RECENTER_BUTTON;
+  const aboveControls = controlsBottom(i.safeBottom, i.bottomBarHeight) + Math.max(leftColumn, rightColumn) + CONTROL_GAP;
+  const mapHeight = i.windowHeight - (i.reservedBottom ?? 0);
+  const arrowTop = NAV_ARROW_FRACTION * mapHeight - ARROW_HALF;
+  return Math.max(aboveControls, Math.ceil(i.windowHeight - arrowTop + CONTROL_GAP));
+}
+
+/** The exit card's height: 12 + a two-line question (40) + 8 + buttons (44) + 12, rounded up. */
+export const EXIT_CARD_HEIGHT = 120;
+
+/**
+ * The exit card's full placement: its bottom (exitCardBottom) and its right inset. On a short phone
+ * (667 pt) there isn't 120 pt between the bottom columns and a full top-right column (music
+ * player, sound, voice), so there the card stops short of that column instead of covering it.
+ */
+export function exitCardPlacement(i: { windowHeight: number; safeTop: number; safeBottom: number; topBarHeight: number; bottomBarHeight: number; reservedBottom?: number }): { bottom: number; right: number } {
+  const bottom = exitCardBottom(i);
+  const cardTop = i.windowHeight - bottom - EXIT_CARD_HEIGHT;
+  const rightColumnBottom = topColumnTop(i.safeTop, i.topBarHeight) + 3 * SOUND_SIZE + 2 * CONTROL_GAP;
+  return { bottom, right: cardTop < rightColumnBottom + CONTROL_GAP ? SIDE_MARGIN + SOUND_SIZE + CONTROL_GAP : EXIT_CARD_SIDE };
+}
+/** The card's normal side margin (theme spacing.md). */
+export const EXIT_CARD_SIDE = 12;

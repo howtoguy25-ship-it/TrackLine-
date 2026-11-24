@@ -59,6 +59,33 @@ describe("60 s stationary with ±10 m GPS noise", () => {
     expect(deadbandMeters(14)).toBe(14);
   });
 
+  // Regression (fix pass 7 §5 proof render): a parked phone also reports the odd spurious speed
+  // (1.5-2 m/s) together with a fix jumping 10-15 m. One such fix used to unlock the arrow, and then
+  // every raw fix was drawn: it moved 14 m in 60 s.
+  it("lone speed spikes with a jumping fix (multipath) don't unlock it", () => {
+    const r = rng(3);
+    const parked = { latitude: -33.84462, longitude: 151.03712 };
+    let s: StillState = INITIAL_STILL;
+    const drawn: { latitude: number; longitude: number }[] = [];
+    for (let t = 0; t <= 60_000; t += 1000) {
+      const spike = t % 7000 === 3000; // every 7 s: 1.6-2.4 m/s, 12-15 m off
+      const angle = r() * 2 * Math.PI;
+      const dist = spike ? 12 + r() * 3 : r() * 8;
+      const fix = offset(parked, Math.cos(angle) * dist, Math.sin(angle) * dist);
+      s = stillLockStep(s, { ...fix, accuracy: 8, speed: spike ? 1.6 + r() * 0.8 : r() * 0.5, timeMs: t });
+      drawn.push({ latitude: s.latitude, longitude: s.longitude });
+    }
+    expect(s.locked).toBe(true);
+    expect(Math.max(...drawn.map((p) => m(p, drawn[0])))).toBe(0);
+    // Even a lone 4 m/s reading isn't enough on its own.
+    const one = stillLockStep(s, { ...offset(parked, 20, 0), accuracy: 8, speed: 4, timeMs: 61_000 });
+    expect(one.locked).toBe(true);
+    expect(m(one, drawn[0])).toBe(0);
+    // A second moving fix a second later: that's driving -- unlocked.
+    const two = stillLockStep(one, { ...offset(parked, 26, 0), accuracy: 8, speed: 4, timeMs: 62_000 });
+    expect(two.locked).toBe(false);
+  });
+
   it("the phone really turned (more than 20° for a second): the heading follows", () => {
     const hold = new HeadingHold();
     expect(hold.push(90, 0, true)).toBe(90);
@@ -98,7 +125,7 @@ describe("driving: sharp, on the road, no lag", () => {
       if (lastDrawn && t > 2000) biggestStep = Math.max(biggestStep, m(lastDrawn, drawn));
       lastDrawn = drawn;
     }
-    expect(unlockedAt).toBe(2000); // the first fix at speed after the start unlocks it
+    expect(unlockedAt).toBe(3000); // the second fix at speed after the start unlocks it (one GPS second)
     expect(errors.length).toBeGreaterThan(100);
     // On the road within 3 m of where the car really is, on (nearly) every fix.
     const sorted = [...errors].sort((a, b) => a - b);

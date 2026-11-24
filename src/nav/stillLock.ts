@@ -9,7 +9,10 @@
 //   * while still the position is LOCKED: fixes inside the deadband -- max(8 m, the fix's
 //     accuracy) -- around the locked point are ignored (0 m of movement);
 //   * it unlocks when the car really moves: speed at least 1.5 m/s AND outside the deadband, or
-//     clearly driving (3 m/s+); the arrow then eases from the locked point to the new fix (the
+//     clearly driving (3 m/s+) -- on TWO fixes in a row at least 1 s apart (fix pass 7 §5: the
+//     proof's 60 s parked run, with the odd spurious speed reading a parked phone gives, unlocked on
+//     one lone 1.6 m/s fix 14 m off and then drew every raw fix: the arrow moved 14 m). Pulling
+//     away costs one GPS second. The arrow then eases from the locked point to the new fix (the
 //     arrow's own MotionSmoother), so there is no jump;
 //   * moving: every fix goes straight through (60 fps interpolation and route matching happen
 //     downstream), so there is no added lag.
@@ -27,6 +30,8 @@ export const MIN_DEADBAND_M = 8;
 export const CLEARLY_MOVING_MS = 3;
 export const HEADING_HOLD_DEG = 20;
 export const HEADING_HOLD_MS = 1000;
+/** Two "moving" fixes this far apart (or more) unlock the arrow. */
+export const MOVE_CONFIRM_MS = 1000;
 
 export interface Fix {
   latitude: number;
@@ -46,6 +51,8 @@ export interface StillState {
   /** When speed first dropped under the threshold (while moving); null when not slow. */
   slowSince: number | null;
   started: boolean;
+  /** While locked: when the current run of "moving" fixes began (null when the last fix wasn't). */
+  movingSince?: number | null;
 }
 
 export const INITIAL_STILL: StillState = { locked: true, latitude: 0, longitude: 0, slowSince: null, started: false };
@@ -64,8 +71,10 @@ export function stillLockStep(s: StillState, f: Fix): StillState {
   const band = deadbandMeters(f.accuracy);
   if (s.locked) {
     const moving = (speed != null && speed >= CLEARLY_MOVING_MS) || (speed != null && speed >= STILL_SPEED_MS && away > band) || (speed == null && away > band * 2);
-    if (!moving) return s; // the arrow stays exactly where it is
-    return { locked: false, latitude: f.latitude, longitude: f.longitude, slowSince: null, started: true };
+    if (!moving) return s.movingSince != null ? { ...s, movingSince: null } : s; // the arrow stays exactly where it is
+    const since = s.movingSince ?? f.timeMs;
+    if (f.timeMs - since < MOVE_CONFIRM_MS) return { ...s, movingSince: since }; // one fix isn't enough
+    return { locked: false, latitude: f.latitude, longitude: f.longitude, slowSince: null, started: true, movingSince: null };
   }
   // Moving: every fix passes straight through.
   const slow = speed != null ? speed < STILL_SPEED_MS : away <= band;

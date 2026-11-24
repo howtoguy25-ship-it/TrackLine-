@@ -255,7 +255,7 @@ import { tiltForZoom } from "@/map/tiltCurve";
 import { PREVIEW_FIT_MS, drawnRouteIndices, previewEdgePadding, previewFitCamera, previewFitCoordinates, previewFitLines } from "@/nav/previewCamera";
 import { routeAheadOf } from "@/map-v2/geo";
 import { NAV_START_MS, navCameraBearing, navFollowPadding, navFollowPose, navStartBearing, navZoomForSpeed, showManoeuvreCallout } from "@/nav/navCamera";
-import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, navControlFrames, topBadgeLane } from "@/nav/navControlsLayout";
+import { AHEAD_BANNER_HEIGHT, REPORT_SIZE, SIDE_MARGIN, SPEEDOMETER_SIZE, aheadRoom as aheadRoomFor, controlsBottom, exitCardPlacement, navControlFrames, topBadgeLane } from "@/nav/navControlsLayout";
 import { chipRemainingM, featureChipText, shouldSpeakFeature } from "@/nav/roadFeatureAlerts";
 import { ARRIVAL_CARD_MS, HOME_RESET_MS, homeCameraAfterDrive, type ArrivalInfo, type EndReason } from "@/nav/endDrive";
 import { parseNavVoiceCommand } from "@/nav/voiceCommand";
@@ -7453,7 +7453,7 @@ export function MapScreen() {
       {route && exitQuestion && canAskNow(currentSpeedKmh) ? (
         <ExitGateCard
           question={exitQuestionText(exitQuestion.label)}
-          bottom={controlsBottom(insets.bottom, bottomBarHeight) + Math.max(REPORT_SIZE, SPEEDOMETER_SIZE) + 12}
+          {...exitCardPlacement({ windowHeight, safeTop: insets.top, safeBottom: insets.bottom, topBarHeight: instructionCardHeight, bottomBarHeight, reservedBottom: liveViewReserved })}
           scheme={mapScheme}
           onOpen={() => answerExitQuestion(true)}
           onClosed={() => answerExitQuestion(false)}

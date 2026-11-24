@@ -48,7 +48,7 @@ import { roadWidthExpression } from "../src/map-v2/styles/buildStyle";
 import { screenLayout, withPanelPadding, type ScreenLayout } from "../src/layout/screenLayout";
 import { bannerSlotHeight } from "../src/components/bannerSlot";
 import { NAV_FOLLOW_PITCH, navFollowPadding, navZoomForSpeed } from "../src/nav/navCamera";
-import { navControlFrames, overlaps, type Frame } from "../src/nav/navControlsLayout";
+import { EXIT_CARD_HEIGHT, EXIT_CARD_SIDE, exitCardPlacement, navControlFrames, overlaps, type Frame } from "../src/nav/navControlsLayout";
 import { CALLOUT_TAIL, calloutAnchor, calloutSide } from "../src/nav/turnCallout";
 import { routeColoursFor } from "../src/map-v2/styles/mapAppearance";
 import type { LatLng } from "../src/utils/polyline";
@@ -115,23 +115,35 @@ const caption = (text: string, y: number, w: number) =>
 // ---------------------------------------------------------------- real data
 const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
 const overpassCache = new Map<string, SiteData>();
+const diskCache = process.env.OVERPASS_CACHE_DIR;
+const cacheFile = (q: string) => path.join(diskCache!, require("crypto").createHash("sha1").update(q).digest("hex") + ".json"); // eslint-disable-line @typescript-eslint/no-require-imports
 async function overpass(q: string): Promise<SiteData> {
   const hit = overpassCache.get(q);
   if (hit) return hit;
+  if (diskCache) {
+    try {
+      const d = JSON.parse(readFileSync(cacheFile(q), "utf8")) as SiteData;
+      overpassCache.set(q, d);
+      return d;
+    } catch {
+      // not cached yet
+    }
+  }
   let last: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     for (const url of OVERPASS) {
       try {
         const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "content-type": "application/x-www-form-urlencoded", "User-Agent": "TrackLine-proof/1.0" }, signal: AbortSignal.timeout(30_000) });
         if (!r.ok) throw new Error(`Overpass HTTP ${r.status}`);
         const data = parseOverpass(((await r.json()) as { elements: OsmElement[] }).elements);
         overpassCache.set(q, data);
+        if (diskCache) writeFileSync(cacheFile(q), JSON.stringify(data));
         return data;
       } catch (e) {
         last = e;
       }
     }
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 15000));
   }
   throw last;
 }
@@ -248,10 +260,10 @@ function etaBar(w: number, safeBottom: number, eta: string, sub: string) {
     <div style="width:56px;height:56px;border-radius:28px;background:#33363B"></div></div>`;
 }
 /** components/ExitGateCard.tsx, drawn: our gate icon, the question, [Open] [Closed]. */
-function exitCard(question: string, bottom: number, w: number) {
-  return `<div style="position:absolute;left:16px;width:${w - 32}px;bottom:${bottom}px;background:#fff;border-radius:20px;padding:16px;box-sizing:border-box;box-shadow:0 6px 18px rgba(0,0,0,.25)">
-    <div style="display:flex;align-items:center;gap:16px">${GATE_SVG()}<div style="flex:1;font:700 16px ${FONT};color:#1F2125">${question}</div></div>
-    <div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1;height:48px;border-radius:24px;background:#EEF0F3;display:flex;align-items:center;justify-content:center;font:700 16px ${FONT};color:#1F2125">Open</div><div style="flex:1;height:48px;border-radius:24px;background:#0098FF;display:flex;align-items:center;justify-content:center;font:700 16px ${FONT};color:#fff">Closed</div></div></div>`;
+function exitCard(question: string, place: { bottom: number; right: number }, w: number) {
+  return `<div style="position:absolute;left:${EXIT_CARD_SIDE}px;width:${w - EXIT_CARD_SIDE - place.right}px;bottom:${place.bottom}px;max-height:${EXIT_CARD_HEIGHT}px;background:#fff;border-radius:20px;padding:12px;box-sizing:border-box;box-shadow:0 6px 18px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;gap:12px">${GATE_SVG()}<div style="flex:1;font:700 16px/20px ${FONT};color:#1F2125">${question}</div></div>
+    <div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1;height:44px;border-radius:22px;background:#EEF0F3;display:flex;align-items:center;justify-content:center;font:700 16px ${FONT};color:#1F2125">Open</div><div style="flex:1;height:44px;border-radius:22px;background:#0098FF;display:flex;align-items:center;justify-content:center;font:700 16px ${FONT};color:#fff">Closed</div></div></div>`;
 }
 const toast = (text: string, top: number, w: number) => `<div style="position:absolute;left:0;width:${w}px;top:${top}px;display:flex;justify-content:center"><div style="padding:8px 14px;border-radius:18px;background:rgba(20,22,26,.9);font:600 15px ${FONT};color:#fff">${text}</div></div>`;
 
@@ -277,11 +289,17 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
     const tried: string[] = [];
     for (const p of searchAt) {
       if (found) break;
-      const area = await overpass(overpassQuery(p, 900));
+      let area: SiteData;
+      try {
+        area = await overpass(overpassQuery(p, 900));
+      } catch (e) {
+        console.log("  area skipped (Overpass unavailable):", String(e));
+        continue;
+      }
       // Warehouse lots first (the smallest site wins in siteAt, as in the app).
       const candidates = area.sites.filter((s) => s.kind === "warehouse" && siteGates(s, area.gates).length >= 2).sort((a, b) => a.areaM2 - b.areaM2);
       for (const cand of candidates) {
-        if (found || tried.length > 24) break;
+        if (found || tried.length > 60) break;
         const gates = siteGates(cand, area.gates);
         const c = cand.polygon.reduce((a, q) => ({ latitude: a.latitude + q.latitude / cand.polygon.length, longitude: a.longitude + q.longitude / cand.polygon.length }), { latitude: 0, longitude: 0 });
         for (const g of gates) {
@@ -291,7 +309,12 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
           const origin = { latitude: g.point.latitude + (c.latitude - g.point.latitude) * t, longitude: g.point.longitude + (c.longitude - g.point.longitude) * t };
           // What the app runs at "Go": the site we're in (re-fetched around the start, ~500 m).
           const cell = { latitude: +origin.latitude.toFixed(3), longitude: +origin.longitude.toFixed(3) };
-          const data = await overpass(overpassQuery(cell));
+          let data: SiteData;
+          try {
+            data = await overpass(overpassQuery(cell));
+          } catch {
+            continue;
+          }
           console.log("  try", cand.id, g.id);
           const site = siteAt(origin, data.sites);
           tried.push(`${cand.id}/${g.id}`);
@@ -305,7 +328,8 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
           const alt = alternativeExit(siteG, exit.id, {}, origin, bucketFor(new Date()), Date.now());
           if (!alt) continue;
           const rerouted = await mapboxRoute([ll(origin), ll(alt.point), ll(destination)]);
-          if (!rerouted || gatesOnRouteStart(rerouted.line.map(lat), [alt]).length === 0) continue;
+          // The new route must really leave through the other gate, and not through the closed one.
+          if (!rerouted || gatesOnRouteStart(rerouted.line.map(lat), [alt]).length === 0 || gatesOnRouteStart(rerouted.line.map(lat), [exit]).length > 0) continue;
           found = { data, site, gates: siteG, origin, route, exit, alt, rerouted };
           break;
         }
@@ -349,7 +373,7 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
       pins: gatePins,
       overlay:
         topBar(W, SAFE_TOP, `${Math.round(gatesOnRouteStart(route.line.map(lat), [exit])[0].alongM)} m`, route.firstStreet ?? "", straight(60)) +
-        exitCard(question, 110 + SAFE_BOTTOM + 12, W) +
+        exitCard(question, exitCardPlacement({ windowHeight: H, safeTop: SAFE_TOP, safeBottom: SAFE_BOTTOM, topBarHeight: TOP_BAR_H, bottomBarHeight: 110 }), W) +
         etaBar(W, SAFE_BOTTOM, etaText(route.seconds), `${Math.round(route.seconds / 60)} min • ${(route.metres / 1000).toFixed(1)} km`) +
         caption(`Real OSM ${site.kind} ${site.id}${site.name ? ` (${site.name})` : ""} · ${gates.length} gates · real route leaves through ${exit.id} · stopped (0 km/h) → decideExit = "${decision.kind}" · dashed = site edge, pins = annotations · drawn`, SAFE_TOP + TOP_BAR_H + 10, W),
     });
@@ -504,7 +528,7 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
     const stepIdx = recorded.steps.findIndex((s: { maneuver?: string; targetStreetName?: string }) => s.maneuver === "turn-right" && s.targetStreetName === "St Hilliers Road");
     const step = recorded.steps[stepIdx];
     const turnAlong = geo.stepEnds[stepIdx - 1];
-    const along = turnAlong - 230;
+    const along = turnAlong - 150;
     const here = pointAt(geo, along);
     const heading = routeBearingAt(geo, along) ?? 0;
     const speed = 50;
@@ -539,7 +563,7 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
         driver: { at: ll(here), heading },
         pins: [callout],
         overlay:
-          topBar(W, SAFE_TOP, "230 m", step.targetStreetName, turnRight(60)) +
+          topBar(W, SAFE_TOP, "150 m", step.targetStreetName, turnRight(60)) +
           html +
           etaBar(W, SAFE_BOTTOM, "10:12 am", "21 min • 15.2 km") +
           caption(
