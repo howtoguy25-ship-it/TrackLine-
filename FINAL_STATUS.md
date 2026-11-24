@@ -16,7 +16,7 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 | Admin site (`/admin`) | `tsc` 0 errors · vitest 4/4 · `next build` OK (unchanged since) |
 | Map styles | open style-spec validator: 0 errors on light / dark / satellite (`__tests__/map/styleValid.test.ts`) |
 | Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
-| TestFlight | 212 (ce48702) · 213 (ace575b) · 214 (4633690) · 215 (a9b1f86) gaps 15-18 · **216 (5b5e064) permanent fix — queued, auto-submitted to TestFlight** — all on TestFlight only (not submitted for review) |
+| TestFlight | 212 (ce48702) · 213 (ace575b) · 214 (4633690) · 215 (a9b1f86) gaps 15-18 · **216 (5b5e064) permanent fix — FINISHED, on TestFlight** — all on TestFlight only (not submitted for review) |
 
 ## 2026-11-23: permanent fix — marker, camera, route fit, nav orientation, 3D, controls
 
