@@ -1341,6 +1341,28 @@ exports.reportFuelPrice = onCall({ timeoutSeconds: 20 }, async (request) => {
   }
 });
 
+// ---- Smart exit gates (fix pass 7 §1) ----
+// "Is the exit on <road> open?": a driver's answer, anonymous (hashed), building each exit's
+// pattern by time of day (siteExitsCore.js). Clients can read siteExits but never write it.
+const siteExitsCore = require("./siteExitsCore");
+
+exports.answerSiteExit = onCall({ timeoutSeconds: 20 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const a = siteExitsCore.parseAnswer(request.data);
+  if (a.error) throw new HttpsError("invalid-argument", a.error);
+  const ref = getFirestore().collection("siteExits").doc(a.gateId);
+  const voter = siteExitsCore.voterKey(request.auth.uid, a.gateId);
+  const out = await getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const next = siteExitsCore.applyAnswer(snap.exists ? snap.data() : null, { ...a, voter }, Date.now());
+    tx.set(ref, next);
+    return next;
+  });
+  return { pattern: out.patterns[a.bucket] || null, summary: out.summary, answers: out.answers.length };
+});
+
+// The dashboard's list of exits and opening hours: the adminModeration section (admin/moderation.js).
+
 // ---- Planned drives (Plan a drive) ----
 // Every 5 minutes: drives due within 30 minutes that haven't had their reminder get one traffic
 // re-check (Google Routes API, the same server key as badge popularity) and one push with the

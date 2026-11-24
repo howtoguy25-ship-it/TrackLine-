@@ -97,6 +97,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Smart exit gates (fix pass 7 §1): read by signed-in drivers; written only by the
+    // answerSiteExit / adminSetSiteExitHours functions.
+    match /siteExits/{gateId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /scores/{uid} {
       allow read: if isSignedIn();
       allow write: if false;

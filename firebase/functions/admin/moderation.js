@@ -181,6 +181,34 @@ function moderationOps({ reportStore, POLICY, encodeGeohash }) {
         };
       },
     },
+    // Smart exit gates (fix pass 7 §1): every exit drivers have answered for, newest first, with
+    // its pattern by time of day; and setting / confirming an exit's opening hours.
+    siteExits: {
+      perm: "moderation.read",
+      run: async (ctx) => {
+        const snap = await ctx.db.collection("siteExits").orderBy("updatedAtMs", "desc").limit(200).get();
+        return {
+          exits: snap.docs.map((d) => {
+            const x = d.data();
+            return { gateId: d.id, siteId: x.siteId || null, label: x.label || null, lat: x.lat ?? null, lng: x.lng ?? null, answers: (x.answers || []).length, patterns: x.patterns || {}, summary: x.summary || null, hours: x.hours || null, hoursConfirmed: !!x.hoursConfirmed, updatedAtMs: x.updatedAtMs || null };
+          }),
+        };
+      },
+    },
+    setSiteExitHours: {
+      perm: "moderation.act",
+      run: async (ctx) => {
+        const h = require("../siteExitsCore").parseHours(ctx.data);
+        if (h.error) throw new BadInput(h.error);
+        const reason = requireReason(ctx.data);
+        const ref = ctx.db.doc(`siteExits/${h.gateId}`);
+        const before = await ref.get();
+        const patch = { hours: h.hours, hoursConfirmed: h.confirmed, hoursSetBy: ctx.actor.uid, hoursSetAtMs: ctx.nowMs };
+        await ref.set(patch, { merge: true });
+        await ctx.audit({ action: "moderation.siteExitHours", target: h.gateId, before: before.exists ? { hours: before.data().hours || null, hoursConfirmed: !!before.data().hoursConfirmed } : null, after: { hours: h.hours, hoursConfirmed: h.confirmed }, reason });
+        return { ok: true };
+      },
+    },
     decideMapEdit: {
       perm: "moderation.act",
       run: async (ctx) => {
