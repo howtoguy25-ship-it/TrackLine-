@@ -6,6 +6,24 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Startup + Trackys around you + private zones + arrow heading, and Waze-match route preview / route list / "What's your ride?" — 2026-11-24
+
+All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §47, §48).
+Line-by-line check of MAP POLISH + both PERMANENT FIX prompts: `docs/waze-match-routes/CHECKLIST.md`.
+
+| § | What | Evidence |
+|---|---|---|
+| W0 Blue dots | Root cause: driver-reported road features drew as 24 pt badges / far dots. Now the same icon / checker / hidden states as OSM features (`roadFeatureReportIcon`). Commit shown in Settings › About | `__tests__/wazeMatch/noFeatureDots.test.ts` |
+| S1 Start-up | Grid in our colours until the first frame; controls at final frames from the start; camera starts at the cached last place (saved every 30 s / 200 m) then eases to the live fix | `__tests__/startup/startup.test.tsx`, `docs/startup-trackys/1-*`, `2-*` |
+| S2 Trackys around you | Server-side count (`noteActive` + `trackysAround`, geohash cells, 15 min, 10→25→50→150 km until 20 users, ghosts count, "A few" < 10, nearest 10, cached 60 s). White pill 5 s, tap zooms out; again after > 10 min away; one message at a time | `firebase/tests/trackysCore.test.js`, `firebase/tests/trackys.test.js` (emulator), `__tests__/startup/trackysPill.test.tsx` |
+| S3 Viewport Trackys + private zones | Geohash cell queries (max 50, no fixed radius). Server hides anyone within 400 m of Home / Work / trip start / destination; no Home → first stationary place tonight (10 pm–6 am) | `firebase/tests/trackys.test.js` (inside zone, after leaving, on arrival, ghost) |
+| S4 Arrow heading | Compass when slow, GPS course above 8 km/h, blend 3–8; turret turn max 90°/s ease-in-out, low-pass, 4° deadband, spike > 60° in < 0.5 s ignored unless held 1 s, accuracy gating. Home map heading-up unless north-up chosen | `__tests__/startup/headingTurret.test.ts`, `docs/startup-trackys/4-*` |
+| W1 Route preview | White top card ("Your location", swap), blue-text Avoid pill, vehicle pill; flat north-up clean map (no badges / signs / dots / Trackys); bubbles placed with their real sizes | `__tests__/wazeMatch/routeSheet.test.tsx`, `docs/waze-match-routes/route-preview-*` |
+| W2 Route sheet | Via = two main named roads + suburb (`viaText`), list Via on 2 lines, separator above Leave later / Go now, refit at both heights | same |
+| W3 What's your ride? | Once after the location question (guest or signed in), synced with the settings; Settings › Driving preferences › Vehicle type; vehicle pill re-requests routes; Motorcycle → TWO_WHEELER where offered, else labelled car routes; Taxi note; EV/Truck hidden (BLOCKED #29); vehicle sets the map icon | `__tests__/wazeMatch/vehiclePicker.test.tsx`, `docs/waze-match-routes/vehicle-picker.png` |
+
+Not done: the home arrow at ~72% (conflicts with the sheet peek; stays above the street pill at 61% on 390×844, see `docs/startup-trackys/README.md`). Simulator recordings (Linux, BLOCKED #28).
+
 ## Map styles: every style Waze-level, clean satellite — 2026-11-24
 
 All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §46).

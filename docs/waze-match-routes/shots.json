@@ -1,0 +1,612 @@
+{
+  "routes": [
+    {
+      "minutes": 14,
+      "km": 4.9,
+      "via": "Via Wattle Street Mount Lewis; Wiley Avenue Wiley Park"
+    },
+    {
+      "minutes": 15,
+      "km": 5.3,
+      "via": "Via South Terrace Mount Lewis; Punchbowl Road Wiley Park"
+    }
+  ],
+  "collapsed-bubbles": {
+    "sizes": [
+      {
+        "width": 84,
+        "height": 60
+      },
+      {
+        "width": 84,
+        "height": 40
+      }
+    ],
+    "placed": [
+      true,
+      true
+    ]
+  },
+  "docs/waze-match-routes/route-preview-collapsed": {
+    "zoom": 12.430596250067342,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": true,
+    "anchors": [
+      {
+        "x": 209.42677886075506,
+        "y": 374.34857852425057
+      },
+      {
+        "x": 195.67151790245262,
+        "y": 453.79632959697295
+      }
+    ]
+  },
+  "collapsed-padding": {
+    "top": 240,
+    "bottom": 263,
+    "left": 32,
+    "right": 32
+  },
+  "pulled-up-bubbles": {
+    "sizes": [
+      {
+        "width": 84,
+        "height": 60
+      },
+      {
+        "width": 84,
+        "height": 40
+      }
+    ],
+    "placed": [
+      true,
+      true
+    ]
+  },
+  "docs/waze-match-routes/route-preview-pulled-up": {
+    "zoom": 12.430596250067342,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": true,
+    "anchors": [
+      {
+        "x": 209.42677886075506,
+        "y": 324.34857852425057
+      },
+      {
+        "x": 195.67151790245262,
+        "y": 403.79632959697295
+      }
+    ]
+  },
+  "pulled-up-padding": {
+    "top": 240,
+    "bottom": 363,
+    "left": 32,
+    "right": 32
+  },
+  "docs/waze-match-routes/vehicle-picker": {},
+  "docs/waze-match-routes/home-map": {
+    "zoom": 16,
+    "pitch": 45,
+    "bearing": 20,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/1-loading-grid-light": {},
+  "frames-light": {
+    "loading": {
+      "menu": {
+        "x": 16,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "compass": {
+        "x": 16,
+        "y": 119,
+        "width": 56,
+        "height": 56
+      },
+      "sound": {
+        "x": 318,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "report": {
+        "x": 318,
+        "y": 542,
+        "width": 56,
+        "height": 56
+      },
+      "streetPill": {
+        "x": 72,
+        "y": 542,
+        "width": 246,
+        "height": 56
+      }
+    },
+    "loaded": {
+      "menu": {
+        "x": 16,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "compass": {
+        "x": 16,
+        "y": 119,
+        "width": 56,
+        "height": 56
+      },
+      "sound": {
+        "x": 318,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "report": {
+        "x": 318,
+        "y": 542,
+        "width": 56,
+        "height": 56
+      },
+      "streetPill": {
+        "x": 72,
+        "y": 542,
+        "width": 246,
+        "height": 56
+      }
+    },
+    "same": true
+  },
+  "docs/startup-trackys/2-loaded-light": {
+    "zoom": 16,
+    "pitch": 45,
+    "bearing": 20,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/1-loading-grid-dark": {},
+  "frames-dark": {
+    "loading": {
+      "menu": {
+        "x": 16,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "compass": {
+        "x": 16,
+        "y": 119,
+        "width": 56,
+        "height": 56
+      },
+      "sound": {
+        "x": 318,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "report": {
+        "x": 318,
+        "y": 542,
+        "width": 56,
+        "height": 56
+      },
+      "streetPill": {
+        "x": 72,
+        "y": 542,
+        "width": 246,
+        "height": 56
+      }
+    },
+    "loaded": {
+      "menu": {
+        "x": 16,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "compass": {
+        "x": 16,
+        "y": 119,
+        "width": 56,
+        "height": 56
+      },
+      "sound": {
+        "x": 318,
+        "y": 55,
+        "width": 56,
+        "height": 56
+      },
+      "report": {
+        "x": 318,
+        "y": 542,
+        "width": 56,
+        "height": 56
+      },
+      "streetPill": {
+        "x": 72,
+        "y": 542,
+        "width": 246,
+        "height": 56
+      }
+    },
+    "same": true
+  },
+  "docs/startup-trackys/2-loaded-dark": {
+    "zoom": 16,
+    "pitch": 45,
+    "bearing": 20,
+    "inside": null,
+    "anchors": []
+  },
+  "trackysCount": {
+    "seeded": 43,
+    "active": 37,
+    "result": {
+      "few": false,
+      "count": 40,
+      "radiusKm": 10
+    },
+    "text": "40 Trackys around you"
+  },
+  "docs/startup-trackys/3-trackys-banner": {
+    "zoom": 16,
+    "pitch": 45,
+    "bearing": 20,
+    "inside": null,
+    "anchors": []
+  },
+  "turret": [
+    {
+      "t": 0,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 50,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 100,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 150,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 200,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 250,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 300,
+      "raw": 0,
+      "arrow": 0
+    },
+    {
+      "t": 350,
+      "raw": 10,
+      "arrow": 0
+    },
+    {
+      "t": 400,
+      "raw": 20,
+      "arrow": 0.75
+    },
+    {
+      "t": 450,
+      "raw": 30,
+      "arrow": 2.25
+    },
+    {
+      "t": 500,
+      "raw": 40,
+      "arrow": 4.5
+    },
+    {
+      "t": 550,
+      "raw": 50,
+      "arrow": 7.5
+    },
+    {
+      "t": 600,
+      "raw": 60,
+      "arrow": 11.25
+    },
+    {
+      "t": 650,
+      "raw": 70,
+      "arrow": 15.75
+    },
+    {
+      "t": 700,
+      "raw": 80,
+      "arrow": 20.25
+    },
+    {
+      "t": 750,
+      "raw": 90,
+      "arrow": 24.75
+    },
+    {
+      "t": 800,
+      "raw": 100,
+      "arrow": 29.25
+    },
+    {
+      "t": 850,
+      "raw": 110,
+      "arrow": 33.75
+    },
+    {
+      "t": 900,
+      "raw": 120,
+      "arrow": 38.25
+    },
+    {
+      "t": 950,
+      "raw": 120,
+      "arrow": 42.75
+    },
+    {
+      "t": 1000,
+      "raw": 120,
+      "arrow": 47.25
+    },
+    {
+      "t": 1050,
+      "raw": 120,
+      "arrow": 51.75
+    },
+    {
+      "t": 1100,
+      "raw": 120,
+      "arrow": 56.25
+    },
+    {
+      "t": 1150,
+      "raw": 120,
+      "arrow": 60.75
+    },
+    {
+      "t": 1200,
+      "raw": 300,
+      "arrow": 65.25
+    },
+    {
+      "t": 1250,
+      "raw": 120,
+      "arrow": 69.75
+    },
+    {
+      "t": 1300,
+      "raw": 120,
+      "arrow": 74.25
+    },
+    {
+      "t": 1350,
+      "raw": 120,
+      "arrow": 78.75
+    },
+    {
+      "t": 1400,
+      "raw": 120,
+      "arrow": 83.25
+    },
+    {
+      "t": 1450,
+      "raw": 120,
+      "arrow": 87.75
+    },
+    {
+      "t": 1500,
+      "raw": 120,
+      "arrow": 92.25
+    },
+    {
+      "t": 1550,
+      "raw": 120,
+      "arrow": 96.75
+    },
+    {
+      "t": 1600,
+      "raw": 120,
+      "arrow": 101.25
+    },
+    {
+      "t": 1650,
+      "raw": 120,
+      "arrow": 105.75
+    },
+    {
+      "t": 1700,
+      "raw": 120,
+      "arrow": 109.5
+    },
+    {
+      "t": 1750,
+      "raw": 120,
+      "arrow": 112.5
+    },
+    {
+      "t": 1800,
+      "raw": 120,
+      "arrow": 114.75
+    },
+    {
+      "t": 1850,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 1900,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 1950,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2000,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2050,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2100,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2150,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2200,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2250,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2300,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2350,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    },
+    {
+      "t": 2400,
+      "raw": 120,
+      "arrow": 116.12233187599486
+    }
+  ],
+  "docs/startup-trackys/4-arrow-still-t0000": {
+    "zoom": 16,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/4-arrow-still-t0600": {
+    "zoom": 16,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/4-arrow-still-t0900": {
+    "zoom": 16,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/4-arrow-still-t1200": {
+    "zoom": 16,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/4-arrow-still-t1500": {
+    "zoom": 16,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/4-arrow-still-t2400": {
+    "zoom": 16,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "zoneFrames": [
+    {
+      "at": [
+        151.042034,
+        -33.914012
+      ],
+      "shown": false
+    },
+    {
+      "at": [
+        151.045816,
+        -33.911248
+      ],
+      "shown": true
+    },
+    {
+      "at": [
+        151.057746,
+        -33.917146
+      ],
+      "shown": true
+    },
+    {
+      "at": [
+        151.075592,
+        -33.919869
+      ],
+      "shown": false
+    }
+  ],
+  "docs/startup-trackys/5-trackys-moving-1": {
+    "zoom": 12.369189353969091,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/5-trackys-moving-2": {
+    "zoom": 12.369189353969091,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/5-trackys-moving-3": {
+    "zoom": 12.369189353969091,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  },
+  "docs/startup-trackys/5-trackys-moving-4": {
+    "zoom": 12.369189353969091,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": null,
+    "anchors": []
+  }
+}

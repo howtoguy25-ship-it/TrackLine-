@@ -680,6 +680,56 @@ new road's within a few seconds (it used to stick to the first road).
 8. **Overseas.** Search a place in London (or anywhere abroad): street and suburb names show and
    roads are drawn the same way.
 
+## 47. Startup, "Trackys around you", private zones, arrow heading — NEEDS DEVICE TEST
+
+1. **Start-up.** Close TrackLine fully and open it. While tiles load you see a soft grey grid (dark
+   grid with the dark map), never white or black. The menu, compass, sound and Report buttons are
+   already in their final places and don't move when the map appears. The map starts where you
+   last were, then eases to your live position.
+2. **Trackys around you.** A white pill with the Tracky icon shows above the sheet for 5 s:
+   "A few Trackys around you", or a number rounded to 10. Tap it: the map zooms out. Leave the app
+   for more than 10 minutes and come back: it shows again. (Needs the Firebase deploy, BLOCKED #27.
+   Until then the pill doesn't show, rather than showing a made-up number.)
+3. **Private zones.** With a second phone signed in to another account and visible: within 400 m
+   of its saved Home, its Work, or where its trip started, it never appears on your map. Drive it
+   away and it appears; it disappears again near its destination. Ghost mode hides it at once.
+4. **Arrow when stopped.** Parked, turn on the spot holding the phone: the arrow turns smoothly
+   with you (never faster than a quarter turn per second, no twitching), and ignores a quick jolt
+   near a magnet or the car's metal. Drive off: above about 8 km/h it follows the road instead.
+5. **Heading-up home map.** On the home map the map turns with you, the arrow sits just above the
+   street-name pill. Settings › Map view › Keep map north up: the map stays north-up.
+
+## 48. Route preview, route list, "What's your ride?" — NEEDS DEVICE TEST
+
+1. **First open.** Delete and reinstall (or a new phone). After the location question,
+   "What's your ride?" shows once: our car-and-motorbike picture, Private car · Motorcycle · Taxi,
+   blue ✓ on Private car. Skip → Private car. It never shows again. Signed in on a second phone
+   that already chose: it doesn't show there.
+2. **Settings.** Settings › Navigation & voice › Driving preferences › Vehicle type: the same three,
+   one ticked. Picking Taxi turns your map icon into the taxi, unless you'd picked your own icon.
+3. **Route preview card.** Pick a destination: a white rounded card at the top with ‹, a grey box
+   with "Your location" (blue ring) and the destination (red pin), and ⇅ on the right. Under it a
+   white "Avoid ▾" pill with blue text and the vehicle pill ("Private car ▾").
+4. **Clean map.** The map is flat and north-up with no 3D buildings. It shows no POI badges, no
+   speed-bump or sign icons, no report dots and no other Trackys: only the routes, their time
+   bubbles, your blue start dot and the checkered flag.
+5. **Routes.** Selected route thick purple with a dark edge, others light lavender and thinner;
+   tap one to select it. Bubbles: white "13 min", selected dark purple "12 min / Best"; never on
+   top of each other.
+6. **Sheet.** Collapsed: big time on the left, distance on the right, "Via <two main roads with
+   their suburbs>" on one line, "Best route…" in grey, a thin line, then Leave later / Go now.
+   Pull up: every route with time (selected in blue), distance, Via on up to 2 lines, the traffic
+   line, separators; the selected row has a grey fill and a blue bar on the left. The map refits
+   so every route stays visible in both positions.
+7. **Vehicle pill.** Tap it: "Your vehicle" at the top of Getting there. Pick Motorcycle: routes
+   reload as Motorbike. In Australia they're car routes labelled "Motorbike routes use car roads
+   here" (Google has no motorcycle routing in AU). Pick Taxi: car routes with the note "Taxi and
+   bus lanes aren't in our routing data yet…".
+8. **No blue dots on home.** On the home map near a reported speed bump: a small grey icon on the
+   road at street zoom, a tiny checker mark at mid zoom, nothing when zoomed out. Never a big
+   blue dot.
+9. **About.** Settings › About shows the build number and the commit.
+
 ## If something doesn't match this
 
 This document describes the intended, real behavior as built and already verified at the
