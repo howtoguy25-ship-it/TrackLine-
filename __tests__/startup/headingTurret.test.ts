@@ -104,7 +104,8 @@ describe("compass when slow, GPS course when moving, blended between", () => {
 describe("wired into the map", () => {
   const src = require("fs").readFileSync("src/screens/MapScreen.tsx", "utf8") as string;
   it("the compass is read on the home map too (not only while driving) and feeds the turret", () => {
-    expect(src).toMatch(/const good = compassFilterRef\.current\.push\(\{ timeMs: now, heading: value, accuracyDeg \}\);\s*turret\.setTarget\(targetHeading\(\{ \.\.\.turretInputsRef\.current, compass: good \}\)\);/);
+    // Fix pass 7 §2: through the still-hold (held while still until the phone turns > 20° for 1 s).
+    expect(src).toMatch(/const good = headingHoldRef\.current\.push\(compassFilterRef\.current\.push\(\{ timeMs: now, heading: value, accuracyDeg \}\), now, isStillRef\.current\);\s*turret\.setTarget\(targetHeading\(\{ \.\.\.turretInputsRef\.current, compass: good \}\)\);/);
     expect(src).not.toMatch(/useEffect\(\(\) => \{\s*if \(!route\) return;\s*let subscription: Location\.LocationSubscription/);
   });
   it("off a drive the arrow turns by the turret; the heading-up home map turns with it (not north-up, not driving)", () => {

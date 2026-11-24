@@ -36,7 +36,7 @@ import * as Haptics from "expo-haptics";
 import { ModeRouteCache, fastestSeconds, fetchRoutesForMode, type ModeRoutes } from "@/travel/modeRouting";
 import type { SchoolCalendar } from "@/schoolZones/calendar";
 import { resolveSpeedLimit, routeLimitAt, signStyleFor, signUnitFor, signValue } from "@/speedLimits/resolveLimit";
-import { buildRouteGeometry, createMatchState, deadReckon, matchFix, routeBearingAt, type MatchResult } from "@/nav/routeMatcher";
+import { buildRouteGeometry, createMatchState, deadReckon, matchFix, pointAt, routeBearingAt, type MatchResult } from "@/nav/routeMatcher";
 import { approachTick } from "@/nav/navPipeline";
 import { INITIAL_REROUTE_TRIGGER, rerouteTrigger } from "@/nav/rerouteTrigger";
 import { useAudioPlayer } from "expo-audio";
@@ -356,6 +356,7 @@ import { Sentry } from "@/services/sentry";
 import { useScreenLayout } from "@/layout/LayoutContext";
 import { withPanelPadding } from "@/layout/screenLayout";
 import { calloutSide } from "@/nav/turnCallout";
+import { HeadingHold, INITIAL_STILL, smoothAlong, stillLockStep, type AlongState, type StillState } from "@/nav/stillLock";
 /** The route preview's start field while it follows the live GPS (Waze-match §1). */
 const YOUR_LOCATION_LABEL = "Your location";
 
@@ -1002,6 +1003,31 @@ export function MapScreen() {
     [location]
   );
 
+  // Fix pass 7 §2: calm when still, sharp when driving (nav/stillLock.ts). The position the arrow
+  // and the follow camera use: locked while still (GPS drift inside the deadband ignored), every
+  // fix while moving. Stepped once per fix, while rendering (no effect, no extra frame).
+  const [still, setStill] = useState<{ fixTime: number | null; state: StillState }>({ fixTime: null, state: INITIAL_STILL });
+  if (location && location.timestamp !== still.fixTime) {
+    setStill({
+      fixTime: location.timestamp,
+      state: stillLockStep(still.state, {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        accuracy: location.coords.accuracy ?? null,
+        speed: location.coords.speed ?? null,
+        timeMs: location.timestamp,
+      }),
+    });
+  }
+  const stillLatLng = useMemo(
+    () => (still.state.started ? { latitude: still.state.latitude, longitude: still.state.longitude } : null),
+    [still.state.started, still.state.latitude, still.state.longitude]
+  );
+  const isStill = still.state.locked;
+  const isStillRef = useLatest(isStill);
+  /** Off a route: the position the arrow and the home camera use (locked while still). */
+  const calmLatLng = isStill ? stillLatLng : currentLatLng;
+
   // Real, explicit request -- a Waze-style accuracy circle around the live position marker,
   // straight off expo-location's own real reported horizontal accuracy (meters) for this fix,
   // never a guessed/fixed radius. Null on a fix that genuinely didn't report one (handled by the
@@ -1197,10 +1223,12 @@ export function MapScreen() {
     // route: every GPS fix used to pull the camera back onto the driver at street zoom, undoing
     // the fit that shows all the routes.
     // FREE (you moved the map) is refused by the controller: nothing follows until Recentre.
-    if (!currentLatLng || route || !mapReady || placePage || pendingDestination) return;
+    // Still: the locked point (same object fix after fix), so the camera centres once and stays.
+    const at = calmLatLng;
+    if (!at || route || !mapReady || placePage || pendingDestination) return;
     const bearing = northUpRef.current ? 0 : followHeadingRef.current;
-    if (camera.move("follow", { center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 })) mapBearing.set(bearing);
-  }, [currentLatLng, route, mapReady, mapBearing, placePage, northUpRef, pendingDestination, camera]);
+    if (camera.move("follow", { center: at, heading: bearing, zoom: HOME_FOLLOW_ZOOM }, { duration: 500 })) mapBearing.set(bearing);
+  }, [calmLatLng, route, mapReady, mapBearing, placePage, northUpRef, pendingDestination, camera]);
 
   // Real, explicit request -- a bottom-left Re-centre FAB on the idle (not-navigating) home map
   // that only appears once the driver has actually panned away, mirroring Waze's own behaviour:
@@ -1244,6 +1272,19 @@ export function MapScreen() {
     setMatchedGeo(navGeo);
     setNavMatch(null);
   }
+  // Where the arrow and the follow camera are: still -> the locked point; driving on the route ->
+  // the matched point on the road; otherwise the fix itself (fix pass 7 §2).
+  // On the route: the matched distance along it, smoothed so GPS noise along the road doesn't
+  // make the arrow surge and drop back (nav/stillLock.ts smoothAlong). Stepped once per match.
+  const [alongTrack, setAlongTrack] = useState<{ match: MatchResult | null; state: AlongState | null }>({ match: null, state: null });
+  if (navMatch !== alongTrack.match) {
+    setAlongTrack({
+      match: navMatch,
+      state: navMatch?.onRoute ? smoothAlong(alongTrack.state, navMatch.along, location?.coords.speed != null && location.coords.speed >= 0 ? location.coords.speed : null, location?.timestamp ?? alongTrack.state?.timeMs ?? 0) : null,
+    });
+  }
+  const smoothedAlong = alongTrack.state;
+  const arrowLatLng = isStill ? stillLatLng : route && navGeo && navMatch?.onRoute && smoothedAlong ? pointAt(navGeo, smoothedAlong.along) : calmLatLng;
 
   // Live device compass heading -- deliberately separate from `heading` below, which is the
   // direction of TRAVEL (GPS course/derived bearing) and is what the puck arrow + chase-cam
@@ -1262,6 +1303,8 @@ export function MapScreen() {
   // own frame loop and the heading-up map ticker below read it.
   const turret = useMemo(() => new HeadingTurret(), []);
   const compassFilterRef = useRef(new CompassFilter());
+  // While still, the compass direction is held until the phone turns > 20° for 1 s (fix pass 7 §2).
+  const headingHoldRef = useRef(new HeadingHold());
   const turretInputsRef = useRef<{ speedKmh: number | null; gps: number | null }>({ speedKmh: null, gps: null });
   const navigatingRef = useLatest(!!route);
   useEffect(() => {
@@ -1275,7 +1318,7 @@ export function MapScreen() {
       if (cancelled || value < 0) return;
       const accuracyDeg = headingData.accuracy === 3 ? 20 : headingData.accuracy === 2 ? 35 : headingData.accuracy === 1 ? 50 : null;
       const now = Date.now();
-      const good = compassFilterRef.current.push({ timeMs: now, heading: value, accuracyDeg });
+      const good = headingHoldRef.current.push(compassFilterRef.current.push({ timeMs: now, heading: value, accuracyDeg }), now, isStillRef.current);
       turret.setTarget(targetHeading({ ...turretInputsRef.current, compass: good }));
       if (navigatingRef.current) {
         setDeviceHeading(value);
@@ -1289,7 +1332,7 @@ export function MapScreen() {
       cancelled = true;
       subscription?.remove();
     };
-  }, [turret, navigatingRef]);
+  }, [turret, navigatingRef, isStillRef]);
 
   // GPS "course" heading (location.coords.heading) is a real device/OS-reported value, but a
   // genuinely unreliable one -- iOS commonly reports it as -1 ("invalid") at low speed, right
@@ -1482,7 +1525,7 @@ export function MapScreen() {
   // The GPS side of the turret's target: each fix's course (after the no-flip filter) and speed.
   useEffect(() => {
     turretInputsRef.current = { speedKmh: currentSpeedKmh, gps: headingTrack.filter.target };
-    turret.setTarget(targetHeading({ speedKmh: currentSpeedKmh, gps: headingTrack.filter.target, compass: compassFilterRef.current.good }));
+    turret.setTarget(targetHeading({ speedKmh: currentSpeedKmh, gps: headingTrack.filter.target, compass: headingHoldRef.current.held ?? compassFilterRef.current.good }));
   }, [turret, currentSpeedKmh, headingTrack.filter.target]);
   // Heading-up home map: while following (and not north-up), the map turns with the turret, so
   // the arrow keeps pointing up the screen as you turn on the spot. 10 times a second at most,
@@ -2033,9 +2076,9 @@ export function MapScreen() {
     // Flies back to follow mode -- position, heading-up, street zoom and the default tilt --
     // over 600ms; the re-centre button fades out as the state leaves FREE.
     const bearing = northUpRef.current ? 0 : followHeadingRef.current;
-    camera.move("recentre", { center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
+    camera.move("recentre", { center: calmLatLng ?? currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
     mapBearing.set(bearing);
-  }, [currentLatLng, route, mapBearing, camera, northUpRef]);
+  }, [currentLatLng, calmLatLng, route, mapBearing, camera, northUpRef]);
 
   // Tapping the route line pulls the camera back into a wider, still-tilted "overview" --
   // Apple/Google Maps' own convention when you tap the route during nav: not the tight
@@ -3644,9 +3687,9 @@ export function MapScreen() {
     // Closing the place page is Recentre: back to following you.
     camera.recentre();
     if (currentLatLng) {
-      camera.move("recentre", { center: currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
+      camera.move("recentre", { center: calmLatLng ?? currentLatLng, heading: followHeadingRef.current, zoom: HOME_FOLLOW_ZOOM, pitch: DEFAULT_IDLE_PITCH }, { duration: 600 });
     }
-  }, [currentLatLng, camera]);
+  }, [currentLatLng, calmLatLng, camera]);
 
   const onDestinationSelected = useCallback(
     (place: PlaceDetails) => {
@@ -6533,7 +6576,9 @@ export function MapScreen() {
     () =>
       currentLatLng
         ? {
-            coordinate: currentLatLng,
+            // Still: the locked point. Driving on the route: the matched point on the road.
+            // Otherwise: the fix as it comes (fix pass 7 §2).
+            coordinate: arrowLatLng ?? currentLatLng,
             // No heading yet: null, so the arrow keeps its last direction (UserArrow), never a dot.
             heading: headingTrack.filter.shown ?? null,
             turret: route ? null : turret,
@@ -6545,7 +6590,7 @@ export function MapScreen() {
             ghost: settings.visibility === "ghost",
           }
         : null,
-    [currentLatLng, headingTrack.filter.shown, location?.timestamp, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility, turret]
+    [currentLatLng, arrowLatLng, headingTrack.filter.shown, location?.timestamp, currentAccuracyMeters, route, deviceHeading, compassConeAllowed, settings.mapMarkerStyle, settings.visibility, turret]
   );
 
   // A tap on a named place drawn by the Mapbox map: find it with Google Places (same details,

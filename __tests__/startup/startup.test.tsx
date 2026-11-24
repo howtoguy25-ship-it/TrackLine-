@@ -46,6 +46,6 @@ describe("start on the last known place", () => {
   it("MapScreen moves to the cached place only while there's no live fix; the fix then eases in (follow, 500 ms)", () => {
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
     expect(src).toMatch(/if \(cancelled \|\| !cached \|\| liveFixRef\.current\) return;\s*camera\.move\("follow", \{ center: \{ latitude: cached\.latitude, longitude: cached\.longitude \}, zoom: HOME_FOLLOW_ZOOM \}, \{ duration: 0 \}\);/);
-    expect(src).toMatch(/camera\.move\("follow", \{ center: currentLatLng, heading: bearing, zoom: HOME_FOLLOW_ZOOM \}, \{ duration: 500 \}\)/);
+    expect(src).toMatch(/camera\.move\("follow", \{ center: at, heading: bearing, zoom: HOME_FOLLOW_ZOOM \}, \{ duration: 500 \}\)/); // at = the calm position (fix pass 7 §2)
   });
 });
