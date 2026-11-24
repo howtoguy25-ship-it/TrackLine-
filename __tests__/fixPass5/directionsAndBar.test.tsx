@@ -156,3 +156,30 @@ describe("directions list (§7)", () => {
     expect(map).toMatch(/onClose=\{\(\) => directionsSheetRef\.current\?\.close\(\)\}/);
   });
 });
+
+describe("roundabout exit number from every instruction style (bug found by the proof render)", () => {
+  it("reads '2nd exit' and 'second exit' alike", () => {
+    const { extractRoundaboutExitNumber } = require("@/utils/navFormat");
+    expect(extractRoundaboutExitNumber("At the roundabout, take the 2nd exit onto King St")).toBe(2);
+    expect(extractRoundaboutExitNumber("At the roundabout, take the second exit onto Chapel Road")).toBe(2);
+    expect(extractRoundaboutExitNumber("At the roundabout, take the fourth exit")).toBe(4);
+    expect(extractRoundaboutExitNumber("Continue onto Second Avenue")).toBeUndefined();
+  });
+  it("the recorded Mapbox route's roundabout gets its number in the directions list", () => {
+    const rows = directionsRows(parseMapboxResponse(carJson)[0].steps);
+    const rb = rows.find((r) => r.maneuver?.startsWith("roundabout"));
+    expect(rb?.roundaboutExit).toBe(2);
+  });
+});
+
+describe("one roundabout, one picture", () => {
+  it("both Mapbox steps of the recorded roundabout point the same way (second exit: straight on)", () => {
+    const { roundaboutGeometryFor } = require("@/nav/roundabout");
+    const steps = parseMapboxResponse(carJson)[0].steps;
+    const idx = steps.map((s: RouteStep, i: number) => (s.maneuver?.startsWith("roundabout") ? i : -1)).filter((i: number) => i >= 0);
+    expect(idx.length).toBeGreaterThanOrEqual(1);
+    const angles = idx.map((i: number) => roundaboutExitAngle({ exit: 2, drivingSide: "left", ...roundaboutGeometryFor(steps, i) }));
+    for (const a of angles) expect(Math.abs(a)).toBeLessThan(30);
+    expect(new Set(angles).size).toBe(1);
+  });
+});

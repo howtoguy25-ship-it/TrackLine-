@@ -96,7 +96,13 @@ jobs:
         run: npm ci
 
       - name: Write service account key to a temp file
-        run: echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+        run: |
+          # Say plainly when the secret isn't there (never prints the value).
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::The FIREBASE_SERVICE_ACCOUNT repository secret is empty or missing. Add it in GitHub: Settings > Secrets and variables > Actions > New repository secret (see DEPLOY.md). Nothing was deployed."
+            exit 1
+          fi
+          echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 

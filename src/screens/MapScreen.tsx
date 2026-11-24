@@ -227,7 +227,7 @@ import { viaText } from "@/map/viaText";
 import { VehiclePickerScreen } from "@/components/VehiclePicker";
 import { type VehicleType, shouldShowVehiclePicker, vehicleForMode, vehicleMode, vehicleOption, vehiclePatch, vehicleRouteNote } from "@/services/vehicle";
 import { overlaysFor } from "@/map/previewOverlays";
-import { isRoundabout, roundaboutExitAngle } from "@/nav/roundabout";
+import { isRoundabout, roundaboutExitAngle, roundaboutGeometryFor } from "@/nav/roundabout";
 import { NAV_TOAST_MS, RECENTRE_MS, compassHighlighted, compassTapAction, compassToast, showRecentrePill } from "@/nav/offCentreHint";
 import { layoutRouteBubbles, timeDifferenceText } from "@/map/bubbleLayout";
 import { fetchTrackysAround, HEARTBEAT_MS, noteActive, shouldGreet, trackysPillText } from "@/services/trackysAround";
@@ -6465,7 +6465,7 @@ export function MapScreen() {
               ? (() => {
                   const exit = extractRoundaboutExitNumber(step.instruction) ?? null;
                   const drivingSide = step.drivingSide ?? "left";
-                  return { exit, drivingSide, angle: roundaboutExitAngle({ exit, drivingSide, approach: step.polyline, after: route.steps[activeStepIndex + 1]?.polyline }) };
+                  return { exit, drivingSide, angle: roundaboutExitAngle({ exit, drivingSide, ...roundaboutGeometryFor(route.steps, activeStepIndex) }) };
                 })()
               : null,
           }))
@@ -6974,6 +6974,7 @@ export function MapScreen() {
           onExpandDirections={() => directionsSheetRef.current?.expand()}
           onHeightChange={setInstructionCardHeight}
           nextStep={route.steps[activeStepIndex + 1] ?? null}
+          roundaboutGeometry={isRoundabout(activeStep?.maneuver) ? roundaboutGeometryFor(route.steps, activeStepIndex) : undefined}
           isFinalStep={activeStepIndex === route.steps.length - 1}
           onRepeatInstruction={() => {
             // Tapping the card repeats the instruction on request -- so it's said whatever

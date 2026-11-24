@@ -62,6 +62,8 @@ interface Props {
   lanes?: Lane[] | null;
   /** Metres left to the manoeuvre along the road (live). Falls back to the step's length. */
   metersToManoeuvre?: number | null;
+  /** Roundabouts: the real way in and out (nav/roundabout.ts roundaboutGeometryFor). */
+  roundaboutGeometry?: { approach: import("@/utils/polyline").LatLng[]; after: import("@/utils/polyline").LatLng[] };
 }
 
 export { splitRouteShield, barStreetName };
@@ -85,6 +87,7 @@ export function NavigationInstructionCard({
   distanceUnit = "km",
   lanes,
   metersToManoeuvre,
+  roundaboutGeometry,
 }: Props) {
   const insets = useSafeAreaInsets();
   if (!step) return null;
@@ -120,8 +123,8 @@ export function NavigationInstructionCard({
               dim="rgba(255,255,255,0.38)"
               exit={roundaboutExit ?? null}
               drivingSide={step.drivingSide}
-              approach={step.polyline}
-              after={nextStep?.polyline}
+              approach={roundaboutGeometry?.approach ?? step.polyline}
+              after={roundaboutGeometry?.after ?? nextStep?.polyline}
             />
           )}
         </Pressable>

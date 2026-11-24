@@ -70,6 +70,9 @@ export function extractRoundaboutExitNumber(instruction: string): number | undef
     const n = parseInt(match[1], 10);
     return Number.isFinite(n) && n >= 1 && n <= 7 ? n : undefined;
   }
+  // Mapbox/OSRM instructions we write ourselves spell it out: "take the second exit".
+  const word = instruction.match(/\b(first|second|third|fourth|fifth|sixth|seventh)\s+exit\b/i);
+  if (word) return ["first", "second", "third", "fourth", "fifth", "sixth", "seventh"].indexOf(word[1].toLowerCase()) + 1;
   // Instructions in other languages (services/navLanguage.ts) write the exit as a standalone
   // ordinal digit -- Spanish "la 2.ª salida", Russian "2-й съезд", Turkish "2. çıkış". Only a
   // lone digit 1-7 carrying one of those ordinal markers counts, so a road number such as "A2"

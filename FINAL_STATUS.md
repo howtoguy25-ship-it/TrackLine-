@@ -18,6 +18,26 @@ Everything that needs a key, a console setting or a decision from you is in BLOC
 | Siren model on 220 sample clips | back-to-back windows 28/40 sirens, 0/180 false; 50 % overlap 31/40, 1/180 false (a sustained car horn) — `docs/siren-radar/README.md` |
 | TestFlight | 212 (ce48702) · 213 (ace575b) · 214 (4633690) · 215 (a9b1f86) gaps 15-18 · **216 (5b5e064) permanent fix — FINISHED, on TestFlight** — all on TestFlight only (not submitted for review) |
 
+## 2026-11-24: fix pass 5 — route fit, ETA bubbles, nav camera + re-centre hint, controls, directions, options sheet, settings wiring
+
+Checks (real output, branch `fix-pass-5`): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·
+`jest` Test Suites 126 passed / 126, Tests 1578 passed / 1578, Snapshots 1 passed · `scripts/test-*.ts` all pass ·
+`expo export --platform ios` exit 0, 3169 modules · emulator suite in CI (run 45391736881): 18 suites / 314 tests pass and Jest now exits.
+Firebase deploy: still not live — the `FIREBASE_SERVICE_ACCOUNT` GitHub secret is empty (BLOCKED #27/#30).
+
+| Requirement | Status | Evidence | What you must do |
+|---|---|---|---|
+| 1 Route preview fits all routes + start + flag, every mode and trigger | DONE | `__tests__/fixPass5/routeFit.test.ts`, `docs/fix-pass-5/1-*` | §49.1 |
+| 2 ETA bubbles beside their line, collision-free, "+1 min" / "Best" | DONE | `__tests__/fixPass5/bubbles.test.ts`, `docs/fix-pass-5/1-*`, `2-*` | §49.2 |
+| 3 Own Tracky never drawn | DONE | `__tests__/fixPass5/ownTracky.test.ts` | §49.3 |
+| 4 Nav default view, Re-centre pill + compass ring, compass toggle + toast | DONE | `__tests__/fixPass5/navHint.test.tsx`, `docs/fix-pass-5/3-*`, `4-*`, `4b-*` | §49.4 |
+| 5 Controls never overlap; no floating Keep pill; faster route in the banner | DONE (pill bottom-left per §4) | navHint test (320/375/390/430, every state), `docs/fix-pass-5/5-*` | §49.5 |
+| 6 Bar under the status bar, light text; own roundabout icon everywhere | DONE (+ exit numbers from "second exit") | `__tests__/fixPass5/directionsAndBar.test.tsx`, `docs/fix-pass-5/6-*` | §49.6 |
+| 7 Directions list merged + redesigned + themed | DONE | same, `docs/fix-pass-5/7-*` | §49.7 |
+| 8 Options sheet height, scroll, sentence case, chart, timeout text | DONE | `__tests__/fixPass5/optionsSheet.test.tsx`, `docs/fix-pass-5/8-*` | §49.8 |
+| 9 Every setting live + saved + synced | DONE; 3 bugs fixed (Satellite not saved, voice not synced, back-to-back changes lost) | `__tests__/fixPass5/settingsWiring.test.tsx` | §49.9 |
+| 10 Proof screenshots | DONE as real-tile renders with drawn screens (no iOS simulator on Linux) | `docs/fix-pass-5` | — |
+
 ## 2026-11-24: startup + Trackys around you + private zones + arrow heading; Waze-match route preview / list / "What's your ride?"
 
 Checks (real output, branch `startup-trackys` at 3cddc30): `tsc` exit 0 · `eslint src __tests__ jest.setup.js --max-warnings 0` exit 0 ·

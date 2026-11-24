@@ -6,6 +6,24 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Fix pass 5 — route fit, ETA bubbles, nav camera + re-centre hint, controls, directions, options sheet, settings wiring — 2026-11-24
+
+All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §49). Proof images: `docs/fix-pass-5`.
+
+| § | What (root cause → fix, one shared place) | Evidence |
+|---|---|---|
+| 1 Route fit | Some fits used one route or `slice(0, 3)` → every fit goes through `previewFitLines` (all drawn routes + start + flag) on first load, mode, Avoid, route select and sheet height | `__tests__/fixPass5/routeFit.test.ts` (6 modes × 2 sheet heights, real data) |
+| 2 Bubbles | Fixed offsets → `layoutRouteBubbles`: own stretch of route, beside the line with a tail, no overlap with lines / bubbles / flag / start / card / sheet, compact "+2 min" chip or none; "+1 min" / "12 min · Best" | `__tests__/fixPass5/bubbles.test.ts` |
+| 3 Own Tracky | One `othersOnly` filter for every presence use | `__tests__/fixPass5/ownTracky.test.ts` |
+| 4 Nav camera + hint | Zoom by speed so 300–500 m ahead shows (measured per screen height), arrow 72%, 45°; FREE → Re-centre pill bottom-left + blue compass ring, 600 ms back; compass toggles heading-up / north-up with a toast | `__tests__/fixPass5/navHint.test.tsx`, `__tests__/nav/navCamera.test.ts` |
+| 5 Controls | Re-centre pill in the shared layout; floating "Keep current route" pill removed (re-centre / tap your route keeps it); faster-route offers in the ahead banner, kept after 10 s | navHint test: every state on 320/375/390/430 |
+| 6 Top bar + roundabout | Bar black behind the status bar, light status-bar text; own roundabout picture (bar, list, callout); exit number now read from "second exit" too; one roundabout = one picture | `__tests__/fixPass5/directionsAndBar.test.tsx` |
+| 7 Directions list | Repeats merged (`directionsRows`), new row design, theme, never moves the camera | same |
+| 8 Options sheet | Half + full (= screen − bar − 120), scrolls; sentence case; chart equal bars / one-line labels / Best tag / 10 s timeout text | `__tests__/fixPass5/optionsSheet.test.tsx` |
+| 9 Settings wiring | Audit test of 11 settings (live behaviour + saved + synced). Fixed: Satellite rows didn't save; Sound & voice never synced; two quick changes lost the first | `__tests__/fixPass5/settingsWiring.test.tsx` |
+
+Conflict resolved: §4 asks for Re-centre bottom-left, §5 lists it in the right column — the driving pill follows §4 (bottom-left); the home map keeps Re-centre above Report.
+
 ## Startup + Trackys around you + private zones + arrow heading, and Waze-match route preview / route list / "What's your ride?" — 2026-11-24
 
 All in code, tested, merged to `claude/go-session-0d5bup`. NEEDS DEVICE TEST (TEST_ON_PHONE §47, §48).

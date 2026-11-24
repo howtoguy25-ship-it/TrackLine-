@@ -741,3 +741,16 @@ see on a real device, that's a genuine bug in the client-side wiring (`src/scree
 `src/services/presence.ts`, `src/screens/PresenceCard.tsx`) that the emulator tests wouldn't have
 caught, since they don't exercise the React Native UI at all — please report exactly which step
 failed and what you saw instead.
+
+## 49. Fix pass 5 — NEEDS DEVICE TEST
+
+1. Route preview in Drive, Walk, Bike, Transit: every route, your start and the flag fit on screen; switch mode, change Avoid, tap another route, drag the sheet up — still all visible.
+2. Time bubbles sit beside their own route with a small tail, never on top of a line, each other, the flag, the top card or the sheet. Alternatives say "+1 min"; the selected one its time and "Best".
+3. Your own Tracky never appears on the map (home, preview, driving).
+4. Start driving: heading-up, tilted, your arrow about three-quarters down. Pan or rotate: "Re-centre" fades in bottom-left and the compass gets a blue ring; tap either → back in about half a second. Tap the compass when not ringed: "North up" / "Heading up".
+5. Nothing overlaps in any state (also with an ahead banner up). There's no floating "Keep current route" pill; a faster route shows in the banner with Switch / Keep and is kept after 10 s.
+6. The black instruction bar runs up behind the clock; status-bar text is white. At a roundabout: our roundabout picture with the exit number, in the bar, the directions list and on the map callout.
+7. Directions list: no two rows the same, big icons, bold distance and street, grey detail, the current step highlighted, follows dark mode; closing it leaves the map where it was.
+8. Options sheet never covers the instruction; it scrolls; headings in sentence case; the best-time chart has equal bars, labels on one line, "Best" above; with no signal: "Couldn't load traffic predictions — tap to retry".
+9. Change Map view, Satellite, Sound & voice, Avoid, vehicle, alerts, units, dark mode: each takes effect at once, survives a restart, and appears on a second phone signed in to the same account.
+

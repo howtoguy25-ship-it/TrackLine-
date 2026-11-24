@@ -1,0 +1,348 @@
+{
+  "1-preview-drive-bubbles": [
+    {
+      "side": "right",
+      "compact": false
+    },
+    {
+      "side": "left",
+      "compact": false
+    }
+  ],
+  "1-preview-drive": {
+    "zoom": 10.8,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": true,
+    "arrowFraction": 0.66
+  },
+  "1-preview-walk-bubbles": [
+    {
+      "side": "right",
+      "compact": false
+    }
+  ],
+  "1-preview-walk": {
+    "zoom": 13,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": true,
+    "arrowFraction": 0.66
+  },
+  "1-preview-bike-bubbles": [
+    {
+      "side": "right",
+      "compact": false
+    },
+    {
+      "side": "left",
+      "compact": false
+    }
+  ],
+  "1-preview-bike": {
+    "zoom": 12.7,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": true,
+    "arrowFraction": 0.66
+  },
+  "2-bubbles-sheet-half-bubbles": [
+    {
+      "side": "right",
+      "compact": false
+    },
+    {
+      "side": "left",
+      "compact": false
+    }
+  ],
+  "2-bubbles-sheet-half": {
+    "zoom": 9.4,
+    "pitch": 0,
+    "bearing": 0,
+    "inside": true,
+    "arrowFraction": 0.427
+  },
+  "navCamera": {
+    "speedKmh": 60,
+    "googleZoom": 19,
+    "mapboxZoom": 18,
+    "pitch": 45,
+    "aheadMetres": 410
+  },
+  "navDefaultOverlaps": [],
+  "3-nav-default-view": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "navFreeOverlaps": [],
+  "4-nav-free-recentre-hint": {
+    "zoom": 17.1,
+    "pitch": 25,
+    "bearing": 48,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "4b-nav-compass-toast": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 0,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "controls": {
+    "320-following": [],
+    "320-FREE": [],
+    "320-FREE + banner": [],
+    "375-following": [],
+    "375-FREE": [],
+    "375-FREE + banner": [],
+    "390-following": [],
+    "390-FREE": [],
+    "390-FREE + banner": [],
+    "430-following": [],
+    "430-FREE": [],
+    "430-FREE + banner": []
+  },
+  "5-controls-all-states": {},
+  "roundabout": {
+    "instruction": "At the roundabout, take the second exit onto Chapel Road",
+    "exit": 2,
+    "angleFromGeometry": 0
+  },
+  "6-roundabout-icon": {},
+  "directionsRows": [
+    {
+      "meters": 143,
+      "street": "Fetherstone Street",
+      "shield": null,
+      "detail": "Keep left onto Fetherstone Street",
+      "maneuver": "fork-left"
+    },
+    {
+      "meters": 58,
+      "street": "The Mall",
+      "shield": null,
+      "detail": "Keep left onto The Mall",
+      "maneuver": "turn-slight-left"
+    },
+    {
+      "meters": 66,
+      "street": "Chapel Road",
+      "shield": null,
+      "detail": "At the roundabout, take the second exit onto Chapel Road",
+      "maneuver": "roundabout-right"
+    },
+    {
+      "meters": 1059,
+      "street": "Rookwood Road",
+      "shield": null,
+      "detail": "Continue onto Rookwood Road"
+    },
+    {
+      "meters": 2176,
+      "street": "Joseph Street",
+      "shield": null,
+      "detail": "Continue onto Joseph Street"
+    },
+    {
+      "meters": 1975,
+      "street": "Olympic Drive",
+      "shield": null,
+      "detail": "Continue onto Olympic Drive",
+      "maneuver": "straight"
+    },
+    {
+      "meters": 1877,
+      "street": "Boorea Street",
+      "shield": null,
+      "detail": "Continue onto Boorea Street"
+    },
+    {
+      "meters": 259,
+      "street": "Rawson Street",
+      "shield": null,
+      "detail": "Continue onto Rawson Street"
+    },
+    {
+      "meters": 141,
+      "street": "St Hilliers Road",
+      "shield": null,
+      "detail": "Turn right onto St Hilliers Road",
+      "maneuver": "turn-right"
+    },
+    {
+      "meters": 851,
+      "street": "Silverwater Road",
+      "shield": null,
+      "detail": "Continue onto Silverwater Road"
+    },
+    {
+      "meters": 152,
+      "street": "Western Motorway Onramp",
+      "shield": null,
+      "detail": "Take the exit to Western Motorway Onramp",
+      "maneuver": "ramp-left"
+    },
+    {
+      "meters": 806,
+      "street": "Western Motorway",
+      "shield": null,
+      "detail": "Merge right onto Western Motorway",
+      "maneuver": "merge"
+    },
+    {
+      "meters": 914,
+      "street": "Western Motorway",
+      "shield": null,
+      "detail": "Keep right onto Western Motorway",
+      "maneuver": "fork-right"
+    },
+    {
+      "meters": 491,
+      "street": "James Ruse Drive Offramp",
+      "shield": null,
+      "detail": "Take the exit towards Granville",
+      "maneuver": "ramp-left"
+    },
+    {
+      "meters": 417,
+      "street": "James Ruse Drive",
+      "shield": null,
+      "detail": "Turn left onto James Ruse Drive",
+      "maneuver": "turn-left"
+    },
+    {
+      "meters": 221,
+      "street": "Parramatta Road",
+      "shield": null,
+      "detail": "Turn right onto Parramatta Road",
+      "maneuver": "turn-right"
+    },
+    {
+      "meters": 1447,
+      "street": "Church Street",
+      "shield": null,
+      "detail": "Turn right onto Church Street",
+      "maneuver": "turn-right"
+    },
+    {
+      "meters": 827,
+      "street": "",
+      "shield": "A44",
+      "detail": "Turn left onto A44",
+      "maneuver": "turn-left"
+    },
+    {
+      "meters": 358,
+      "street": "Marsden Street",
+      "shield": null,
+      "detail": "Turn right onto Marsden Street",
+      "maneuver": "turn-right"
+    },
+    {
+      "meters": 542,
+      "street": "Macquarie Street",
+      "shield": null,
+      "detail": "Turn right onto Macquarie Street",
+      "maneuver": "turn-right"
+    },
+    {
+      "meters": 179,
+      "street": "United Lane",
+      "shield": null,
+      "detail": "Turn left onto United Lane",
+      "maneuver": "turn-left"
+    },
+    {
+      "meters": 19,
+      "street": "Arrive at your destination",
+      "shield": null,
+      "detail": null
+    }
+  ],
+  "directionsMerged": {
+    "steps": 23,
+    "rows": 22
+  },
+  "7-directions-list-light": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "7-directions-list-dark": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "leavePredictions": {
+    "source": "Mapbox driving-traffic depart_at (the app asks Google; same shape)",
+    "preds": [
+      {
+        "departMs": 1795523151924,
+        "durationSeconds": 1243.178
+      },
+      {
+        "departMs": 1795523400000,
+        "durationSeconds": 1243.178
+      },
+      {
+        "departMs": 1795524300000,
+        "durationSeconds": 1212.389
+      },
+      {
+        "departMs": 1795525200000,
+        "durationSeconds": 1241.908
+      },
+      {
+        "departMs": 1795526100000,
+        "durationSeconds": 1241.908
+      },
+      {
+        "departMs": 1795527000000,
+        "durationSeconds": 1241.908
+      }
+    ]
+  },
+  "optionsSheet": {
+    "topBarBottom": 139,
+    "half": 380,
+    "full": 585,
+    "gapBelowBar": 120
+  },
+  "8-options-sheet-half-light": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "8-options-sheet-full-light": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "8-options-sheet-half-dark": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  },
+  "8-options-sheet-full-dark": {
+    "zoom": 18,
+    "pitch": 45,
+    "bearing": 8,
+    "inside": null,
+    "arrowFraction": 0.72
+  }
+}

@@ -123,8 +123,9 @@ describe("meaning colours stay in the theme", () => {
       sourceFiles()
         .filter((f) => !theme(f) && read(f).includes(token))
         .map((f) => f.split(path.sep).join("/"));
-    // NavBottomBar's in-drive Re-centre (above the bar, after a pan) is the other re-centre button.
-    expect(users("colors.recenterGrey")).toEqual(["src/components/NavBottomBar.tsx"]);
+    // The in-drive Re-centre is now the shared Button pill bottom-left (fix pass 5 §4): nothing
+    // else may borrow the re-centre grey.
+    expect(users("colors.recenterGrey")).toEqual([]);
     // The street pill's "N reports around you" mark is about reports, so it's report yellow.
     expect(users("colors.reportYellow")).toEqual(["src/components/StreetPill.tsx"]);
   });

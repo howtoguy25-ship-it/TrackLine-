@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MANEUVER_ICONS } from "@/components/NavigationInstructionCard";
 import { ManeuverIcon } from "@/components/icons/RoundaboutIcon";
 import type { Route } from "@/services/directions";
+import { roundaboutGeometryFor } from "@/nav/roundabout";
 import { activeRowIndex, directionsRows, type DirectionsRow } from "@/nav/directionsRows";
 import { formatDistance, type DistanceUnit } from "@/utils/navFormat";
 import { BLUE, GREEN_TEXT, SURFACES } from "@/theme/colors";
@@ -69,7 +70,7 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
               const isActive = index === current;
               const isPast = index < current;
               const ink = isPast ? s.textFaint : s.text;
-              const next = route.steps[item.lastStep + 1];
+              const geo = roundaboutGeometryFor(route.steps, item.firstStep);
               return (
                 <View
                   style={[styles.row, { borderBottomColor: s.divider }, isActive && { backgroundColor: scheme === "dark" ? "#0F2A40" : "#E5F4FF" }]}
@@ -87,8 +88,8 @@ export const RouteDirectionsSheet = forwardRef<BottomSheet, Props>(function Rout
                         dim={s.divider}
                         exit={item.roundaboutExit}
                         drivingSide={item.drivingSide}
-                        approach={route.steps[item.lastStep]?.polyline}
-                        after={next?.polyline}
+                        approach={geo.approach}
+                        after={geo.after}
                       />
                     )}
                   </View>

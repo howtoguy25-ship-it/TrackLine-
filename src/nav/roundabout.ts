@@ -107,3 +107,15 @@ export function roundaboutDrawing(angle: number, drivingSide: "left" | "right" =
     arrow: `M${tip.x} ${tip.y} L${+(base.x + px).toFixed(2)} ${+(base.y + py).toFixed(2)} L${+(base.x - px).toFixed(2)} ${+(base.y - py).toFixed(2)} Z`,
   };
 }
+
+/**
+ * The road into the roundabout and the road after it, for step `i`. A route can give one
+ * roundabout as two steps (Mapbox: "roundabout" then "exit roundabout", same instruction); the
+ * second one starts on the circle, so both use the first step's way in -- one picture, the same
+ * on the bar, the list and the map.
+ */
+export function roundaboutGeometryFor<S extends { maneuver?: string | null; instruction?: string; polyline: LatLng[] }>(steps: readonly S[], i: number): { approach: LatLng[]; after: LatLng[] } {
+  let j = i;
+  while (j > 0 && isRoundabout(steps[j - 1].maneuver) && steps[j - 1].instruction === steps[i].instruction) j--;
+  return { approach: steps[j]?.polyline ?? [], after: steps[j + 1]?.polyline ?? [] };
+}
