@@ -1,0 +1,276 @@
+{
+  "exitSearch": {
+    "tried": 3,
+    "rejected": {
+      "no exit gate for this route": 2
+    }
+  },
+  "exitGates": {
+    "source": "OpenStreetMap via Overpass (live), Mapbox Directions (live)",
+    "site": {
+      "id": "w888808353",
+      "kind": "warehouse",
+      "name": null,
+      "areaM2": 5732
+    },
+    "gates": [
+      {
+        "id": "n8263376902",
+        "barrier": "gate",
+        "access": null,
+        "at": {
+          "latitude": -33.8407827,
+          "longitude": 150.918209
+        }
+      },
+      {
+        "id": "n8263376903",
+        "barrier": "gate",
+        "access": null,
+        "at": {
+          "latitude": -33.8407503,
+          "longitude": 150.9184389
+        }
+      },
+      {
+        "id": "n8263376905",
+        "barrier": "gate",
+        "access": null,
+        "at": {
+          "latitude": -33.841194,
+          "longitude": 150.9188927
+        }
+      }
+    ],
+    "origin": {
+      "latitude": -33.84137506068116,
+      "longitude": 150.91873222435538
+    },
+    "routeExitGate": "n8263376903",
+    "decision": "ask",
+    "question": "Is the exit on Hassall Street open?",
+    "closedPlan": {
+      "action": "reroute",
+      "via": [
+        "n8263376905"
+      ],
+      "say": "Using another exit"
+    },
+    "openPlan": {
+      "action": "keep"
+    },
+    "original": {
+      "km": 6.85,
+      "min": 14,
+      "exitGate": "n8263376903",
+      "beginsMetresFromExit": 40,
+      "passes": []
+    },
+    "rerouted": {
+      "km": 6.84,
+      "min": 14,
+      "beginsMetresFromNewExit": 53,
+      "passes": []
+    },
+    "tried": [
+      "w888808353/n8263376902",
+      "w888808353/n8263376903",
+      "w888808353/n8263376905"
+    ]
+  },
+  "1-exit-question": {
+    "zoom": 17.2,
+    "pitch": 45,
+    "bearing": -21,
+    "motorwayPx": null,
+    "arrow": {
+      "x": 195,
+      "y": 607
+    }
+  },
+  "2-exit-closed-reroute": {
+    "zoom": 17.98,
+    "pitch": 0,
+    "bearing": 0,
+    "motorwayPx": null,
+    "arrow": {
+      "x": 232,
+      "y": 581
+    }
+  },
+  "calmStill": {
+    "seconds": 60,
+    "rawMaxFromTrueM": 14.7,
+    "rawPathWanderedM": 166.4,
+    "arrowMovedM": 0,
+    "locked": true,
+    "compassHeldChanges": 0
+  },
+  "3-arrow-still-60s": {
+    "zoom": 18.3,
+    "pitch": 0,
+    "bearing": 0,
+    "motorwayPx": null,
+    "arrow": {
+      "x": 228,
+      "y": 423
+    }
+  },
+  "calmDriving": {
+    "seconds": 120,
+    "speedMs": 14,
+    "rawAlongErrorP95M": 10.9,
+    "drawnAlongErrorP95M": 4,
+    "secondsLockedWhileDriving": 2
+  },
+  "3b-arrow-still-vs-driving": {},
+  "4-home-phone": {
+    "zoom": 15,
+    "pitch": 45,
+    "bearing": 0,
+    "motorwayPx": 11,
+    "arrow": {
+      "x": 195,
+      "y": 334
+    }
+  },
+  "4-home-phone-layout": {
+    "kind": "phone",
+    "panel": {
+      "side": "bottom",
+      "left": 0,
+      "width": 390
+    },
+    "mapPadding": {
+      "top": 47,
+      "bottom": 222,
+      "left": 0,
+      "right": 0
+    },
+    "bannerSlot": 56,
+    "bannerArea": 90
+  },
+  "4-home-phone-landscape": {
+    "zoom": 15,
+    "pitch": 45,
+    "bearing": 0,
+    "motorwayPx": 11,
+    "arrow": {
+      "x": 629,
+      "y": 156
+    }
+  },
+  "4-home-phone-landscape-layout": {
+    "kind": "phoneLandscape",
+    "panel": {
+      "side": "left",
+      "left": 59,
+      "width": 354
+    },
+    "mapPadding": {
+      "top": 0,
+      "bottom": 77,
+      "left": 413,
+      "right": 0
+    },
+    "bannerSlot": 56,
+    "bannerArea": 77
+  },
+  "4-home-ipad": {
+    "zoom": 15,
+    "pitch": 45,
+    "bearing": 0,
+    "motorwayPx": 11,
+    "arrow": {
+      "x": 703,
+      "y": 657
+    }
+  },
+  "4-home-ipad-layout": {
+    "kind": "tablet",
+    "panel": {
+      "side": "left",
+      "left": 12,
+      "width": 369
+    },
+    "mapPadding": {
+      "top": 24,
+      "bottom": 76,
+      "left": 381,
+      "right": 0
+    },
+    "bannerSlot": 56,
+    "bannerArea": 76
+  },
+  "4-home-ipad-landscape": {
+    "zoom": 15,
+    "pitch": 45,
+    "bearing": 0,
+    "motorwayPx": 11,
+    "arrow": {
+      "x": 899,
+      "y": 486
+    }
+  },
+  "4-home-ipad-landscape-layout": {
+    "kind": "tablet",
+    "panel": {
+      "side": "left",
+      "left": 12,
+      "width": 420
+    },
+    "mapPadding": {
+      "top": 24,
+      "bottom": 76,
+      "left": 432,
+      "right": 0
+    },
+    "bannerSlot": 56,
+    "bannerArea": 76
+  },
+  "5-nav-following-frames": {
+    "overlaps": [],
+    "recenter": null,
+    "report": {
+      "x": 318,
+      "y": 632,
+      "width": 56,
+      "height": 56
+    }
+  },
+  "5-nav-following": {
+    "zoom": 17.5,
+    "pitch": 45,
+    "bearing": -57,
+    "motorwayPx": null,
+    "arrow": {
+      "x": 195,
+      "y": 608
+    }
+  },
+  "5-nav-free-frames": {
+    "overlaps": [],
+    "recenter": {
+      "x": 318,
+      "y": 564,
+      "width": 56,
+      "height": 56
+    },
+    "report": {
+      "x": 318,
+      "y": 632,
+      "width": 56,
+      "height": 56
+    }
+  },
+  "5-nav-free": {
+    "zoom": 16.9,
+    "pitch": 30,
+    "bearing": -32,
+    "motorwayPx": null,
+    "arrow": {
+      "x": 195,
+      "y": 608
+    }
+  }
+}

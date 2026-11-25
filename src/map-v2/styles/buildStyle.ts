@@ -1,0 +1,761 @@
+// TrackLine's own Mapbox map style, built from rules rather than hand-written JSON: the road
+// widths, which streets get a name at which zoom, the colours. One function turns a palette
+// into a full Mapbox Style Specification document over Mapbox Streets v8 vector tiles.
+//
+// The three shipped files (trackline-light.json, trackline-dark.json,
+// trackline-satellite-streets.json) are written from this by `npx tsx scripts/build-map-styles.ts`,
+// and a test checks they're up to date. The other colour themes in Settings are built at runtime
+// with the same function. No React Native imports -- unit-tested directly.
+
+import { LAVENDER, PURPLE } from "../../theme/colors";
+import { BADGE_LAYER_IDS, BADGE_MIN_ZOOM, BADGE_PADDING_PX, EARLY_MIN_ZOOM, badgeFilter, badgeIconExpression, isBadgeFeature } from "../../map/poiBadges";
+export type RoadClass = "motorway" | "trunk" | "primary" | "secondary" | "tertiary" | "residential" | "service";
+
+/** Mapbox Streets v8 `road` layer `class` values that make up each of our road classes. */
+export const ROAD_CLASS_SOURCES: Record<RoadClass, string[]> = {
+  motorway: ["motorway", "motorway_link"],
+  trunk: ["trunk", "trunk_link"],
+  primary: ["primary", "primary_link"],
+  secondary: ["secondary", "secondary_link"],
+  tertiary: ["tertiary", "tertiary_link"],
+  residential: ["street", "street_limited"],
+  service: ["service"],
+};
+
+/** Drawn bottom to top, so a motorway always sits over the streets it crosses. */
+export const ROAD_DRAW_ORDER: RoadClass[] = ["service", "residential", "tertiary", "secondary", "primary", "trunk", "motorway"];
+
+/** Line width in px at zoom 14 and zoom 18 (Mapbox interpolates between and beyond). */
+export const ROAD_WIDTHS: Record<RoadClass, { z14: number; z18: number }> = {
+  // Main roads clearly thicker than streets, but never giant bands (fix pass 7 §3). The home view
+  // is zoom 16 on the app's (Google) scale = Mapbox 15: there a motorway is ~9 px plus its 2 px
+  // edge (~11 px), a street ~5 px.
+  motorway: { z14: 8, z18: 16 },
+  trunk: { z14: 7, z18: 15 },
+  primary: { z14: 5, z18: 13 },
+  secondary: { z14: 4, z18: 10.5 },
+  tertiary: { z14: 3.25, z18: 8.5 },
+  residential: { z14: 2.5, z18: 7.5 },
+  service: { z14: 1.5, z18: 5 },
+};
+
+/** The zoom a road class first gets its name drawn. */
+export const LABEL_MIN_ZOOM: Record<RoadClass, number> = {
+  motorway: 10,
+  trunk: 10,
+  primary: 11,
+  secondary: 12.5,
+  tertiary: 13.5,
+  residential: 15,
+  service: 17,
+};
+
+/** Road lines are drawn from this zoom up (the tiles decide which roads exist that far out). */
+export const ROAD_LINE_MIN_ZOOM = 9;
+/** Motorways show from further out (the whole network across a city / state), thin until z9. */
+export const MOTORWAY_LINE_MIN_ZOOM = 6;
+export const lineMinZoom = (cls: RoadClass) => (cls === "motorway" ? MOTORWAY_LINE_MIN_ZOOM : ROAD_LINE_MIN_ZOOM);
+/** px between repeated labels of one road. */
+export const LABEL_SPACING_PX = 250;
+/** Lower wins when labels compete for space. */
+export const LABEL_PRIORITY: Record<RoadClass, number> = {
+  motorway: 1,
+  trunk: 2,
+  primary: 3,
+  secondary: 4,
+  tertiary: 5,
+  residential: 6,
+  service: 7,
+};
+/** Above this camera pitch the buildings are raised (handled by TrackLineMap, not the style). */
+export const BUILDING_EXTRUSION_MIN_PITCH = 30;
+/**
+ * Raised buildings (only when the driver turns 3D buildings on), permanent fix §6: 40% of their
+ * real height (capped at 40 m), a soft colour for the theme (light grey / slate, never white towers
+ * on a dark map), fading in from z16, and more see-through while a route is drawn so the line
+ * always reads. Labels stay on top (the layer goes under the road labels).
+ */
+export const BUILDING_EXTRUSION_STYLE = {
+  color: { light: "#DCDFE4", dark: "#3A4558" },
+  opacity: 0.45,
+  opacityNearRoute: 0.28,
+  heightScale: 0.4,
+  maxHeightM: 40,
+  fadeInFromZoom: 16,
+  fullFromZoom: 17,
+} as const;
+
+/** The extrusion paint for a theme, and whether a route is on the map. */
+export function buildingExtrusionPaint(dark: boolean, routeShown: boolean) {
+  const s = BUILDING_EXTRUSION_STYLE;
+  const opacity = routeShown ? s.opacityNearRoute : s.opacity;
+  return {
+    fillExtrusionColor: dark ? s.color.dark : s.color.light,
+    fillExtrusionOpacity: ["interpolate", ["linear"], ["zoom"], s.fadeInFromZoom, 0, s.fullFromZoom, opacity],
+    fillExtrusionHeight: ["min", ["*", ["get", "height"], s.heightScale], s.maxHeightM],
+    fillExtrusionBase: ["min", ["*", ["get", "min_height"], s.heightScale], s.maxHeightM],
+  };
+}
+
+// Mapbox-hosted fonts. Rubik isn't on Mapbox's glyph server (uploading it needs a Mapbox
+// Studio account step), so labels use the closest geometric sans Mapbox hosts, with a
+// wide-coverage fallback for non-Latin names.
+export const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
+export const LABEL_FONT_BOLD = ["DIN Pro Bold", "Arial Unicode MS Bold"];
+
+/** Bumped whenever the style's rules change (shown in Settings > About). */
+export const STYLE_VERSION = 11;
+
+/**
+ * Clean satellite (map styles add-on §2): imagery a little less saturated and contrasty with a
+ * soft lift, so roads and labels stand out instead of busy rooftops; tiles fade in over a neutral
+ * ground (no grey flashes).
+ */
+export const SATELLITE_RASTER_PAINT = {
+  "raster-saturation": -0.35,
+  "raster-contrast": -0.12,
+  "raster-brightness-min": 0.08,
+  "raster-brightness-max": 0.96,
+  "raster-fade-duration": 300,
+} as const;
+export const SATELLITE_GROUND = "#3B4249";
+/** Main roads get a thin dark casing over imagery; the rest are light lines only. */
+export const SATELLITE_CASED: RoadClass[] = ["motorway", "trunk", "primary"];
+export const SATELLITE_ROAD_OPACITY = { main: 0.7, other: 0.5, casing: 0.4 } as const;
+
+/** Australian suburb names with postcodes (ABS data) are drawn from this zoom up to 16. */
+export const AU_SUBURB_MIN_ZOOM = 11;
+export const AU_SUBURB_LAYER_ID = "au-suburb-labels";
+
+/** The Australian suburb layer's look: the same as every other suburb label. */
+export function auSuburbLabelStyle(palette: StylePalette) {
+  return {
+    textField: ["case", ["has", "postcode"], ["concat", ["get", "name"], " ", ["get", "postcode"]], ["get", "name"]],
+    // Mixed case, semi-bold (map polish §1): "Punchbowl 2196", not "PUNCHBOWL 2196".
+    textFont: LABEL_FONT_BOLD,
+    textSize: ["interpolate", ["linear"], ["zoom"], 11, 14, 13, 18, 16, 20],
+    textTransform: "none" as const,
+    textLetterSpacing: 0.02,
+    textMaxWidth: 9,
+    textColor: palette.suburbLabel,
+    textHaloColor: palette.labelHalo,
+    textHaloWidth: 2,
+    textAllowOverlap: false,
+  };
+}
+
+/**
+ * Every label is the place's own name in the local language and script (Mapbox Streets `name`):
+ * Arabic in Riyadh and Beirut, Japanese in Tokyo, Cyrillic in Moscow -- like the road signs.
+ * English only where a feature has no local name. No rule anywhere is tied to one country.
+ */
+export const LOCAL_NAME = ["coalesce", ["get", "name"], ["get", "name_en"]];
+
+/** Settings > Map appearance > Map labels. */
+export type LabelLanguage = "local" | "app" | "both";
+
+/** The languages Mapbox Streets v8 carries name_* fields for. */
+export const MAPBOX_NAME_LANGUAGES = ["ar", "en", "es", "fr", "de", "it", "pt", "ru", "zh-Hans", "zh-Hant", "ja", "ko", "vi"] as const;
+
+/** "en-AU" -> "name_en", "zh-TW" -> "name_zh-Hant", "zh-CN" -> "name_zh-Hans"; null if Mapbox has no field. */
+export function mapboxNameField(locale: string | null | undefined): string | null {
+  if (!locale) return null;
+  const [lang, ...rest] = locale.replace("_", "-").split("-");
+  const l = lang.toLowerCase();
+  if (l === "zh") {
+    const r = rest.join("-").toLowerCase();
+    return /hant|tw|hk|mo/.test(r) ? "name_zh-Hant" : "name_zh-Hans";
+  }
+  return (MAPBOX_NAME_LANGUAGES as readonly string[]).includes(l) ? `name_${l}` : null;
+}
+
+/**
+ * A label's text for the chosen mode. "app": the name in the app's language where the tiles have
+ * it, else the local name. "both": the local name, with the app-language name smaller underneath
+ * only where it's different. "local" (default): the local name.
+ */
+export function labelText(mode: LabelLanguage = "local", appField: string | null = null): unknown {
+  if (mode === "local" || !appField) return LOCAL_NAME;
+  if (mode === "app") return ["coalesce", ["get", appField], ["get", "name"]];
+  return [
+    "case",
+    ["all", ["has", appField], ["has", "name"], ["!=", ["get", appField], ["get", "name"]]],
+    ["format", ["get", "name"], {}, "\n", {}, ["get", appField], { "font-scale": 0.8 }],
+    LOCAL_NAME,
+  ];
+}
+
+/** Prefix of the runtime plate images the highway shields are drawn on (TrackLineMap adds them). */
+export const SHIELD_IMAGE = "tl-shield";
+
+/** The plate colours TrackLineMap draws (`tl-shield-<colour>`). */
+export const SHIELD_PLATES = ["green", "blue", "white", "red", "yellow", "orange", "brown"] as const;
+export type ShieldPlate = (typeof SHIELD_PLATES)[number];
+
+export const SHIELD_PLATE_COLOURS: Record<ShieldPlate, string> = {
+  green: "#1F8A3B",
+  blue: "#1E4FA3",
+  white: "#FFFFFF",
+  red: "#C8102E",
+  yellow: "#FFD400",
+  orange: "#E87722",
+  brown: "#7A4A21",
+};
+
+/**
+ * Which plate a road's route number goes on, from the tiles' own `shield` value (Mapbox Streets
+ * v8 gives each road the shield style used where it is). The data decides -- US Interstates blue,
+ * German motorways blue, Swiss red, Australian national highways green -- and anything unknown a
+ * plain white plate, never one country's look applied to another.
+ */
+export const SHIELD_PLATE_FOR: Record<string, ShieldPlate> = {
+  // Only values documented for Mapbox Streets v8 (docs.mapbox.com > mapbox-streets-v8 > road >
+  // shield; "No further shield values will be added in v8"). Anything else, and every
+  // country-specific value whose real plate colour isn't certain, gets the neutral white plate
+  // with the tiles' own text colour.
+  "rectangle-white": "white",
+  "rectangle-red": "red",
+  "rectangle-orange": "orange",
+  "rectangle-yellow": "yellow",
+  "rectangle-green": "green",
+  "rectangle-blue": "blue",
+  "circle-white": "white",
+  "au-national-highway": "green",
+  // Australia's alphanumeric routes (M1, A6, B83) are signed on green plates.
+  "au-national-route": "green",
+  "au-state": "green",
+  "au-tourist": "brown",
+  "nz-state": "red",
+  "us-interstate": "blue",
+  "us-interstate-duplex": "blue",
+  "us-interstate-truck": "blue",
+  "us-interstate-business": "green",
+  "us-highway": "white",
+  "us-highway-duplex": "white",
+  "us-highway-alternate": "white",
+  "us-highway-bypass": "white",
+  "us-highway-truck": "white",
+  "us-highway-business": "green",
+  "de-motorway": "blue",
+  "hu-motorway": "blue",
+  "ch-motorway": "red",
+  "gr-motorway": "green",
+  "hr-motorway": "green",
+  "si-motorway": "green",
+  "cn-nths-expy": "green",
+  "mx-federal": "white",
+  "mx-state": "white",
+};
+
+/** Default text colour on each plate when the tiles don't give one. */
+const PLATE_TEXT: Record<ShieldPlate, string> = {
+  green: "#FFFFFF",
+  blue: "#FFFFFF",
+  white: "#1A1A1A",
+  red: "#FFFFFF",
+  yellow: "#1A1A1A",
+  orange: "#1A1A1A",
+  brown: "#FFFFFF",
+};
+
+/** Mapbox Streets v8 `shield_text_color` values -> the colours drawn. */
+export const SHIELD_TEXT_COLOURS: Record<string, string> = {
+  // The documented shield_text_color values.
+  black: "#1A1A1A",
+  white: "#FFFFFF",
+  yellow: "#FFD400",
+  orange: "#E87722",
+  blue: "#1E4FA3",
+};
+
+function plateExpression(): unknown[] {
+  const pairs = Object.entries(SHIELD_PLATE_FOR).flatMap(([shield, plate]) => [shield, `${SHIELD_IMAGE}-${plate}`]);
+  return ["match", ["get", "shield"], ...pairs, `${SHIELD_IMAGE}-white`];
+}
+
+function shieldTextExpression(): unknown[] {
+  const byPlate = ["match", ["get", "shield"], ...Object.entries(SHIELD_PLATE_FOR).flatMap(([shield, plate]) => [shield, PLATE_TEXT[plate]]), PLATE_TEXT.white];
+  // The tile's own text colour when it gives one, else the plate's. (Root cause of a rejected
+  // style: this used to fall back to the string "none" inside a colour expression, which Mapbox
+  // can't parse as a colour, so the whole road-shields layer -- or in GL JS the whole style -- failed.)
+  const fromData = ["match", ["get", "shield_text_color"], ...Object.entries(SHIELD_TEXT_COLOURS).flat(), byPlate];
+  // Australia's green route plates (M5, M8, A1, A3) always carry bold yellow numbers.
+  const australian = ["match", ["get", "shield"], ...AU_YELLOW_TEXT_SHIELDS.flatMap((v) => [v, true]), false];
+  return ["case", australian, AU_SHIELD_TEXT, fromData];
+}
+
+/** Australia's green-plate shields: yellow route numbers (map polish §1). */
+export const AU_YELLOW_TEXT_SHIELDS = ["au-national-highway", "au-national-route", "au-state"];
+export const AU_SHIELD_TEXT = "#FFD400";
+
+export interface StylePalette {
+  name: string;
+  land: string;
+  park: string;
+  water: string;
+  building: string;
+  road: string;
+  roadCasing: string;
+  /**
+   * Motorways (M1, M2, M4... and their on/off ramps): their own warm colour with a darker edge,
+   * so drivers can see at a glance where the motorway network is.
+   */
+  motorway: string;
+  motorwayCasing: string;
+  /** Trunk roads / highways: the quieter slate main-road colour. */
+  trunk: string;
+  suburbLabel: string;
+  streetLabel: string;
+  labelHalo: string;
+  shieldText: string;
+  /** The route line, its casing and the other routes (preview / alternatives), per theme. */
+  route: string;
+  routeCasing: string;
+  routeAlt: string;
+}
+
+// Route colours: our purple on the light themes; a brighter purple on dark ground and imagery,
+// so the route always passes the contrast rules (styleContrast.ts).
+const ROUTE_LIGHT = { route: PURPLE, routeCasing: "#3B0E7A", routeAlt: LAVENDER } as const;
+const ROUTE_DARK = { route: "#B48CFF", routeCasing: "#2A0F63", routeAlt: "#6F5C9E" } as const;
+const ROUTE_SATELLITE = { route: "#8F45FF", routeCasing: "#FFFFFF", routeAlt: "#D9C6FF" } as const;
+
+export const LIGHT_PALETTE: StylePalette = {
+  name: "TrackLine Light",
+  // Map look 3: TrackLine's own light look -- a cool, airy off-white ground, blue-grey streets
+  // with crisp white edges, slate main roads, fresh mint parks and a clear sky-blue water.
+  land: "#F5F6F8",
+  park: "#D2EED8",
+  water: "#A3D2F3",
+  // Very light, flat buildings so the roads read first.
+  building: "#ECEFF3",
+  road: "#D3D9E2",
+  roadCasing: "#FFFFFF",
+  // Motorways: a soft warm amber with a deeper edge (fix pass 7 §3: softer than the first,
+  // brighter orange); highways keep the slate.
+  motorway: "#E9C27A",
+  motorwayCasing: "#D2A75A",
+  trunk: "#A7B4C6",
+  suburbLabel: "#4A6886",
+  streetLabel: "#323A45",
+  labelHalo: "#FFFFFF",
+  shieldText: "#FFD400",
+  ...ROUTE_LIGHT,
+};
+
+export const DARK_PALETTE: StylePalette = {
+  name: "TrackLine Dark",
+  // Dark slate background, readable navy-grey roads, bright labels: clear, not murky.
+  land: "#18202B",
+  park: "#1B3127",
+  // Clearly water on the dark ground (it was #12304F: 1.18:1, too close to the land).
+  water: "#1F4E80",
+  building: "#232B39",
+  road: "#3D4B63",
+  roadCasing: "#121722",
+  // A muted amber on dark ground: clearly a motorway, not glaring at night.
+  motorway: "#A88A5C",
+  motorwayCasing: "#7A6340",
+  trunk: "#5A6B8B",
+  suburbLabel: "#A9C6DC",
+  streetLabel: "#EEF1F4",
+  labelHalo: "#14171B",
+  shieldText: "#FFD400",
+  ...ROUTE_DARK,
+};
+
+/** Satellite imagery underneath, with the road names and shields drawn on top of it. */
+export const SATELLITE_LABEL_PALETTE: StylePalette = {
+  ...LIGHT_PALETTE,
+  name: "TrackLine Satellite Streets",
+  streetLabel: "#FFFFFF",
+  labelHalo: "#1F2125",
+  suburbLabel: "#FFFFFF",
+  // Roads over imagery: light, semi-transparent lines (buildStyle sets the opacity).
+  road: "#F2F4F7",
+  motorway: "#FFBE45",
+  motorwayCasing: "#1F2125",
+  trunk: "#FFE9A8",
+  roadCasing: "#1F2125",
+  ...ROUTE_SATELLITE,
+};
+
+export interface BuildOptions {
+  /** Multiplies every road width (Settings > Road thickness). */
+  roadScale?: number;
+  /** Satellite imagery as the base, roads drawn as thin overlays. */
+  satellite?: boolean;
+  /** Fades the base map while routes are being chosen, so the route lines stand out. */
+  dimmed?: boolean;
+  /** Label language (default: local names). */
+  labels?: { mode: LabelLanguage; field: string | null };
+}
+
+type Json = Record<string, unknown>;
+
+/** The fill colour of a road class: motorways amber, highways slate, the rest the street colour. */
+export function roadColour(p: StylePalette, cls: RoadClass): string {
+  return cls === "motorway" ? p.motorway : cls === "trunk" ? p.trunk : p.road;
+}
+
+function roadFilter(cls: RoadClass): unknown[] {
+  return ["match", ["get", "class"], ROAD_CLASS_SOURCES[cls], true, false];
+}
+
+/** Width expression for a road class: grows from z9 up to its z14 and z18 sizes. */
+export function roadWidthExpression(cls: RoadClass, scale = 1, extra = 0): unknown[] {
+  const { z14, z18 } = ROAD_WIDTHS[cls];
+  const z9 = Math.max(0.5, z14 * 0.25);
+  // Motorways start earlier, as a fine line that thickens towards z9.
+  const early = cls === "motorway" ? [MOTORWAY_LINE_MIN_ZOOM, round2(0.9 * scale + extra * 0.5)] : [];
+  return [
+    "interpolate",
+    ["exponential", 1.5],
+    ["zoom"],
+    ...early,
+    ROAD_LINE_MIN_ZOOM,
+    round2(z9 * scale + extra),
+    14,
+    round2(z14 * scale + extra),
+    18,
+    round2(z18 * scale + extra),
+  ];
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// Bigger street names than before (Waze-style): readable at a glance while driving.
+const LABEL_SIZES: Record<RoadClass, [number, number]> = {
+  // Readable, not oversized (fix pass 7 §3).
+  motorway: [12.5, 16],
+  trunk: [12.5, 16],
+  primary: [12, 15.5],
+  secondary: [11.5, 15],
+  tertiary: [11, 14.5],
+  residential: [11, 14.5],
+  service: [10, 12.5],
+};
+/** Main roads' names in bold. */
+const BOLD_LABEL_CLASSES: RoadClass[] = ["motorway", "trunk", "primary", "secondary", "tertiary"];
+
+/** The street-name layer for one road class. */
+export function roadLabelLayer(cls: RoadClass, palette: StylePalette, text: unknown = LOCAL_NAME): Json {
+  const [small, large] = LABEL_SIZES[cls];
+  return {
+    id: `road-label-${cls}`,
+    type: "symbol",
+    source: "composite",
+    "source-layer": "road",
+    minzoom: LABEL_MIN_ZOOM[cls],
+    filter: ["all", roadFilter(cls), ["has", "name"]],
+    layout: {
+      "symbol-placement": "line",
+      "symbol-spacing": LABEL_SPACING_PX,
+      "symbol-sort-key": LABEL_PRIORITY[cls],
+      "text-field": text,
+      "text-font": BOLD_LABEL_CLASSES.includes(cls) ? LABEL_FONT_BOLD : LABEL_FONT,
+      "text-size": ["interpolate", ["linear"], ["zoom"], LABEL_MIN_ZOOM[cls], small, 18, large],
+      "text-max-angle": 30,
+      "text-padding": 4,
+      "text-allow-overlap": false,
+      "text-ignore-placement": false,
+      "text-pitch-alignment": "viewport",
+      "text-rotation-alignment": "map",
+    },
+    paint: {
+      "text-color": palette.streetLabel,
+      "text-halo-color": palette.labelHalo,
+      "text-halo-width": 2,
+    },
+  };
+}
+
+function shieldLayer(): Json {
+  return {
+    id: "road-shields",
+    type: "symbol",
+    source: "composite",
+    "source-layer": "road",
+    minzoom: 10,
+    filter: ["all", ["has", "ref"], ["match", ["get", "class"], [...ROAD_CLASS_SOURCES.motorway, ...ROAD_CLASS_SOURCES.trunk, ...ROAD_CLASS_SOURCES.primary], true, false]],
+    layout: {
+      "symbol-placement": "line",
+      "symbol-spacing": 400,
+      "symbol-sort-key": 0,
+      // A road with several route numbers ("A1;M1") shows the first.
+      "text-field": [
+        "case",
+        [">=", ["index-of", ";", ["get", "ref"]], 0],
+        ["slice", ["get", "ref"], 0, ["index-of", ";", ["get", "ref"]]],
+        ["get", "ref"],
+      ],
+      "text-font": LABEL_FONT_BOLD,
+      "text-size": 12,
+      "text-rotation-alignment": "viewport",
+      "icon-image": plateExpression(),
+      "icon-text-fit": "both",
+      "icon-text-fit-padding": [3, 6, 3, 6],
+      "icon-rotation-alignment": "viewport",
+    },
+    // The tiles' own shield text colour (yellow on Australia's green, white on blue motorways...).
+    paint: { "text-color": shieldTextExpression() },
+  };
+}
+
+function dim(hex: string, amount: number): string {
+  // Blend toward mid-grey, keeping it a plain hex colour.
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c: number) => Math.round(c + (0xb4 - c) * amount);
+  const r = mix((n >> 16) & 255);
+  const g = mix((n >> 8) & 255);
+  const b = mix(n & 255);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1).toUpperCase()}`;
+}
+
+/** A complete Mapbox style document. */
+export function buildStyle(input: StylePalette, options: BuildOptions = {}): Json {
+  const roadScale = options.roadScale ?? 1;
+  const p: StylePalette = options.dimmed
+    ? { ...input, land: dim(input.land, 0.08), park: dim(input.park, 0.25), water: dim(input.water, 0.25), road: dim(input.road, 0.15) }
+    : input;
+  const layers: Json[] = [];
+
+  if (options.satellite) {
+    layers.push(
+      { id: "satellite-ground", type: "background", paint: { "background-color": SATELLITE_GROUND } },
+      { id: "satellite", type: "raster", source: "satellite", paint: { ...SATELLITE_RASTER_PAINT } }
+    );
+  } else {
+    layers.push(
+      { id: "land", type: "background", paint: { "background-color": p.land } },
+      {
+        id: "parks",
+        type: "fill",
+        source: "composite",
+        "source-layer": "landuse",
+        filter: ["match", ["get", "class"], ["park", "grass", "pitch", "cemetery", "golf_course", "wood", "scrub"], true, false],
+        paint: { "fill-color": p.park },
+      },
+      {
+        id: "national-parks",
+        type: "fill",
+        source: "composite",
+        "source-layer": "landuse_overlay",
+        filter: ["==", ["get", "class"], "national_park"],
+        paint: { "fill-color": p.park, "fill-opacity": 0.6 },
+      },
+      { id: "water", type: "fill", source: "composite", "source-layer": "water", paint: { "fill-color": p.water } },
+      {
+        id: "waterways",
+        type: "line",
+        source: "composite",
+        "source-layer": "waterway",
+        paint: { "line-color": p.water, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 6] },
+      },
+      {
+        // Flat footprints; TrackLineMap adds a raised version once the camera is tilted.
+        id: "buildings",
+        type: "fill",
+        source: "composite",
+        "source-layer": "building",
+        // Map look 2: quieter mid-zoom map -- footprints fade in from 15.5 (street level), soft
+        // and with no outline, so the roads and labels read first when zoomed out.
+        minzoom: 15.5,
+        filter: ["==", ["get", "underground"], "false"],
+        paint: { "fill-color": p.building, "fill-opacity": ["interpolate", ["linear"], ["zoom"], 15.5, 0, 16.5, 0.75, 18, 0.9] },
+      }
+    );
+  }
+
+  // Casings first (all classes), then fills, so every junction looks continuous.
+  for (const cls of ROAD_DRAW_ORDER) {
+    layers.push({
+      id: `road-casing-${cls}`,
+      type: "line",
+      source: "composite",
+      "source-layer": "road",
+      minzoom: lineMinZoom(cls),
+      filter: roadFilter(cls),
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": cls === "motorway" ? p.motorwayCasing : p.roadCasing,
+        "line-width": options.satellite ? roadWidthExpression(cls, roadScale * 0.5, 1.5) : roadWidthExpression(cls, roadScale, 2),
+        "line-opacity": options.satellite ? (SATELLITE_CASED.includes(cls) ? SATELLITE_ROAD_OPACITY.casing : 0) : 1,
+      },
+    });
+  }
+  for (const cls of ROAD_DRAW_ORDER) {
+    layers.push({
+      id: `road-${cls}`,
+      type: "line",
+      source: "composite",
+      "source-layer": "road",
+      minzoom: lineMinZoom(cls),
+      filter: roadFilter(cls),
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": roadColour(p, cls),
+        "line-width": roadWidthExpression(cls, options.satellite ? roadScale * 0.5 : roadScale),
+        "line-opacity": options.satellite ? (SATELLITE_CASED.includes(cls) ? SATELLITE_ROAD_OPACITY.main : SATELLITE_ROAD_OPACITY.other) : 1,
+      },
+    });
+  }
+
+  // Labels: suburbs, then street names (most important first), then shields on top.
+  // Suburb and town names. Below zoom 11 (and outside Australia at every zoom) they're Mapbox's
+  // own. From zoom 11 in Australia they come from the official ABS suburb list instead, with the
+  // postcode ("PUNCHBOWL 2196") -- TrackLineMap draws that layer (AU_SUBURB_LAYER_ID). No other
+  // country has an official source wired, so no postcode is shown anywhere else.
+  const suburbLayout = {
+    "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
+    "text-font": LABEL_FONT_BOLD,
+    "text-size": ["interpolate", ["linear"], ["zoom"], 9, 12, 13, 15.5, 16, 17],
+    "text-transform": "none",
+    "text-letter-spacing": 0.02,
+    "text-max-width": 8,
+    "symbol-sort-key": ["get", "symbolrank"],
+  };
+  const suburbPaint = { "text-color": p.suburbLabel, "text-halo-color": p.labelHalo, "text-halo-width": 2 };
+  const settlement = ["match", ["get", "class"], ["settlement", "settlement_subdivision"], true, false];
+  layers.push({
+    id: "suburb-labels",
+    type: "symbol",
+    source: "composite",
+    "source-layer": "place_label",
+    filter: settlement,
+    minzoom: 9,
+    maxzoom: AU_SUBURB_MIN_ZOOM,
+    layout: suburbLayout,
+    paint: suburbPaint,
+  });
+  layers.push({
+    id: "suburb-labels-intl",
+    type: "symbol",
+    source: "composite",
+    "source-layer": "place_label",
+    filter: ["all", settlement, ["!=", ["get", "iso_3166_1"], "AU"]],
+    minzoom: AU_SUBURB_MIN_ZOOM,
+    maxzoom: 16,
+    layout: suburbLayout,
+    paint: suburbPaint,
+  });
+  for (const cls of [...ROAD_DRAW_ORDER].reverse()) layers.push(roadLabelLayer(cls, p, labelText(options.labels?.mode, options.labels?.field ?? null)));
+  layers.push(shieldLayer());
+  // Places of interest: small, from close zoom only. Tapping one opens its details
+  // (TrackLineMap reads these features at the tap point).
+  layers.push({
+    id: "poi-labels",
+    type: "symbol",
+    source: "composite",
+    "source-layer": "poi_label",
+    // Map look 3: only the most notable places, and only right up close -- a calmer map.
+    minzoom: 16.5,
+    // Places that get a brand badge (below) aren't labelled twice.
+    filter: ["all", ["<=", ["get", "filterrank"], 1], ["!", isBadgeFeature()]],
+    layout: {
+      "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
+      "text-font": LABEL_FONT,
+      "text-size": 11,
+      "text-max-width": 8,
+      "symbol-sort-key": 10,
+    },
+    paint: { "text-color": dim(p.streetLabel, 0.25), "text-halo-color": p.labelHalo, "text-halo-width": 1.2 },
+  });
+
+  // Brand & popular places (map/poiBadges.ts): fuel and hospitals from z13, the rest from z15.
+  // Drawn after the plain labels so they win placement; most prominent first.
+  for (const early of [true, false]) {
+    layers.push({
+      id: early ? BADGE_LAYER_IDS[0] : BADGE_LAYER_IDS[1],
+      type: "symbol",
+      source: "composite",
+      "source-layer": "poi_label",
+      minzoom: early ? EARLY_MIN_ZOOM : BADGE_MIN_ZOOM,
+      filter: badgeFilter(early),
+      layout: {
+        "icon-image": badgeIconExpression(),
+        "icon-anchor": "bottom",
+        "icon-padding": BADGE_PADDING_PX,
+        "symbol-sort-key": ["get", "filterrank"],
+        "text-field": labelText(options.labels?.mode, options.labels?.field ?? null),
+        "text-font": LABEL_FONT,
+        "text-size": 12,
+        "text-max-width": 9,
+        "text-anchor": "left",
+        "text-offset": [1.3, -1.5],
+        // The badge stays even where its name would collide.
+        "text-optional": true,
+      },
+      paint: { "text-color": p.streetLabel, "text-halo-color": p.labelHalo, "text-halo-width": 1.4 },
+    });
+  }
+
+  const sources: Json = {
+    composite: { type: "vector", url: "mapbox://mapbox.mapbox-streets-v8" },
+  };
+  if (options.satellite) sources.satellite = { type: "raster", url: "mapbox://mapbox.satellite", tileSize: 512 };
+
+  return {
+    version: 8,
+    name: p.name,
+    metadata: { "trackline:styleVersion": STYLE_VERSION },
+    sources,
+    glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+    // Map look 2: a soft haze toward the horizon when the map is tilted, so the far distance
+    // fades out cleanly instead of ending in a hard line or a wall of tiny labels.
+    fog: fogFor(p, options.satellite),
+    layers,
+  };
+}
+
+/**
+ * Distance haze (Mapbox style "fog"): starts a little way into the tilted view and blends into a
+ * pale sky above the horizon -- the land colour lightened on light themes, darkened on dark ones.
+ */
+export function fogFor(p: StylePalette, satellite = false): Json {
+  const dark = isDarkColour(p.land) && !satellite;
+  return {
+    range: [0.8, 7],
+    color: dark ? "#1E2533" : satellite ? "#DCE4EE" : mix(p.land, "#EEF3F9", 0.6),
+    "high-color": dark ? "#161C27" : "#E9EEF4",
+    "space-color": dark ? "#121722" : "#EEF2F6",
+    "horizon-blend": 0.12,
+    "star-intensity": 0,
+  };
+}
+
+function isDarkColour(hex: string): boolean {
+  const n = parseInt(hex.slice(1), 16);
+  return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114 < 110;
+}
+
+function mix(a: string, b: string, t: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ch = (shift: number) => Math.round(((pa >> shift) & 255) * (1 - t) + ((pb >> shift) & 255) * t);
+  return `#${[16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The colour themes in Settings > Map appearance, as palettes over the same rules.
+
+export type ThemeKey = "normal" | "purpleBlue" | "blueGrey" | "greenYellow" | "blue" | "light" | "dark";
+
+export const THEME_PALETTES: Record<ThemeKey, StylePalette> = {
+  normal: LIGHT_PALETTE,
+  light: LIGHT_PALETTE,
+  dark: DARK_PALETTE,
+  purpleBlue: { ...LIGHT_PALETTE, name: "Purple & Blue", land: "#F4F2FA", road: "#D8D3EC", trunk: "#C7BCEB", water: "#9FC6F2", suburbLabel: "#7563A8" },
+  blueGrey: { ...LIGHT_PALETTE, name: "Blue & Grey", land: "#EEF1F4", road: "#C9D2DC", trunk: "#B3C3D6", motorway: "#E4B96C", motorwayCasing: "#CA9B4A", water: "#8FB7E3", suburbLabel: "#5C7690" },
+  greenYellow: { ...LIGHT_PALETTE, name: "Green & Yellow", land: "#F4F6EC", park: "#BFE6A8", road: "#DAD5A6", trunk: "#E0BC45", motorway: "#E2A35A", motorwayCasing: "#C2853C", water: "#A6D2E8", suburbLabel: "#4E6B33" },
+  blue: { ...LIGHT_PALETTE, name: "Blue", land: "#EEF5FB", road: "#C5DCF0", trunk: "#9CC4EA", water: "#7FB6EC", suburbLabel: "#3E6E9A" },
+};
+
+export const ROAD_SCALES: Record<"thin" | "normal" | "bold" | "extraBold", number> = {
+  thin: 0.75,
+  normal: 1,
+  bold: 1.3,
+  extraBold: 1.6,
+};

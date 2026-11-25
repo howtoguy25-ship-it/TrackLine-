@@ -19,10 +19,12 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   EmailAuthProvider,
+  updateProfile,
   type AuthCredential,
   type User,
 } from "@firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 // From "@firebase/functions" (not the "firebase/functions" wrapper) -- this repo's OWN Cloud
 // Functions source lives at ./firebase/functions (see firebase.json), which collides with that
 // wrapper subpath under this project's own baseUrl-relative module resolution (tsconfig.json
@@ -69,6 +71,10 @@ export const auth = DIAGNOSTIC_DISABLE_ASYNC_STORAGE_PERSISTENCE
     });
 
 export const db = getFirestore(firebaseApp);
+// Backs recordedVoices.ts' real upload of a driver's own "Record your own voice" clips, to
+// their own private voiceRecordings/{uid}/ folder -- see firebase/storage.rules for the real
+// owner-only access rule.
+export const storage = getStorage(firebaseApp);
 // Backs runRevCheck (see src/services/revCheck.ts) -- the real PPSR provider key lives only in
 // firebase/functions/index.js's own Admin SDK read, never shipped to or reachable from this
 // client at all.
@@ -170,14 +176,14 @@ export async function reauthenticateWithGoogleCredential(idToken: string): Promi
   await reauthenticateWithCredential(current, GoogleAuthProvider.credential(idToken));
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<User> {
+export async function signUpWithEmail(email: string, password: string, displayName?: string): Promise<User> {
   const current = auth.currentUser;
-  if (current?.isAnonymous) {
-    const result = await linkWithCredential(current, EmailAuthProvider.credential(email, password));
-    return result.user;
-  }
-  const result = await createUserWithEmailAndPassword(auth, email, password);
-  return result.user;
+  const user = current?.isAnonymous
+    ? (await linkWithCredential(current, EmailAuthProvider.credential(email, password))).user
+    : (await createUserWithEmailAndPassword(auth, email, password)).user;
+  // The name from Create account. The account already exists if this fails, so don't fail sign-up.
+  if (displayName?.trim()) await updateProfile(user, { displayName: displayName.trim() }).catch(() => {});
+  return user;
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<User> {

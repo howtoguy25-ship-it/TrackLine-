@@ -6,6 +6,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.google.android.gms.maps3d.GoogleMap3D
 import com.google.android.gms.maps3d.Map3DView
+import com.google.android.gms.maps3d.OnMap3DViewReadyCallback
 import com.google.android.gms.maps3d.model.AltitudeMode
 import com.google.android.gms.maps3d.model.LatLngAltitude
 import com.google.android.gms.maps3d.model.Map3DMode
@@ -77,14 +78,27 @@ class ExpoMap3DView(context: Context, appContext: AppContext) : ExpoView(context
     addView(map3DView)
     (appContext.throwingActivity as? ComponentActivity)?.lifecycle?.addObserver(lifecycleObserver)
 
-    map3DView.getMap3DViewAsync { map ->
-      googleMap3D = map
-      map.setMapMode(mapMode)
-      map.setOnMapSteadyListener { isSteady -> onStatusChange(Map3DStatusEvent(isSteady)) }
-      applyMarker()
-      applyPolyline()
-      applyInitialCameraIfReady()
-    }
+    // Real, confirmed-via-reproduction Kotlin 2.2 regression: a plain trailing-lambda SAM
+    // conversion here (`getMap3DViewAsync { map -> ... }`) fails to type-check under the
+    // Kotlin 2.2.20 compiler this project moved to (to read google-mobile-ads' own newer
+    // Kotlin metadata -- see android/build.gradle's own comment) with "Argument type
+    // mismatch: actual type is Function1<ERROR CLASS: Unknown return lambda parameter
+    // type...>". play-services-maps3d 0.2.0's own OnMap3DViewReadyCallback is itself compiled
+    // with Kotlin metadata version 2.2.0 (confirmed by inspecting its class file), and its
+    // callback interface carries a `default` method (onError) alongside the one abstract
+    // method -- SAM conversion of a bare lambda apparently can't resolve cleanly against that
+    // shape under 2.2.20's K2 compiler. An explicit anonymous object implementing the real
+    // interface directly (not a SAM-converted lambda) sidesteps whatever inference path broke.
+    map3DView.getMap3DViewAsync(object : OnMap3DViewReadyCallback {
+      override fun onMap3DViewReady(map: GoogleMap3D) {
+        googleMap3D = map
+        map.setMapMode(mapMode)
+        map.setOnMapSteadyListener { isSteady -> onStatusChange(Map3DStatusEvent(isSteady)) }
+        applyMarker()
+        applyPolyline()
+        applyInitialCameraIfReady()
+      }
+    })
   }
 
   override fun onDetachedFromWindow() {
@@ -141,7 +155,12 @@ class ExpoMap3DView(context: Context, appContext: AppContext) : ExpoView(context
     }
     val existing = markerObj
     if (existing != null) {
-      existing.position = position
+      // Real, confirmed-via-decompiling-the-SDK fix: Marker's own Kotlin source declares
+      // `position` as a read-only (val) property with setPosition() as a separate, unrelated
+      // method -- not a property setter -- so `existing.position = position` doesn't compile
+      // now that the compiler can read that real metadata (see getMap3DViewAsync's own comment
+      // above for why this project's compiler only started seeing it now).
+      existing.setPosition(position)
     } else {
       markerObj = map.addMarker(
         markerOptions {
@@ -160,7 +179,12 @@ class ExpoMap3DView(context: Context, appContext: AppContext) : ExpoView(context
     } else if (routeCoordinates.isNotEmpty()) {
       polylineObj = map.addPolyline(
         polylineOptions {
-          coordinates = routeCoordinates
+          // Real, confirmed-via-decompiling-the-SDK fix: PolylineOptions has no "coordinates"
+          // property at all (only Polyline itself, the already-constructed object, has a
+          // legacy getCoordinates()/setCoordinates() pair alongside path) -- "path" is this
+          // builder's own real property, same name applyPolyline already uses on the existing-
+          // polyline branch just above.
+          path = routeCoordinates
           strokeColor = android.graphics.Color.parseColor("#2563EB")
           strokeWidth = 8.0
           altitudeMode = AltitudeMode.CLAMP_TO_GROUND
@@ -206,26 +230,35 @@ class ExpoMap3DView(context: Context, appContext: AppContext) : ExpoView(context
 
   fun rotateCamera(deltaDeg: Double) {
     val map = googleMap3D ?: return
-    val current = map.getCamera()
+    // getCamera() is nullable (GoogleMap3D's own Kotlin metadata, confirmed via decompiling
+    // its real class file -- see the Kotlin 2.2 upgrade comment in getMap3DViewAsync above for
+    // why this project's compiler only started seeing/enforcing its true nullability now).
+    val current = map.getCamera() ?: return
     map.setCamera(
       camera {
         center = current.center
-        heading = (current.heading + deltaDeg + 360.0) % 360.0
-        tilt = current.tilt
-        range = current.range
+        // Real, confirmed-via-decompiling-the-SDK fix: Camera.heading/tilt/range are each
+        // individually nullable java.lang.Double on the real play-services-maps3d API (only
+        // visible now that this project's Kotlin compiler can actually read the SDK's own
+        // Kotlin metadata -- see the getMap3DViewAsync comment above). Falling back to this
+        // view's own last-known defaults (same fields setCamera's initial/explicit calls
+        // already use) rather than crashing on a genuinely-absent value.
+        heading = ((current.heading ?: this@ExpoMap3DView.heading) + deltaDeg + 360.0) % 360.0
+        tilt = current.tilt ?: this@ExpoMap3DView.tilt
+        range = current.range ?: this@ExpoMap3DView.range
       }
     )
   }
 
   fun tiltCamera(deltaDeg: Double) {
     val map = googleMap3D ?: return
-    val current = map.getCamera()
+    val current = map.getCamera() ?: return
     map.setCamera(
       camera {
         center = current.center
-        heading = current.heading
-        tilt = (current.tilt + deltaDeg).coerceIn(0.0, 67.5)
-        range = current.range
+        heading = current.heading ?: this@ExpoMap3DView.heading
+        tilt = ((current.tilt ?: this@ExpoMap3DView.tilt) + deltaDeg).coerceIn(0.0, 67.5)
+        range = current.range ?: this@ExpoMap3DView.range
       }
     )
   }

@@ -1,0 +1,68 @@
+.drive-link-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--app-bg);
+  font-family: system-ui, sans-serif;
+}
+
+.drive-link-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  color: var(--surface-text);
+  border-radius: 16px;
+  padding: 22px 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+
+.drive-link-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--surface-text-muted);
+}
+
+.drive-link-title {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.drive-link-body {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--surface-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.drive-link-button {
+  display: block;
+  margin-top: 12px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--surface-text);
+  border: 1px solid var(--surface-text-muted);
+}
+
+.drive-link-button-primary {
+  margin-top: 20px;
+  color: #ffffff;
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.drive-link-hint {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--surface-text-muted);
+}

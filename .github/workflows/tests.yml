@@ -1,0 +1,91 @@
+name: Tests (typecheck, app tests, Firebase emulator tests)
+
+# Runs on every push and pull request. Never deploys anything and uses no real keys: the Cloud
+# Functions emulator only needs placeholder values for the functions' secrets, written to a
+# throwaway .secret.local on the runner (the same file is gitignored locally).
+on:
+  push:
+  pull_request:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit -p .
+      - name: Lint the app (includes the no-mocks / no-fakes guard, REAL_AUDIT.md)
+        run: npx eslint src __tests__ jest.setup.js --max-warnings 0
+      - name: App tests
+        run: npx jest --ci
+      - name: Script tests (scripts/test-*.ts)
+        run: for f in scripts/test-*.ts; do echo "== $f"; npx tsx "$f" || exit 1; done
+
+  firebase-emulators:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install functions and test dependencies
+        run: |
+          npm ci --prefix firebase/functions
+          npm ci --prefix firebase/tests
+      - name: Placeholder secrets for the Functions emulator (not real keys)
+        run: |
+          printf 'MAPBOX_SERVER_TOKEN=emulator-placeholder\nELEVENLABS_API_KEY=unset\nTFNSW_API_KEY=unset\nCARJAM_API_KEY=emulator-placeholder\nAUCN_API_KEY=emulator-placeholder\nMOTORWEB_API_KEY=emulator-placeholder\nEQUIFAX_API_KEY=emulator-placeholder\nPPSR_API_KEY=emulator-placeholder\nPPSR_BUSINESSAPI_KEY=emulator-placeholder\nGOOGLE_PLACES_SERVER_KEY=emulator-placeholder\nANTHROPIC_API_KEY=emulator-placeholder\nTWILIO_ACCOUNT_SID=emulator-placeholder\nTWILIO_AUTH_TOKEN=emulator-placeholder\nTWILIO_FROM_NUMBER=emulator-placeholder\nSENTRY_AUTH_TOKEN=emulator-placeholder\n' > firebase/functions/.secret.local
+      # The functions' non-secret parameters (defineString), set to the defaults in index.js.
+      # Without them the emulator stops to ask for each value and the job hangs.
+      - name: Function parameters for the emulator (the code's own defaults)
+        run: |
+          printf 'ELEVENLABS_MODEL=eleven_multilingual_v2\nELEVENLABS_VOICE_MATILDA=XrExE9yKIg1WjnnlVkGX\nELEVENLABS_VOICE_FOOTY_FAN=IKne3meq5aSn9XLyUdCD\nELEVENLABS_VOICE_SARCASTIC_COPILOT=onwK4e9ZLuTAKqWW03F9\nELEVENLABS_VOICE_DRY_WIT=JBFqnCBsd6RMkjVDRZzb\n' > firebase/functions/.env.local
+      - name: Firestore + Storage rules and Cloud Functions, on the real emulators
+        run: npx -y firebase-tools@14 emulators:exec --project demo-trackline-rules-test --only firestore,storage,functions,auth "npm --prefix firebase/tests test"
+
+  admin-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --prefix admin
+      - name: Typecheck + tests + static build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: demo-build
+          NEXT_PUBLIC_FIREBASE_API_KEY: build-placeholder
+        run: |
+          npm --prefix admin run typecheck
+          npm --prefix admin test
+          npm --prefix admin run build
+
+  web-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --prefix web
+      - name: Typecheck + production build
+        env:
+          VITE_FIREBASE_PROJECT_ID: demo-build
+          VITE_FIREBASE_API_KEY: build-placeholder
+        run: |
+          npm --prefix web run build
+          test -f web/dist/phone-verify.html

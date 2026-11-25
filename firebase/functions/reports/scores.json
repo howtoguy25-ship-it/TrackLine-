@@ -1,0 +1,19 @@
+{
+  "_about": "Points, levels and badges (gap item 15). Shared by the server (reports/scores.js, which is the only writer of scores/{uid}) and the app (src/gamification/points.ts). Points only for things the server saw happen: a report going live, other drivers confirming it, voting Still there / Not there on someone else's report.",
+  "points": { "reportPublished": 5, "confirmedByOther": 3, "vote": 1, "reportRemoved": -5 },
+  "levels": [
+    { "name": "Learner", "min": 0 },
+    { "name": "P-plater", "min": 50 },
+    { "name": "Road regular", "min": 200 },
+    { "name": "Road scout", "min": 600 },
+    { "name": "Road guardian", "min": 1500 },
+    { "name": "Road legend", "min": 4000 }
+  ],
+  "badges": [
+    { "id": "firstReport", "name": "First report", "how": "Report something on the road", "counter": "reports", "atLeast": 1 },
+    { "id": "tenReports", "name": "Ten reports", "how": "Have 10 reports go live", "counter": "reports", "atLeast": 10 },
+    { "id": "trusted", "name": "Trusted eyes", "how": "Get 25 confirmations from other drivers", "counter": "confirmationsReceived", "atLeast": 25 },
+    { "id": "helper", "name": "Helper", "how": "Vote Still there / Not there 20 times", "counter": "votes", "atLeast": 20 },
+    { "id": "centurion", "name": "Centurion", "how": "Have 100 reports go live", "counter": "reports", "atLeast": 100 }
+  ]
+}

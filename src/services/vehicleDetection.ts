@@ -2,6 +2,7 @@ import * as tf from "@tensorflow/tfjs";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import * as jpeg from "jpeg-js";
 import { File } from "expo-file-system";
+import { ImageManipulator } from "expo-image-manipulator";
 import { ensureTfReady } from "@/services/tfPlatform";
 import { cachedModelIO } from "@/services/cachedModelIO";
 import { bundledModelIO } from "@/services/modelAssetIO";
@@ -23,6 +24,7 @@ import { Sentry } from "@/services/sentry";
 // The ".bin" extension (registered as an assetExt in metro.config.js) is what makes this
 // resolve as an asset; expo-file-system's File.json() parses it as JSON regardless of its
 // actual file extension once downloaded, so the renamed file's content is unchanged.
+/* eslint-disable @typescript-eslint/no-require-imports -- binary model files: Metro only bundles them as assets through require() */
 const bundledCocoSsdModelJson = require("../../assets/models/ssdlite_mobilenet_v2/model.json.bin");
 const bundledCocoSsdWeights = [
   require("../../assets/models/ssdlite_mobilenet_v2/group1-shard1of5.bin"),
@@ -31,6 +33,7 @@ const bundledCocoSsdWeights = [
   require("../../assets/models/ssdlite_mobilenet_v2/group1-shard4of5.bin"),
   require("../../assets/models/ssdlite_mobilenet_v2/group1-shard5of5.bin"),
 ];
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 // COCO-SSD fetches its own base model (several MB, model.json + weight shards) from
 // Google's CDN on every single load by default -- there's no persistent cache without this,
@@ -54,7 +57,7 @@ const COCO_SSD_MODEL_URL =
 
 // COCO-SSD (the pretrained model this runs) only knows generic COCO classes — "car" /
 // "truck" / "bus" / "motorcycle" -- not "police car" or "ambulance". This app used to run a
-// second, custom-trained classifier (src/services/vehicleClassifier.ts, still present but no
+// second, custom-trained classifier (the former src/services/vehicleClassifier.ts, removed as unused;
 // longer called from here) behind each box to guess ambulance/firetruck/police-car. Dropped
 // for the same reason the web app already dropped its identical model: repeated real-world
 // testing kept producing confidently-wrong "Police car" results on ordinary cars even after
@@ -163,7 +166,7 @@ export async function warmUpModel(): Promise<void> {
       Sentry.logger.error("vehicleDetection: warmUpModel timed out", { timeoutMs: MODEL_LOAD_TIMEOUT_MS });
       reject(
         new Error(
-          "Detection model is taking unusually long to load -- check your connection, or try again."
+          "Detection model is taking unusually long to load — check your connection, or try again."
         )
       );
     }, MODEL_LOAD_TIMEOUT_MS);
@@ -211,6 +214,41 @@ export async function decodePhotoForDetection(uri: string): Promise<DecodedPhoto
     );
   }
   return { width, height, data };
+}
+
+// Real, confirmed regression this was raised to fix WITHOUT reintroducing (see
+// VehicleDetectionScreen.tsx's own photoResolution comment): jpeg.decode() above is a pure-JS
+// decode, and its cost is directly proportional to total pixel count -- decoding a full capture
+// at true 4K on every ~0.9-1.4s side-capture tick caused real, confirmed on-device lag. The
+// lightbar flash sampler (lightbarDetector.ts) only needs to tell whether a small crop near a
+// vehicle's roofline is showing a strobing red/blue color -- it never needed full-resolution
+// detail, it was just riding along on the same decode the plate-crop coordinate math used to
+// need too (mapUprightBoxToRawPhoto's rawWidth/rawHeight -- now sourced from the PhotoFile's own
+// already-known width/height metadata instead, see captureForPlateAndLightbar, so nothing else
+// needs this function's full decode anymore). Resizing down to a small, FIXED width first (a
+// native, hardware-accelerated resize via expo-image-manipulator -- the same real crop pipeline
+// plateOcr.ts already uses, not a JS operation) means this decode's cost stays pinned to that
+// small size regardless of how high photoResolution is set, so the still-photo capture is free
+// to be genuinely high-res for plate/zoom clarity without paying for it here.
+const LIGHTBAR_SAMPLE_WIDTH = 640;
+
+/** Same as decodePhotoForDetection, but decodes a small, natively-resized copy of the photo
+ *  instead of the original -- see LIGHTBAR_SAMPLE_WIDTH's own comment for why. Returned
+ *  dimensions are the RESIZED image's own (preserving the original's aspect ratio), not the
+ *  original photo's -- any bbox passed alongside this result needs to be scaled to match. */
+export async function decodePhotoForLightbarSampling(uri: string): Promise<DecodedPhoto> {
+  const resized = await ImageManipulator.manipulate(uri).resize({ width: LIGHTBAR_SAMPLE_WIDTH }).renderAsync();
+  const saved = await resized.saveAsync();
+  try {
+    return await decodePhotoForDetection(saved.uri);
+  } finally {
+    // Same best-effort temp-file cleanup as plateOcr.ts's own crop -- this resize writes a
+    // brand-new file to disk on every side-capture tick, and never deleting it would leak one
+    // small JPEG per tick for the entire length of a driving session.
+    try {
+      new File(saved.uri).delete();
+    } catch {}
+  }
 }
 
 /** Runs detection on an already-decoded photo (see decodePhotoForDetection) and returns

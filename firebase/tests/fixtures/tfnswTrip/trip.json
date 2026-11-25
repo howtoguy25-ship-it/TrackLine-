@@ -1,0 +1,27 @@
+{
+  "journeys": [
+    {
+      "legs": [
+        {
+          "origin": { "name": "Bankstown Station", "departureTimePlanned": "2026-11-18T23:07:00Z", "departureTimeEstimated": "2026-11-18T23:10:00Z" },
+          "destination": { "name": "Lidcombe Station", "arrivalTimePlanned": "2026-11-18T23:25:00Z" },
+          "transportation": { "name": "Sydney Trains Network T6 Lidcombe & Bankstown Line", "disassembledName": "T6" },
+          "isRealtimeControlled": true,
+          "stopSequence": [
+            { "name": "Bankstown Station", "coord": [-33.9177, 151.0346] },
+            { "name": "Yagoona Station", "coord": [-33.9047, 151.0247] },
+            { "name": "Lidcombe Station", "coord": [-33.8644, 151.0472] }
+          ]
+        },
+        {
+          "origin": { "name": "Lidcombe Station", "departureTimePlanned": "2026-11-18T23:33:00Z" },
+          "destination": { "name": "Parramatta Station" },
+          "transportation": { "name": "Sydney Trains Network T1 North Shore & Western Line", "disassembledName": "T1" },
+          "isRealtimeControlled": false,
+          "stopSequence": []
+        },
+        { "origin": { "name": "walk" }, "destination": { "name": "walk" } }
+      ]
+    }
+  ]
+}

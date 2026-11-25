@@ -1,0 +1,37 @@
+{
+  "route": "323 Stacey St -> 40 Bazentin St (recorded)",
+  "lengthM": 5178,
+  "spoken": [
+    "57.0 s  show  Speed hump",
+    "120.0 s  show  Roadwork",
+    "166.0 s  show  Traffic light not working",
+    "198.0 s  reminder  Traffic light not working",
+    "223.0 s  show  Crash causing standstill traffic",
+    "256.0 s  reminder  Crash causing standstill traffic"
+  ],
+  "frames": [
+    "01-hump.svg: Speed hump · On Wattle Street · 130 m",
+    "02-roadwork.svg: Roadwork · 2 lanes closed · 280 m",
+    "03-brokenLight.svg: Traffic light not working · On Persic Street · Reported 6 min ago · 3 drivers · 580 m",
+    "04-brokenLight-reminder.svg: Traffic light not working · On Persic Street · Reported 6 min ago · 3 drivers · 130 m",
+    "05-crash.svg: Crash causing standstill traffic · On Persic Street · Stopped for 450 m · +5 min · Reported 3 min ago · 2 drivers · 580 m",
+    "06-crash-reminder.svg: Crash causing standstill traffic · On Persic Street · Stopped for 450 m · +5 min · Reported 3 min ago · 2 drivers · 120 m"
+  ],
+  "sequence": [
+    "seq-1-00080ms.svg",
+    "seq-1-00270ms.svg",
+    "seq-1-01000ms.svg",
+    "seq-1-06110ms.svg",
+    "seq-1-06300ms.svg",
+    "seq-2-00080ms.svg",
+    "seq-2-00270ms.svg",
+    "seq-2-01000ms.svg",
+    "seq-2-07110ms.svg",
+    "seq-2-07300ms.svg",
+    "seq-3-00080ms.svg",
+    "seq-3-00270ms.svg",
+    "seq-3-01000ms.svg",
+    "seq-3-07110ms.svg",
+    "seq-3-07300ms.svg"
+  ]
+}

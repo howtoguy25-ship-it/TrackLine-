@@ -1,0 +1,11 @@
+{
+  "name": "audio-route",
+  "version": "1.0.0",
+  "description": "Local Expo Module: reads where the phone is currently playing audio (speaker, Bluetooth, car...) and opens the system's own output picker.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

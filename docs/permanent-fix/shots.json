@@ -1,0 +1,288 @@
+{
+  "notes": {
+    "pinch": {
+      "cameraMovesAllowedIn60s": 0,
+      "zoomAfter60s": 13,
+      "states": [
+        {
+          "t": 0,
+          "mode": "FREE",
+          "zoom": 13,
+          "at": [
+            151.034489,
+            -33.917402
+          ]
+        },
+        {
+          "t": 15,
+          "mode": "FREE",
+          "zoom": 13,
+          "at": [
+            151.033635,
+            -33.915865
+          ]
+        },
+        {
+          "t": 30,
+          "mode": "FREE",
+          "zoom": 13,
+          "at": [
+            151.034869,
+            -33.913117
+          ]
+        },
+        {
+          "t": 45,
+          "mode": "FREE",
+          "zoom": 13,
+          "at": [
+            151.038715,
+            -33.90598
+          ]
+        },
+        {
+          "t": 60,
+          "mode": "FREE",
+          "zoom": 13,
+          "at": [
+            151.045249,
+            -33.90113
+          ]
+        }
+      ]
+    },
+    "recentre": {
+      "mode": "FOLLOW",
+      "zoom": 17
+    },
+    "preview-collapsed": {
+      "padding": {
+        "top": 203,
+        "bottom": 324,
+        "left": 32,
+        "right": 32
+      },
+      "modelSaysAllVisible": true
+    },
+    "preview-pulled-up": {
+      "padding": {
+        "top": 203,
+        "bottom": 488,
+        "left": 32,
+        "right": 32
+      },
+      "modelSaysAllVisible": true
+    },
+    "nav": {
+      "startBearing": 265.02988261008966,
+      "firstSegmentFrom": [
+        151.034489,
+        -33.917402
+      ],
+      "arrowFractionTarget": 0.7
+    },
+    "controls-banner-recentre-false": {
+      "overlaps": []
+    },
+    "controls-banner-recentre-true": {
+      "overlaps": []
+    }
+  },
+  "shots": [
+    {
+      "name": "home-light.png",
+      "scheme": "light",
+      "zoom": 16,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 512.0000000007533,
+      "arrowX": 195.00000000602637,
+      "inside": null,
+      "features": 1027,
+      "arrowYFraction": 0.607,
+      "takenAt": "2026-11-23T16:55:09.585Z"
+    },
+    {
+      "name": "home-dark.png",
+      "scheme": "dark",
+      "zoom": 16,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 512.0000000007533,
+      "arrowX": 195.00000000602637,
+      "inside": null,
+      "features": 1027,
+      "arrowYFraction": 0.607,
+      "takenAt": "2026-11-23T16:55:11.995Z"
+    },
+    {
+      "name": "pinch-out-t00s.png",
+      "scheme": "light",
+      "zoom": 12,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 511.55853293019123,
+      "arrowX": 194.7045945767832,
+      "inside": null,
+      "features": 3267,
+      "arrowYFraction": 0.606,
+      "takenAt": "2026-11-23T16:55:17.401Z"
+    },
+    {
+      "name": "pinch-out-t15s.png",
+      "scheme": "light",
+      "zoom": 12,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 505.6245765168957,
+      "arrowX": 186.3829907213715,
+      "inside": null,
+      "features": 3267,
+      "arrowYFraction": 0.599,
+      "takenAt": "2026-11-23T16:55:22.924Z"
+    },
+    {
+      "name": "pinch-out-t30s.png",
+      "scheme": "light",
+      "zoom": 12,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 491.3777468148143,
+      "arrowX": 186.6353475112108,
+      "inside": null,
+      "features": 3266,
+      "arrowYFraction": 0.582,
+      "takenAt": "2026-11-23T16:55:28.050Z"
+    },
+    {
+      "name": "pinch-out-t45s.png",
+      "scheme": "light",
+      "zoom": 12,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 455.0163413898249,
+      "arrowX": 190.62256221431642,
+      "inside": null,
+      "features": 3266,
+      "arrowYFraction": 0.539,
+      "takenAt": "2026-11-23T16:55:37.568Z"
+    },
+    {
+      "name": "pinch-out-t60s.png",
+      "scheme": "light",
+      "zoom": 12,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 426.67275533237483,
+      "arrowX": 213.22426687853275,
+      "inside": null,
+      "features": 3266,
+      "arrowYFraction": 0.506,
+      "takenAt": "2026-11-23T16:55:43.109Z"
+    },
+    {
+      "name": "recentre-after.png",
+      "scheme": "light",
+      "zoom": 16,
+      "pitch": 45,
+      "bearing": 20,
+      "arrowY": 511.9999999992467,
+      "arrowX": 194.9999999997131,
+      "inside": null,
+      "features": 349,
+      "arrowYFraction": 0.607,
+      "takenAt": "2026-11-23T16:55:45.156Z"
+    },
+    {
+      "name": "route-preview-collapsed.png",
+      "scheme": "light",
+      "zoom": 11.673274710916546,
+      "pitch": 0,
+      "bearing": 0,
+      "arrowY": 474.5887082476186,
+      "arrowX": 36.180380422922106,
+      "inside": true,
+      "features": 1042,
+      "arrowYFraction": 0.562,
+      "takenAt": "2026-11-23T16:55:48.673Z"
+    },
+    {
+      "name": "route-preview-pulled-up.png",
+      "scheme": "light",
+      "zoom": 11.108280790600329,
+      "pitch": 0,
+      "bearing": 0,
+      "arrowY": 355.9432470264593,
+      "arrowX": 87.64456549112643,
+      "inside": true,
+      "features": 1630,
+      "arrowYFraction": 0.422,
+      "takenAt": "2026-11-23T16:55:52.811Z"
+    },
+    {
+      "name": "nav-facing-road-light.png",
+      "scheme": "light",
+      "zoom": 17.5,
+      "pitch": 45,
+      "bearing": -94.97011738991034,
+      "arrowY": 591.0000000180792,
+      "arrowX": 195,
+      "inside": null,
+      "features": 232,
+      "arrowYFraction": 0.7,
+      "takenAt": "2026-11-23T16:55:55.487Z"
+    },
+    {
+      "name": "nav-facing-road-dark.png",
+      "scheme": "dark",
+      "zoom": 17.5,
+      "pitch": 45,
+      "bearing": -94.97011738991034,
+      "arrowY": 591.0000000180792,
+      "arrowX": 195,
+      "inside": null,
+      "features": 232,
+      "arrowYFraction": 0.7,
+      "takenAt": "2026-11-23T16:55:57.046Z"
+    },
+    {
+      "name": "controls-banner.png",
+      "scheme": "light",
+      "zoom": 16.5,
+      "pitch": 45,
+      "bearing": -94.97011738991034,
+      "arrowY": 591.0000000073005,
+      "arrowX": 194.9999999994262,
+      "inside": null,
+      "features": 805,
+      "arrowYFraction": 0.7,
+      "takenAt": "2026-11-23T16:56:00.456Z"
+    },
+    {
+      "name": "controls-banner-recentre.png",
+      "scheme": "light",
+      "zoom": 16.5,
+      "pitch": 45,
+      "bearing": -94.97011738991034,
+      "arrowY": 591.0000000073005,
+      "arrowX": 194.9999999994262,
+      "inside": null,
+      "features": 805,
+      "arrowYFraction": 0.7,
+      "takenAt": "2026-11-23T16:56:03.573Z"
+    },
+    {
+      "name": "home-recentre-free.png",
+      "scheme": "dark",
+      "zoom": 13,
+      "pitch": 45,
+      "bearing": 0,
+      "arrowY": 649.5706489342815,
+      "arrowX": -5.211801826940686,
+      "inside": null,
+      "features": 2305,
+      "arrowYFraction": 0.77,
+      "takenAt": "2026-11-23T16:56:07.242Z"
+    }
+  ]
+}

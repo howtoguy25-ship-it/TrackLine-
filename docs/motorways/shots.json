@@ -1,0 +1,67 @@
+{
+  "light-sydney-z9": {
+    "appZoom": 9,
+    "zoom": 8,
+    "motorwayFeaturesDrawn": 19,
+    "refs": [
+      "M31",
+      "M4",
+      "M1"
+    ]
+  },
+  "light-m4-m7-z12": {
+    "appZoom": 12,
+    "zoom": 11,
+    "motorwayFeaturesDrawn": 48,
+    "refs": [
+      "M4",
+      "M7",
+      "M12"
+    ]
+  },
+  "light-m4-m7-z14": {
+    "appZoom": 14,
+    "zoom": 13,
+    "motorwayFeaturesDrawn": 55,
+    "refs": [
+      "M7",
+      "M4"
+    ]
+  },
+  "light-m5-z15": {
+    "appZoom": 15,
+    "zoom": 14,
+    "motorwayFeaturesDrawn": 14,
+    "refs": [
+      "M5"
+    ]
+  },
+  "dark-sydney-z9": {
+    "appZoom": 9,
+    "zoom": 8,
+    "motorwayFeaturesDrawn": 19,
+    "refs": [
+      "M31",
+      "M4",
+      "M1"
+    ]
+  },
+  "dark-m4-m7-z13": {
+    "appZoom": 13,
+    "zoom": 12,
+    "motorwayFeaturesDrawn": 45,
+    "refs": [
+      "M4",
+      "M7"
+    ]
+  },
+  "satellite-m4-m7-z13": {
+    "appZoom": 13,
+    "zoom": 12,
+    "motorwayFeaturesDrawn": 45,
+    "refs": [
+      "M4",
+      "M7"
+    ]
+  }
+}

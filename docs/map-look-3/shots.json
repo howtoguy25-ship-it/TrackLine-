@@ -1,0 +1,98 @@
+{
+  "light-z17": {
+    "appZoom": 17,
+    "zoom": 16,
+    "pitch": 44,
+    "fog": true
+  },
+  "light-z16": {
+    "appZoom": 16,
+    "zoom": 15,
+    "pitch": 50,
+    "fog": true
+  },
+  "light-z15": {
+    "appZoom": 15,
+    "zoom": 14,
+    "pitch": 55.9,
+    "fog": true
+  },
+  "light-z14_5": {
+    "appZoom": 14.5,
+    "zoom": 13.5,
+    "pitch": 58.00000000000001,
+    "fog": true
+  },
+  "light-z13_5": {
+    "appZoom": 13.5,
+    "zoom": 12.5,
+    "pitch": 51.99999999999999,
+    "fog": true
+  },
+  "light-z12_5": {
+    "appZoom": 12.5,
+    "zoom": 11.5,
+    "pitch": 34.199999999999996,
+    "fog": true
+  },
+  "light-z11_5": {
+    "appZoom": 11.5,
+    "zoom": 10.5,
+    "pitch": 20.7,
+    "fog": true
+  },
+  "light-z10_5": {
+    "appZoom": 10.5,
+    "zoom": 9.5,
+    "pitch": 0,
+    "fog": true
+  },
+  "dark-z17": {
+    "appZoom": 17,
+    "zoom": 16,
+    "pitch": 44,
+    "fog": true
+  },
+  "dark-z16": {
+    "appZoom": 16,
+    "zoom": 15,
+    "pitch": 50,
+    "fog": true
+  },
+  "dark-z15": {
+    "appZoom": 15,
+    "zoom": 14,
+    "pitch": 55.9,
+    "fog": true
+  },
+  "dark-z14_5": {
+    "appZoom": 14.5,
+    "zoom": 13.5,
+    "pitch": 58.00000000000001,
+    "fog": true
+  },
+  "dark-z13_5": {
+    "appZoom": 13.5,
+    "zoom": 12.5,
+    "pitch": 51.99999999999999,
+    "fog": true
+  },
+  "dark-z12_5": {
+    "appZoom": 12.5,
+    "zoom": 11.5,
+    "pitch": 34.199999999999996,
+    "fog": true
+  },
+  "dark-z11_5": {
+    "appZoom": 11.5,
+    "zoom": 10.5,
+    "pitch": 20.7,
+    "fog": true
+  },
+  "dark-z10_5": {
+    "appZoom": 10.5,
+    "zoom": 9.5,
+    "pitch": 0,
+    "fog": true
+  }
+}

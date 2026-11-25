@@ -1,0 +1,1 @@
+{ "status": "completed", "data": { "registrations": [], "certificates": [{ "downloadUrl": "https://example.invalid/ppsr-certificate.pdf" }], "nevdisData": { "vehicles": [{ "safetyRecalls": [] }] } } }

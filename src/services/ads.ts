@@ -1,7 +1,8 @@
 import { Platform } from "react-native";
 import mobileAds from "react-native-google-mobile-ads";
-import { requestTrackingPermissionsAsync } from "expo-tracking-transparency";
+import { getTrackingPermissionsAsync, requestTrackingPermissionsAsync } from "expo-tracking-transparency";
 import { Sentry } from "@/services/sentry";
+import { askPermission, answered } from "@/services/permissionQueue";
 
 // Kicks off the Google Mobile Ads SDK's own initialization exactly once, no matter how many
 // call sites (App Open manager, banner, any future ad placement) ask for it -- every caller
@@ -43,7 +44,11 @@ async function maybeRequestTrackingPermission(): Promise<void> {
   if (Platform.OS !== "ios") return;
   try {
     Sentry.logger.info("ads: calling requestTrackingPermissionsAsync()");
-    await requestTrackingPermissionsAsync();
+    // Through the queue: last in line, never over another prompt (iOS silently drops the
+    // tracking prompt if another alert is up when it's asked).
+    await askPermission("tracking", () => requestTrackingPermissionsAsync(), {
+      decided: async () => answered(await getTrackingPermissionsAsync()),
+    });
     Sentry.logger.info("ads: requestTrackingPermissionsAsync() resolved");
   } catch (err) {
     Sentry.logger.error("ads: tracking permission request failed", { error: String(err) });

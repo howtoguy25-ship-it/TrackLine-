@@ -8,4 +8,6 @@
 // `global` specifically doesn't) -- declared explicitly here rather than left broken. `global`
 // genuinely exists at runtime in React Native (its own JS engine provides it); this only makes
 // it visible to TypeScript.
+// `var` is required: only an ambient `var` declares a property of globalThis.
+// eslint-disable-next-line no-var
 declare var global: typeof globalThis;

@@ -1,0 +1,5 @@
+<error>
+  <code>-1</code>
+  <message>Requires an API key</message>
+  <class>err</class>
+</error>

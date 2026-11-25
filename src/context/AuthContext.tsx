@@ -1,11 +1,16 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { AppState } from "react-native";
+import { onIdTokenChanged, type User } from "firebase/auth";
 import { auth, ensureSignedIn } from "@/services/firebase";
 import { upsertSignedInProfile } from "@/services/userProfile";
+import { ensureDeviceSession, touchDeviceSessionActivity } from "@/services/deviceSession";
+import { registerForPushNotifications } from "@/services/pushNotifications";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  /** Changes whenever the account changes in place (guest -> account). */
+  authTick?: number;
 }
 
 const AuthContext = createContext<AuthContextValue>({ user: null, loading: true });
@@ -13,6 +18,7 @@ const AuthContext = createContext<AuthContextValue>({ user: null, loading: true 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authTick, setAuthTick] = useState(0);
 
   useEffect(() => {
     // Bootstraps the very first session (anonymous sign-in if nothing is stored on-device
@@ -31,8 +37,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // and kept showing "Signed in as ..." after tapping Sign out, because this context's
     // `user` value was frozen at whatever ensureSignedIn() resolved with at mount and was
     // never updated again for the rest of the session.
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    // onIdTokenChanged also fires when a guest becomes a real account in place (linking keeps
+    // the same User object), so everything showing "guest" updates straight away.
+    const unsubscribe = onIdTokenChanged(auth, (u) => {
       setUser(u);
+      setAuthTick((t) => t + 1);
     });
     return unsubscribe;
   }, []);
@@ -47,12 +56,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user && !user.isAnonymous) {
       upsertSignedInProfile(user).catch((err) => console.warn("[auth] profile sync failed", err));
     }
-  }, [user]);
+  }, [user, authTick]);
+
+  // Real, owner-dashboard-backing install/activity tracking -- fires for EVERY session,
+  // anonymous included (unlike the sign-in-only profile sync above), since an anonymous driver
+  // who never signs in is still a real install and a real active user (see deviceSession.ts's
+  // own header for why that distinction matters). Also registers this device for real push
+  // notifications once signed in -- see pushNotifications.ts; a driver who declines the
+  // permission prompt just never gets a token saved, no different from before this existed.
+  useEffect(() => {
+    if (!user) return;
+    ensureDeviceSession(user.uid, user.isAnonymous).catch((err) =>
+      console.warn("[auth] device session sync failed", err)
+    );
+    registerForPushNotifications(user.uid).catch((err) =>
+      console.warn("[auth] push registration failed", err)
+    );
+
+    // Real heartbeat while the app is actually in use -- deviceSession.ts's own throttle keeps
+    // this cheap even though AppState can fire "active" repeatedly (e.g. returning from a
+    // system permission sheet), and the immediate call above already covers the moment this
+    // session starts, so this listener only needs to cover the driver coming BACK to the app
+    // later in the same session.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        touchDeviceSessionActivity(user.uid).catch(() => {});
+      }
+    });
+    return () => subscription.remove();
+  }, [user, authTick]);
 
   // Same reasoning as SettingsContext's own fix -- a fresh object literal every render meant
   // every consumer re-rendered on any AuthProvider render, not just the ones that actually
   // change `user`/`loading`.
-  const value = useMemo(() => ({ user, loading }), [user, loading]);
+  // authTick: a new value after linking, so consumers re-render with the upgraded account.
+  const value = useMemo(() => ({ user, loading, authTick }), [user, loading, authTick]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

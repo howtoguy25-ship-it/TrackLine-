@@ -3,8 +3,12 @@ export interface LatLng {
   longitude: number;
 }
 
-/** Decodes a Google-encoded polyline string into an array of lat/lng points. */
-export function decodePolyline(encoded: string): LatLng[] {
+/**
+ * Decodes an encoded polyline string into lat/lng points. Google uses 5 decimal places; Mapbox's
+ * `geometries=polyline6` uses 6 (pass precision 6).
+ */
+export function decodePolyline(encoded: string, precision = 5): LatLng[] {
+  const factor = Math.pow(10, -precision);
   const points: LatLng[] = [];
   let index = 0;
   let lat = 0;
@@ -30,7 +34,7 @@ export function decodePolyline(encoded: string): LatLng[] {
     } while (b >= 0x1f);
     lng += result & 1 ? ~(result >> 1) : result >> 1;
 
-    points.push({ latitude: lat * 1e-5, longitude: lng * 1e-5 });
+    points.push({ latitude: lat * factor, longitude: lng * factor });
   }
 
   return points;

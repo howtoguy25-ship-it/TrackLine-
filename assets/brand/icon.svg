@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1240B0"/>
+    </linearGradient>
+    <linearGradient id="pinShine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#EAF1FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed square background -- App Store/OS applies its own corner rounding, so this
+       must stay a plain square with no transparency (matches assets/icon.png's existing
+       1024x1024 opaque RGB format). -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- Map pin -- the universal Apple Maps / Google Maps / Waze symbol language, sized with a
+       generous safe margin so it still reads cleanly once social platforms crop this to a
+       circle for an avatar. -->
+  <path d="
+    M 512 190
+    C 388 190 288 288 288 410
+    C 288 560 460 740 496 792
+    C 503 802 521 802 528 792
+    C 564 740 736 560 736 410
+    C 736 288 636 190 512 190
+    Z"
+    fill="url(#pinShine)"/>
+
+  <!-- The "track line" inside the pin -- a real route curve with a start node and a live-
+       position dot, in the same blue as the background so it reads as a cutout, not a sticker.
+       This is the one deliberately ownable detail that sets this apart from a plain generic pin:
+       TrackLine's own name, literally drawn as the mark. -->
+  <path d="M 372 460 C 420 540 460 420 512 460 C 564 500 580 400 648 420"
+        fill="none" stroke="#1240B0" stroke-width="34" stroke-linecap="round"/>
+  <circle cx="372" cy="460" r="24" fill="#1240B0"/>
+  <circle cx="648" cy="420" r="30" fill="#1240B0"/>
+  <circle cx="648" cy="420" r="13" fill="url(#pinShine)"/>
+</svg>

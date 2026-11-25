@@ -1,0 +1,10 @@
+<message>
+  <vehicles __array="true">
+    <vin>WAUZZZ8X4GB00TEST</vin>
+    <chassis/>
+    <registration>
+      <plate>TEST80</plate>
+      <state>VIC</state>
+    </registration>
+  </vehicles>
+</message>

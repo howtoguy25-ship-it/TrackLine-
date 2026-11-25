@@ -1,3 +1,5 @@
+import { featureOnNow } from "@/remote/useAppConfig";
+import { auth } from "@/services/firebase";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { useAppOpenAd } from "react-native-google-mobile-ads";
@@ -6,6 +8,7 @@ import { ensureAdsInitialized } from "@/services/ads";
 import { shouldShowAppOpenAd, recordAppOpenAdShown } from "@/services/appOpenAdSchedule";
 import { isNavigationActive } from "@/services/navState";
 import { Sentry } from "@/services/sentry";
+import { permissionQueue, whenPromptsIdle } from "@/services/permissionQueue";
 
 // Renders nothing -- loads and shows a full-screen App Open ad on real app-open events (cold
 // start, and every background->foreground resume), up to 3 times per day: immediately on the
@@ -35,6 +38,8 @@ export function AppOpenAdManager() {
   const evaluateOpen = useCallback(() => {
     pendingShowRef.current = false;
     if (isNavigationActive()) return;
+    // Owner dashboard > App control > ads off: no ad at all.
+    if (!featureOnNow("ads", auth.currentUser?.uid ?? null)) return;
     shouldShowAppOpenAd()
       .then((should) => {
         if (!should || isNavigationActive()) return;
@@ -43,7 +48,9 @@ export function AppOpenAdManager() {
         load();
       })
       .catch((err) => {
-        Sentry.logger.error("ads: app open ad schedule check failed", { error: String(err) });
+        Sentry.logger.error("ads: app open ad schedule check failed", {
+          error: String(err),
+        });
         console.warn("[ads] app open ad schedule check failed", err);
       });
   }, [load]);
@@ -56,18 +63,27 @@ export function AppOpenAdManager() {
     ensureAdsInitialized()
       .then(() => evaluateOpen())
       .catch((err) => {
-        Sentry.logger.error("ads: Google Mobile Ads SDK failed to initialize", { error: String(err) });
+        Sentry.logger.error("ads: Google Mobile Ads SDK failed to initialize", {
+          error: String(err),
+        });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Where the app was before it became active: only a return from the BACKGROUND is a new open.
+  // A permission prompt (or Control Centre, a call banner) only makes the app "inactive" for a
+  // moment -- that used to count as an open, so an ad popped up straight after the driver
+  // answered a permission prompt.
+  const lastStateRef = useRef<AppStateStatus>(AppState.currentState);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
+      const from = lastStateRef.current;
+      lastStateRef.current = state;
       if (state === "active") {
         setAppIsActive(true);
         // A real return-to-foreground counts as its own "app opened again" for the 3-per-day
         // cadence -- re-evaluate whether this is the 2nd/3rd ad's turn, or none at all yet.
-        evaluateOpen();
+        if (from === "background") evaluateOpen();
       } else {
         setAppIsActive(false);
       }
@@ -75,15 +91,33 @@ export function AppOpenAdManager() {
     return () => subscription.remove();
   }, [evaluateOpen]);
 
+  // The ad waits its turn: never over a permission prompt or a card the driver must read, and
+  // not in the pause straight after one (permissionQueue.ts) -- one thing at a time.
+  const latest = useRef({ appIsActive, isShowing });
   useEffect(() => {
-    if (isLoaded && appIsActive && !isShowing && pendingShowRef.current && !isNavigationActive()) {
-      pendingShowRef.current = false;
-      Sentry.logger.info("ads: calling app open ad show()");
-      recordAppOpenAdShown().catch((err) => {
-        Sentry.logger.error("ads: failed to record app open ad shown", { error: String(err) });
+    latest.current = { appIsActive, isShowing };
+  });
+  useEffect(() => {
+    if (!(isLoaded && appIsActive && !isShowing && pendingShowRef.current && !isNavigationActive())) return;
+    let cancelled = false;
+    const tryShow = (): Promise<void> =>
+      whenPromptsIdle().then(() => {
+        if (cancelled) return;
+        if (permissionQueue.busy()) return tryShow(); // another prompt slipped in: wait again
+        if (!pendingShowRef.current || !latest.current.appIsActive || latest.current.isShowing || isNavigationActive()) return;
+        pendingShowRef.current = false;
+        Sentry.logger.info("ads: calling app open ad show()");
+        recordAppOpenAdShown().catch((err) => {
+          Sentry.logger.error("ads: failed to record app open ad shown", {
+            error: String(err),
+          });
+        });
+        show();
       });
-      show();
-    }
+    tryShow();
+    return () => {
+      cancelled = true;
+    };
   }, [isLoaded, appIsActive, isShowing, show]);
 
   return null;

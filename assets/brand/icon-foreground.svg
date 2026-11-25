@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Transparent foreground mark -- used for both Android's adaptive-icon foreground
+       (rendered over app.config.js's android.adaptiveIcon.backgroundColor, #0B1220) and the
+       splash screen (expo-splash-screen's own image, same backgroundColor). Pin is scaled/
+       centered to sit inside Android's adaptive-icon safe zone (roughly the center 66% of the
+       canvas, since launchers mask this into a circle/squircle/rounded-square and can clip
+       anything outside that zone) -- about 20% smaller and centered vs. the full-bleed iOS
+       icon.svg version. -->
+  <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
+    <path d="
+      M 512 190
+      C 388 190 288 288 288 410
+      C 288 560 460 740 496 792
+      C 503 802 521 802 528 792
+      C 564 740 736 560 736 410
+      C 736 288 636 190 512 190
+      Z"
+      fill="#FFFFFF"/>
+    <path d="M 372 460 C 420 540 460 420 512 460 C 564 500 580 400 648 420"
+          fill="none" stroke="#1D4ED8" stroke-width="34" stroke-linecap="round"/>
+    <circle cx="372" cy="460" r="24" fill="#1D4ED8"/>
+    <circle cx="648" cy="420" r="30" fill="#1D4ED8"/>
+    <circle cx="648" cy="420" r="13" fill="#FFFFFF"/>
+  </g>
+</svg>

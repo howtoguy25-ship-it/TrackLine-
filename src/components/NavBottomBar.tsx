@@ -1,119 +1,131 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/ui/Icon";
+import { View, StyleSheet, Pressable, type LayoutChangeEvent } from "react-native";
+import { Text } from "@/components/AppText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NAV_CARD_THEMES, type NavCardThemeKey } from "@/utils/navCardTheme";
-import { radius, spacing, shadow, pressedOpacity } from "@/theme/tokens";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
+import { useScreenLayout } from "@/layout/LayoutContext";
 
 interface Props {
   etaText: string;
   arrivalClockText: string;
   distanceRemainingText: string;
+  /** Kept for callers; the street shows in the pill above the bar. */
   roadName: string | null;
   themeKey: NavCardThemeKey;
   hasStop: boolean;
+  /** Search along the route (fuel, food, parking) and add it as a stop. */
   onAddStop: () => void;
   onRemoveStop: () => void;
+  /** Opens the ETA sheet (arrival, events on route, best time to leave, Stop). */
   onOptions: () => void;
-  // Same real-measured-height pattern NavigationInstructionCard already uses for the controls
-  // above it -- MapScreen shifts the FAB column up by this bar's actual height so the two
-  // never collide, instead of guessing a fixed number that only holds for one line count.
   onHeightChange?: (height: number) => void;
+  /** The routes button: the whole route on screen (and the other routes). */
+  onOverview: () => void;
+  /** Long-press the bar: end navigation (asks first). */
+  onLongPressEnd?: () => void;
 }
 
-// Waze/Google-Maps-style persistent trip strip at the bottom of the screen: live ETA/arrival
-// time/distance remaining plus the road currently being driven, a "+" to add a mid-trip stop,
-// and a "..." for the less-frequent actions (Report/Share ETA/AI Detection/End -- see
-// NavOptionsSheet). Everything that used to be a 4-icon actions row inside the top turn card
-// now lives down here instead, matching the explicit ask to move ETA/road/time/distance to the
-// bottom, "similar to Maps/Waze".
+export const NAV_BOTTOM_BAR_HEIGHT = 110;
+
+/**
+ * The bottom bar while navigating (Waze-style): a thick bar across the full bottom. Round search
+ * button on the left, arrival time large in the middle with "25 min • 28 km" under it, round
+ * routes button on the right. Tapping the middle opens the ETA sheet. Re-centre is not part of
+ * the bar: it's the bottom-left pill in NavMapControls (fix pass 5 §4) -- nothing ever sits on
+ * top of the arrival time.
+ */
 export function NavBottomBar({
   etaText,
   arrivalClockText,
   distanceRemainingText,
-  roadName,
   themeKey,
   hasStop,
   onAddStop,
   onRemoveStop,
   onOptions,
   onHeightChange,
+  onOverview,
+  onLongPressEnd,
 }: Props) {
   const insets = useSafeAreaInsets();
+  // Landscape phones, tablets, desktop: the bar sits under the left panel's width (fix pass 7 §3).
+  const layout = useScreenLayout();
+  const side = layout.panel.side === "left";
   const theme = NAV_CARD_THEMES[themeKey];
-
-  const onLayout = (e: LayoutChangeEvent) => {
-    onHeightChange?.(e.nativeEvent.layout.height);
-  };
+  const bg = theme.bottomBarBackground ?? theme.background;
+  const roundBg = theme.actionBg;
+  const onLayout = (e: LayoutChangeEvent) => onHeightChange?.(e.nativeEvent.layout.height);
+  // Drag the bar up: the ETA sheet (same as tapping the arrival time), so it's always reachable.
+  const swipeUp = Gesture.Pan()
+    .activeOffsetY(-15)
+    .onEnd((e) => {
+      if (e.translationY < -30) runOnJS(onOptions)();
+    });
 
   return (
     <View
-      style={[styles.bar, { backgroundColor: theme.background, bottom: insets.bottom + spacing.sm }]}
-      onLayout={onLayout}
+      style={[styles.wrap, side && { left: layout.etaBar.left, width: layout.etaBar.width, right: undefined, bottom: insets.bottom + 8, borderRadius: 18, overflow: "hidden" }]}
+      pointerEvents="box-none"
+      testID="nav-bottom-bar"
     >
-      <View style={styles.info}>
-        <Text style={[styles.infoPrimary, { color: theme.text }]} numberOfLines={1}>
-          {etaText} · {arrivalClockText} · {distanceRemainingText}
-        </Text>
-        {roadName && (
-          <Text style={[styles.infoSecondary, { color: theme.textSecondary }]} numberOfLines={1}>
-            {roadName}
+      {/* Re-centre: the bottom-left pill in NavMapControls (fix pass 5 §4). */}
+      <GestureDetector gesture={swipeUp}>
+      <View style={[styles.bar, { backgroundColor: bg, paddingBottom: side ? 10 : insets.bottom + 10, minHeight: side ? NAV_BOTTOM_BAR_HEIGHT : NAV_BOTTOM_BAR_HEIGHT + insets.bottom }]} onLayout={onLayout}>
+        <Pressable
+          onPress={hasStop ? onRemoveStop : onAddStop}
+          style={[styles.round, { backgroundColor: roundBg }]}
+          accessibilityRole="button"
+          accessibilityLabel={hasStop ? "Remove the stop" : "Search along the route"}
+          testID="nav-search"
+        >
+          <Icon name={hasStop ? "close" : "search"} size={24} color={theme.text} />
+        </Pressable>
+        <Pressable
+          onPress={onOptions}
+          onLongPress={onLongPressEnd}
+          delayLongPress={600}
+          style={styles.centre}
+          accessibilityRole="button"
+          accessibilityLabel={`Arrive ${arrivalClockText}, ${etaText}, ${distanceRemainingText}. Open trip details.`}
+          accessibilityHint="Swipe up or tap for trip details and Stop. Long-press to end navigation."
+          testID="nav-eta"
+        >
+          <View style={[styles.grabber, { backgroundColor: theme.textSecondary }]} />
+          <Text style={[styles.arrival, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>
+            {arrivalClockText}
           </Text>
-        )}
+          <Text style={[styles.sub, { color: theme.textSecondary }]} numberOfLines={1}>
+            {etaText} • {distanceRemainingText}
+          </Text>
+        </Pressable>
+        <Pressable onPress={onOverview} style={[styles.round, { backgroundColor: roundBg }]} accessibilityRole="button" accessibilityLabel="Routes and overview" testID="nav-routes">
+          <Icon name="swap-vertical" size={24} color={theme.text} />
+        </Pressable>
       </View>
-
-      <Pressable
-        onPress={hasStop ? onRemoveStop : onAddStop}
-        hitSlop={8}
-        style={({ pressed }) => [styles.iconButton, { backgroundColor: theme.actionBg }, pressed && { opacity: pressedOpacity }]}
-        accessibilityLabel={hasStop ? "Remove stop" : "Add a stop"}
-      >
-        <Ionicons name={hasStop ? "close-circle-outline" : "add"} size={22} color={theme.actionText} />
-      </Pressable>
-
-      <Pressable
-        onPress={onOptions}
-        hitSlop={8}
-        style={({ pressed }) => [styles.iconButton, { backgroundColor: theme.actionBg }, pressed && { opacity: pressedOpacity }]}
-        accessibilityLabel="More options"
-      >
-        <Ionicons name="ellipsis-vertical" size={20} color={theme.actionText} />
-      </Pressable>
+      </GestureDetector>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
   bar: {
-    position: "absolute",
-    left: spacing.md,
-    right: spacing.md,
-    borderRadius: radius.xl,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    ...shadow.medium,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 12,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
   },
-  info: {
-    flex: 1,
-  },
-  infoPrimary: {
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0.2,
-  },
-  infoSecondary: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  round: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  centre: { flex: 1, alignItems: "center", minHeight: 56, justifyContent: "center" },
+  grabber: { width: 36, height: 4, borderRadius: 2, opacity: 0.5, marginBottom: 6 },
+  arrival: { fontSize: 30, fontWeight: "800" },
+  sub: { fontSize: 15, fontWeight: "500", marginTop: 2 },
+  // Bottom-RIGHT, over the Report button (nav/navControlsLayout.ts). It used to sit bottom-left,
+  // exactly on top of the speedometer.
 });

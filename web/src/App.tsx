@@ -8,7 +8,7 @@ import {
   Circle,
   OverlayView,
 } from "@react-google-maps/api";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { onIdTokenChanged, type User } from "firebase/auth";
 import { auth, ensureSignedIn, signInWithGoogle, signInWithApple, signOutUser } from "@/services/firebase";
 import { upsertSignedInProfile, updateLastKnownLocation } from "@/services/userProfile";
 import {
@@ -36,6 +36,9 @@ import { AboutPanel } from "@/components/AboutPanel";
 import { AlertCameraSettingsPanel } from "@/components/AlertCameraSettingsPanel";
 import { RevCheckPanel } from "@/components/RevCheckPanel";
 import { PhoneAuthPanel } from "@/components/PhoneAuthPanel";
+import { AccountCenter } from "@/components/AccountCenter";
+import { WebGates } from "@/components/WebGates";
+import { featureOn, type RemoteConfig } from "@/services/account";
 import { AdminPanel } from "@/components/AdminPanel";
 import { BusinessDetailPanel } from "@/components/BusinessDetailPanel";
 import { Street3DJoystick } from "@/components/Street3DJoystick";
@@ -331,6 +334,9 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [phoneAuthOpen, setPhoneAuthOpen] = useState(false);
+  const [accountCenterOpen, setAccountCenterOpen] = useState(false);
+  const [, setAuthTick] = useState(0);
+  const [remoteConfig, setRemoteConfig] = useState<RemoteConfig>({});
   const [revCheckOpen, setRevCheckOpen] = useState(false);
   const [revCheckReturnSessionId, setRevCheckReturnSessionId] = useState<string | null>(null);
 
@@ -626,7 +632,12 @@ export default function App() {
     // state for the rest of the session, not just whatever each individual sign-in/out call
     // site below happens to pass to setUser itself. Without this, any auth change that isn't
     // routed through one of those exact call sites would never reflect in the UI.
-    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    // onIdTokenChanged, not onAuthStateChanged: it also fires when a guest becomes a real
+    // account in place (linking keeps the same user object), so the UI re-renders then too.
+    const unsubscribe = onIdTokenChanged(auth, (u) => {
+      setUser(u);
+      setAuthTick((t) => t + 1);
+    });
     return unsubscribe;
   }, []);
 
@@ -2458,7 +2469,7 @@ export default function App() {
       {/* REV Check: real stolen/written-off/money-owing PPSR lookup, $14.99 AUD via Stripe --
           matches mobile's IAP-gated REV Check feature. Own FAB slot so it never overlaps the
           other persistent buttons above it. */}
-      {satelliteToggleVisible && (
+      {satelliteToggleVisible && featureOn(remoteConfig, "vehicleCheck", user?.uid ?? null) && (
         <button
           className="fab fab-octonary"
           onClick={() => setRevCheckOpen(true)}
@@ -2530,6 +2541,22 @@ export default function App() {
         </Suspense>
       )}
 
+      <WebGates user={user} onConfig={setRemoteConfig} />
+
+      {accountCenterOpen && (
+        <AccountCenter
+          user={user}
+          onSignInGoogle={handleSignInGoogle}
+          onSignInApple={handleSignInApple}
+          onSignInPhone={() => {
+            setAccountCenterOpen(false);
+            setPhoneAuthOpen(true);
+          }}
+          onSignOut={handleSignOut}
+          onClose={() => setAccountCenterOpen(false)}
+        />
+      )}
+
       {aboutOpen && (
         <AboutPanel
           theme={settings.theme}
@@ -2547,6 +2574,10 @@ export default function App() {
           onOpenAdmin={() => {
             setAboutOpen(false);
             setAdminOpen(true);
+          }}
+          onOpenAccountCenter={() => {
+            setAboutOpen(false);
+            setAccountCenterOpen(true);
           }}
           onClose={() => setAboutOpen(false)}
           settingsPanel={

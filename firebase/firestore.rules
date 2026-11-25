@@ -7,6 +7,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // A from/to place on a planned drive: a name and real coordinates.
+    function isPlannedPlace(p) {
+      return p is map && p.name is string && p.lat is number && p.lng is number
+        && p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180;
+    }
+
     function isOwner(createdBy) {
       return isSignedIn() && request.auth.uid == createdBy;
     }
@@ -19,53 +25,180 @@ service cloud.firestore {
           || request.auth.token.phone_number in ['+61474011265']);
     }
 
+    // A report waiting out its 3 s undo window, and each reporter's limits / trust: server only.
+    // Badge popularity caches, arrival counts and lookup budgets: server only.
+    // Owner dashboard + account recovery (firebase/functions/admin/). Everything here is
+    // written and read only by Cloud Functions (Admin SDK); the dashboard goes through the
+    // role-checked callables, never straight to Firestore. The audit log in particular can't be
+    // read, edited or deleted by any client.
+    match /auditLog/{id} { allow read, write: if false; }
+    match /auditChain/{id} { allow read, write: if false; }
+    match /staff/{uid} { allow read, write: if false; }
+    match /otpCodes/{id} { allow read, write: if false; }
+    match /otpThrottle/{id} { allow read, write: if false; }
+    match /recoveryLimits/{id} { allow read, write: if false; }
+    match /recoveryGrants/{id} { allow read, write: if false; }
+    match /recoveryEvents/{id} { allow read, write: if false; }
+    match /contactProofs/{id} { allow read, write: if false; }
+    match /contactChanges/{id} { allow read, write: if false; }
+    match /mail/{id} { allow read, write: if false; }
+    match /smsOutbox/{id} { allow read, write: if false; }
+    match /campaigns/{id} { allow read, write: if false; }
+    match /appConfigHistory/{id} { allow read, write: if false; }
+    match /statsDaily/{id} { allow read, write: if false; }
+    match /opsErrors/{id} { allow read, write: if false; }
+    match /pendingDeletions/{id} { allow read, write: if false; }
+    match /dataRequests/{id} { allow read, write: if false; }
+    match /refundNotes/{id} { allow read, write: if false; }
+    match /tripMarks/{id} { allow read, write: if false; }
+    // Help + recovery tickets: the app uses the helpTicket callable (only the user's own).
+    match /supportTickets/{id} {
+      allow read, write: if false;
+      match /{sub=**} { allow read, write: if false; }
+    }
+    // Remote config and the legal text the app shows: anyone can read (also before sign-in).
+    match /appConfig/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /legalDocs/{kind} {
+      allow read: if true;
+      allow write: if false;
+      match /versions/{v} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    match /poiPopularity/{id} { allow read, write: if false; }
+    match /poiArrivals/{id} { allow read, write: if false; }
+    match /poiArrivalMarks/{id} { allow read, write: if false; }
+    match /poiLookupBudget/{id} { allow read, write: if false; }
+    // Crash history: real crashes (Live Traffic NSW + confirmed driver reports); the server writes.
+    match /crashRecords/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /moderationLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /pendingReports/{id} {
+      allow read, write: if false;
+    }
+    // Points, levels, badges and the weekly leaderboard (gap item 15): written only by the report
+    // functions (reports/scores.js); readable by signed-in drivers. A name is there only when its
+    // driver chose to show their name on reports.
+    // Driver-reported fuel prices (gap item 18): written only by the reportFuelPrice function.
+    // Readable by signed-in drivers (the app shows a price only once 3 drivers agree).
+    match /fuelUserPrices/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Smart exit gates (fix pass 7 §1): read by signed-in drivers; written only by the
+    // answerSiteExit / adminSetSiteExitHours functions.
+    match /siteExits/{gateId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /scores/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /reporterState/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
     match /alerts/{alertId} {
       allow read: if isSignedIn();
 
-      allow create: if isSignedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.confirmCount == 0
-        && request.resource.data.hiddenBy == {}
-        && request.resource.data.type in ['police', 'emergency_vehicle', 'hazard', 'camera', 'crash', 'traffic_light']
-        && request.resource.data.expiresAt is timestamp
-        && request.resource.data.lat is number
-        && request.resource.data.lng is number
-        && request.resource.data.geohash is string
-        && request.resource.data.region in ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
+      // Reports are only ever created by the server (submitReport -> publishPendingReport in
+      // functions/index.js), after the anti-spam checks and the 3 s undo window. No client
+      // writes an alert directly.
+      allow create: if false;
 
       // Creator can delete their own alert outright (global delete) -- only the creator, per
       // explicit request ("only the users who places them can delete for the rest").
       allow delete: if isOwner(resource.data.createdBy);
 
-      // Anyone signed in can update — but only to set their OWN key in hiddenBy (a real,
-      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly) or bump confirmCount by exactly
-      // 1; every other field, including anyone else's hiddenBy entry, must stay untouched. This
-      // is what keeps "Hide" a per-user, non-destructive, self-only action -- "other users who
-      // hide them can only be hidden for themselves."
+      // Anyone signed in can update -- but only to set their OWN key in hiddenBy (a real,
+      // self-only, time-boxed hide -- see hiddenByAddsSelfOnly), or add ONE vote: confirmCount or
+      // denyCount (the "Still here? / Not here" prompt) or thanksCount (the thumbs-up on the alert
+      // card), each by exactly 1. A vote only counts in the same batch that creates the voter's
+      // own marker doc (votes/{uid} or thanks/{uid}, below), and those are create-only, so each
+      // signed-in user votes once per alert and thanks once per alert -- enforced here, not just
+      // by the app. Every other field, including anyone else's hiddenBy entry, stays untouched.
       allow update: if isSignedIn()
-        && onlyHideOrConfirmChanged()
-        && (hiddenByAddsSelfOnly() || confirmCountIncrementedByOne());
+        && (hiddenByAddsSelfOnly()
+          || (onlyChanged('confirmCount') && countUpByOne('confirmCount') && votedInThisWrite(alertId))
+          || (onlyChanged('denyCount') && countUpByOne('denyCount') && votedInThisWrite(alertId))
+          || (onlyChanged('thanksCount') && countUpByOne('thanksCount') && thankedInThisWrite(alertId)));
+
+      // One "still here / not here" vote per user per alert. Readable only by its owner (so the
+      // app knows it already voted); never changed or removed.
+      match /votes/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['vote', 'at'])
+          && request.resource.data.vote in ['confirm', 'deny']
+          && request.resource.data.at == request.time
+          && counterUpInThisWrite(alertId, request.resource.data.vote == 'confirm' ? 'confirmCount' : 'denyCount');
+        allow update, delete: if false;
+      }
+
+      // One thumbs-up per user per alert, never on their own report.
+      match /thanks/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time
+          && get(/databases/$(database)/documents/alerts/$(alertId)).data.createdBy != uid
+          && counterUpInThisWrite(alertId, 'thanksCount');
+        allow update, delete: if false;
+      }
     }
 
-    function onlyHideOrConfirmChanged() {
-      // affectedKeys() already only contains keys whose value actually changed, so
-      // restricting it to these two fields guarantees every other field is untouched.
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hiddenBy', 'confirmCount']);
+    function onlyChanged(field) {
+      // affectedKeys() only contains keys whose value actually changed.
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field]);
+    }
+
+    function countUpByOne(field) {
+      return request.resource.data.get(field, 0) == resource.data.get(field, 0) + 1;
+    }
+
+    // The caller's marker doc doesn't exist before this write and does after it: the vote and
+    // the marker were written together, in one batch.
+    function votedInThisWrite(alertId) {
+      return !exists(/databases/$(database)/documents/alerts/$(alertId)/votes/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/alerts/$(alertId)/votes/$(request.auth.uid));
+    }
+
+    function thankedInThisWrite(alertId) {
+      return !exists(/databases/$(database)/documents/alerts/$(alertId)/thanks/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/alerts/$(alertId)/thanks/$(request.auth.uid));
+    }
+
+    // The marker only lands together with its counter going up by one.
+    function counterUpInThisWrite(alertId, field) {
+      return getAfter(/databases/$(database)/documents/alerts/$(alertId)).data.get(field, 0)
+        == get(/databases/$(database)/documents/alerts/$(alertId)).data.get(field, 0) + 1;
     }
 
     // hiddenBy is a map of uid -> the ms timestamp they hid it (see types/alert.ts) -- this only
     // ever allows a write that changes THE CALLER'S OWN key within that map (setting or
-    // refreshing their own hide), never anyone else's, and never touches confirmCount in the
-    // same write.
+    // refreshing or removing their own hide), never anyone else's, and nothing else in the same write.
     function hiddenByAddsSelfOnly() {
-      return request.resource.data.hiddenBy.diff(resource.data.hiddenBy).affectedKeys().hasOnly([request.auth.uid])
-        && request.resource.data.hiddenBy[request.auth.uid] is number
-        && request.resource.data.confirmCount == resource.data.confirmCount;
-    }
-
-    function confirmCountIncrementedByOne() {
-      return request.resource.data.confirmCount == resource.data.confirmCount + 1
-        && request.resource.data.hiddenBy == resource.data.hiddenBy;
+      return onlyChanged('hiddenBy')
+        && request.resource.data.hiddenBy.diff(resource.data.hiddenBy).affectedKeys().hasOnly([request.auth.uid])
+        // Set (a fresh timestamp) or removed (the Inbox's "Undo", unhideAlertForUser).
+        && (!(request.auth.uid in request.resource.data.hiddenBy)
+          || request.resource.data.hiddenBy[request.auth.uid] is number);
     }
 
     match /crashReports/{reportId} {
@@ -108,11 +241,264 @@ service cloud.firestore {
       allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
       allow write: if isSignedIn() && request.auth.uid == uid;
+
+      // Vehicle full check reports. Written only by the runVehicleCheck function (Admin SDK);
+      // the owner can read them (the app watches one fill in, and lists "My checks") but never
+      // write one, so a report can't be forged or edited on the device.
+      match /vehicleChecks/{reportId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      // Messages from TrackLine (dashboard, support replies). Delivered by Cloud Functions;
+      // opened / clicked / dismissed is reported through the inboxEvent callable.
+      match /inbox/{messageId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      // Planned drives (Plan a drive). The owner creates, reads and deletes them; the server
+      // re-checks traffic before each one and writes leaveAtMs / recheckedAt / reminded.
+      match /plannedDrives/{driveId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        // Signed in includes a guest's anonymous account: guests can plan drives too.
+        allow create: if isSignedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['from', 'to', 'mode', 'targetMs', 'leaveAtMs', 'durationSeconds', 'createdAt', 'recheckedAt', 'reminded', 'tz'])
+          && request.resource.data.keys().hasAll(['from', 'to', 'mode', 'targetMs', 'leaveAtMs', 'durationSeconds'])
+          && isPlannedPlace(request.resource.data.from)
+          && isPlannedPlace(request.resource.data.to)
+          && request.resource.data.mode in ['arrive', 'leave']
+          && request.resource.data.targetMs is number
+          && request.resource.data.leaveAtMs is number
+          && request.resource.data.durationSeconds is number
+          && request.resource.data.durationSeconds >= 0
+          && (!('tz' in request.resource.data) || request.resource.data.tz is string)
+          && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is number)
+          && request.resource.data.reminded == false;
+        allow update: if false;
+      }
+    }
+
+    // Free re-checks owed to a user (a check that couldn't load). Server-written; owner-readable.
+    match /vehicleCheckCredits/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Purchases, the 24 h result cache and per-check provider costs: server only.
+    match /vehicleCheckPurchases/{key} {
+      allow read, write: if false;
+    }
+    match /vehicleCheckCache/{key} {
+      allow read, write: if false;
+    }
+    match /providerUsage/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Real, explicit request (Ghost mode + visibility control, Part 3) -- "Position written to
+    // Firestore presence/{uid} via Cloud Function ONLY." Every client write is rejected outright
+    // (updatePresence/clearPresence in firebase/functions/index.js use the Admin SDK, which
+    // bypasses these rules entirely) -- this is what actually enforces "ONLY", not a convention
+    // this app merely expects clients to follow. Any signed-in driver can read/list the
+    // collection (Part 3's own client needs this to show nearby Trackys), which is safe because
+    // the Cloud Function itself never writes a raw or current GPS fix, only road-snapped points
+    // that are already at least 60s old (see presencePending below). What a reader can learn
+    // is a property of what's IN each doc, not something a read-time rule could filter
+    // per-field anyway (Firestore security rules operate per-document, not per-field). One doc
+    // per uid, overwritten every update and trimmed to a few minutes of path, is also what
+    // makes "no uid-history queries" true: there's no history collection to query.
+    match /presence/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ADD-ON Part B -- the server-side "60s privacy delay" buffer. Holds a driver's most
+    // recent, NOT-yet-old-enough-to-show points; updatePresence (Admin SDK) is the only thing
+    // that ever touches it. No client can read it, including the driver's own -- if any client
+    // could, the delay would only be a convention.
+    match /presencePending/{uid} {
+      allow read, write: if false;
+    }
+
+    // "Trackys around you" (startup §2): who's using the app, for counting only -- position rounded
+    // to ~1 km, written and read only by noteActive / trackysAround (Admin SDK). No client can read
+    // anyone's, including their own; the app only ever gets the rounded count.
+    match /activity/{uid} {
+      allow read, write: if false;
+    }
+    match /trackysCountCache/{cell} {
+      allow read, write: if false;
+    }
+    // Tonight's private zone for a driver with no Home saved (startup §3). Server-only.
+    match /privateZones/{uid} {
+      allow read, write: if false;
+    }
+
+    // Real, explicit request -- "[Wave 👋] rate-limited 1/10min/blockable." This per-sender-
+    // per-target rate-limit doc is read/written only by sendWave (Admin SDK) -- a client could
+    // otherwise just delete its own cooldown doc to bypass the rate limit entirely.
+    match /waves/{waveId} {
+      allow read, write: if false;
+    }
+
+    // Character voices: how many new sentences each driver has had synthesized today. Written
+    // only by synthesizePersonaSpeech (Admin SDK) -- a client that could write its own count
+    // could simply reset it and spend the ElevenLabs quota without limit.
+    match /personaUsage/{uid} {
+      allow read, write: if false;
+    }
+
+    // Live Traffic NSW: one shared snapshot of current road incidents, written every few
+    // minutes by refreshNswTraffic (Admin SDK). It's public road information, so any signed-in
+    // driver may read it; nobody can write it from a phone.
+    match /trafficNsw/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // School zones and school calendars from official government data, written weekly by
+    // refreshSchoolZones (Admin SDK). Public road information: any signed-in driver may read;
+    // nobody can write from a phone.
+    match /schoolZoneTiles/{tile} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /schoolCalendars/{region} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /dataSources/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Real, explicit request -- "Block/report from card." A block is the BLOCKING driver's own
+    // list of who THEY'VE blocked -- safe to let them write directly (same self-only-write
+    // reasoning as alerts.ts's own hiddenBy map), and only they can read it back (e.g. a future
+    // "blocked drivers" management list). sendWave/presence reads it server-side via the Admin
+    // SDK regardless of this read restriction.
+    match /blocks/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Real, explicit request -- the other half of "Block/report from card." A report is a
+    // simple, safe, self-attributed create: reportedBy must be the caller's own uid and
+    // reportedUid must be a different real uid, enforced right here rather than needing a
+    // dedicated Cloud Function the way sendWave's rate-limit/block logic does. No client read
+    // or update/delete at all -- only the admin can review reports (same convention as the
+    // `broadcasts` collection), and a report can never be edited or withdrawn once filed.
+    // Photos drivers add to a place page. Created "pending" by the uploader; only the project
+    // owner can approve (or reject) one. Other drivers can read a photo only once approved --
+    // the app's query asks for approved ones, which these rules allow.
+    match /placePhotos/{photoId} {
+      allow read: if isSignedIn()
+        && (resource.data.status == "approved" || resource.data.uploaderUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.uploaderUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.placeId is string
+        && request.resource.data.placeId.size() > 0
+        && request.resource.data.placeId.size() <= 300
+        && request.resource.data.storagePath == "placePhotos/" + request.auth.uid + "/" + photoId + ".jpg";
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.uploaderUid == request.auth.uid);
+    }
+
+    // "This place is wrong" reports from the place page. Self-attributed, read only by the
+    // project owner, never edited.
+    match /placeReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.placeId is string
+        && request.resource.data.reason in ["wrong_location", "closed", "wrong_name", "other"];
+      allow update, delete: if false;
+    }
+
+    // Driver reports about school zones and speed limits (firebase/functions/roadReportsCore.js).
+    // Filed "pending" by the reporter; other signed-in drivers can see pending ones near them to
+    // confirm (one confirmation per account, never their own). Only the confirmRoadReport
+    // function and the project owner change a report's status.
+    match /roadFeatureReports/{reportId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.confirmCount == 0
+        && request.resource.data.kind in ["school_zone_missing", "school_zone_wrong", "speed_limit_wrong"]
+        && request.resource.data.lat is number && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+        && request.resource.data.lng is number && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
+        && request.resource.data.tile is string && request.resource.data.tile.size() <= 20;
+      allow update, delete: if isAdmin();
+
+      match /confirmations/{uid} {
+        allow read: if isAdmin();
+        allow create: if isSignedIn()
+          && uid == request.auth.uid
+          && get(/databases/$(database)/documents/roadFeatureReports/$(reportId)).data.reportedBy != request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // Live / approved driver-reported school zones, written only by syncRoadReport. No reporter id.
+    match /communityRoadFeatures/{featureId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /userReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && request.resource.data.reportedUid is string
+        && request.resource.data.reportedUid != request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Real, owner-only install/activity tracking for the mobile Owner Dashboard -- one doc per
+    // device, written by EVERY session (including the app's default anonymous one, unlike
+    // users/{uid} above which only ever gets a doc for a real sign-in). This is what makes
+    // "total installs" and "active right now" real numbers instead of only covering accounts
+    // that actually signed in. A device's own uid can only ever write its OWN doc (own install
+    // record, own heartbeat, own push token); only the admin can list the whole collection to
+    // compute real counts.
+    match /deviceSessions/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+
+      // One doc per phone the account is used on (model, OS, app version, last seen), for the
+      // dashboard's device list and the recovery "same device as before" check.
+      match /devices/{deviceId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if isSignedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['model', 'os', 'appVersion', 'lastSeenAt', 'platform']);
+      }
+    }
+
+    // Real send-history log for the owner's broadcast-notification button (see
+    // broadcastNotification in firebase/functions/index.js, which is the only thing that ever
+    // writes here -- via the Admin SDK, bypassing these rules -- after a real send actually
+    // completes). Owner-only read so the dashboard can show real past sends, not a fabricated
+    // list; no client write at all, including the owner's own device, since a fake row here
+    // would misrepresent a broadcast that never actually went out.
+    match /broadcasts/{broadcastId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Real vehicle REV check (PPSR) provider credentials -- split into two docs so the raw
     // secret key and its own "is a real provider actually connected" status can have
     // genuinely different read rules (Firestore rules are per-document, not per-field).
+    match /config/vehicleCheck {
+      // Vehicle full check routing + on/off switch (no keys in here -- those are Firebase
+      // secrets). Read by the functions with the Admin SDK; only the owner reads or edits it.
+      allow read, write: if isAdmin();
+    }
+
     match /config/revCheckProvider {
       // The raw API key itself. Admin (owner) only, both ways -- this is a real, paid business
       // credential; no other signed-in user, anonymous or not, can ever read or write it. The
@@ -129,6 +515,32 @@ service cloud.firestore {
       // "not connected" and skip the paid purchase flow entirely when nothing's configured,
       // without ever needing the real key to make that call. Only the owner can flip it, and
       // only ever alongside actually saving/clearing the real key above (see SettingsScreen.tsx).
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Same two-doc split as config/revCheckProvider/revCheckStatus above, for the second,
+    // plate-based vehicle-lookup provider (RegCheck/carregistrationapi.com.au -- see
+    // runPlateLookup in firebase/functions/index.js). A real, separate paid credential from the
+    // PPSR key above, so it gets its own admin-only doc rather than being folded into
+    // config/revCheckProvider.
+    match /config/plateLookupProvider {
+      allow read, write: if isAdmin();
+    }
+
+    match /config/plateLookupStatus {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Same two-doc split again, for the Plate Recognizer cloud OCR provider (see recognizePlate
+    // in firebase/functions/index.js) -- a real, paid platerecognizer.com account, used as a
+    // cloud alternative to VehicleDetectionScreen's own on-device plate reader when connected.
+    match /config/plateRecognizerProvider {
+      allow read, write: if isAdmin();
+    }
+
+    match /config/plateRecognizerStatus {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
