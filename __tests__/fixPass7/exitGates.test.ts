@@ -20,7 +20,11 @@ import {
   parseOverpass,
   patternFor,
   privateRoadExit,
+  routeExitGate,
+  exitReroute,
+  holdRerouteWhileLeaving,
   siteAt,
+  START_GATE_M,
   siteGates,
   SITE_MIN_AREA_M2,
   type ExitAnswer,
@@ -124,8 +128,9 @@ describe("the answer", () => {
   it("Closed -> the route goes out the other exit (the east gate), and says so", () => {
     expect(exitAnswerPlan(false, q, now)).toEqual({ action: "reroute", via: [gates.find((g) => g.id === "n502")], say: "Using another exit" });
     const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
-    // The reroute forces the new route through that exit (Routes API via-point), stops kept.
-    expect(src).toMatch(/getRouteThrough\(from, destination, \[\.\.\.vias\.map\(\(g\) => \(\{ point: g\.point, via: true \}\)\), \.\.\.stops\]\)/);
+    // The new route starts AT that exit (a yard has no mapped roads), an arrival entrance stays a
+    // via-point, stops kept.
+    expect(src).toMatch(/const \{ origin, vias \} = exitReroute\(plan\.depart, plan\.arrive, from\);\s*const fresh = await getRouteThrough\(origin, destination, \[\.\.\.vias\.map\(\(p\) => \(\{ point: p, via: true \}\)\), \.\.\.stops\]\);/);
   });
   it("Open -> keep the route", () => {
     expect(exitAnswerPlan(true, q, now)).toEqual({ action: "keep" });
@@ -154,6 +159,59 @@ describe("arriving", () => {
     expect(gatesOnRouteStart([...arriving].reverse(), gates)[0].gate.id).toBe("n501");
     const docs = { n501: { answers: [ans(false), ans(false), ans(false)] } };
     expect(alternativeExit(gates, "n501", docs, parked, bucket, now)?.id).toBe("n502");
-    expect(readFileSync("src/screens/MapScreen.tsx", "utf8")).toMatch(/gatesOnRouteStart\(\[\.\.\.chosen\.polyline\]\.reverse\(\), gates\)/);
+    expect(readFileSync("src/screens/MapScreen.tsx", "utf8")).toMatch(/routeExitGate\(\[\.\.\.chosen\.polyline\]\.reverse\(\), gates, endSite, destination\)/);
+  });
+});
+
+// Regression (found in the proof run): a router snaps a start inside a yard onto the public street
+// outside, so the route begins outside the site and passes no gate -- on ~100 real Sydney lots the
+// app would never have asked. You still leave through a gate: the one nearest where the route begins.
+describe("the route begins on the street outside the yard", () => {
+  const site = siteAt(parked, data.sites)!;
+  const gates = siteGates(site, data.gates);
+  // Snapped onto the street 30 m north of the north gate, then away along it.
+  const snapped = [ll(at(130, 80)), ll(at(130, 200)), ll(at(130, 400))];
+
+  it("the exit is the gate nearest where the route begins", () => {
+    expect(gatesOnRouteStart(snapped, gates)).toEqual([]);
+    expect(routeExitGate(snapped, gates, site, parked)?.id).toBe("n501");
+    expect(decideExit({ site, exit: routeExitGate(snapped, gates, site, parked), doc: null, myLast: null, nowMs: now, bucket }).kind).toBe("ask");
+  });
+  it("a gate the route really passes still wins", () => {
+    expect(routeExitGate(routeNorth, gates, site, parked)?.id).toBe("n501");
+  });
+  it("no gate when you're not inside the site, the route starts inside it, or the nearest gate is too far", () => {
+    expect(routeExitGate(snapped, gates, site, ll(at(200, 300)))).toBeNull(); // parked on the street
+    expect(routeExitGate([ll(at(60, 60)), ll(at(70, 70))], gates, site, parked)).toBeNull(); // still in the yard
+    const far = [ll(at(100 + START_GATE_M + 20, 75)), ll(at(400, 75))];
+    expect(routeExitGate(far, gates, site, parked)).toBeNull();
+  });
+  it("the map screen uses it for leaving and arriving", () => {
+    const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
+    expect(src).toMatch(/const exit = routeExitGate\(chosen\.polyline, gates, site, from\) \?\? privateRoadExit/);
+  });
+});
+
+// Regression (found in the proof run): "via the other gate" from a start the router snapped onto
+// the street outside the CLOSED gate meant leaving through the closed gate and driving round. The
+// new route starts at the other gate; the off-route reroute waits until you're out of the site.
+describe("after Closed: the new route starts at the other gate", () => {
+  const site = siteAt(parked, data.sites)!;
+  const gates = siteGates(site, data.gates);
+  const east = gates.find((g) => g.id === "n502")!;
+  it("starts at the departure gate; an arrival entrance stays a via-point", () => {
+    expect(exitReroute(east, null, parked)).toEqual({ origin: east.point, vias: [] });
+    const entrance = { id: "n9", point: ll(at(900, 900)), barrier: "gate", access: null, openingHours: null };
+    expect(exitReroute(null, entrance, parked)).toEqual({ origin: parked, vias: [entrance.point] });
+    expect(exitReroute(east, entrance, parked)).toEqual({ origin: east.point, vias: [entrance.point] });
+  });
+  it("no off-route reroute while still crossing the yard; normal again once out", () => {
+    expect(holdRerouteWhileLeaving(parked, { site })).toBe(true);
+    expect(holdRerouteWhileLeaving(ll(at(60, 120)), { site })).toBe(true);
+    expect(holdRerouteWhileLeaving(ll(at(50, 200)), { site })).toBe(false); // out on the street
+    expect(holdRerouteWhileLeaving(parked, null)).toBe(false); // not leaving through a chosen gate
+    const src = readFileSync("src/screens/MapScreen.tsx", "utf8");
+    expect(src).toMatch(/if \(holdRerouteWhileLeaving\(currentLatLng, leavingSiteRef\.current\)\) return;\s*leavingSiteRef\.current = null;\s*const missedManoeuvre/);
+    expect(src).toMatch(/rerouteVia\(\{ depart: plan\.via\[0\], arrive: q\.arrivalVia, site: q\.site \}/);
   });
 });

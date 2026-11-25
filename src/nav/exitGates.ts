@@ -202,6 +202,27 @@ export function gatesOnRouteStart(line: LatLng[], gates: Gate[]): { gate: Gate; 
   return out.sort((a, b) => a.alongM - b.alongM);
 }
 
+/** How far from where the route begins a gate can be and still be the way out to it. */
+export const START_GATE_M = 80;
+
+/**
+ * The exit this route leaves the site through. Usually a gate the route passes. But a router often
+ * snaps a start inside a yard onto the public street outside (it has no yard roads), so the route
+ * begins outside the site and passes no gate -- found in the proof run: ~100 real Sydney lots, the
+ * route passed no gate for nearly all of them, so the app never asked. Starting inside the site
+ * with the route beginning outside it, you still leave through a gate: the one nearest where the
+ * route begins (within 80 m).
+ */
+export function routeExitGate(line: LatLng[], gates: Gate[], site: Site, start: LatLng): Gate | null {
+  const passed = gatesOnRouteStart(line, gates)[0]?.gate;
+  if (passed) return passed;
+  const first = line[0];
+  if (!first || gates.length === 0) return null;
+  if (!pointInPolygon(start, site.polygon) || pointInPolygon(first, site.polygon)) return null;
+  const nearest = [...gates].sort((a, b) => metres(a.point, first) - metres(b.point, first))[0];
+  return metres(nearest.point, first) <= START_GATE_M ? nearest : null;
+}
+
 /**
  * The route's first stretch along a private service road: the point where it leaves it (the
  * exit), as an exit of its own (keyed by the road, "w<id>").
@@ -320,4 +341,24 @@ export function exitAnswerPlan(
   const alt = alternativeExit(q.gates, q.exit.id, q.docs, q.from, q.bucket, nowMs);
   if (!alt) return { action: "noOtherExit", say: "No other exit found" };
   return { action: "reroute", via: [alt, ...(q.arrivalVia ? [q.arrivalVia] : [])], say: "Using another exit" };
+}
+
+/**
+ * Leaving a site through a chosen gate: where the new route starts, and the via-points. A yard has
+ * no mapped roads, so a router snaps a start inside it to the nearest street -- possibly right
+ * outside the closed gate, and "via the other gate" then means out the closed one and round. So
+ * the route starts AT the departure gate (you cross the yard to it); an arrival entrance stays a
+ * via-point.
+ */
+export function exitReroute(depart: Gate | null, arrive: Gate | null, from: LatLng): { origin: LatLng; vias: LatLng[] } {
+  return { origin: depart ? depart.point : from, vias: arrive ? [arrive.point] : [] };
+}
+
+/**
+ * While you cross the yard to the chosen gate you're "off" the new route (it starts at the gate);
+ * the off-route reroute waits until you've left the site, or it would route you back out the
+ * closed gate.
+ */
+export function holdRerouteWhileLeaving(position: LatLng, leaving: { site: Site } | null): boolean {
+  return !!leaving && pointInPolygon(position, leaving.site.polygon);
 }

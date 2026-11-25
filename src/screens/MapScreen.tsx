@@ -357,7 +357,7 @@ import { useScreenLayout } from "@/layout/LayoutContext";
 import { withPanelPadding } from "@/layout/screenLayout";
 import { calloutSide } from "@/nav/turnCallout";
 import { HeadingHold, INITIAL_STILL, smoothAlong, stillLockStep, type AlongState, type StillState } from "@/nav/stillLock";
-import { alternativeExit, bucketFor, canAskNow, decideExit, exitAnswerPlan, exitLabel, exitQuestion as exitQuestionText, gatesOnRouteStart, patternFor, privateRoadExit, siteAt, siteGates, type ExitDoc, type Gate, type Site } from "@/nav/exitGates";
+import { alternativeExit, bucketFor, canAskNow, decideExit, exitAnswerPlan, exitLabel, exitQuestion as exitQuestionText, exitReroute, holdRerouteWhileLeaving, patternFor, privateRoadExit, routeExitGate, siteAt, siteGates, type ExitDoc, type Gate, type Site } from "@/nav/exitGates";
 import { answerExit, fetchSiteData, loadExitDocs, myLastAnswer } from "@/services/siteExits";
 import { ExitGateCard } from "@/components/ExitGateCard";
 /** The route preview's start field while it follows the live GPS (Waze-match §1). */
@@ -2605,6 +2605,9 @@ export function MapScreen() {
   // consistent evidence over 3+ fixes, poor-accuracy fixes ignored, wrong-way for 5 s, a missed
   // turn from the approach machine; debounced.
   const rerouteTriggerRef = useRef(INITIAL_REROUTE_TRIGGER);
+  // Set while leaving a site through a chosen exit gate (fix pass 7 §1): the off-route reroute waits
+  // until we're out of the site.
+  const leavingSiteRef = useRef<{ site: Site } | null>(null);
   const lastRerouteAtRef = useRef(0);
   // Cancels a still-in-flight reroute request the instant a newer one fires -- per explicit
   // spec, so two off-route triggers close together (e.g. a missed turn immediately followed by
@@ -2616,6 +2619,9 @@ export function MapScreen() {
       rerouteTriggerRef.current = { ...INITIAL_REROUTE_TRIGGER, lastRerouteMs: rerouteTriggerRef.current.lastRerouteMs };
       return;
     }
+    // Crossing the yard to the chosen exit gate: no off-route reroute until we're out of the site.
+    if (holdRerouteWhileLeaving(currentLatLng, leavingSiteRef.current)) return;
+    leavingSiteRef.current = null;
     const missedManoeuvre = missedManoeuvreRef.current;
     const t = rerouteTrigger(rerouteTriggerRef.current, {
       nowMs: Date.now(),
@@ -4248,9 +4254,11 @@ export function MapScreen() {
     [voiceIdentifierRef, voiceVolumeRef]
   );
   const rerouteVia = useCallback(
-    async (vias: Gate[], from: LatLng, destination: LatLng) => {
+    async (plan: { depart: Gate | null; arrive: Gate | null; site: Site | null }, from: LatLng, destination: LatLng) => {
       const stops = (stopWaypointsLiveRef.current ?? []).map((p: LatLng) => ({ point: p, via: false }));
-      const fresh = await getRouteThrough(from, destination, [...vias.map((g) => ({ point: g.point, via: true })), ...stops]);
+      const { origin, vias } = exitReroute(plan.depart, plan.arrive, from);
+      const fresh = await getRouteThrough(origin, destination, [...vias.map((p) => ({ point: p, via: true })), ...stops]);
+      leavingSiteRef.current = plan.depart && plan.site ? { site: plan.site } : null;
       guidanceRef.current = createGuidanceState();
       setActiveStepIndex(0);
       setRoute(fresh);
@@ -4269,7 +4277,7 @@ export function MapScreen() {
         const endSite = siteAt(destination, endData.sites);
         if (endSite) {
           const gates = siteGates(endSite, endData.gates);
-          const entrance = gatesOnRouteStart([...chosen.polyline].reverse(), gates)[0]?.gate ?? null;
+          const entrance = routeExitGate([...chosen.polyline].reverse(), gates, endSite, destination);
           if (entrance) {
             const docs = await loadExitDocs(gates.map((g) => g.id));
             if (patternFor(docs[entrance.id]?.answers, bucket, nowMs).state === "closed") arrivalVia = alternativeExit(gates, entrance.id, docs, destination, bucket, nowMs);
@@ -4281,7 +4289,7 @@ export function MapScreen() {
         let departureVia: Gate | null = null;
         if (site) {
           const gates = siteGates(site, startData.gates);
-          const exit = gatesOnRouteStart(chosen.polyline, gates)[0]?.gate ?? privateRoadExit(chosen.polyline, startData.privateRoads);
+          const exit = routeExitGate(chosen.polyline, gates, site, from) ?? privateRoadExit(chosen.polyline, startData.privateRoads);
           const docs = await loadExitDocs([...gates.map((g) => g.id), ...(exit && !gates.some((g) => g.id === exit.id) ? [exit.id] : [])]);
           const decision = decideExit({ site, exit, doc: exit ? docs[exit.id] : null, myLast: exit ? await myLastAnswer(exit.id) : null, nowMs, bucket });
           if (decision.kind === "avoid") {
@@ -4291,9 +4299,8 @@ export function MapScreen() {
             setExitQuestion({ exit: decision.exit, site, gates, docs, label: exitLabel(decision.exit, site, road), bucket, from, destination, arrivalVia });
           }
         }
-        const vias = [departureVia, arrivalVia].filter((g): g is Gate => !!g);
-        if (vias.length > 0) {
-          await rerouteVia(vias, from, destination);
+        if (departureVia || arrivalVia) {
+          await rerouteVia({ depart: departureVia, arrive: arrivalVia, site }, from, destination);
           sayIfVoice(departureVia ? "Using another exit" : "Using another entrance");
         }
       } catch (err) {
@@ -4312,7 +4319,7 @@ export function MapScreen() {
       const plan = exitAnswerPlan(open, q, Date.now());
       if (plan.action === "keep") return;
       sayIfVoice(plan.say);
-      if (plan.action === "reroute") rerouteVia(plan.via, currentLatLngRef.current ?? q.from, q.destination).catch((err) => console.warn("[exits] reroute failed", err));
+      if (plan.action === "reroute") rerouteVia({ depart: plan.via[0], arrive: q.arrivalVia, site: q.site }, currentLatLngRef.current ?? q.from, q.destination).catch((err) => console.warn("[exits] reroute failed", err));
     },
     [exitQuestion, rerouteVia, sayIfVoice, currentLatLngRef]
   );

@@ -30,8 +30,13 @@ import {
   exitLabel,
   exitQuestion,
   gatesOnRouteStart,
+  exitReroute,
   overpassQuery,
   parseOverpass,
+  routeExitGate,
+  START_GATE_M,
+  SAME_EXIT_M,
+  SITE_MIN_AREA_M2,
   siteAt,
   siteGates,
   type Gate,
@@ -283,60 +288,72 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
   // ======== 1-2. Smart exit gates: a real warehouse lot, its real gates, a real route out
   {
     const W = 390, H = 844, SAFE_TOP = 47, SAFE_BOTTOM = 34;
-    const searchAt: LatLng[] = [{ latitude: -33.8395, longitude: 150.912 }, { latitude: -33.853, longitude: 150.89 }, { latitude: -33.83, longitude: 150.935 }];
-    const destination: LatLng = { latitude: -33.8726, longitude: 150.9566 }; // Fairfield station
-    let found: null | { data: SiteData; site: Site; gates: Gate[]; origin: LatLng; route: NonNullable<Awaited<ReturnType<typeof mapboxRoute>>>; exit: Gate; alt: Gate; rerouted: NonNullable<Awaited<ReturnType<typeof mapboxRoute>>> } = null;
+    // Industrial areas of Sydney, each with a real destination a few km away.
+    const searchAt: { at: LatLng; to: LatLng }[] = [
+      { at: { latitude: -33.8395, longitude: 150.912 }, to: { latitude: -33.8726, longitude: 150.9566 } }, // Wetherill Park -> Fairfield stn
+      { at: { latitude: -33.853, longitude: 150.89 }, to: { latitude: -33.8726, longitude: 150.9566 } }, // Smithfield
+      { at: { latitude: -33.835, longitude: 151.045 }, to: { latitude: -33.8173, longitude: 151.0034 } }, // Silverwater -> Parramatta stn
+      { at: { latitude: -33.94, longitude: 150.93 }, to: { latitude: -33.9256, longitude: 150.9255 } }, // Moorebank -> Liverpool stn
+      { at: { latitude: -33.985, longitude: 150.86 }, to: { latitude: -34.0637, longitude: 150.8145 } }, // Ingleburn -> Campbelltown stn
+      { at: { latitude: -33.8, longitude: 150.86 }, to: { latitude: -33.769, longitude: 150.906 } }, // Eastern Creek -> Blacktown stn
+      { at: { latitude: -33.91, longitude: 151.19 }, to: { latitude: -33.8832, longitude: 151.2063 } }, // Alexandria -> Central
+    ];
+    let found: null | { data: SiteData; site: Site; gates: Gate[]; origin: LatLng; destination: LatLng; route: NonNullable<Awaited<ReturnType<typeof mapboxRoute>>>; exit: Gate; alt: Gate; rerouted: NonNullable<Awaited<ReturnType<typeof mapboxRoute>>> } = null;
     const tried: string[] = [];
-    for (const p of searchAt) {
+    const why: Record<string, number> = {};
+    const reject = (k: string) => {
+      why[k] = (why[k] ?? 0) + 1;
+    };
+    for (const { at: p, to: destination } of searchAt) {
       if (found) break;
-      let area: SiteData;
+      // One query per area: everything within 900 m -- a superset of the ~500 m the app fetches
+      // around the start, so siteAt / siteGates give the app's answer for any start in it.
+      let data: SiteData;
       try {
-        area = await overpass(overpassQuery(p, 900));
+        data = await overpass(overpassQuery(p, 900));
       } catch (e) {
         console.log("  area skipped (Overpass unavailable):", String(e));
         continue;
       }
-      // Warehouse lots first (the smallest site wins in siteAt, as in the app).
-      const candidates = area.sites.filter((s) => s.kind === "warehouse" && siteGates(s, area.gates).length >= 2).sort((a, b) => a.areaM2 - b.areaM2);
+      // Sites with at least two exits more than SAME_EXIT_M apart, smallest first (siteAt's order).
+      const spread = (gs: Gate[]) => gs.some((x) => gs.some((y) => metres(x.point, y.point) > SAME_EXIT_M));
+      const candidates = data.sites.filter((s) => s.areaM2 > SITE_MIN_AREA_M2 && spread(siteGates(s, data.gates))).sort((a, b) => a.areaM2 - b.areaM2);
+      console.log(`  area ${p.latitude},${p.longitude}: ${candidates.length} sites with 2+ separate exits`);
       for (const cand of candidates) {
-        if (found || tried.length > 60) break;
-        const gates = siteGates(cand, area.gates);
-        const c = cand.polygon.reduce((a, q) => ({ latitude: a.latitude + q.latitude / cand.polygon.length, longitude: a.longitude + q.longitude / cand.polygon.length }), { latitude: 0, longitude: 0 });
-        for (const g of gates) {
+        if (found || tried.length > 200) break;
+        const c = cand.polygon.reduce((acc, q) => ({ latitude: acc.latitude + q.latitude / cand.polygon.length, longitude: acc.longitude + q.longitude / cand.polygon.length }), { latitude: 0, longitude: 0 });
+        for (const g of siteGates(cand, data.gates)) {
           // Parked in the yard, 25 m inside the gate.
           const d = metres(g.point, c);
           const t = Math.min(1, 25 / Math.max(1, d));
           const origin = { latitude: g.point.latitude + (c.latitude - g.point.latitude) * t, longitude: g.point.longitude + (c.longitude - g.point.longitude) * t };
-          // What the app runs at "Go": the site we're in (re-fetched around the start, ~500 m).
-          const cell = { latitude: +origin.latitude.toFixed(3), longitude: +origin.longitude.toFixed(3) };
-          let data: SiteData;
-          try {
-            data = await overpass(overpassQuery(cell));
-          } catch {
-            continue;
-          }
-          console.log("  try", cand.id, g.id);
-          const site = siteAt(origin, data.sites);
           tried.push(`${cand.id}/${g.id}`);
-          if (!site) continue;
+          const site = siteAt(origin, data.sites);
+          if (!site) { reject("no site at the start"); continue; } // prettier-ignore
           const siteG = siteGates(site, data.gates);
           const route = await mapboxRoute([ll(origin), ll(destination)]);
-          if (!route) continue;
-          const onRoute = gatesOnRouteStart(route.line.map(lat), siteG);
-          if (onRoute.length === 0) continue;
-          const exit = onRoute[0].gate;
+          if (!route) { reject("no route"); continue; } // prettier-ignore
+          // The app's own choice of exit (routeExitGate): a gate the route passes, or -- the router
+          // snapped the start onto the street outside -- the gate nearest where the route begins.
+          const exit = routeExitGate(route.line.map(lat), siteG, site, origin);
+          if (!exit) { reject("no exit gate for this route"); continue; } // prettier-ignore
           const alt = alternativeExit(siteG, exit.id, {}, origin, bucketFor(new Date()), Date.now());
-          if (!alt) continue;
-          const rerouted = await mapboxRoute([ll(origin), ll(alt.point), ll(destination)]);
-          // The new route must really leave through the other gate, and not through the closed one.
-          if (!rerouted || gatesOnRouteStart(rerouted.line.map(lat), [alt]).length === 0 || gatesOnRouteStart(rerouted.line.map(lat), [exit]).length > 0) continue;
-          found = { data, site, gates: siteG, origin, route, exit, alt, rerouted };
+          if (!alt) { reject("no other exit"); continue; } // prettier-ignore
+          // What the app asks for after "Closed" (exitReroute): the new route starts AT the other gate.
+          const plan = exitReroute(alt, null, origin);
+          const rerouted = await mapboxRoute([ll(plan.origin), ll(destination)]);
+          // It must really begin at the other gate, and not pass the closed one.
+          if (!rerouted || metres(lat(rerouted.line[0]), alt.point) > START_GATE_M) { reject("reroute doesn't begin at the other gate"); continue; } // prettier-ignore
+          if (gatesOnRouteStart(rerouted.line.map(lat), [exit]).length > 0) { reject("reroute still passes the closed gate"); continue; } // prettier-ignore
+          found = { data, site, gates: siteG, origin, destination, route, exit, alt, rerouted };
           break;
         }
       }
+      console.log("  so far:", JSON.stringify(why));
     }
-    if (!found) throw new Error(`No real site with a gate on a real route found (tried ${tried.length}: ${tried.join(", ")})`);
+    if (!found) throw new Error(`No real site with a gate on a real route found (tried ${tried.length}; ${JSON.stringify(why)})`);
     const { site, gates, origin, route, exit, alt, rerouted } = found;
+    notes.exitSearch = { tried: tried.length, rejected: why };
     const now = new Date();
     const bucket = bucketFor(now);
     const decision = decideExit({ site, exit, doc: null, myLast: null, nowMs: now.getTime(), bucket });
@@ -353,11 +370,14 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
       question,
       closedPlan: plan.action === "reroute" ? { action: plan.action, via: plan.via.map((g) => g.id), say: plan.say } : plan,
       openPlan: exitAnswerPlan(true, { exit, gates, docs: {}, from: origin, bucket, arrivalVia: null }, now.getTime()),
-      original: { km: +(route.metres / 1000).toFixed(2), min: Math.round(route.seconds / 60), passes: gatesOnRouteStart(route.line.map(lat), gates).map((g) => g.gate.id) },
-      rerouted: { km: +(rerouted.metres / 1000).toFixed(2), min: Math.round(rerouted.seconds / 60), passes: gatesOnRouteStart(rerouted.line.map(lat), gates).map((g) => g.gate.id) },
+      original: { km: +(route.metres / 1000).toFixed(2), min: Math.round(route.seconds / 60), exitGate: exit.id, beginsMetresFromExit: Math.round(metres(lat(route.line[0]), exit.point)), passes: gatesOnRouteStart(route.line.map(lat), gates).map((g) => g.gate.id) },
+      rerouted: { km: +(rerouted.metres / 1000).toFixed(2), min: Math.round(rerouted.seconds / 60), beginsMetresFromNewExit: Math.round(metres(lat(rerouted.line[0]), alt.point)), passes: gatesOnRouteStart(rerouted.line.map(lat), gates).map((g) => g.gate.id) },
       tried,
     };
-    const heading = bearingOf(lat(route.line[0]), lat(route.line[Math.min(route.line.length - 1, 4)]));
+    const heading = bearingOf(origin, exit.point);
+    // Across the yard to the gate, then where the route begins (the app draws the route from there;
+    // the dashed part is an annotation).
+    const yard = (g: Gate, line: LngLat[]): LngLat[] => [ll(origin), ll(g.point), line[0]];
     const gatePins = gates.map((g) => ({ at: ll(g.point), ...gatePin(g.id === exit.id ? `OSM gate ${g.id} · on route` : `OSM gate ${g.id}`, g.id === exit.id ? "#B4540A" : "#5B6472") }));
     const etaText = (s: number) => new Date(Date.now() + s * 1000).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
     // 1: stopped in the yard at the start of the drive -- the question.
@@ -367,33 +387,39 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
       width: W,
       height: H,
       camera: { center: ll(origin), zoom: 17.2, pitch: NAV_FOLLOW_PITCH, bearing: heading, padding: navFollowPadding(H) },
-      routes: [{ line: route.line, selected: true }],
+      routes: [{ line: yard(exit, route.line), selected: false, faded: true }, { line: route.line, selected: true }],
       polygons: [site.polygon.map(ll)],
       driver: { at: ll(origin), heading },
       pins: gatePins,
       overlay:
-        topBar(W, SAFE_TOP, `${Math.round(gatesOnRouteStart(route.line.map(lat), [exit])[0].alongM)} m`, route.firstStreet ?? "", straight(60)) +
+        topBar(W, SAFE_TOP, `${Math.round(metres(origin, exit.point))} m`, route.firstStreet ?? "", straight(60)) +
         exitCard(question, exitCardPlacement({ windowHeight: H, safeTop: SAFE_TOP, safeBottom: SAFE_BOTTOM, topBarHeight: TOP_BAR_H, bottomBarHeight: 110 }), W) +
         etaBar(W, SAFE_BOTTOM, etaText(route.seconds), `${Math.round(route.seconds / 60)} min • ${(route.metres / 1000).toFixed(1)} km`) +
-        caption(`Real OSM ${site.kind} ${site.id}${site.name ? ` (${site.name})` : ""} · ${gates.length} gates · real route leaves through ${exit.id} · stopped (0 km/h) → decideExit = "${decision.kind}" · dashed = site edge, pins = annotations · drawn`, SAFE_TOP + TOP_BAR_H + 10, W),
+        caption(`Real OSM ${site.kind} ${site.id}${site.name ? ` (${site.name})` : ""} · ${gates.length} gates · the real route begins on the street ${Math.round(metres(lat(route.line[0]), exit.point))} m from ${exit.id} → that's the exit (routeExitGate) · stopped (0 km/h) → decideExit = "${decision.kind}" · orange dashes = site edge, grey dashes = across the yard, pins = annotations · drawn`, SAFE_TOP + TOP_BAR_H + 10, W),
     });
     // 2: "Closed" -> out through the other gate (overview so both routes show).
-    const fitCoords = [...route.line.slice(0, 60), ...rerouted.line.slice(0, 60), ll(origin), ...gates.map((g) => ll(g.point))];
+    // The yard and the first ~250 m out of it (both routes), so the two gates are clearly apart.
+    const near = (line: LngLat[]) => line.filter((q) => metres(lat(q), origin) <= 250);
+    const fitCoords = [...near(route.line), ...near(rerouted.line), ll(origin), ...gates.map((g) => ll(g.point))];
     await shoot({
       name: "2-exit-closed-reroute",
       scheme: "light",
       width: W,
       height: H,
       fit: { coords: fitCoords, padding: { top: SAFE_TOP + TOP_BAR_H + 70, bottom: 110 + SAFE_BOTTOM + 40, left: 40, right: 40 } },
-      routes: [{ line: route.line, selected: false, faded: true }, { line: rerouted.line, selected: true }],
+      routes: [{ line: [...yard(exit, route.line), ...route.line], selected: false, faded: true }, { line: yard(alt, rerouted.line), selected: false, faded: true }, { line: rerouted.line, selected: true }],
       polygons: [site.polygon.map(ll)],
       driver: { at: ll(origin), heading: bearingOf(origin, alt.point) },
-      pins: gates.map((g) => ({ at: ll(g.point), ...gatePin(g.id === exit.id ? `${g.id} · answered Closed` : g.id === alt.id ? `${g.id} · new exit` : g.id, g.id === exit.id ? "#C62828" : g.id === alt.id ? "#1E7A34" : "#5B6472") })),
+      // Labels on opposite sides so they never sit on each other.
+      pins: gates.map((g, i) => {
+        const pin = gatePin(g.id === exit.id ? "answered Closed" : g.id === alt.id ? "new exit" : g.id, g.id === exit.id ? "#C62828" : g.id === alt.id ? "#1E7A34" : "#5B6472");
+        return { at: ll(g.point), ...pin, ay: i % 2 === 0 ? -34 : 2, html: i % 2 === 0 ? pin.html : pin.html.replace("flex-direction:column", "flex-direction:column-reverse") };
+      }),
       overlay:
         topBar(W, SAFE_TOP, "", "Using another exit", straight(60)) +
         toast("Using another exit", SAFE_TOP + TOP_BAR_H + 12, W) +
         etaBar(W, SAFE_BOTTOM, etaText(rerouted.seconds), `${Math.round(rerouted.seconds / 60)} min • ${(rerouted.metres / 1000).toFixed(1)} km`) +
-        caption(`Tapped Closed → exitAnswerPlan = reroute via ${alt.id} ("${plan.action === "reroute" ? plan.say : ""}") · dashed grey = the old route out ${exit.id} · purple = new real route through ${alt.id} · overview for the picture · drawn`, H - 110 - SAFE_BOTTOM - 64, W),
+        caption(`Tapped Closed → exitAnswerPlan = reroute via ${alt.id} ("${plan.action === "reroute" ? plan.say : ""}") · grey dashes = the old way out through ${exit.id}, and across the yard to ${alt.id} · purple = the new real route, starting at ${alt.id} (exitReroute) · overview for the picture · drawn`, H - 110 - SAFE_BOTTOM - 64, W),
     });
   }
 
@@ -479,7 +505,7 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
       ${plot(tS, [stillRaw, stillDrawn], ["#E5484D", "#0098FF"], 50, 60, 330, 300, 15, "Parked 60 s: distance from where it stopped (m)", "seconds 0-60 · red raw GPS · blue the arrow")}
       ${plot(errsRaw.map((_, i) => i), [errsRaw, errsDrawn], ["#E5484D", "#0098FF"], 460, 60, 330, 300, 15, "Driving 50 km/h: along-route error (m)", "seconds 4-120 · red matcher input · blue the arrow (smoothAlong)")}
     </svg>`;
-    const summary = `<div style="position:absolute;left:50px;top:420px;font:500 14px/20px ${FONT};color:#1F2125;width:740px">Parked: the raw fixes wandered up to <b>${rawSpread.toFixed(1)} m</b>; the arrow moved <b>${drawnMoves.toFixed(1)} m</b> and its heading changed <b>${heldChanges}×</b> in 60 s.<br>Driving: 95% of the input was within <b>${p95(errsRaw)} m</b>; the arrow, within <b>${p95(errsDrawn)} m</b>, and it was locked for <b>${lockedWhileDriving}</b> s while moving (sharp, never held).</div>`;
+    const summary = `<div style="position:absolute;left:50px;top:420px;font:500 14px/20px ${FONT};color:#1F2125;width:740px">Parked: the raw fixes wandered up to <b>${rawSpread.toFixed(1)} m</b>; the arrow moved <b>${drawnMoves.toFixed(1)} m</b> and its heading changed <b>${heldChanges}×</b> in 60 s.<br>Driving: 95% of the input was within <b>${p95(errsRaw)} m</b>; the arrow, within <b>${p95(errsDrawn)} m</b>, and it let go <b>${lockedWhileDriving}</b> s after pulling away (two moving GPS fixes), then followed every fix.</div>`;
     await shoot({ name: "3b-arrow-still-vs-driving", scheme: "light", width: cw, height: ch, noMap: true, overlay: `<div style="position:absolute;left:0;top:0">${svg}</div>` + summary });
   }
 
@@ -527,7 +553,9 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
     const geo = buildRouteGeometry(recorded.steps, recorded.line);
     const stepIdx = recorded.steps.findIndex((s: { maneuver?: string; targetStreetName?: string }) => s.maneuver === "turn-right" && s.targetStreetName === "St Hilliers Road");
     const step = recorded.steps[stepIdx];
-    const turnAlong = geo.stepEnds[stepIdx - 1];
+    // The app's step model: a step's manoeuvre, street and endLocation are the turn at its END
+    // (MapScreen's mapboxTurnCallouts anchors the callout at step.endLocation).
+    const turnAlong = geo.stepEnds[stepIdx];
     const along = turnAlong - 150;
     const here = pointAt(geo, along);
     const heading = routeBearingAt(geo, along) ?? 0;
@@ -539,7 +567,7 @@ const toast = (text: string, top: number, w: number) => `<div style="position:ab
     const totalW = pillW + CALLOUT_TAIL + 2;
     const tail = `<div style="width:${tailW}px;height:${tailW}px;background:#3B0764;transform:rotate(45deg);margin:${side === "left" ? `0 0 0 -${tailW / 2}px` : `0 -${tailW / 2}px 0 0`}"></div>`;
     const pill = `<div style="height:${pillH}px;padding:0 10px;border-radius:999px;background:#3B0764;border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;font:700 12px ${FONT};color:#fff;white-space:nowrap">${step.targetStreetName}</div>`;
-    const callout = { at: ll(step.startLocation), html: `<div style="display:flex;align-items:center;width:${totalW}px;justify-content:${side === "left" ? "flex-end" : "flex-start"}">${side === "left" ? pill + tail : tail + pill}</div>`, ax: -anchor.x * totalW, ay: -anchor.y * pillH };
+    const callout = { at: ll(step.endLocation), html: `<div style="display:flex;align-items:center;width:${totalW}px;justify-content:${side === "left" ? "flex-end" : "flex-start"}">${side === "left" ? pill + tail : tail + pill}</div>`, ax: -anchor.x * totalW, ay: -anchor.y * pillH };
     const fb = (f: Frame, inner: string, bg = "#2A2C30", radius = "50%") => `<div style="position:absolute;left:${f.x}px;top:${f.y}px;width:${f.width}px;height:${f.height}px;border-radius:${radius};background:${bg};box-shadow:0 3px 10px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">${inner}</div>`;
     for (const free of [false, true]) {
       const frames = navControlFrames({ width: W, height: H, safeTop: SAFE_TOP, safeBottom: SAFE_BOTTOM, bottomBarHeight: 110, topBarHeight: TOP_BAR_H, showSpeedLimit: true, showRecenter: free, showCompass: true, showSound: true, showVoice: true, showStreetChip: true, showInfoBanner: false });

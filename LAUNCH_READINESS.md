@@ -9,12 +9,12 @@ if your phone test passes. Apple's review then usually takes 1–2 days.
 |---|---|
 | Typecheck (`tsc`) | 0 errors |
 | Lint (`eslint … --max-warnings 0`) | 0 problems |
-| App tests (`jest`) | 128 suites, **1601 / 1601 pass** |
-| Server tests on the Firebase emulators (CI) | 18 suites, **314 / 314 pass** |
+| App tests (`jest`) | 139 suites, **1704 / 1704 pass** |
+| Server tests on the Firebase emulators | 19 suites, **324 / 324 pass** |
 | Script checks (`scripts/test-*.ts`) | all pass |
 | iOS bundle (`expo export`) | builds, 3171 modules |
 | CI on GitHub (latest push) | green |
-| TestFlight | builds 218–222 all processed and on TestFlight (none sent for review) |
+| TestFlight | builds up to 228 processed and on TestFlight (none sent for review) |
 
 What these cover: routes and route preview fit, ETA bubbles, the driving camera and controls
 (no overlaps on 320–430 pt phones), turn guidance and the directions list, ahead alerts, every
