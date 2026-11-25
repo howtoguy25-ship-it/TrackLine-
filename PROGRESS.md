@@ -6,9 +6,22 @@ Items 1-6 DONE in code (items 1-4 earlier; item 5 owner dashboard + account reco
 branch `admin`, merged; item 6 FINAL_STATUS.md + BLOCKED.md). Final checks pasted in
 FINAL_STATUS.md. Web ships with each iOS/Android build via Actions > "Deploy web app (main website)" (DEPLOY.md > Web app). **Next step:** owner sets the real Mapbox `pk.` token in EAS `MAPBOX_PUBLIC_TOKEN` (BLOCKED.md #23 -- it currently holds placeholder text), then Claude ships it with `eas update --channel production --environment production` and checks Diagnostics. TestFlight build 203 has the map/routing fixes + Diagnostics.
 
+## Fix pass 7 — exit gates, calm arrow, map scale on every screen, nav overlaps — 2026-11-25
+
+All in code, tested, merged to `claude/go-session-0d5bup`; TestFlight build 227 (commit c66639b). NEEDS DEVICE TEST (TEST_ON_PHONE §54). Proof renders on real tiles with real OSM and route data: `docs/fix-pass-6` (`scripts/fix-pass-7-proof.ts`, measured values in `shots.json`).
+
+| § | What | Root cause → fix | Tests |
+|---|---|---|---|
+| 1 | Smart exit gates | Starting a drive inside a warehouse / industrial lot / car park, the route's exit gate comes from OpenStreetMap (our Overpass pipeline). Stopped or under 10 km/h, a card asks "Is the exit on <street> open?" [Open] [Closed]; Closed reroutes out another gate (Routes API via-point), "No other exit found" if none; ignored 8 s = keep. Answers go anonymously to `siteExits/{gate}` (Cloud Function `answerSiteExit`): 3+ agreeing answers at that time of day (75%) are used automatically, for leaving and arriving. Not asked again within 7 days at a similar time. Owner dashboard › Moderation › Site exits (answers, pattern, opening hours, audited). Gates within 40 m of each other count as one exit (a real lot has a double gate 20 m apart) | `__tests__/fixPass7/exitGates.test.ts`, `exitGateCard.test.tsx`, `exitCardPlace.test.ts`, `firebase/tests/siteExits.test.js` (emulator) |
+| 2 | Calm arrow when still, sharp when driving | Every raw GPS fix and compass reading was drawn. Still (under 1.5 m/s for 3 s) the position locks; it unlocks only on two moving fixes 1 s apart (one spurious speed reading with a 14 m jump unlocked it in the proof run). Compass held until it turns 20°+ for 1 s. Driving: the along-route position is smoothed (alpha-beta) | `__tests__/fixPass7/calmArrow.test.ts` (60 s parked with noise + multipath spikes: 0 m, 0°; driving within 3 m) |
+| 3 | Map scale on every screen | Home opens at zoom 16 (Mapbox 15), 45° lean. Motorway 10-12 px with its edge at that zoom (the first test measured at Mapbox 16, the wrong scale), softer amber. Landscape phone / iPad / wide web: sheets become a left panel, the map keeps the arrow centred in what's visible; supportsTablet on (App Store now needs iPad screenshots) | `__tests__/layout/screenLayout.test.ts`, `__tests__/mapV2.test.ts` |
+| 4 | Nav overlaps | "End suggested route" pill → options sheet row. Round Re-centre in the right column above Report. Route = one fill + one casing (the white turn stripe is gone). Street callouts beside the turn on its outside with a tail. Own Tracky: the ghost badge drew it (visibility defaults to "ghost") — removed. Ad banner: slot follows the ad's real height (50-60 pt), full width | `__tests__/fixPass7/navLook.test.ts`, `ownTracky.test.tsx`, `__tests__/nav/navControls.test.tsx` |
+
+Also fixed on the way: CI (the queue crashed without AppState in one test; the one-secret test needed the functions' packages — the token check is now in a dependency-free file), and a Plan a drive test that failed only after 23:30.
+
 ## Map camera: home closer, driving view higher — 2026-11-24
 
-Owner request. Home map opens and re-centres at zoom 18 (was 17): nearer street level, leaning about 42° by the lean-by-zoom curve. Driving camera sits higher and further back: it keeps 400 / 550 / 700 m of road ahead in view by speed band (was 300 / 400 / 500), same 45° pitch and arrow at 72%. Tests: `__tests__/nav/navCamera.test.ts`, `__tests__/fixPass5/navHint.test.tsx`, `__tests__/nav/endDrive.test.ts`.
+Owner request. (Home zoom since superseded by fix pass 7 §3: zoom 16, 45°.) Home map opens and re-centres at zoom 18 (was 17): nearer street level, leaning about 42° by the lean-by-zoom curve. Driving camera sits higher and further back: it keeps 400 / 550 / 700 m of road ahead in view by speed band (was 300 / 400 / 500), same 45° pitch and arrow at 72%. Tests: `__tests__/nav/navCamera.test.ts`, `__tests__/fixPass5/navHint.test.tsx`, `__tests__/nav/endDrive.test.ts`.
 
 ## Permissions one by one + one secret to go live — 2026-11-24
 

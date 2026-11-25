@@ -785,7 +785,7 @@ Delete TrackLine first, then install the new build so every permission is asked 
 
 ## 53. Map camera height — NEEDS DEVICE TEST
 
-1. Open the app / tap Re-centre: the map is closer than before (street level, street names big), still gently leaning.
+1. (Superseded by §54 step 9: the home map now opens at zoom 16, leaning 45°.) Open the app / tap Re-centre: street level, still gently leaning.
 2. Start a drive: the camera is higher and further back than before; at 50-80 km/h you see roughly the next 500 m of road ahead, on the motorway about 700 m.
 3. Tell me if either should go further (closer / higher) — each is one number.
 
